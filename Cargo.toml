@@ -1,0 +1,40 @@
+[package]
+name = "bevy_lightyear_game"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["client", "server", "netcode", "udp", "interpolation", "prediction", "replication", "input_native"]
+client = ["lightyear/client"]
+server = ["lightyear/server"]
+netcode = ["lightyear/netcode"]
+udp = ["lightyear/udp"]
+interpolation = ["lightyear/interpolation"]
+prediction = ["lightyear/prediction"]
+replication = ["lightyear/replication"]
+input_native = ["lightyear/input_native"]
+
+[dependencies]
+bevy = "0.19"
+lightyear = { version = "0.28", features = [
+    "interpolation",
+    "prediction",
+    "replication",
+    "input_native",
+    "netcode",
+    "udp"
+] }
+serde = { version = "1.0", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
+dotenvy = "0.15"
+sea-orm = { version = "1.1", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-uuid"] }
+sea-orm-migration = { version = "1.1", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+uuid = { version = "1", features = ["v4"] }
+
+[workspace]
+members = []
+
+[[bin]]
+name = "game"
+path = "src/main.rs"

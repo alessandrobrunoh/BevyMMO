@@ -1,0 +1,117 @@
+use bevy::ecs::entity::MapEntities;
+use bevy::prelude::*;
+use lightyear::prelude::*;
+use serde::{Deserialize, Serialize};
+
+use crate::plugins::entity::components::{EntityState, GameEntity, Health, Stats};
+use crate::plugins::entity::enemy::components::EnemyAttack;
+
+// Canali
+pub struct Channel1;
+
+/// Canale affidabile client -> server usato per i messaggi di join (es. `JoinRequest`).
+pub struct Channel2;
+
+// Componenti
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PlayerId(pub PeerId);
+
+/// Posizione generica di un'entità di gioco, replicata via lightyear.
+/// Non è più specifica del Player: qualsiasi entità (Player, Enemy, NPC, ...)
+/// può usarla per avere una posizione nello spazio replicata.
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Reflect, Deref, DerefMut)]
+pub struct Position(pub Vec3);
+
+impl Ease for Position {
+    fn interpolating_curve_unbounded(start: Self, end: Self) -> impl Curve<Self> {
+        FunctionCurve::new(Interval::UNIT, move |t| {
+            Position(Vec3::lerp(start.0, end.0, t))
+        })
+    }
+}
+
+/// Colore generico di un'entità di gioco, replicato via lightyear.
+#[derive(Component, Deserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct EntityColor(pub bevy::prelude::Color);
+
+// Comandi di input
+/// Comando punta-e-clicca inviato dal client al server.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Reflect)]
+pub enum Inputs {
+    MoveTo(Vec3),
+    Stop,
+}
+
+impl Default for Inputs {
+    fn default() -> Self {
+        Self::Stop
+    }
+}
+
+impl MapEntities for Inputs {
+    fn map_entities<M: EntityMapper>(&mut self, _entity_mapper: &mut M) {}
+}
+
+// Messaggi
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PlayerMessage(pub usize);
+
+/// Richiesta di join inviata dal client al server subito dopo `Connected`.
+/// Il server valida `player_name` prima di spawnare il player.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct JoinRequest {
+    pub player_name: String,
+}
+
+// Protocol Plugin
+pub struct ProtocolPlugin;
+
+impl Plugin for ProtocolPlugin {
+    fn build(&self, app: &mut App) {
+        // Canali
+        app.add_channel::<Channel1>(ChannelSettings {
+            mode: ChannelMode::OrderedReliable(ReliableSettings::default()),
+            ..default()
+        })
+        .add_direction(NetworkDirection::ServerToClient);
+
+        app.add_channel::<Channel2>(ChannelSettings {
+            mode: ChannelMode::UnorderedReliable(ReliableSettings::default()),
+            ..default()
+        })
+        .add_direction(NetworkDirection::ClientToServer);
+
+        // Messaggi
+        app.register_message::<PlayerMessage>()
+            .add_direction(NetworkDirection::ServerToClient);
+
+        app.register_message::<JoinRequest>()
+            .add_direction(NetworkDirection::ClientToServer);
+
+        // Comandi di input
+        app.add_plugins(input::native::InputPlugin::<Inputs>::default());
+
+        // Componenti
+        app.component::<PlayerId>().replicate();
+
+        app.component::<Position>()
+            .replicate()
+            .predict()
+            .add_linear_interpolation();
+
+        app.component::<EntityColor>().replicate();
+
+        app.component::<Stats>().replicate().predict();
+
+        app.component::<EnemyAttack>().replicate();
+
+        app.component::<EntityState>().replicate().predict();
+
+        app.component::<GameEntity>().replicate();
+
+        app.component::<Health>().replicate().predict();
+
+        app.component::<crate::plugins::entity::components::PlayerName>()
+            .replicate();
+    }
+}

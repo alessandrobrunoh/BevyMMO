@@ -7,6 +7,29 @@ use std::collections::HashMap;
 use super::context::{CastKind, ChannelMovementPolicy};
 use super::registry::SpellId;
 
+const DEFAULT_PLAYER_SPELL_IDS: [&str; 6] = [
+    "attack",
+    "fireball",
+    "followball",
+    "healing_circle",
+    "meteorite",
+    "swift",
+];
+
+/// Authoritative initial player spellbook.
+///
+/// Keeping the defaults in one function avoids drift between first-time player
+/// creation, database backfills, and non-persisted player spawns.
+///
+/// # Example
+/// ```rust
+/// let spellbook = default_player_spellbook();
+/// assert!(spellbook.contains(&SpellId::new("attack")));
+/// ```
+pub fn default_player_spellbook() -> Spellbook {
+    Spellbook::from_ids(DEFAULT_PLAYER_SPELL_IDS.map(SpellId::new))
+}
+
 // TODO: QUesto sará da modificare e rimuovere perché le spell sono attaccate agli Enemy o agli Items e non anche ai Player.
 /// A collection of spells known to an entity.
 ///

@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::game_state::validate_player_name;
 use crate::network::protocol::*;
 use crate::plugins::entity::components::{EntityState, PlayerName, SpawnPoint};
-use crate::plugins::entity::definition::EntityDefinition;
+
 use crate::plugins::entity::dummy::components::Dummy;
 use crate::plugins::entity::enemy::components::Enemy;
 use crate::plugins::entity::events::RespawnedEvent;
@@ -24,7 +24,9 @@ use crate::plugins::entity::spawn::{spawn_entity, GameEntityBundle};
 use crate::plugins::persistence::{
     normalize_name, PersistedPlayerSnapshot, PersistenceError, PersistenceRuntime, PlayerStore,
 };
-use crate::plugins::spells::{SpellCastRequest, SpellId, SpellReleaseRequest};
+use crate::plugins::spells::{
+    SpellCastRequest, SpellCooldowns, SpellId, SpellReleaseRequest, Spellbook,
+};
 use crate::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 
 /// Impostazioni di connessione del server, conservate come risorsa.
@@ -264,7 +266,9 @@ fn finish_pending_joins(
                     NetworkTarget::All,
                 ),
                 PlayerName(snapshot.player.display_name),
-                Player::bundle(),
+                Player,
+                snapshot.spellbook,
+                SpellCooldowns::default(),
                 PlayerId(completed_join.peer_id),
                 DbPlayerId(snapshot.player.id),
                 PredictionTarget::to_clients(NetworkTarget::Single(completed_join.peer_id)),
@@ -303,6 +307,7 @@ fn handle_disconnected_client(
             &MovementStats,
             &CombatStats,
             &VitalStats,
+            &Spellbook,
         ),
         With<Player>,
     >,
@@ -314,9 +319,10 @@ fn handle_disconnected_client(
         return;
     };
 
-    let Some((player_entity, _, database_id, position, movement, combat, vital)) = players
-        .iter()
-        .find(|(_, player_id, _, _, _, _, _)| player_id.0 == remote_id.0)
+    let Some((player_entity, _, database_id, position, movement, combat, vital, spellbook)) =
+        players
+            .iter()
+            .find(|(_, player_id, _, _, _, _, _, _)| player_id.0 == remote_id.0)
     else {
         commands
             .entity(trigger.entity)
@@ -329,9 +335,17 @@ fn handle_disconnected_client(
     let database_id = database_id.0;
     let position = position.0;
     let stats = StatsBundleData::from_components(movement, combat, vital);
+    let spellbook = spellbook.clone();
     runtime.0.spawn(async move {
         if let Err(error) = repository
-            .save_snapshot(database_id, position.x, position.y, position.z, &stats)
+            .save_snapshot(
+                database_id,
+                position.x,
+                position.y,
+                position.z,
+                &stats,
+                &spellbook,
+            )
             .await
         {
             error!("Failed to save player position {database_id}: {error}");

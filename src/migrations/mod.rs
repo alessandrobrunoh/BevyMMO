@@ -6,6 +6,7 @@ use sea_orm_migration::prelude::*;
 
 mod m20260805_000001_create_players;
 mod m20260805_000002_create_player_stats;
+mod m20260805_000003_create_player_spells;
 
 pub struct Migrator;
 
@@ -15,6 +16,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20260805_000001_create_players::Migration),
             Box::new(m20260805_000002_create_player_stats::Migration),
+            Box::new(m20260805_000003_create_player_spells::Migration),
         ]
     }
 }

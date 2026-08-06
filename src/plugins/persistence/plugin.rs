@@ -5,8 +5,8 @@ use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 use tokio::runtime::Runtime;
 
-use crate::migrations::Migrator;
 use super::repository::player::PlayerRepository;
+use crate::migrations::Migrator;
 
 /// Accesso condiviso e asincrono ai player persistiti.
 #[derive(Resource, Clone)]

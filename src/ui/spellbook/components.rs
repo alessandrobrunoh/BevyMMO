@@ -5,12 +5,13 @@ use bevy::prelude::*;
 pub struct SpellbookWindow;
 
 #[derive(Component)]
-pub struct SpellListItem {
+pub struct SpellAssignmentButton {
+    pub slot: HotbarSlot,
     pub spell_id: SpellId,
 }
 
 #[derive(Component)]
-pub struct HotbarSlotUi {
+pub struct ClearHotbarSlotButton {
     pub slot: HotbarSlot,
 }
 

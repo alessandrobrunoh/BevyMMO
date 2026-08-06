@@ -21,7 +21,7 @@ impl Plugin for SpellbookUiPlugin {
             (
                 systems::toggle_spellbook,
                 systems::update_spellbook_ui,
-                systems::handle_spell_selection,
+                systems::handle_spellbook_interactions,
             )
                 .chain()
                 .run_if(has_client)

@@ -3,6 +3,7 @@
 mod plugin;
 
 pub mod bar;
+pub mod boss_bar;
 pub mod button;
 pub mod connecting;
 pub mod crowd_control_bar;

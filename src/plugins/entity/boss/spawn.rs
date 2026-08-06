@@ -23,7 +23,15 @@ impl Boss {
     /// Empty in Phase 0; Phase 2+ appends ability IDs (`dragon_claw`,
     /// `wing_buffet`, ...). Kept as a single source of truth so the
     /// `BossSpellbook` and the rotation scheduler stay in sync.
-    pub const SPELLS: &'static [&'static str] = &[];
+    pub const SPELLS: &'static [&'static str] = &[
+        "dragon_claw",
+        "tail_sweep",
+        "searing_breath",
+        "cinder_storm",
+        "wing_buffet",
+        "molten_eruption",
+        "cataclysm",
+    ];
 }
 
 impl EntityDefinition for Boss {

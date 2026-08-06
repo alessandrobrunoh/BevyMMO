@@ -4,9 +4,14 @@
 //! components and spawns a dormant, immobile dragon. Aggro, threat, the phase
 //! machine and the ability rotation are added in later phases.
 
+#[cfg(feature = "client")]
+pub mod arena_visual;
 pub mod components;
+#[cfg(feature = "client")]
+pub mod dragon_visual;
 pub mod spawn;
 pub mod systems;
+pub mod target_select;
 
 use bevy::prelude::*;
 
@@ -27,7 +32,26 @@ impl Plugin for BossPlugin {
         // for lightyear to (de)serialize them.
         app.register_type::<BossPhase>();
         app.register_type::<BossArena>();
-        // Phase 0: no AI systems yet. Aggro/threat/phase/rotation arrive in
-        // Phase 1+, all gated by `crate::network::mode::has_server`.
+
+        // Server-authoritative encounter control. `accrue_threat` runs before
+        // the rotation driver (Phase 2) so a fresh damage tick can influence
+        // the next target pick within the same fixed step.
+        app.add_systems(
+            FixedUpdate,
+            (
+                systems::boss_aggro_check,
+                systems::accrue_threat,
+                systems::update_boss_phase,
+                systems::run_boss_rotation,
+            )
+                .chain()
+                .run_if(crate::network::mode::has_server),
+        );
+
+        #[cfg(feature = "client")]
+        arena_visual::client_arena_systems(app);
+
+        #[cfg(feature = "client")]
+        dragon_visual::client_dragon_systems(app);
     }
 }

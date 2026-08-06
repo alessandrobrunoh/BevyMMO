@@ -41,6 +41,13 @@ pub fn client_effect_systems(app: &mut App) {
             crate::spells::healing_circle::visual::animate,
             crate::spells::meteorite::visual::animate,
             crate::spells::stun_field::visual::animate,
+            crate::spells::dragon_enemy::dragon_claw::visual::animate,
+            crate::spells::dragon_enemy::tail_sweep::visual::animate,
+            crate::spells::dragon_enemy::searing_breath::visual::animate,
+            crate::spells::dragon_enemy::cinder_storm::visual::animate,
+            crate::spells::dragon_enemy::wing_buffet::visual::animate,
+            crate::spells::dragon_enemy::molten_eruption::visual::animate,
+            crate::spells::dragon_enemy::cataclysm::visual::animate,
         )
             .chain()
             .run_if(has_client)
@@ -109,6 +116,62 @@ fn spawn_spell_visuals(
             }
             StunFieldSpell::ID => {
                 crate::spells::stun_field::visual::spawn(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    effect,
+                );
+            }
+            "dragon_claw" => {
+                crate::spells::dragon_enemy::dragon_claw::visual::spawn(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    effect,
+                );
+            }
+            "tail_sweep" => {
+                crate::spells::dragon_enemy::tail_sweep::visual::spawn(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    effect,
+                );
+            }
+            "searing_breath" => {
+                crate::spells::dragon_enemy::searing_breath::visual::spawn(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    effect,
+                );
+            }
+            "cinder_storm" => {
+                crate::spells::dragon_enemy::cinder_storm::visual::spawn(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    effect,
+                );
+            }
+            "wing_buffet" => {
+                crate::spells::dragon_enemy::wing_buffet::visual::spawn(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    effect,
+                );
+            }
+            "molten_eruption" => {
+                crate::spells::dragon_enemy::molten_eruption::visual::spawn(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    effect,
+                );
+            }
+            "cataclysm" => {
+                crate::spells::dragon_enemy::cataclysm::visual::spawn(
                     &mut commands,
                     &mut meshes,
                     &mut materials,
@@ -191,7 +254,6 @@ fn cleanup_spell_visuals(mut commands: Commands, visuals: Query<Entity, With<Spe
         commands.entity(entity).despawn();
     }
 }
-
 
 #[cfg(test)]
 mod tests {

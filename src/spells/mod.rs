@@ -4,3 +4,4 @@
 
 pub mod attack;
 pub mod fireball;
+pub mod followball;

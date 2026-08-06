@@ -3,20 +3,18 @@
 //! Questo modulo è volutamente isolato: per rimuovere le animazioni locali
 //! delle spell basta togliere `client_effect_systems(app)` dal `SpellsPlugin`
 //! e cancellare questo file.
+//!
+//! Gli effetti visivi arrivano dal server come messaggi `SpellVisualEffect`
+//! replicati su tutti i client, garantendo che Player2 veda la fireball di Player1.
 
 use bevy::prelude::*;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::network::mode::has_client;
+use crate::network::protocol::SpellVisualEffect;
 
 const FIREBALL_DURATION_SECONDS: f32 = 0.35;
 const FIREBALL_SIZE: f32 = 0.28;
-
-#[derive(Message, Debug, Clone, Copy, PartialEq)]
-pub struct FireballVisualEffect {
-    pub start: Vec3,
-    pub end: Vec3,
-}
 
 #[derive(Component)]
 struct FireballVisual {
@@ -27,7 +25,6 @@ struct FireballVisual {
 }
 
 pub fn client_effect_systems(app: &mut App) {
-    app.add_message::<FireballVisualEffect>();
     app.add_systems(
         Update,
         (spawn_fireball_visuals, animate_fireball_visuals)
@@ -53,7 +50,7 @@ fn not_in_gameplay(screen: Res<GameScreen>) -> bool {
 
 fn spawn_fireball_visuals(
     mut commands: Commands,
-    mut messages: MessageReader<FireballVisualEffect>,
+    mut messages: MessageReader<SpellVisualEffect>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -108,8 +105,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn visual_effect_stores_start_and_end_points() {
-        let effect = FireballVisualEffect {
+    fn spell_visual_effect_stores_start_and_end_points() {
+        let effect = SpellVisualEffect {
+            spell_id: "fireball".to_string(),
             start: Vec3::ZERO,
             end: Vec3::Z,
         };

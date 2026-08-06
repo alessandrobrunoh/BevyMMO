@@ -5,6 +5,7 @@ pub struct KeyBindings {
     pub show_scoreboard: KeyCode,
     pub toggle_pause: KeyCode,
     pub cast_fireball: KeyCode,
+    pub cast_followball: KeyCode,
 }
 
 impl Default for KeyBindings {
@@ -13,6 +14,7 @@ impl Default for KeyBindings {
             show_scoreboard: KeyCode::Tab,
             toggle_pause: KeyCode::Escape,
             cast_fireball: KeyCode::KeyQ,
+            cast_followball: KeyCode::KeyE,
         }
     }
 }

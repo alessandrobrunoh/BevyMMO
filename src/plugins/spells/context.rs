@@ -6,6 +6,7 @@
 use bevy::ecs::entity::Entity;
 use bevy::math::Vec3;
 
+use crate::network::protocol::SpellVisualEffect;
 use crate::stats::components::CombatStats;
 use crate::stats::events::{DamageEvent, HealEvent};
 
@@ -64,6 +65,15 @@ impl SpellConfig {
     }
 }
 
+/// Richiesta di spawn di un proiettile homing, emessa da una spell durante il cast.
+#[derive(Debug, Clone)]
+pub struct ProjectileSpawnRequest {
+    pub target: Entity,
+    pub speed: f32,
+    pub damage: f32,
+    pub hit_radius: f32,
+}
+
 /// Context provided to a spell during casting.
 ///
 /// This context contains all the information a spell needs to make decisions
@@ -79,6 +89,8 @@ pub struct SpellCastContext<'a> {
     pub caster_combat: &'a CombatStats,
     /// The optional target position for the spell.
     pub target_position: Option<Vec3>,
+    /// The optional target entity for homing/projectile spells.
+    pub target_entity: Option<Entity>,
     /// List of potential targets in range, with their positions.
     ///
     /// This is provided as a slice of (Entity, Vec3) tuples. Spells can filter
@@ -88,6 +100,10 @@ pub struct SpellCastContext<'a> {
     pub pending_damage: Vec<DamageEvent>,
     /// Pending healing events to be applied after the spell cast completes.
     pub pending_healing: Vec<HealEvent>,
+    /// Pending visual effects to be broadcast to clients after cast.
+    pub pending_visuals: Vec<SpellVisualEffect>,
+    /// Pending projectile spawn requests.
+    pub pending_projectiles: Vec<ProjectileSpawnRequest>,
 }
 
 impl<'a> SpellCastContext<'a> {
@@ -97,6 +113,7 @@ impl<'a> SpellCastContext<'a> {
         caster_position: Vec3,
         caster_combat: &'a CombatStats,
         target_position: Option<Vec3>,
+        target_entity: Option<Entity>,
         potential_targets: &'a [(Entity, Vec3)],
     ) -> Self {
         Self {
@@ -104,9 +121,12 @@ impl<'a> SpellCastContext<'a> {
             caster_position,
             caster_combat,
             target_position,
+            target_entity,
             potential_targets,
             pending_damage: Vec::new(),
             pending_healing: Vec::new(),
+            pending_visuals: Vec::new(),
+            pending_projectiles: Vec::new(),
         }
     }
 
@@ -125,6 +145,25 @@ impl<'a> SpellCastContext<'a> {
             target,
             source: Some(self.caster),
             amount,
+        });
+    }
+
+    /// Emit a visual effect to be broadcast to all clients.
+    pub fn emit_visual(&mut self, spell_id: &str, start: Vec3, end: Vec3) {
+        self.pending_visuals.push(SpellVisualEffect {
+            spell_id: spell_id.to_string(),
+            start,
+            end,
+        });
+    }
+
+    /// Emit a projectile spawn request (for homing/projectile spells).
+    pub fn emit_projectile(&mut self, target: Entity, speed: f32, damage: f32, hit_radius: f32) {
+        self.pending_projectiles.push(ProjectileSpawnRequest {
+            target,
+            speed,
+            damage,
+            hit_radius,
         });
     }
 

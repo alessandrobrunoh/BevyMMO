@@ -21,6 +21,8 @@ pub struct SpellCastRequest {
     /// - Some spells may require a target position (e.g., area-of-effect spells)
     /// - Self-targeted or caster-centered spells may use None
     pub target_position: Option<Vec3>,
+    /// Optional target entity for homing/projectile spells.
+    pub target_entity: Option<Entity>,
 }
 
 impl SpellCastRequest {
@@ -30,6 +32,7 @@ impl SpellCastRequest {
             caster,
             spell_id,
             target_position,
+            target_entity: None,
         }
     }
 
@@ -39,6 +42,7 @@ impl SpellCastRequest {
             caster,
             spell_id,
             target_position: None,
+            target_entity: None,
         }
     }
 
@@ -48,6 +52,7 @@ impl SpellCastRequest {
             caster,
             spell_id,
             target_position: Some(target_position),
+            target_entity: None,
         }
     }
 }

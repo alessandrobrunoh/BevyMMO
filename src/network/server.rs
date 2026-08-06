@@ -379,6 +379,7 @@ fn handle_spell_cast_commands(
                 caster: player_entity,
                 spell_id: SpellId::new(command.spell_id.clone()),
                 target_position: command.target_position,
+                target_entity: command.target_entity,
             });
         }
     }

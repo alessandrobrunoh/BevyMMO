@@ -14,8 +14,8 @@ mod ui;
 
 pub use components::{SpellCooldowns, Spellbook};
 pub use context::{Spell, SpellCastContext, SpellConfig};
-pub use effects::FireballVisualEffect;
 pub use events::SpellCastRequest;
 pub use plugin::SpellsPlugin;
 pub use registry::{SpellId, SpellRegistry};
+pub use systems::HomingProjectile;
 pub use ui::{SpellHudCooldownStarted, SpellHudState};

@@ -12,6 +12,7 @@ use crate::network::mode::has_client;
 use crate::plugins::key_mapping::KeyBindings;
 use crate::plugins::spells::SpellId;
 use crate::spells::fireball::FireballSpell;
+use crate::spells::followball::FollowballSpell;
 use crate::ui::theme::UiTheme;
 
 #[derive(Message, Debug, Clone, PartialEq)]
@@ -76,11 +77,18 @@ fn not_in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
 }
 
 fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>, bindings: Res<KeyBindings>) {
-    let entries = [SpellHudEntry {
-        spell_id: SpellId::new(FireballSpell::ID),
-        display_name: FireballSpell::DISPLAY_NAME,
-        key_label: key_label(bindings.cast_fireball),
-    }];
+    let entries = [
+        SpellHudEntry {
+            spell_id: SpellId::new(FireballSpell::ID),
+            display_name: FireballSpell::DISPLAY_NAME,
+            key_label: key_label(bindings.cast_fireball),
+        },
+        SpellHudEntry {
+            spell_id: SpellId::new(FollowballSpell::ID),
+            display_name: FollowballSpell::DISPLAY_NAME,
+            key_label: key_label(bindings.cast_followball),
+        },
+    ];
 
     commands
         .spawn((

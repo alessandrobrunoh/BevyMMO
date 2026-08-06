@@ -59,6 +59,9 @@ impl Spell for FireballSpell {
         let center = Self::clamp_target_to_range(ctx.caster_position, requested_center);
         let damage = ctx.caster_combat.attack_power * Self::DAMAGE_MULTIPLIER;
 
+        // Broadcast visual effect to all clients via server
+        ctx.emit_visual(Self::ID, ctx.caster_position, center);
+
         for (target, position) in ctx.potential_targets.iter().copied() {
             if target == ctx.caster {
                 continue;

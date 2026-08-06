@@ -61,6 +61,7 @@ pub fn enemy_auto_cast_attack(
                     caster: enemy_entity,
                     spell_id: SpellId::new("attack"),
                     target_position: None,
+                    target_entity: None,
                 });
             }
         }

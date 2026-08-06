@@ -82,6 +82,23 @@ pub struct JoinRequest {
 pub struct SpellCastCommand {
     pub spell_id: String,
     pub target_position: Option<Vec3>,
+    pub target_entity: Option<Entity>,
+}
+
+impl MapEntities for SpellCastCommand {
+    fn map_entities<M: EntityMapper>(&mut self, mapper: &mut M) {
+        if let Some(ref mut e) = self.target_entity {
+            *e = mapper.get_mapped(*e);
+        }
+    }
+}
+
+/// Messaggio server -> client per replicare un effetto visivo spell.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, bevy::prelude::Message)]
+pub struct SpellVisualEffect {
+    pub spell_id: String,
+    pub start: Vec3,
+    pub end: Vec3,
 }
 
 // Protocol Plugin
@@ -111,6 +128,9 @@ impl Plugin for ProtocolPlugin {
 
         app.register_message::<SpellCastCommand>()
             .add_direction(NetworkDirection::ClientToServer);
+
+        app.register_message::<SpellVisualEffect>()
+            .add_direction(NetworkDirection::ServerToClient);
 
         // Comandi di input
         app.add_plugins(input::native::InputPlugin::<Inputs>::default());

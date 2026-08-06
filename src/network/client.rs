@@ -14,9 +14,8 @@ use crate::game_state::{
 use crate::network::mode::has_client;
 use crate::network::protocol::*;
 use crate::plugins::key_mapping::KeyBindings;
-use crate::plugins::spells::{
-    FireballVisualEffect, SpellHudCooldownStarted, SpellHudState, SpellId,
-};
+use crate::plugins::spells::{SpellHudCooldownStarted, SpellHudState, SpellId};
+use crate::plugins::targeting::CurrentTarget;
 
 /// Impostazioni di connessione del client, conservate come risorsa.
 #[derive(Resource)]
@@ -81,6 +80,7 @@ impl Plugin for ClientPlugins {
         app.add_systems(Update, receive_messages);
         app.add_systems(Update, lower_controlled_saturation);
         app.add_systems(Update, cast_fireball_on_key.run_if(has_client));
+        app.add_systems(Update, cast_followball_on_key.run_if(has_client));
 
         app.add_observer(handle_connected);
         app.add_observer(handle_disconnected);
@@ -247,7 +247,6 @@ fn cast_fireball_on_key(
     hud_state: Res<SpellHudState>,
     mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
     controlled_players: Query<(&Position, Option<&LookDirection>), With<Controlled>>,
-    mut visuals: MessageWriter<FireballVisualEffect>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
 ) {
     if !matches!(screen.0, Screen::InGame | Screen::Paused) {
@@ -280,13 +279,57 @@ fn cast_fireball_on_key(
         sender.send::<Channel2>(SpellCastCommand {
             spell_id: crate::spells::fireball::FireballSpell::ID.to_string(),
             target_position: Some(target),
+            target_entity: None,
         });
     }
 
-    visuals.write(FireballVisualEffect { start, end: target });
     hud_cooldowns.write(SpellHudCooldownStarted {
         spell_id: SpellId::new(crate::spells::fireball::FireballSpell::ID),
         cooldown_seconds: crate::spells::fireball::FireballSpell::COOLDOWN_SECONDS,
+    });
+}
+
+/// Cast Followball: invia il target entity selezionato al server.
+/// Se non c'è un target selezionato, non invia nulla.
+fn cast_followball_on_key(
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    bindings: Option<Res<KeyBindings>>,
+    screen: Res<GameScreen>,
+    hud_state: Res<SpellHudState>,
+    current_target: Res<CurrentTarget>,
+    mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
+    mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
+) {
+    if !matches!(screen.0, Screen::InGame | Screen::Paused) {
+        return;
+    }
+    let (Some(keys), Some(bindings)) = (keys, bindings) else {
+        return;
+    };
+    if !keys.just_pressed(bindings.cast_followball) {
+        return;
+    }
+
+    let followball_id = SpellId::new(crate::spells::followball::FollowballSpell::ID);
+    if hud_state.is_on_cooldown(&followball_id) {
+        return;
+    }
+
+    let Some(target_entity) = current_target.entity else {
+        return;
+    };
+
+    for mut sender in senders.iter_mut() {
+        sender.send::<Channel2>(SpellCastCommand {
+            spell_id: crate::spells::followball::FollowballSpell::ID.to_string(),
+            target_position: None,
+            target_entity: Some(target_entity),
+        });
+    }
+
+    hud_cooldowns.write(SpellHudCooldownStarted {
+        spell_id: followball_id,
+        cooldown_seconds: crate::spells::followball::FollowballSpell::COOLDOWN_SECONDS,
     });
 }
 

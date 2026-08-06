@@ -20,7 +20,11 @@ impl EntityDefinition for Player {
     fn bundle() -> impl Bundle {
         (
             Player,
-            Spellbook::from_ids([SpellId::new("attack"), SpellId::new("fireball")]),
+            Spellbook::from_ids([
+                SpellId::new("attack"),
+                SpellId::new("fireball"),
+                SpellId::new("followball"),
+            ]),
             SpellCooldowns::default(),
         )
     }

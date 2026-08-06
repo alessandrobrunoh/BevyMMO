@@ -21,6 +21,7 @@ pub struct PlayerMovementPlugin;
 #[derive(Resource, Default)]
 struct MoveTarget(Option<Vec3>);
 
+#[cfg(feature = "client")]
 #[derive(Component)]
 struct ClickIndicator {
     elapsed: f32,
@@ -43,6 +44,7 @@ impl Plugin for PlayerMovementPlugin {
                 predict_move_to_target.run_if(mode::has_client),
             ),
         );
+        #[cfg(feature = "client")]
         app.add_systems(
             Update,
             (select_move_target, animate_click_indicators).run_if(mode::has_client),
@@ -51,6 +53,7 @@ impl Plugin for PlayerMovementPlugin {
 }
 
 /// Legge il click sinistro sul terreno e salva il punto da inviare al server.
+#[cfg(feature = "client")]
 fn select_move_target(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -177,6 +180,7 @@ fn move_towards_target(
     *state = EntityState::Moving;
 }
 
+#[cfg(feature = "client")]
 fn spawn_click_indicator(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -220,6 +224,7 @@ fn spawn_click_indicator(
 }
 
 /// Due anelli si espandono e scompaiono rapidamente, come un indicatore di comando MOBA.
+#[cfg(feature = "client")]
 fn animate_click_indicators(
     time: Res<Time>,
     mut commands: Commands,

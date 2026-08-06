@@ -12,6 +12,7 @@ use crate::game_state::{
     ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen, Screen,
 };
 use crate::network::mode::has_client;
+use crate::network::protocol::SpellVisualEffect;
 use crate::network::protocol::*;
 use crate::plugins::key_mapping::KeyBindings;
 use crate::plugins::spells::{SpellHudCooldownStarted, SpellHudState, SpellId};
@@ -247,6 +248,7 @@ fn cast_fireball_on_key(
     hud_state: Res<SpellHudState>,
     mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
     controlled_players: Query<(&Position, Option<&LookDirection>), With<Controlled>>,
+    mut visuals: MessageWriter<SpellVisualEffect>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
 ) {
     if !matches!(screen.0, Screen::InGame | Screen::Paused) {
@@ -258,6 +260,8 @@ fn cast_fireball_on_key(
     if !keys.just_pressed(bindings.cast_fireball) {
         return;
     }
+
+    bevy::log::info!("Fireball key pressed, attempting cast");
 
     let fireball_id = SpellId::new(crate::spells::fireball::FireballSpell::ID);
     if hud_state.is_on_cooldown(&fireball_id) {

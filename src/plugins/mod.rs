@@ -1,6 +1,9 @@
 pub mod entity;
+#[cfg(feature = "client")]
 pub mod key_mapping;
 pub mod player_movement;
+#[cfg(feature = "client")]
 pub mod renderer;
 pub mod spells;
+#[cfg(feature = "client")]
 pub mod targeting;

@@ -375,6 +375,11 @@ fn handle_spell_cast_commands(
         };
 
         for command in receiver.receive() {
+            bevy::log::info!(
+                "Received spell cast command from player {:?}: spell={}",
+                player_entity,
+                command.spell_id
+            );
             spell_cast_requests.write(SpellCastRequest {
                 caster: player_entity,
                 spell_id: SpellId::new(command.spell_id.clone()),

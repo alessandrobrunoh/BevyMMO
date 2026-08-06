@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use std::sync::Arc;
 
-use crate::network::protocol::{EntityColor, Position, SpellVisualEffect};
+use crate::network::protocol::{EntityColor, Position};
 use crate::plugins::entity::components::GameEntity;
 use crate::stats::components::{CombatStats, VitalStats};
 use crate::stats::events::{DamageEvent, HealEvent};
@@ -44,7 +44,6 @@ pub fn process_cast_requests(
     targets_query: Query<(Entity, &Position, &VitalStats), With<GameEntity>>,
     mut damage_events: MessageWriter<DamageEvent>,
     mut heal_events: MessageWriter<HealEvent>,
-    mut visual_effects: MessageWriter<SpellVisualEffect>,
 ) {
     for request in requests.read() {
         // Step 1: Look up the spell in the registry
@@ -128,11 +127,6 @@ pub fn process_cast_requests(
 
         for heal_event in ctx.pending_healing {
             heal_events.write(heal_event);
-        }
-
-        // Step 9: Broadcast visual effects to all clients
-        for visual in ctx.pending_visuals {
-            visual_effects.write(visual);
         }
 
         // Step 10: Spawn homing projectiles

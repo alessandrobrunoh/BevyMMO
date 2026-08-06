@@ -74,23 +74,11 @@ pub struct JoinRequest {
 }
 
 /// Comando client -> server per richiedere il cast di una spell.
-///
-/// Il client invia solo dati intenzionali e non autorevoli. Il server risolve
-/// l'entità caster dal peer connesso, valida spellbook/cooldown e applica gli
-/// effetti tramite il sistema spell server-authoritative.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SpellCastCommand {
     pub spell_id: String,
     pub target_position: Option<Vec3>,
     pub target_entity: Option<Entity>,
-}
-
-impl MapEntities for SpellCastCommand {
-    fn map_entities<M: EntityMapper>(&mut self, mapper: &mut M) {
-        if let Some(ref mut e) = self.target_entity {
-            *e = mapper.get_mapped(*e);
-        }
-    }
 }
 
 /// Messaggio server -> client per replicare un effetto visivo spell.
@@ -128,9 +116,6 @@ impl Plugin for ProtocolPlugin {
 
         app.register_message::<SpellCastCommand>()
             .add_direction(NetworkDirection::ClientToServer);
-
-        app.register_message::<SpellVisualEffect>()
-            .add_direction(NetworkDirection::ServerToClient);
 
         // Comandi di input
         app.add_plugins(input::native::InputPlugin::<Inputs>::default());

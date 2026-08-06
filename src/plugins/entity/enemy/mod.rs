@@ -1,6 +1,7 @@
 //! Enemy: entità controllata dal server (AI).
 
 pub mod components;
+#[cfg(feature = "client")]
 pub mod debug;
 pub mod spawn;
 pub mod systems;
@@ -17,6 +18,7 @@ impl Plugin for EnemyPlugin {
                 .chain()
                 .run_if(crate::network::mode::has_server),
         );
+        #[cfg(feature = "client")]
         debug::client_debug_systems(app);
     }
 }

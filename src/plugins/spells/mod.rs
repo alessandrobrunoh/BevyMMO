@@ -5,11 +5,13 @@
 
 mod components;
 mod context;
+#[cfg(feature = "client")]
 mod effects;
 mod events;
 mod plugin;
 mod registry;
 mod systems;
+#[cfg(feature = "client")]
 mod ui;
 
 pub use components::{SpellCooldowns, Spellbook};
@@ -18,4 +20,5 @@ pub use events::SpellCastRequest;
 pub use plugin::SpellsPlugin;
 pub use registry::{SpellId, SpellRegistry};
 pub use systems::HomingProjectile;
+#[cfg(feature = "client")]
 pub use ui::{SpellHudCooldownStarted, SpellHudState};

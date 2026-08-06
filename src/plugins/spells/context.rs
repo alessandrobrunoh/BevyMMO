@@ -6,7 +6,6 @@
 use bevy::ecs::entity::Entity;
 use bevy::math::Vec3;
 
-use crate::network::protocol::SpellVisualEffect;
 use crate::stats::components::CombatStats;
 use crate::stats::events::{DamageEvent, HealEvent};
 
@@ -100,8 +99,6 @@ pub struct SpellCastContext<'a> {
     pub pending_damage: Vec<DamageEvent>,
     /// Pending healing events to be applied after the spell cast completes.
     pub pending_healing: Vec<HealEvent>,
-    /// Pending visual effects to be broadcast to clients after cast.
-    pub pending_visuals: Vec<SpellVisualEffect>,
     /// Pending projectile spawn requests.
     pub pending_projectiles: Vec<ProjectileSpawnRequest>,
 }
@@ -125,7 +122,6 @@ impl<'a> SpellCastContext<'a> {
             potential_targets,
             pending_damage: Vec::new(),
             pending_healing: Vec::new(),
-            pending_visuals: Vec::new(),
             pending_projectiles: Vec::new(),
         }
     }
@@ -145,15 +141,6 @@ impl<'a> SpellCastContext<'a> {
             target,
             source: Some(self.caster),
             amount,
-        });
-    }
-
-    /// Emit a visual effect to be broadcast to all clients.
-    pub fn emit_visual(&mut self, spell_id: &str, start: Vec3, end: Vec3) {
-        self.pending_visuals.push(SpellVisualEffect {
-            spell_id: spell_id.to_string(),
-            start,
-            end,
         });
     }
 

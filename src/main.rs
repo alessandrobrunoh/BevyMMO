@@ -11,9 +11,11 @@ mod game_state;
 mod network;
 mod persistence;
 mod plugins;
+#[cfg(feature = "client")]
 mod scenes;
 mod spells;
 mod stats;
+#[cfg(feature = "client")]
 mod ui;
 
 const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5051);
@@ -117,6 +119,7 @@ fn build_app(config: &AppConfig) -> App {
         });
     }
 
+    #[cfg(feature = "client")]
     if config.mode.has_client() {
         app.add_plugins(network::client::ClientPlugins {
             client_id: config.client_id(),
@@ -130,9 +133,11 @@ fn build_app(config: &AppConfig) -> App {
     app.add_plugins(stats::StatsPlugin);
     app.add_plugins(plugins::entity::EntityPlugin);
     app.add_plugins(plugins::player_movement::PlayerMovementPlugin);
+    #[cfg(feature = "client")]
     app.add_plugins(plugins::targeting::TargetingPlugin);
     app.add_plugins(plugins::spells::SpellsPlugin);
 
+    #[cfg(feature = "client")]
     if config.mode.has_client() {
         app.add_plugins(plugins::key_mapping::KeyMappingPlugin);
         app.add_plugins(ui::UiPlugin);

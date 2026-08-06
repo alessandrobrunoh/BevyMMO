@@ -1,7 +1,6 @@
 use crate::network::mode::has_server;
-use bevy::prelude::*;
-
 use crate::network::protocol::SpellVisualEffect;
+use bevy::prelude::*;
 
 use super::{
     effects,
@@ -40,7 +39,10 @@ impl Plugin for SpellsPlugin {
                     .run_if(has_server),
             );
 
-        effects::client_effect_systems(app);
-        ui::spell_hud_systems(app);
+        #[cfg(feature = "client")]
+        {
+            effects::client_effect_systems(app);
+            ui::spell_hud_systems(app);
+        }
     }
 }

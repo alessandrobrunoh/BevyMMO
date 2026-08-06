@@ -1453,6 +1453,11 @@ name = "bevy_lightyear_game"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevymmo_client",
+ "bevymmo_editor",
+ "bevymmo_presentation",
+ "bevymmo_server",
+ "bevymmo_shared",
  "clap",
  "config",
  "lightyear",
@@ -2241,6 +2246,55 @@ dependencies = [
  "serde",
  "thiserror 2.0.19",
  "uuid",
+]
+
+[[package]]
+name = "bevymmo_client"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevymmo_shared",
+ "lightyear",
+]
+
+[[package]]
+name = "bevymmo_editor"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
+name = "bevymmo_presentation"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevymmo_client",
+ "bevymmo_shared",
+ "lightyear",
+]
+
+[[package]]
+name = "bevymmo_server"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevymmo_shared",
+ "lightyear",
+ "sea-orm",
+ "sea-orm-migration",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "bevymmo_shared"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "config",
+ "lightyear",
+ "serde",
 ]
 
 [[package]]

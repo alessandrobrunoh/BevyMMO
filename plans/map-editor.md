@@ -41,10 +41,10 @@ The `.ron` manifest contains only serializable data structures with `id`s and `k
 
 Palette, inspector, toolbar, save/dialog panels are egui immediate-mode. The 3D viewport is Bevy scene rendering. No Bevy UI in the editor, and no egui in the game client.
 
-### D4. Selection/picking via `bevy_mod_picking`, manipulation via `bevy_transform_gizmo`
+### D4. Selection/picking via `bevy_mod_picking`, manipulation via `TransformGizmoPlugin` (built-in Bevy 0.19)
 
 - `bevy_mod_picking` handles mouse → entity raycast for selecting placed props (backend: `RaycastPick`; it integrates with `bevy_egui` so clicks on panels don't fall through).
-- `bevy_transform_gizmo` provides the translate/rotate/scale handles (T/R/S modes).
+- **`TransformGizmoPlugin`** (built-in since Bevy 0.19) provides the translate/rotate/scale handles (T/R/S modes). Mark the camera with `TransformGizmoCamera` and the selected entity with `TransformGizmoFocus`; mode is controlled via `TransformGizmoMode` resource, snapping via `TransformGizmoSettings`. The plugin is intentionally decoupled from input, so the editor controls when `TransformGizmoFocus` is applied (only on selection). The external crate `bevy_transform_gizmo` is **no longer needed**.
 - Placement raycasts to the ground plane (y = 0) — same math already used in `network/client.rs` for spell targeting.
 
 ### D5. Server validates interactions; client presents them
@@ -613,7 +613,8 @@ The boss arena (existing `boss-dragon.md` plan) becomes one `Trigger` + one `Reg
 |---|---|---|
 | `bevy_egui` | Inspector, palette, toolbar, dialogs (immediate-mode) | De-facto standard; integrates with bevy window; **must** run its context before picking so panels eat their own clicks |
 | `bevy_mod_picking` | Mouse → 3D entity selection, hover, drag | Backends: `raycast` (simple) or `bevy_mod_raycast`; supports `bevy_egui` interaction blocking |
-| `bevy_transform_gizmo` | Translate/rotate/scale handles (T/R/S) | Tracks Bevy releases; fallback: custom gizmo entities if version lags |
+| `TransformGizmoPlugin` (**built-in Bevy 0.19**) | Translate/rotate/scale handles (T/R/S) | Native, no external crate needed. Camera needs `TransformGizmoCamera`; selected entity gets `TransformGizmoFocus`; `TransformGizmoMode` / `TransformGizmoSettings` resources for mode and snapping. Replaces the old `bevy_transform_gizmo` crate. |
+| `InfiniteGridPlugin` (**built-in Bevy 0.19**) | Infinite ground grid in the editor viewport | Fullscreen shader — no aliasing or Moiré patterns. `app.add_plugins(InfiniteGridPlugin)` + `commands.spawn(InfiniteGrid)`. Replaces manual Gizmos grid lines. |
 | `bevy_mod_raycast` | Low-level ray vs mesh/plane queries | Alternative picking backend; also used for ground-plane placement |
 
 ### Physics & collision (`bevymmo_server` + future)
@@ -648,7 +649,7 @@ The boss arena (existing `boss-dragon.md` plan) becomes one `Trigger` + one `Reg
 | `bevy-inspector-egui` | Runtime ECS inspector/editor | Great for debugging systems; **not** the editor itself |
 | `bevy_dev_tools` | FPS overlay, remote server, entity debugger (built-in Bevy) | Ships with Bevy; enable in dev only |
 | `bevy_prototype_debug_lines` / `bevy_debug_lines` | Debug lines (draw region/trigger shapes in the editor viewport) | Very useful: draw region bounds, trigger volumes, collision shapes as wireframes |
-| `bevy_mod_gizmos` | Gizmo API wrappers (built-in `Gizmos` exists in Bevy) | Prefer built-in `Gizmos`; only add if needing extra shapes |
+| Built-in `Gizmos` + **Text Gizmos** (Bevy 0.19) | World-space text labels for dev/editor use | `gizmos.text_2d(...)` / `gizmos.text_3d(...)` — zero-setup, stroke font, ASCII only. Use to label prop ids, spawn points, region names directly in the 3D viewport. No external crate needed. |
 
 ### Serialization & tooling (workspace-wide)
 
@@ -659,7 +660,7 @@ The boss arena (existing `boss-dragon.md` plan) becomes one `Trigger` + one `Reg
 | `cargo-machete` | Unused dependency linter | CI helper |
 | `cargo-hakari` | Workspace dep unification | Only if workspace build times become an issue |
 
-**Recommended install order**: slice 1 (editor shell): `bevy_egui`, `bevy_mod_picking`. Slice 3 (manipulation): `bevy_transform_gizmo`. Slice 4 (region/trigger visualization): built-in `Gizmos` first, `bevy_mod_outline` if needed.
+**Recommended install order**: slice 1 (editor shell): `bevy_egui`, `bevy_mod_picking`, `InfiniteGridPlugin` (built-in). Slice 3 (manipulation): `TransformGizmoPlugin` (built-in). Slice 4 (region/trigger visualization): built-in `Gizmos` + Text Gizmos for labels, `bevy_mod_outline` if needed.
 
 ---
 
@@ -696,9 +697,9 @@ The boss arena (existing `boss-dragon.md` plan) becomes one `Trigger` + one `Reg
 
 - `crates/editor/src/{mod.rs,camera.rs,tools.rs,palette.rs}`.
 - `AppMode::Editor` in `bins/game` CLI; `bins/game` adds `EditorPlugin` when the `editor` feature is on.
-- `EditorPlugin` registers: `EditorCamera` orbit camera system, `EditorTool` resource (default `Select`), egui `EditorUi` plugin (palette + status bar + toolbar), and **no network plugins**.
+- `EditorPlugin` registers: `EditorCamera` orbit camera system, `EditorTool` resource (default `Select`), egui `EditorUi` plugin (palette + status bar + toolbar), `InfiniteGridPlugin`, and **no** network plugins.
 - Palette data from `assets/catalog.ron` (loaded via `bevy_common_assets::RonAssetPlugin`).
-- Editor world: spawn nothing; show a flat ground plane (reuse pattern from `scenes/base` but owned by the editor) + grid via built-in `Gizmos`.
+- Editor world: spawn nothing; show a flat ground plane (reuse pattern from `scenes/base` but owned by the editor) + **`InfiniteGrid`** component (fullscreen shader, no aliasing — replaces manual Gizmos grid lines).
 
 **Acceptance criteria**:
 
@@ -740,7 +741,7 @@ The boss arena (existing `boss-dragon.md` plan) becomes one `Trigger` + one `Reg
 
 **Path**:
 
-- `gizmo.rs`: `bevy_transform_gizmo` attached to the selected entity; T/R/S toggle; snap config.
+- `gizmo.rs`: add `TransformGizmoPlugin` (built-in Bevy 0.19); tag the selected entity with `TransformGizmoFocus`; remove the tag on deselect. T/R/S mode managed via `TransformGizmoMode` resource. Snap configured via `TransformGizmoSettings`.
 - Sync system (single source of truth, decided in D-detail: **gizmo writes `Transform` → sync into `PropData`; inspector writes `PropData` → sync into `Transform`**; run in that order each frame to avoid fights).
 - `inspector.rs` (egui right panel): drag-values for translation/rotation/scale (degrees), color picker for `tint`, collision shape editor (type dropdown + radius/extents fields), `blocks_movement` checkbox.
 - `io.rs` stub: `save_map`/`load_map` wired to `Ctrl+S`/`Ctrl+O` but manifest assembly not yet complete (slices 4).
@@ -764,6 +765,7 @@ The boss arena (existing `boss-dragon.md` plan) becomes one `Trigger` + one `Reg
 
 - `io.rs`: assemble `MapManifest` from all `PropData` entities + resource collections (spawn points, regions, triggers, interactables, resources, effects — spawned by their tools with their own data components).
 - Tools for each section (`PlaceSpawn`, `DrawRegion`, `DrawTrigger`, `PlaceInteractable`, `PlaceResource`, `PlaceEffect`): each spawns an entity carrying the section-specific manifest struct + `EditorMarker`; inspector edits them; region/trigger shapes drawn with `Gizmos`.
+- **Text Gizmos** (`gizmos.text_2d` / `gizmos.text_3d`, built-in Bevy 0.19): label each entity with its `id` directly in the 3D viewport (prop ids, spawn point names, region names). ASCII only — strictly dev/editor use.
 - `loader::validate` runs on save; errors surface in the status bar, save is blocked until valid.
 - `New map` dialog (map_id, display_name, bounds).
 
@@ -877,7 +879,7 @@ The boss arena (existing `boss-dragon.md` plan) becomes one `Trigger` + one `Reg
 
 | Risk | Mitigation |
 |---|---|
-| Bevy 0.19 crate lag (`bevy_egui`, picking, gizmo) | Verify versions first in Slice 1; fallbacks: custom gizmo entities, built-in `Gizmos`, `bevy_mod_raycast` |
+| Bevy 0.19 crate lag (`bevy_egui`, picking) | Verify `bevy_egui` + `bevy_mod_picking` versions first in Slice 1; fallback for picking: `bevy_mod_raycast`. Transform gizmo and grid are now **built-in** (no external crate lag risk). |
 | `bevy_egui` swallows viewport clicks | Configure `bevy_mod_picking` interaction blocking with egui context (standard integration) |
 | Manifest grows unmaintainably | `version` field + validation; per-zone files in Slice 8 |
 | Server accidentally loading assets | `bevymmo_server` has no `bevy/render` feature; CI `cargo tree` check from crate-split plan |

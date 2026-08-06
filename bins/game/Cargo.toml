@@ -1,0 +1,35 @@
+[package]
+name = "bevy_lightyear_game"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["client", "server", "netcode", "udp", "interpolation", "prediction", "replication", "input_native"]
+client = ["lightyear/client", "bevy/default"]
+server = ["lightyear/server"]
+netcode = ["lightyear/netcode"]
+udp = ["lightyear/udp"]
+interpolation = ["lightyear/interpolation"]
+prediction = ["lightyear/prediction"]
+replication = ["lightyear/replication"]
+input_native = ["lightyear/input_native"]
+
+[dependencies]
+bevy = { workspace = true }
+lightyear = { workspace = true }
+serde = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+bevymmo_shared = { path = "../../crates/shared" }
+bevymmo_server = { path = "../../crates/server" }
+bevymmo_client = { path = "../../crates/client" }
+bevymmo_presentation = { path = "../../crates/presentation" }
+bevymmo_editor = { path = "../../crates/editor" }
+
+[[bin]]
+name = "game"
+path = "src/main.rs"

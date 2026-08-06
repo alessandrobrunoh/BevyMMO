@@ -5,11 +5,12 @@ This document contains high-signal, repo-specific facts to help agents avoid mis
 ## Commands & Workflows
 
 **Building & Running**
-By default, the `game` crate compiles into a "fat" binary that contains both client and server logic. It requires a CLI argument to select the mode at runtime.
+The repository is now a Cargo workspace. The runnable binary lives in `bins/game`, and the workspace root sets `default-members = ["bins/game"]`, so the classic commands still work from the repository root.
 
 - **Run Client**: `cargo run -- client`
 - **Run Server**: `cargo run -- server` (Requires PostgreSQL, see Database section)
 - **Run Host-Client**: `cargo run -- host-client` (Embedded server + client)
+- **Run Editor Placeholder**: `cargo run -- editor`
 - **Build Dedicated Production Server**: 
   `cargo build --release --no-default-features --features server,netcode,udp,replication --bin game`
   *(This skips building client UI/rendering for a much smaller footprint).*
@@ -31,6 +32,16 @@ The server requires a PostgreSQL connection to run.
   - The `DATABASE_URL` is required to run the server, and is provided out-of-the-box for local dev in `config/development.toml`. Do not commit secrets; place them in `config/local.toml` (gitignored).
 
 ## Architecture & Code Conventions
+
+- **Workspace split**:
+  - `bevymmo_shared` = pure shared data/contracts only
+  - `bevymmo_server` = authoritative runtime + persistence
+  - `bevymmo_client` = client-only runtime helpers
+  - `bevymmo_presentation` = rendering, scenes, UI
+  - `bevymmo_editor` = editor-mode plugin placeholder / future map editor
+  - `bins/game` = composition root CLI binary
+
+- **Shared means data only**: do not put sockets, rendering, or Bevy UI inside `bevymmo_shared`.
 
 - **Application Roles (CRITICAL)**: System logic must be gated using the Bevy run conditions `network::mode::has_server` and `network::mode::has_client`. Do **not** infer the application role simply by checking if a client/server transport config exists, because in `HostClient` mode, both exist simultaneously.
 - **Headless Server**: The server is purely headless and does not register scenes, UI, or rendering plugins.

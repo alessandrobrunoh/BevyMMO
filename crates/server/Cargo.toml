@@ -1,0 +1,13 @@
+[package]
+name = "bevymmo_server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { workspace = true }
+lightyear = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+bevymmo_shared = { path = "../shared" }

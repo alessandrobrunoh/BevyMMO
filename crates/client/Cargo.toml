@@ -1,0 +1,9 @@
+[package]
+name = "bevymmo_client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { version = "0.19", default-features = true }
+lightyear = { workspace = true }
+bevymmo_shared = { path = "../shared" }

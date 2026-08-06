@@ -1,0 +1,15 @@
+[package]
+name = "bevymmo_shared"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { workspace = true }
+lightyear = { workspace = true, features = [
+    "interpolation",
+    "prediction",
+    "replication",
+    "input_native",
+] }
+serde = { workspace = true }
+config = { workspace = true }

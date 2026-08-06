@@ -3,7 +3,13 @@
 # Create a new Entity Plugin
 
 Guide to adding a new game entity (Player, Enemy, NPC, Boss, ...)
-inside the `src/plugins/entity/` module.
+inside the runtime package at `bins/game/src/plugins/entity/`.
+
+Note: the workspace is now split. Shared data/traits such as `EntityDefinition`,
+`GameEntityBundle`, replicated components, and stats DTOs live in
+`crates/shared/`; server-authoritative systems progressively move to
+`crates/server/`. This guide still uses the runtime package paths because the
+compatibility facades remain there during the migration.
 
 ---
 
@@ -12,7 +18,7 @@ inside the `src/plugins/entity/` module.
 To create a new `Foo` entity that is **automatically synchronized over the
 network**:
 
-1. Create `src/plugins/entity/foo/{mod.rs,components.rs,spawn.rs,systems.rs}`.
+1. Create `bins/game/src/plugins/entity/foo/{mod.rs,components.rs,spawn.rs,systems.rs}`.
 2. Define a `Foo` marker in `components.rs`.
 3. Implement `EntityDefinition` in `spawn.rs`.
 4. Register systems in `FooPlugin` (`mod.rs`).
@@ -26,11 +32,11 @@ network code.
 
 ## Architecture
 
-Each concrete entity is a **sub-module** of `src/plugins/entity/` with this
+Each concrete entity is a **sub-module** of `bins/game/src/plugins/entity/` with this
 fixed structure:
 
 ```
-src/plugins/entity/
+bins/game/src/plugins/entity/
 ├── mod.rs              # EntityPlugin (parent) → registers all child FooPlugins
 ├── components.rs       # GameEntity, Health (shared by all)
 ├── definition.rs       # EntityDefinition trait (entity defaults)

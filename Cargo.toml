@@ -1,20 +1,16 @@
-[package]
-name = "bevy_lightyear_game"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+    "crates/shared",
+    "crates/server",
+    "crates/client",
+    "crates/presentation",
+    "crates/editor",
+    "bins/game",
+]
+default-members = ["bins/game"]
+resolver = "2"
 
-[features]
-default = ["client", "server", "netcode", "udp", "interpolation", "prediction", "replication", "input_native"]
-client = ["lightyear/client", "bevy/default"]
-server = ["lightyear/server"]
-netcode = ["lightyear/netcode"]
-udp = ["lightyear/udp"]
-interpolation = ["lightyear/interpolation"]
-prediction = ["lightyear/prediction"]
-replication = ["lightyear/replication"]
-input_native = ["lightyear/input_native"]
-
-[dependencies]
+[workspace.dependencies]
 bevy = { version = "0.19", default-features = false, features = ["bevy_color", "bevy_log"] }
 lightyear = { version = "0.28", features = [
     "interpolation",
@@ -22,7 +18,7 @@ lightyear = { version = "0.28", features = [
     "replication",
     "input_native",
     "netcode",
-    "udp"
+    "udp",
 ] }
 serde = { version = "1.0", features = ["derive"] }
 clap = { version = "4.5", features = ["derive"] }
@@ -31,10 +27,3 @@ sea-orm = { version = "1.1", features = ["sqlx-postgres", "runtime-tokio-rustls"
 sea-orm-migration = { version = "1.1", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 uuid = { version = "1", features = ["v4"] }
-
-[workspace]
-members = []
-
-[[bin]]
-name = "game"
-path = "src/main.rs"

@@ -107,14 +107,21 @@ pub fn setup_boss_bar(mut commands: Commands, theme: Res<UiTheme>) {
 
 /// Toggles bar visibility, updates the fill width/color, and detects phase
 /// transitions to arm the banner.
+///
+/// `roots` and `fills` both take `&mut Node`; Bevy's B0001 check can't prove
+/// they're disjoint (root vs. its fill child), so they're wrapped in a
+/// `ParamSet` and accessed sequentially. The banner query is separate because
+/// `BossBanner` is provably disjoint from both markers.
 pub fn update_boss_bar(
     mut commands: Commands,
     theme: Res<UiTheme>,
     mut banner_state: ResMut<BossBannerState>,
     bosses: Query<(&VitalStats, &BossArena, &BossPhase), With<Boss>>,
-    mut roots: Query<&mut Node, With<BossBarRoot>>,
-    mut fills: Query<(&mut Node, &mut BackgroundColor), With<BossBarFill>>,
-    mut banners: Query<(Entity, &mut Node, Option<&Children>), With<BossBanner>>,
+    mut bar_params: ParamSet<(
+        Query<&mut Node, With<BossBarRoot>>,
+        Query<(&mut Node, &mut BackgroundColor), With<BossBarFill>>,
+    )>,
+    banners: Query<(Entity, Option<&Children>), With<BossBanner>>,
 ) {
     // Resolve the (single) boss, if any.
     let boss = bosses.iter().next();
@@ -123,12 +130,15 @@ pub fn update_boss_bar(
         arena.is_engaged && !vital.is_dead() && *phase != BossPhase::Dead
     });
 
-    for mut root in roots.iter_mut() {
-        root.display = if should_show_bar {
-            Display::Flex
-        } else {
-            Display::None
-        };
+    {
+        let mut roots = bar_params.p0();
+        for mut root in roots.iter_mut() {
+            root.display = if should_show_bar {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
     }
 
     if should_show_bar {
@@ -139,6 +149,7 @@ pub fn update_boss_bar(
             0.0
         };
         let fill_color = fill_color_for_phase(*phase, &theme);
+        let mut fills = bar_params.p1();
         for (mut node, mut bg) in fills.iter_mut() {
             node.width = Val::Percent(fraction * 100.0);
             bg.0 = fill_color;
@@ -151,7 +162,7 @@ pub fn update_boss_bar(
         if let Some(from) = banner_state.last_phase {
             let to = current_phase.unwrap_or(BossPhase::Dormant);
             if let Some(text) = banner_text_for_transition(from, to) {
-                show_banner(&mut commands, &mut banners, text, &theme);
+                show_banner(&mut commands, &banners, text, &theme);
                 banner_state.remaining_seconds = BANNER_SECONDS;
             }
         }
@@ -159,17 +170,21 @@ pub fn update_boss_bar(
     }
 }
 
-/// Writes the banner text and shows the banner node.
+/// Shows the banner node (via `Commands`, to avoid a second `&mut Node` query
+/// that would conflict with the bar queries) and writes the banner text.
 fn show_banner(
     commands: &mut Commands,
-    banners: &mut Query<(Entity, &mut Node, Option<&Children>), With<BossBanner>>,
+    banners: &Query<(Entity, Option<&Children>), With<BossBanner>>,
     text: &str,
     theme: &UiTheme,
 ) {
-    let Ok((banner_entity, mut node, children)) = banners.single_mut() else {
+    let Ok((banner_entity, children)) = banners.single() else {
         return;
     };
-    node.display = Display::Flex;
+    commands.entity(banner_entity).insert(Node {
+        display: Display::Flex,
+        ..default()
+    });
 
     // Replace the text child if present, else spawn one.
     let existing_text = children

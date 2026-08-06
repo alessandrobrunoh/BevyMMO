@@ -160,13 +160,20 @@ fn spawn_dragon_parts(
 
 /// Animates the rig: idle bob (dormant/ground), aerial lift, berserk aura
 /// pulse, and death collapse. Resolves the boss phase via the rig's `boss` field.
+///
+/// The two queries are wrapped in a `ParamSet` because both mutably access
+/// `Transform`; Bevy's B0001 check can't prove they target disjoint entities
+/// (rig vs. its aura child), so we run them sequentially instead of in
+/// parallel.
 fn animate_dragon(
     time: Res<Time>,
-    mut rigs: Query<(&DragonRig, &mut Transform, &mut DragonRigAnimation)>,
-    mut auras: Query<(
-        &DragonAura,
-        &mut Transform,
-        &MeshMaterial3d<StandardMaterial>,
+    mut params: ParamSet<(
+        Query<(&DragonRig, &mut Transform, &mut DragonRigAnimation)>,
+        Query<(
+            &DragonAura,
+            &mut Transform,
+            &MeshMaterial3d<StandardMaterial>,
+        )>,
     )>,
     phases: Query<&BossPhase>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -174,46 +181,52 @@ fn animate_dragon(
     let t = time.elapsed_secs();
     let delta = time.delta_secs();
 
-    for (rig, mut transform, mut anim) in rigs.iter_mut() {
-        let phase = phases.get(rig.boss).copied().unwrap_or(BossPhase::Dormant);
+    {
+        let mut rigs = params.p0();
+        for (rig, mut transform, mut anim) in rigs.iter_mut() {
+            let phase = phases.get(rig.boss).copied().unwrap_or(BossPhase::Dormant);
 
-        let target_elevation = match phase {
-            BossPhase::Dead => 0.0,
-            BossPhase::Aerial | BossPhase::Berserk => 4.0,
-            _ => 0.0,
-        };
-        let current = transform.translation.y;
-        let eased = current + (target_elevation - current) * (delta * 2.0).min(1.0);
+            let target_elevation = match phase {
+                BossPhase::Dead => 0.0,
+                BossPhase::Aerial | BossPhase::Berserk => 4.0,
+                _ => 0.0,
+            };
+            let current = transform.translation.y;
+            let eased = current + (target_elevation - current) * (delta * 2.0).min(1.0);
 
-        let bob = if phase != BossPhase::Dead {
-            (t * 1.5).sin() * 0.1
-        } else {
-            0.0
-        };
-        transform.translation.y = eased + bob;
+            let bob = if phase != BossPhase::Dead {
+                (t * 1.5).sin() * 0.1
+            } else {
+                0.0
+            };
+            transform.translation.y = eased + bob;
 
-        if phase == BossPhase::Dead {
-            anim.death_seconds += delta;
-            let p = (anim.death_seconds / 1.0).clamp(0.0, 1.0);
-            let tip = (1.0 - (1.0 - p).powi(2)) * 1.4; // ~80° forward collapse
-            transform.rotation = Quat::from_rotation_x(-tip);
-        } else {
-            anim.death_seconds = 0.0;
-            // Gentle tilt to suggest facing the threat (visual only).
-            transform.rotation = Quat::IDENTITY;
+            if phase == BossPhase::Dead {
+                anim.death_seconds += delta;
+                let p = (anim.death_seconds / 1.0).clamp(0.0, 1.0);
+                let tip = (1.0 - (1.0 - p).powi(2)) * 1.4; // ~80° forward collapse
+                transform.rotation = Quat::from_rotation_x(-tip);
+            } else {
+                anim.death_seconds = 0.0;
+                // Gentle tilt to suggest facing the threat (visual only).
+                transform.rotation = Quat::IDENTITY;
+            }
         }
     }
 
-    for (aura, mut aura_transform, aura_material) in auras.iter_mut() {
-        let phase = phases.get(aura.boss).copied().unwrap_or(BossPhase::Dormant);
-        if phase == BossPhase::Berserk {
-            let pulse = 1.0 + (t * 6.0).sin() * 0.05;
-            aura_transform.scale = Vec3::new(pulse, pulse, pulse);
-            if let Some(mut material) = materials.get_mut(&aura_material.0) {
-                material.base_color.set_alpha(0.15);
+    {
+        let mut auras = params.p1();
+        for (aura, mut aura_transform, aura_material) in auras.iter_mut() {
+            let phase = phases.get(aura.boss).copied().unwrap_or(BossPhase::Dormant);
+            if phase == BossPhase::Berserk {
+                let pulse = 1.0 + (t * 6.0).sin() * 0.05;
+                aura_transform.scale = Vec3::new(pulse, pulse, pulse);
+                if let Some(mut material) = materials.get_mut(&aura_material.0) {
+                    material.base_color.set_alpha(0.15);
+                }
+            } else {
+                aura_transform.scale = Vec3::ZERO;
             }
-        } else {
-            aura_transform.scale = Vec3::ZERO;
         }
     }
 }

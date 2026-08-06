@@ -15,7 +15,8 @@ use crate::network::mode::has_client;
 use crate::network::protocol::SpellVisualEffect;
 use crate::network::protocol::*;
 use crate::plugins::spells::{
-    CastKind, HotbarSlot, SpellHotbar, SpellHudCooldownStarted, SpellHudState, SpellRegistry,
+    cast_bar::ObservedCasts, CastKind, HotbarSlot, SpellHotbar, SpellHudCooldownStarted,
+    SpellHudState, SpellRegistry,
 };
 use crate::plugins::targeting::CurrentTarget;
 
@@ -251,7 +252,8 @@ fn cast_spells_on_key(
     target_ids: Query<&NetworkEntityId>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    controlled_players: Query<&SpellHotbar, With<Controlled>>,
+    controlled_players: Query<(&SpellHotbar, &NetworkEntityId), With<Controlled>>,
+    observed_casts: Res<ObservedCasts>,
     mut cast_senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
     mut release_senders: Query<&mut MessageSender<SpellCastRelease>, With<ConnectedClient>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
@@ -264,7 +266,7 @@ fn cast_spells_on_key(
         return;
     };
 
-    let Ok(hotbar) = controlled_players.single() else {
+    let Ok((hotbar, local_network_id)) = controlled_players.single() else {
         return;
     };
 
@@ -294,9 +296,7 @@ fn cast_spells_on_key(
 
     let check_slot = |key: KeyCode, slot: HotbarSlot| {
         if keys.just_pressed(key) {
-            hotbar.spell_for_slot(slot).map(|id| (id, true))
-        } else if keys.just_released(key) {
-            hotbar.spell_for_slot(slot).map(|id| (id, false))
+            hotbar.spell_for_slot(slot).cloned()
         } else {
             None
         }
@@ -307,42 +307,68 @@ fn cast_spells_on_key(
         (KeyCode::KeyW, HotbarSlot::W),
         (KeyCode::KeyE, HotbarSlot::E),
     ] {
-        let Some((spell_id, just_pressed)) = check_slot(key, slot) else {
+        let Some(spell_id) = check_slot(key, slot) else {
             continue;
         };
-        let spell_id = spell_id.clone();
 
-        if just_pressed {
-            if let Some(spell_def) = registry.get(&spell_id) {
-                if !hud_state.is_on_cooldown(&spell_id) {
-                    for mut sender in cast_senders.iter_mut() {
-                        sender.send::<Channel2>(SpellCastCommand {
-                            spell_id: spell_id.0.to_string(),
-                            target_position,
-                            target_id,
-                        });
-                    }
+        let Some(spell_def) = registry.get(&spell_id) else {
+            continue;
+        };
 
-                    if matches!(
-                        spell_def.cast_kind(),
-                        CastKind::Instant | CastKind::Channeling
-                    ) {
-                        hud_cooldowns.write(SpellHudCooldownStarted {
-                            spell_id: spell_id.clone(),
-                            cooldown_seconds: spell_def.config().cooldown_seconds,
-                        });
-                    }
+        // Channeling spells use press-to-toggle: the first press starts the
+        // channel, a second press sends a Release. We rely on the
+        // server-authoritative `ObservedCasts` mirror to know whether the
+        // local player is already channeling this exact spell, so we don't
+        // require the user to hold the key down.
+        if spell_def.cast_kind() == CastKind::Channeling {
+            let is_channeling_this_spell = observed_casts
+                .0
+                .get(&local_network_id.0)
+                .is_some_and(|cast| cast.spell_id == spell_id.0);
+
+            if is_channeling_this_spell {
+                for mut sender in release_senders.iter_mut() {
+                    sender.send::<Channel2>(SpellCastRelease {
+                        spell_id: spell_id.0.to_string(),
+                    });
                 }
+                continue;
             }
-        } else if registry
-            .get(&spell_id)
-            .is_some_and(|spell_def| spell_def.cast_kind() == CastKind::Channeling)
-        {
-            for mut sender in release_senders.iter_mut() {
-                sender.send::<Channel2>(SpellCastRelease {
+
+            if hud_state.is_on_cooldown(&spell_id) {
+                continue;
+            }
+
+            for mut sender in cast_senders.iter_mut() {
+                sender.send::<Channel2>(SpellCastCommand {
                     spell_id: spell_id.0.to_string(),
+                    target_position,
+                    target_id,
                 });
             }
+            hud_cooldowns.write(SpellHudCooldownStarted {
+                spell_id: spell_id.clone(),
+                cooldown_seconds: spell_def.config().cooldown_seconds,
+            });
+            continue;
+        }
+
+        // Instant / CastTime: single press starts the cast.
+        if hud_state.is_on_cooldown(&spell_id) {
+            continue;
+        }
+        for mut sender in cast_senders.iter_mut() {
+            sender.send::<Channel2>(SpellCastCommand {
+                spell_id: spell_id.0.to_string(),
+                target_position,
+                target_id,
+            });
+        }
+        if matches!(spell_def.cast_kind(), CastKind::Instant) {
+            hud_cooldowns.write(SpellHudCooldownStarted {
+                spell_id: spell_id.clone(),
+                cooldown_seconds: spell_def.config().cooldown_seconds,
+            });
         }
     }
 }

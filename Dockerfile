@@ -39,6 +39,11 @@ FROM deps AS builder
 # Copia il sorgente reale
 COPY src ./src
 
+# Copia i file di configurazione: servono sia a compile time
+# (`include_str!("../config/default.toml")` in `settings.rs`) sia a runtime
+# (`Settings::load` legge `config/<env>.toml` e `config/local.toml`).
+COPY config ./config
+
 # Invalida il timestamp del binario stub per forzare la ricompilazione del bin
 RUN touch src/main.rs
 
@@ -76,8 +81,11 @@ USER server
 
 WORKDIR /app
 
-# Copia solo il binario strippato dallo stage builder
+# Copia il binario strippato dallo stage builder
 COPY --from=builder /build/target/release/game ./game
+
+# Copia i file di configurazione letti a runtime da `Settings::load`.
+COPY --from=builder /build/config ./config
 
 # Porta UDP usata da Lightyear/Netcode per i client
 EXPOSE 5051/udp

@@ -416,7 +416,7 @@ fn fire_spell(
 pub fn handle_cast_release(
     mut commands: Commands,
     mut requests: MessageReader<SpellReleaseRequest>,
-    casters: Query<(Entity, &CastProgress, Option<&SpellCooldowns>)>,
+    casters: Query<(Entity, &CastProgress)>,
     caster_network_ids: Query<&NetworkEntityId>,
     registry: Res<SpellRegistry>,
     mut cooldowns_query: Query<&mut SpellCooldowns>,
@@ -424,10 +424,10 @@ pub fn handle_cast_release(
     server: Single<&lightyear::prelude::server::Server>,
 ) {
     let server = server.into_inner();
-    let mut to_end: Vec<(Entity, crate::plugins::spells::SpellId, bool)> = Vec::new();
+    let mut to_end: Vec<(Entity, SpellId, bool)> = Vec::new();
 
     for request in requests.read() {
-        let Ok((caster_entity, cast, cooldowns_state)) = casters.get(request.caster) else {
+        let Ok((caster_entity, cast)) = casters.get(request.caster) else {
             continue;
         };
         if cast.spell_id != request.spell_id {
@@ -445,7 +445,6 @@ pub fn handle_cast_release(
                 }
             }
         }
-        let _ = cooldowns_state;
     }
 
     for (caster_entity, spell_id, completed) in to_end {

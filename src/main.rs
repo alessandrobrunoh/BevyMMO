@@ -255,17 +255,7 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
             panic!("client mode requires the 'client' cargo feature to be enabled");
         }
     } else {
-        app.add_plugins((
-            MinimalPlugins,
-            bevy::state::app::StatesPlugin,
-            // `MinimalPlugins` non include alcun runner: senza questo plugin
-            // `App::run()` esegue lo schedule una sola volta e poi ritorna,
-            // lasciando il server netcode in ascolto sulla socket ma senza mai
-            // processare i pacchetti in arrivo. Usiamo un run loop a `tick_rate` Hz.
-            bevy::app::ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
-                1.0 / config.tick_rate,
-            )),
-        ));
+        app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin));
         app.add_plugins(LogPlugin {
             filter: config.log_filter.clone(),
             ..default()

@@ -661,6 +661,9 @@ pub fn register_builtin_spells(mut registry: ResMut<SpellRegistry>) {
     let meteorite_spell: Arc<dyn Spell> = Arc::new(crate::spells::meteorite::MeteoriteSpell);
     registry.register(meteorite_spell);
 
+    let stun_field_spell: Arc<dyn Spell> = Arc::new(crate::spells::stun_field::StunFieldSpell);
+    registry.register(stun_field_spell);
+
     let swift_spell: Arc<dyn Spell> = Arc::new(crate::spells::swift::SwiftSpell);
     registry.register(swift_spell);
 

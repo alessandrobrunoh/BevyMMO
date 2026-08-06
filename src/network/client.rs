@@ -334,7 +334,10 @@ fn cast_spells_on_key(
                     }
                 }
             }
-        } else {
+        } else if registry
+            .get(&spell_id)
+            .is_some_and(|spell_def| spell_def.cast_kind() == CastKind::Channeling)
+        {
             for mut sender in release_senders.iter_mut() {
                 sender.send::<Channel2>(SpellCastRelease {
                     spell_id: spell_id.0.to_string(),

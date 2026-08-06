@@ -19,9 +19,12 @@ impl RayOfLightSpell {
     pub const COOLDOWN_SECONDS: f32 = 1.5;
     pub const CAST_TIME_SECONDS: f32 = 0.3;
     pub const CAST_RANGE: f32 = 20.0;
-    /// Mezza larghezza del beam: determina quanto deve essere "largo" il ray.
-    /// Poco inferiore al player per evitare hit spam laterali.
-    pub const BEAM_HALF_WIDTH: f32 = 0.3;
+    /// Horizontal hitbox radius around the beam center line.
+    ///
+    /// This mirrors the visible beam thickness closely enough for gameplay: a
+    /// target whose body overlaps the ray should take damage even when its
+    /// entity origin is not perfectly centered on the line.
+    pub const BEAM_HITBOX_RADIUS: f32 = 0.6;
     pub const DAMAGE_MULTIPLIER: f32 = 1.4;
 
     fn normalized_flat_direction(direction: Vec3) -> Vec3 {
@@ -44,9 +47,10 @@ impl RayOfLightSpell {
         look_direction: Vec3,
         potential_targets: &[(Entity, Vec3)],
         max_range: f32,
-        beam_half_width: f32,
+        beam_hitbox_radius: f32,
     ) -> Vec<(Entity, f32)> {
         let direction = Self::normalized_flat_direction(look_direction);
+        let caster_flat_position = Vec3::new(caster_position.x, 0.0, caster_position.z);
         let mut hits: Vec<(Entity, f32)> = Vec::new();
 
         for (target, position) in potential_targets.iter().copied() {
@@ -54,15 +58,16 @@ impl RayOfLightSpell {
                 continue;
             }
 
-            let to_target = position - caster_position;
+            let target_flat_position = Vec3::new(position.x, 0.0, position.z);
+            let to_target = target_flat_position - caster_flat_position;
             let forward_distance = to_target.dot(direction);
             if forward_distance <= 0.0 || forward_distance > max_range {
                 continue;
             }
 
-            let closest_point_on_line = caster_position + direction * forward_distance;
-            let lateral_distance = position.distance(closest_point_on_line);
-            if lateral_distance > beam_half_width {
+            let closest_point_on_line = caster_flat_position + direction * forward_distance;
+            let lateral_distance = target_flat_position.distance(closest_point_on_line);
+            if lateral_distance > beam_hitbox_radius {
                 continue;
             }
 
@@ -102,7 +107,7 @@ impl Spell for RayOfLightSpell {
             direction,
             ctx.potential_targets,
             Self::CAST_RANGE,
-            Self::BEAM_HALF_WIDTH,
+            Self::BEAM_HITBOX_RADIUS,
         );
 
         for (target, _) in hits {
@@ -133,12 +138,35 @@ mod tests {
             Vec3::Z,
             &targets,
             RayOfLightSpell::CAST_RANGE,
-            RayOfLightSpell::BEAM_HALF_WIDTH,
+            RayOfLightSpell::BEAM_HITBOX_RADIUS,
         );
         hits.sort_by_key(|(_, distance)| distance.to_bits());
 
         let hit_entities: Vec<Entity> = hits.iter().map(|(entity, _)| *entity).collect();
         assert_eq!(hit_entities, vec![near, far]);
+    }
+
+    #[test]
+    fn targets_along_line_uses_horizontal_beam_hitbox() {
+        let caster = Entity::from_bits(1);
+        let elevated = Entity::from_bits(2);
+        let offset_inside_hitbox = Entity::from_bits(3);
+        let targets = [
+            (elevated, Vec3::new(0.0, 2.0, 8.0)),
+            (offset_inside_hitbox, Vec3::new(0.55, 0.0, 8.0)),
+        ];
+
+        let hits = RayOfLightSpell::targets_along_line(
+            caster,
+            Vec3::ZERO,
+            Vec3::Z,
+            &targets,
+            RayOfLightSpell::CAST_RANGE,
+            RayOfLightSpell::BEAM_HITBOX_RADIUS,
+        );
+        let hit_entities: Vec<Entity> = hits.iter().map(|(entity, _)| *entity).collect();
+
+        assert_eq!(hit_entities, vec![elevated, offset_inside_hitbox]);
     }
 
     #[test]
@@ -157,7 +185,7 @@ mod tests {
             Vec3::Z,
             &targets,
             RayOfLightSpell::CAST_RANGE,
-            RayOfLightSpell::BEAM_HALF_WIDTH,
+            RayOfLightSpell::BEAM_HITBOX_RADIUS,
         );
 
         assert!(hits.is_empty());

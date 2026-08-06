@@ -13,3 +13,11 @@ pub struct SpellListItem {
 pub struct HotbarSlotUi {
     pub slot: HotbarSlot,
 }
+
+#[derive(Component)]
+pub struct HotbarSlotLabel {
+    pub slot: HotbarSlot,
+}
+
+#[derive(Component)]
+pub struct CloseSpellbookButton;

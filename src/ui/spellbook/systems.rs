@@ -58,6 +58,30 @@ fn spawn_spellbook_window(
             SpellbookWindow,
         ))
         .with_children(|parent| {
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: Val::Px(8.0),
+                        right: Val::Px(8.0),
+                        padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
+                        ..default()
+                    },
+                    BackgroundColor(theme.button_bg),
+                    CloseSpellbookButton,
+                ))
+                .with_children(|button| {
+                    button.spawn((
+                        Text("Close".to_string()),
+                        TextFont {
+                            font_size: FontSize::Px(theme.button_font_size),
+                            ..default()
+                        },
+                        TextColor(theme.text_color),
+                    ));
+                });
+
             // Left panel: List of all spells
             parent
                 .spawn((Node {
@@ -133,6 +157,7 @@ fn spawn_spellbook_window(
                                         ..default()
                                     },
                                     TextColor(theme.text_color),
+                                    HotbarSlotLabel { slot },
                                 ));
                             });
                     }
@@ -143,7 +168,10 @@ fn spawn_spellbook_window(
 pub fn update_spellbook_ui(
     state: Res<SpellbookUiState>,
     mut list_items: Query<(&SpellListItem, &mut BackgroundColor)>,
+    mut slot_labels: Query<(&HotbarSlotLabel, &mut Text)>,
     theme: Res<UiTheme>,
+    registry: Res<SpellRegistry>,
+    player_query: Query<&SpellHotbar, With<lightyear::prelude::Controlled>>,
 ) {
     for (item, mut bg) in list_items.iter_mut() {
         if Some(&item.spell_id) == state.selected_spell.as_ref() {
@@ -152,20 +180,48 @@ pub fn update_spellbook_ui(
             *bg = BackgroundColor(theme.button_bg);
         }
     }
+
+    let Some(hotbar) = player_query.iter().next() else {
+        return;
+    };
+
+    for (slot_label, mut text) in slot_labels.iter_mut() {
+        text.0 = format_hotbar_slot_label(slot_label.slot, hotbar, &registry);
+    }
 }
 
 pub fn handle_spell_selection(
     mut state: ResMut<SpellbookUiState>,
     list_interactions: Query<(&Interaction, &SpellListItem), (Changed<Interaction>, With<Button>)>,
     slot_interactions: Query<(&Interaction, &HotbarSlotUi), (Changed<Interaction>, With<Button>)>,
+    close_interactions: Query<&Interaction, (Changed<Interaction>, With<CloseSpellbookButton>)>,
     mut player_query: Query<&mut SpellHotbar, With<lightyear::prelude::Controlled>>,
     mut senders: Query<&mut MessageSender<UpdateHotbarSlotRequest>, With<ConnectedClient>>,
     mut commands: Commands,
     window_query: Query<Entity, With<SpellbookWindow>>,
 ) {
-    // Select spell
+    for interaction in close_interactions.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        state.is_open = false;
+        state.selected_spell = None;
+        for entity in window_query.iter() {
+            commands.entity(entity).despawn();
+        }
+        return;
+    }
+
+    // Select a spell; pressing the selected spell again clears the selection.
     for (interaction, item) in list_interactions.iter() {
-        if *interaction == Interaction::Pressed {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        if state.selected_spell.as_ref() == Some(&item.spell_id) {
+            state.selected_spell = None;
+        } else {
             state.selected_spell = Some(item.spell_id.clone());
         }
     }
@@ -191,11 +247,24 @@ pub fn handle_spell_selection(
                     .map(|spell_id| spell_id.as_str().to_string()),
             });
         }
-
-        state.is_open = false;
-        state.selected_spell = None;
-        for entity in window_query.iter() {
-            commands.entity(entity).despawn();
-        }
     }
+}
+
+fn format_hotbar_slot_label(
+    slot: HotbarSlot,
+    hotbar: &SpellHotbar,
+    registry: &SpellRegistry,
+) -> String {
+    let slot_label = match slot {
+        HotbarSlot::Q => "Q",
+        HotbarSlot::W => "W",
+        HotbarSlot::E => "E",
+    };
+    let spell_name = hotbar
+        .spell_for_slot(slot)
+        .and_then(|spell_id| registry.get(spell_id))
+        .map(|spell| spell.display_name().to_string())
+        .unwrap_or_else(|| "Empty".to_string());
+
+    format!("{slot_label} - {spell_name}")
 }

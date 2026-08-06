@@ -27,6 +27,7 @@ services:
     ports:
       - "5051:5051/udp"
     environment:
+      - APP_ENV=production
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
 
 volumes:

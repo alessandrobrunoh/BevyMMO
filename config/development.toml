@@ -1,0 +1,10 @@
+# Ambiente di sviluppo: il server gira in locale con il compose docker.
+# I secret (password DB) vanno in config/local.toml (gitignored).
+
+database_url = "postgresql://bevy:bevy@127.0.0.1:5433/bevy_mmo"
+
+[server]
+bind_addr = "0.0.0.0:5051"
+
+[client]
+server_addr = "127.0.0.1:5051"

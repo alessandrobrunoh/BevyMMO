@@ -1,6 +1,7 @@
 pub mod entity;
 #[cfg(feature = "client")]
 pub mod key_mapping;
+pub mod persistence;
 pub mod player_movement;
 #[cfg(feature = "client")]
 pub mod renderer;

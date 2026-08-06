@@ -1,4 +1,6 @@
-//! Migrazioni SeaORM versionate, applicate dal server durante l'avvio.
+//! Migrazioni SeaORM versionate, applicate dal [`PersistencePlugin`] durante l'avvio.
+//!
+//! [`PersistencePlugin`]: crate::plugins::persistence::plugin::PersistencePlugin
 
 use sea_orm_migration::prelude::*;
 

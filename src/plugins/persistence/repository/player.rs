@@ -7,12 +7,12 @@
 
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
-use crate::persistence::entity::player::{ActiveModel, Column, Entity, PlayerRecord};
-use crate::persistence::entity::player_stats::{
+use crate::plugins::persistence::entity::player::{ActiveModel, Column, Entity, PlayerRecord};
+use crate::plugins::persistence::entity::player_stats::{
     ActiveModel as StatsActiveModel, Column as StatsColumn, Entity as StatsEntity,
 };
-use crate::persistence::error::{PersistenceError, PersistenceResult};
-use crate::persistence::normalize_name;
+use crate::plugins::persistence::error::{PersistenceError, PersistenceResult};
+use crate::plugins::persistence::normalize_name;
 use crate::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 use crate::stats::defaults::player_defaults;
 use uuid::Uuid;

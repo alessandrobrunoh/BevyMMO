@@ -15,7 +15,7 @@
 //!
 //! `normalized_name` è unica a livello DB per garantire la correttezza di
 //! `find_or_create` sotto inserimenti concorrenti; l'helper di normalizzazione
-//! lato applicazione si trova in [`crate::persistence::normalize_name`].
+//! lato applicazione si trova in [`crate::plugins::persistence::normalize_name`].
 
 use sea_orm::entity::prelude::*;
 use uuid::Uuid;

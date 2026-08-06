@@ -4,25 +4,22 @@ use bevy::prelude::*;
 use bevy::window::PresentMode;
 use clap::{Parser, Subcommand};
 use core::time::Duration;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod game_state;
+mod migrations;
 mod network;
-mod persistence;
 mod plugins;
-#[cfg(feature = "client")]
 mod scenes;
+mod settings;
 mod spells;
 mod stats;
 #[cfg(feature = "client")]
 mod ui;
 
-const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5051);
-const CLIENT_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
-const FIXED_TIMESTEP: f64 = 60.0;
-const LOG_FILTER: &str = "warn,bevy_lightyear_game=debug,lightyear=info";
+use settings::Settings;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -34,39 +31,91 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Mode {
     Client {
-        /// Override riproducibile dell'identità Netcode. Se omesso, viene
+        /// Override riproducibile dell'identita' Netcode. Se omesso, viene
         /// generato un ID non-zero unico per questo processo.
         #[arg(short, long)]
         client_id: Option<u64>,
+
+        /// Override dell'indirizzo del server remoto a cui connettersi
+        /// (default: da config/client.toml).
+        #[arg(long)]
+        server_addr: Option<SocketAddr>,
     },
-    Server,
+    Server {
+        /// Override dell'indirizzo locale su cui il server ascolta
+        /// (default: da config/server.toml).
+        #[arg(long)]
+        bind_addr: Option<SocketAddr>,
+    },
     HostClient {
-        /// Override riproducibile dell'identità Netcode. Se omesso, viene
+        /// Override riproducibile dell'identita' Netcode. Se omesso, viene
         /// generato un ID non-zero unico per questo processo.
         #[arg(short, long)]
         client_id: Option<u64>,
+
+        /// Override dell'indirizzo del server locale usato dal client embedded
+        /// (default: da config/client.toml).
+        #[arg(long)]
+        server_addr: Option<SocketAddr>,
     },
 }
 
 struct AppConfig {
     mode: network::mode::AppMode,
     client_id: Option<u64>,
+    server_addr: SocketAddr,
+    client_addr: SocketAddr,
+    log_filter: String,
+    tick_rate: f64,
+    database_url: Option<String>,
 }
 
 impl AppConfig {
-    fn from_cli(mode: Mode) -> Self {
+    /// Unisce i default dei file `config/*.toml` con gli override CLI.
+    fn resolve(mode: Mode, settings: Settings) -> Self {
+        let tick_rate = settings.tick_rate;
+        let log_filter = settings.log_filter.clone();
+        let database_url = settings.database_url.clone();
+
+        // I `SocketAddr` arrivano come stringhe da `Settings`; parsiamo una
+        // volta sola qui. I default garantiscono valori validi.
+        let client_server_addr = parse_addr(&settings.client.server_addr, "client.server_addr");
+        let client_addr = parse_addr(&settings.client.client_addr, "client.client_addr");
+        let server_bind_addr = parse_addr(&settings.server.bind_addr, "server.bind_addr");
+
         match mode {
-            Mode::Client { client_id } => Self {
+            Mode::Client {
+                client_id,
+                server_addr,
+            } => Self {
                 mode: network::mode::AppMode::Client,
                 client_id: Some(resolve_client_id(client_id)),
+                server_addr: server_addr.unwrap_or(client_server_addr),
+                client_addr,
+                tick_rate,
+                log_filter,
+                database_url,
             },
-            Mode::Server => Self {
+            Mode::Server { bind_addr } => Self {
                 mode: network::mode::AppMode::Server,
                 client_id: None,
+                server_addr: bind_addr.unwrap_or(server_bind_addr),
+                client_addr,
+                tick_rate,
+                log_filter,
+                database_url,
             },
-            Mode::HostClient { client_id } => Self {
+            Mode::HostClient {
+                client_id,
+                server_addr,
+            } => Self {
                 mode: network::mode::AppMode::HostClient,
                 client_id: Some(resolve_client_id(client_id)),
+                server_addr: server_addr.unwrap_or(client_server_addr),
+                client_addr,
+                tick_rate,
+                log_filter,
+                database_url,
             },
         }
     }
@@ -79,8 +128,8 @@ impl AppConfig {
 
 /// Produce un ID Netcode distinto per processi locali concorrenti.
 ///
-/// Il server rifiuta due client con lo stesso ID; `0` viene evitato perché è
-/// l'identità placeholder usata da Lightyear per l'autenticazione assente.
+/// Il server rifiuta due client con lo stesso ID; `0` viene evitato perche' e'
+/// l'identita' placeholder usata da Lightyear per l'autenticazione assente.
 fn resolve_client_id(override_id: Option<u64>) -> u64 {
     if let Some(id) = override_id.filter(|id| *id != 0) {
         return id;
@@ -99,7 +148,8 @@ fn resolve_client_id(override_id: Option<u64>) -> u64 {
 }
 
 fn main() {
-    let config = AppConfig::from_cli(Cli::parse().mode);
+    let settings = Settings::load();
+    let config = AppConfig::resolve(Cli::parse().mode, settings);
     println!("Starting {:?}", config.mode);
     build_app(&config).run();
 }
@@ -110,12 +160,16 @@ fn build_app(config: &AppConfig) -> App {
     app.insert_resource(config.mode);
     app.add_plugins(game_state::GameStatePlugin);
 
-    let tick_duration = Duration::from_secs_f64(1.0 / FIXED_TIMESTEP);
+    let tick_duration = Duration::from_secs_f64(1.0 / config.tick_rate);
 
     if config.mode.has_server() {
-        app.add_plugins(persistence::PersistencePlugin);
+        let database_url = config
+            .database_url
+            .clone()
+            .expect("DATABASE_URL is required when starting a server; set it in config/<env>.toml, config/local.toml, or as the DATABASE_URL env var");
+        app.add_plugins(plugins::persistence::PersistencePlugin::new(database_url));
         app.add_plugins(network::server::ServerPlugins {
-            server_addr: SERVER_ADDR,
+            server_addr: config.server_addr,
             tick_duration,
         });
     }
@@ -124,8 +178,8 @@ fn build_app(config: &AppConfig) -> App {
     if config.mode.has_client() {
         app.add_plugins(network::client::ClientPlugins {
             client_id: config.client_id(),
-            server_addr: SERVER_ADDR,
-            client_addr: CLIENT_ADDR,
+            server_addr: config.server_addr,
+            client_addr: config.client_addr,
             tick_duration,
         });
     }
@@ -180,7 +234,7 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
             app.add_plugins(
                 DefaultPlugins
                     .set(LogPlugin {
-                        filter: LOG_FILTER.to_string(),
+                        filter: config.log_filter.clone(),
                         ..default()
                     })
                     .set(WindowPlugin {
@@ -200,13 +254,32 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
             panic!("client mode requires the 'client' cargo feature to be enabled");
         }
     } else {
-        app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin));
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::state::app::StatesPlugin,
+            // `MinimalPlugins` non include alcun runner: senza questo plugin
+            // `App::run()` esegue lo schedule una sola volta e poi ritorna,
+            // lasciando il server netcode in ascolto sulla socket ma senza mai
+            // processare i pacchetti in arrivo. Usiamo un run loop a `tick_rate` Hz.
+            bevy::app::ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
+                1.0 / config.tick_rate,
+            )),
+        ));
         app.add_plugins(LogPlugin {
-            filter: LOG_FILTER.to_string(),
+            filter: config.log_filter.clone(),
             ..default()
         });
         app.insert_resource(Time::<Fixed>::from_duration(Duration::from_secs_f64(
-            1.0 / FIXED_TIMESTEP,
+            1.0 / config.tick_rate,
         )));
     }
+}
+
+/// Parsa un indirizzo "host:port" dai file di configurazione.
+///
+/// Fallire qui e' un errore di configurazione: meglio panicare all'avvio con
+/// un messaggio chiaro che non a runtime.
+fn parse_addr(raw: &str, field: &str) -> SocketAddr {
+    raw.parse()
+        .unwrap_or_else(|e| panic!("invalid socket address for {field}: {raw:?} ({e})"))
 }

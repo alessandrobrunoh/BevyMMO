@@ -1,13 +1,11 @@
 //! Risorse Bevy che possiedono la connessione al database e il runtime async.
 
-use std::env;
-
 use bevy::prelude::*;
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 use tokio::runtime::Runtime;
 
-use super::migration::Migrator;
+use crate::migrations::Migrator;
 use super::repository::player::PlayerRepository;
 
 /// Accesso condiviso e asincrono ai player persistiti.
@@ -18,14 +16,19 @@ pub struct PlayerStore(pub PlayerRepository);
 #[derive(Resource)]
 pub struct PersistenceRuntime(pub Runtime);
 
-pub struct PersistencePlugin;
+pub struct PersistencePlugin {
+    database_url: String,
+}
+
+impl PersistencePlugin {
+    pub fn new(database_url: String) -> Self {
+        Self { database_url }
+    }
+}
 
 impl Plugin for PersistencePlugin {
     fn build(&self, app: &mut App) {
-        dotenvy::dotenv().ok();
-
-        let database_url = env::var("DATABASE_URL")
-            .expect("DATABASE_URL is required when starting a server; copy .env.example to .env");
+        let database_url = self.database_url.clone();
         let runtime = Runtime::new().expect("failed to create persistence Tokio runtime");
         let database = runtime.block_on(connect_and_migrate(&database_url));
 

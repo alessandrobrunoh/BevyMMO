@@ -18,7 +18,7 @@
 //! `player_id` è la primary key e foreign key verso la tabella `players`.
 //! La relazione `BelongsTo` permette di navigare dal record stats al player.
 
-use crate::persistence::entity::player;
+use crate::plugins::persistence::entity::player;
 use sea_orm::entity::prelude::*;
 use uuid::Uuid;
 

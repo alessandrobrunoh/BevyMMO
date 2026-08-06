@@ -8,12 +8,12 @@
 //!
 //! Il modulo **non** è inizializzato qui. La costruzione della
 //! [`DatabaseConnection`] e il collegamento alle risorse Bevy sono
-//! responsabilità del bootstrap dell'applicazione (fuori dallo scopo di questo
-//! modulo).
+//! responsabilità del [`crate::plugins::persistence::plugin::PersistencePlugin`].
+//! Le migrazioni SeaORM sono definite in [`crate::migrations`], separate dalla
+//! logica di plugin.
 
 pub mod entity;
 pub mod error;
-pub mod migration;
 pub mod plugin;
 pub mod repository;
 

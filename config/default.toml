@@ -1,0 +1,23 @@
+# Configurazione condivisa da tutti gli ambienti.
+# I valori qui definiti sono il punto di partenza; ogni ambiente puo' sovrascriverli.
+
+# Frequenza del tick fisico (Hz). Usa 1.0 / tick_rate come durata del Fixed.
+tick_rate = 60.0
+
+# Filtro di log come da sintassi `RUST_LOG`.
+log_filter = "warn,bevy_lightyear_game=debug,lightyear=info"
+
+[server]
+# Indirizzo su cui il server binda la socket UDP.
+bind_addr = "0.0.0.0:5051"
+
+[client]
+# Indirizzo del server a cui il client si connette.
+server_addr = "127.0.0.1:5051"
+# Indirizzo locale bindato dal client (0.0.0.0:0 = porta effimera).
+client_addr = "0.0.0.0:0"
+
+# NOTA: `database_url` non ha default. Deve essere fornito da:
+#   - config/development.toml o config/production.toml (valori locali/non sensibili)
+#   - config/local.toml (gitignored, secret locali)
+#   - env vars (es. DATABASE_URL per la produzione via docker)

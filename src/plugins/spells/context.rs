@@ -86,6 +86,9 @@ pub struct SpellConfig {
     /// Policy di interruzione del channeling col movimento. Ignorata per le
     /// spell Instant e CastTime (per le quali vale la regola fissa di Phase 2).
     pub channel_movement: ChannelMovementPolicy,
+    /// Durata massima opzionale di un channeling. `None` mantiene il modello
+    /// open-ended finché il client rilascia il tasto.
+    pub channel_duration_seconds: Option<f32>,
 }
 
 impl SpellConfig {
@@ -104,6 +107,7 @@ impl SpellConfig {
             cast_time_seconds: 0.0,
             is_channel: false,
             channel_movement: ChannelMovementPolicy::InterruptOnMove,
+            channel_duration_seconds: None,
         }
     }
 
@@ -149,6 +153,12 @@ impl SpellConfig {
     pub const fn with_channel(mut self, movement_policy: ChannelMovementPolicy) -> Self {
         self.is_channel = true;
         self.channel_movement = movement_policy;
+        self
+    }
+
+    /// Builder: imposta una durata finita per una spell channeling.
+    pub const fn with_channel_duration(mut self, seconds: f32) -> Self {
+        self.channel_duration_seconds = Some(seconds);
         self
     }
 }

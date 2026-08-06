@@ -15,7 +15,7 @@ use crate::network::mode::has_client;
 use crate::network::protocol::SpellVisualEffect;
 use crate::network::protocol::*;
 use crate::plugins::key_mapping::KeyBindings;
-use crate::plugins::spells::{SpellHudCooldownStarted, SpellHudState, SpellId};
+use crate::plugins::spells::{SpellHudCooldownStarted, SpellHudState};
 use crate::plugins::targeting::CurrentTarget;
 
 /// Impostazioni di connessione del client, conservate come risorsa.
@@ -252,16 +252,10 @@ fn cast_spells_on_key(
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     controlled_players: Query<&crate::plugins::spells::Spellbook, With<Controlled>>,
     mut cast_senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
-    mut release_senders: Query<&mut MessageSender<SpellCastRelease>, With<ConnectedClient>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
     registry: Res<crate::plugins::spells::SpellRegistry>,
-    mut local_channel: Local<LocalChannelState>,
 ) {
     if !matches!(screen.0, Screen::InGame | Screen::Paused) {
-        // Se usciamo dal gameplay mentre un channel è attivo, rilascia.
-        if let Some(spell_id) = local_channel.0.take() {
-            send_release(&mut release_senders, spell_id);
-        }
         return;
     }
     let (Some(keys), Some(bindings)) = (keys, bindings) else {
@@ -304,17 +298,7 @@ fn cast_spells_on_key(
         let Some(spell_def) = registry.get(spell_id) else {
             continue;
         };
-        let is_channeling_spell =
-            spell_def.cast_kind() == crate::plugins::spells::CastKind::Channeling;
-
         if keys.just_pressed(key) {
-            // Re-press: se siamo già in channeling con questa spell, è un interrupt.
-            if is_channeling_spell && local_channel.0.as_ref() == Some(spell_id) {
-                send_release(&mut release_senders, spell_id.clone());
-                local_channel.0 = None;
-                continue;
-            }
-
             if hud_state.is_on_cooldown(spell_id) {
                 continue;
             }
@@ -327,42 +311,15 @@ fn cast_spells_on_key(
                 });
             }
 
-            if is_channeling_spell {
-                local_channel.0 = Some(spell_id.clone());
-            }
-
             if spell_def.cast_kind() == crate::plugins::spells::CastKind::Instant {
                 hud_cooldowns.write(SpellHudCooldownStarted {
                     spell_id: spell_id.clone(),
                     cooldown_seconds: spell_def.config().cooldown_seconds,
                 });
             }
-        } else if is_channeling_spell && keys.just_released(key) {
-            if local_channel.0.as_ref() == Some(spell_id) {
-                send_release(&mut release_senders, spell_id.clone());
-                local_channel.0 = None;
-            }
         }
     }
 }
-
-/// Invia un `SpellCastRelease` a tutti i sender connessi.
-fn send_release(
-    senders: &mut Query<&mut MessageSender<SpellCastRelease>, With<ConnectedClient>>,
-    spell_id: SpellId,
-) {
-    let spell_id_str = spell_id.0.to_string();
-    for mut sender in senders.iter_mut() {
-        sender.send::<Channel2>(SpellCastRelease {
-            spell_id: spell_id_str.clone(),
-        });
-    }
-}
-
-/// Stato locale delle spell channeling attive sul client: traccia quale spell
-/// id è attualmente in channeling per gestire release e re-press interruption.
-#[derive(Default)]
-struct LocalChannelState(Option<SpellId>);
 
 // Riduce la saturazione sulle entità predette, così il player locale è
 // visivamente distinto.

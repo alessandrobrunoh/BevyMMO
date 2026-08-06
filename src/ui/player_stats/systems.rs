@@ -3,8 +3,12 @@ use lightyear::prelude::Controlled;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::network::client::ClientConnectionConfig;
-use crate::network::protocol::PlayerId;
+use crate::network::protocol::{NetworkEntityId, PlayerId};
+use crate::plugins::player_movement::effective_movement_speed;
+use crate::plugins::spells::cast_bar::ObservedCasts;
+use crate::spells::swift::SwiftSpell;
 use crate::stats::components::{CombatStats, MovementStats, VitalStats};
+use crate::stats::modifiers::ActiveStatModifiers;
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 
@@ -40,12 +44,15 @@ pub fn setup_player_stats(mut commands: Commands, theme: Res<UiTheme>) {
 pub fn update_player_stats(
     screen: Res<GameScreen>,
     client_config: Option<Res<ClientConnectionConfig>>,
+    observed_casts: Option<Res<ObservedCasts>>,
     player_query: Query<(
         &MovementStats,
         &CombatStats,
         &VitalStats,
         Option<&PlayerId>,
         Has<Controlled>,
+        Option<&ActiveStatModifiers>,
+        Option<&NetworkEntityId>,
     )>,
     mut root_query: Query<&mut Node, With<PlayerStatsUi>>,
     mut text_query: Query<&mut Text, With<PlayerStatsText>>,
@@ -61,11 +68,11 @@ pub fn update_player_stats(
 
     root.display = Display::Flex;
     let local_client_id = client_config.map(|config| config.client_id);
-    let Some((movement, combat, vital, _, _)) = player_query
+    let Some((movement, combat, vital, _, _, modifiers, network_id)) = player_query
         .iter()
-        .find(|(_, _, _, _, controlled)| *controlled)
+        .find(|(_, _, _, _, controlled, _, _)| *controlled)
         .or_else(|| {
-            player_query.iter().find(|(_, _, _, player_id, _)| {
+            player_query.iter().find(|(_, _, _, player_id, _, _, _)| {
                 player_id.is_some_and(|id| {
                     local_client_id.is_some_and(|client_id| id.0.to_bits() == client_id)
                 })
@@ -78,10 +85,26 @@ pub fn update_player_stats(
         return;
     };
 
-    text.0 = format_stats(movement, combat, vital);
+    text.0 = format_stats(
+        movement,
+        combat,
+        vital,
+        modifiers,
+        network_id,
+        observed_casts.as_deref(),
+    );
 }
 
-fn format_stats(movement: &MovementStats, combat: &CombatStats, vital: &VitalStats) -> String {
+fn format_stats(
+    movement: &MovementStats,
+    combat: &CombatStats,
+    vital: &VitalStats,
+    modifiers: Option<&ActiveStatModifiers>,
+    network_id: Option<&NetworkEntityId>,
+    observed_casts: Option<&ObservedCasts>,
+) -> String {
+    let move_speed =
+        displayed_movement_speed(movement.speed, modifiers, network_id, observed_casts);
     format!(
         "HP: {}/{}\nMax Mana: {}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)\nAttack Power: {}\nMove Speed: {:.2}",
         format_value(vital.current_health),
@@ -91,8 +114,33 @@ fn format_stats(movement: &MovementStats, combat: &CombatStats, vital: &VitalSta
         format_value(combat.armor),
         combat.armor_damage_reduction() * 100.0,
         format_value(combat.attack_power),
-        movement.speed,
+        move_speed,
     )
+}
+
+fn displayed_movement_speed(
+    base_speed: f32,
+    modifiers: Option<&ActiveStatModifiers>,
+    network_id: Option<&NetworkEntityId>,
+    observed_casts: Option<&ObservedCasts>,
+) -> f32 {
+    let effective_speed = effective_movement_speed(base_speed, modifiers);
+    if modifiers.is_some() {
+        return effective_speed;
+    }
+
+    let (Some(network_id), Some(observed_casts)) = (network_id, observed_casts) else {
+        return effective_speed;
+    };
+    if observed_casts
+        .0
+        .get(&network_id.0)
+        .is_some_and(|cast| cast.spell_id == SwiftSpell::ID)
+    {
+        return effective_speed * SwiftSpell::SPEED_MULTIPLIER;
+    }
+
+    effective_speed
 }
 
 fn format_value(value: f32) -> String {

@@ -1,14 +1,8 @@
-//! Visual client-side per la spell Fireball.
+//! Client-side visual for the Fireball spell.
 //!
-//! Il dispatcher in `plugins::spells::effects` chiama `spawn` quando arriva un
-//! `SpellVisualEffect` con l'id di Fireball. L'animazione è registrata nello
-//! stesso punto.
-//!
-//! A differenza di un'interpolazione `start -> end`, la fireball è modellata
-//! come proiettile a velocità costante: continua a viaggiare nella direzione
-//! di lancio finché non scade il `LIFETIME_SECONDS`. Questo evita il despawn
-//! immediato appena raggiunge la posizione di impatto e le permette di
-//! attraversare la scena per minuti interi.
+//! The server resolves the first hit point, then replicates a visual effect with
+//! a start and end position. The client only animates that authoritative segment
+//! so the projectile disappears exactly where the gameplay hit happened.
 
 use bevy::color::Color;
 use bevy::prelude::*;
@@ -16,15 +10,11 @@ use bevy::prelude::*;
 use crate::network::protocol::SpellVisualEffect;
 use crate::plugins::spells::SpellVisual;
 
-/// Tempo totale di vita del proiettile visivo.
-///
-/// Tenuto volutamente lungo (20 minuti) per evitare che la fireball sparisca
-/// poco dopo il cast: il danno viene applicato istantaneamente lato server,
-/// ma la rappresentazione visiva deve persistere come un proiettile in volo.
-pub const LIFETIME_SECONDS: f32 = 20.0 * 60.0;
+/// Safety cap for orphaned visuals if a malformed effect has a zero-length path.
+pub const LIFETIME_SECONDS: f32 = 2.0;
 
-/// Velocità di volo in unità mondo al secondo.
-pub const SPEED: f32 = 8.0;
+/// Flight speed in world units per second.
+pub const SPEED: f32 = 32.0;
 
 const SIZE: f32 = 0.28;
 const SPAWN_HEIGHT_OFFSET: f32 = 0.8;
@@ -32,13 +22,19 @@ const SPAWN_HEIGHT_OFFSET: f32 = 0.8;
 #[derive(Component)]
 pub struct FireballVisual {
     velocity: Vec3,
+    target: Vec3,
     elapsed_seconds: f32,
 }
 
-/// Spawn della rappresentazione visiva di Fireball.
+/// Builds a short-lived local projectile from the server-resolved impact path.
 ///
-/// La direzione di volo è derivata dal vettore `start -> end` fornito dal
-/// server; il proiettile poi continua dritto per `LIFETIME_SECONDS`.
+/// The visual has no authority over damage. It only mirrors the segment chosen
+/// by the server so the client sees the ball stop on the first entity hit.
+///
+/// # Example
+/// ```rust,ignore
+/// spawn(&mut commands, &mut meshes, &mut materials, &effect);
+/// ```
 pub fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -53,9 +49,8 @@ pub fn spawn(
     });
 
     let start = effect.start + Vec3::Y * SPAWN_HEIGHT_OFFSET;
-    let direction = (effect.end - effect.start)
-        .try_normalize()
-        .unwrap_or(Vec3::Z);
+    let target = effect.end + Vec3::Y * SPAWN_HEIGHT_OFFSET;
+    let direction = (target - start).try_normalize().unwrap_or(Vec3::Z);
 
     commands.spawn((
         Mesh3d(mesh),
@@ -64,13 +59,21 @@ pub fn spawn(
         SpellVisual,
         FireballVisual {
             velocity: direction * SPEED,
+            target,
             elapsed_seconds: 0.0,
         },
     ));
 }
 
-/// Anima le entità `FireballVisual` muovendole in linea retta e le despawna
-/// solo allo scadere del lifetime.
+/// Advances each fireball until it reaches the authoritative end point.
+///
+/// The fallback lifetime avoids leaked entities if a bad network payload creates
+/// a degenerate path. This system runs on the Bevy main world only.
+///
+/// # Example
+/// ```rust,ignore
+/// app.add_systems(Update, animate);
+/// ```
 pub fn animate(
     time: Res<Time>,
     mut commands: Commands,
@@ -79,10 +82,16 @@ pub fn animate(
     let delta = time.delta().as_secs_f32();
     for (entity, mut transform, mut visual) in visuals.iter_mut() {
         visual.elapsed_seconds += delta;
-        transform.translation += visual.velocity * delta;
+        let remaining = visual.target - transform.translation;
+        let remaining_distance = remaining.length();
+        let step = visual.velocity.length() * delta;
 
-        if visual.elapsed_seconds >= LIFETIME_SECONDS {
+        if step >= remaining_distance || visual.elapsed_seconds >= LIFETIME_SECONDS {
+            transform.translation = visual.target;
             commands.entity(entity).despawn();
+            continue;
         }
+
+        transform.translation += visual.velocity * delta;
     }
 }

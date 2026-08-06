@@ -2,9 +2,8 @@
 //!
 //! Channeling self-buff: mentre il caster tiene premuto F riceve un modifier
 //! `Speed * 1.20` che viene refreshato ogni `TICK_INTERVAL_SECONDS`. Il
-//! modifier ha durata `MODIFIER_DURATION_SECONDS` (> tick) così non gap mai;
-//! quando il channeling termina (release / re-press / morte) il modifier
-//! scade naturalmente entro `MODIFIER_DURATION_SECONDS`.
+//! channel dura al massimo `CHANNEL_DURATION_SECONDS`; rilasciare F lo interrompe
+//! prima. Il modifier scade naturalmente poco dopo l'ultimo tick.
 
 use crate::plugins::spells::{
     ChannelMovementPolicy, ModifierEffect, ModifierKind, Spell, SpellCastContext, SpellConfig,
@@ -20,6 +19,7 @@ impl SwiftSpell {
     pub const COOLDOWN_SECONDS: f32 = 0.0;
     pub const SPEED_MULTIPLIER: f32 = 1.20;
     pub const TICK_INTERVAL_SECONDS: f32 = 0.25;
+    pub const CHANNEL_DURATION_SECONDS: f32 = 4.0;
     pub const MODIFIER_DURATION_SECONDS: f32 = 0.5;
 }
 
@@ -40,6 +40,7 @@ impl Spell for SwiftSpell {
             TargetingMode::SelfCentered,
         )
         .with_channel(ChannelMovementPolicy::AllowMovement)
+        .with_channel_duration(Self::CHANNEL_DURATION_SECONDS)
     }
 
     fn channel_tick_interval_seconds(&self) -> f32 {

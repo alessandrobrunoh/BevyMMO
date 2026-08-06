@@ -17,6 +17,7 @@ use crate::network::protocol::NetworkEntityId;
 use crate::network::protocol::{Inputs, LookDirection, Position};
 use crate::plugins::entity::components::EntityState;
 use crate::plugins::entity::player::Player;
+use crate::plugins::spells::{CastKind, CastProgress};
 use crate::stats::components::MovementStats;
 use crate::stats::events::StatField;
 use crate::stats::modifiers::ActiveStatModifiers;
@@ -134,12 +135,18 @@ fn server_move_to_target(
             &mut LookDirection,
             &mut EntityState,
             Option<&ActiveStatModifiers>,
+            Option<&CastProgress>,
         ),
         With<Player>,
     >,
 ) {
-    for (position, input, stats, look_direction, state, modifiers) in &mut players {
-        let effective_speed = effective_speed(stats.speed, modifiers);
+    for (position, input, stats, look_direction, mut state, modifiers, cast) in &mut players {
+        if should_block_movement_for_cast(cast) {
+            *state = EntityState::Idle;
+            continue;
+        }
+
+        let effective_speed = effective_movement_speed(stats.speed, modifiers);
         move_towards_target(position, look_direction, &input.0, effective_speed, state);
     }
 }
@@ -179,11 +186,42 @@ fn predict_move_to_target(
 
 /// Calcola la velocità effettiva applicando tutti i modifier `Speed` attivi
 /// sull'entità. Senza modifier, ritorna il valore base invariato.
-fn effective_speed(base_speed: f32, modifiers: Option<&ActiveStatModifiers>) -> f32 {
+/// Calculates movement speed after active stat modifiers.
+///
+/// This is shared by movement and the stats UI so the value displayed to the
+/// player matches the speed used by gameplay.
+///
+/// # Example
+/// ```rust,ignore
+/// let speed = effective_movement_speed(base_speed, modifiers);
+/// ```
+pub fn effective_movement_speed(base_speed: f32, modifiers: Option<&ActiveStatModifiers>) -> f32 {
     let Some(active) = modifiers else {
         return base_speed;
     };
     effective_value(StatField::Speed, base_speed, &active.modifiers)
+}
+
+/// Returns true when a cast state must freeze point-and-click movement.
+///
+/// CastTime always blocks movement. Channeling blocks only for policies that
+/// interrupt on movement; Swift uses `AllowMovement`, so it keeps running.
+///
+/// # Example
+/// ```rust,ignore
+/// if should_block_movement_for_cast(cast) { return; }
+/// ```
+fn should_block_movement_for_cast(cast: Option<&CastProgress>) -> bool {
+    let Some(cast) = cast else {
+        return false;
+    };
+    match cast.kind {
+        CastKind::CastTime => true,
+        CastKind::Channeling => {
+            cast.channel_movement == crate::plugins::spells::ChannelMovementPolicy::InterruptOnMove
+        }
+        CastKind::Instant => false,
+    }
 }
 
 #[cfg(feature = "client")]
@@ -203,7 +241,7 @@ fn predicted_effective_speed(
     network_id: &NetworkEntityId,
     observed_casts: Option<&ObservedCasts>,
 ) -> f32 {
-    let server_speed = effective_speed(base_speed, modifiers);
+    let server_speed = effective_movement_speed(base_speed, modifiers);
     let Some(observed_casts) = observed_casts else {
         return server_speed;
     };

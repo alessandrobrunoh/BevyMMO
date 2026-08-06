@@ -175,11 +175,16 @@ pub fn process_cast_requests(
                     _ => 0.0,
                 };
 
+                let required_seconds = match cast_kind {
+                    CastKind::Channeling => spell_config.channel_duration_seconds.unwrap_or(0.0),
+                    _ => spell_config.cast_time_seconds,
+                };
+
                 commands.entity(request.caster).insert(CastProgress {
                     spell_id: request.spell_id.clone(),
                     kind: cast_kind,
                     elapsed_seconds: 0.0,
-                    required_seconds: spell_config.cast_time_seconds,
+                    required_seconds,
                     channel_movement: spell_config.channel_movement,
                     last_position: caster_position,
                     target_position: request.target_position,
@@ -335,6 +340,18 @@ pub fn advance_cast_progress(
                         &mut local_visuals,
                         server,
                     );
+                }
+
+                if cast.required_seconds > 0.0 && cast.elapsed_seconds >= cast.required_seconds {
+                    if let Some(mut cd) = cooldowns {
+                        if let Some(spell) = registry.get(&cast.spell_id) {
+                            cd.start_cooldown(
+                                cast.spell_id.clone(),
+                                spell.config().cooldown_seconds,
+                            );
+                        }
+                    }
+                    ended.push((caster_entity, cast.spell_id.clone(), true));
                 }
             }
             CastKind::Instant => {
@@ -505,10 +522,7 @@ pub fn replicate_cast_progress(
             CastKind::CastTime => 0,
             CastKind::Channeling => 1,
         };
-        let required = match cast.kind {
-            CastKind::Channeling => 0.0,
-            _ => cast.required_seconds,
-        };
+        let required = cast.required_seconds;
         let progress = SpellCastProgress {
             caster_network_id: network_id.0,
             spell_id: cast.spell_id.as_str().to_string(),

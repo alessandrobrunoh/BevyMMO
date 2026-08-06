@@ -39,8 +39,6 @@ pub fn client_effect_systems(app: &mut App) {
             crate::spells::fireball::visual::animate,
             crate::spells::healing_circle::visual::animate,
             crate::spells::meteorite::visual::animate,
-            crate::spells::swift::visual::sync_channel_aura,
-            crate::spells::swift::visual::animate,
         )
             .chain()
             .run_if(has_client)

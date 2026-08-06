@@ -5,11 +5,16 @@
 # =============================================================================
 FROM rust:1-slim-bookworm AS deps
 
-# Installa le dipendenze di sistema necessarie per compilare (OpenSSL, libpq, ecc.)
+# Installa le dipendenze di sistema necessarie per compilare.
+# Note: bevy 0.19 abilita wayland/x11/udev nelle sue default features
+# quindi le rispettive librerie di sviluppo servono anche nel build server-only.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     libpq-dev \
+    libwayland-dev \
+    libudev-dev \
+    libxkbcommon-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build

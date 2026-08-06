@@ -17,10 +17,7 @@ pub struct PlayerStatsPlugin;
 impl Plugin for PlayerStatsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_player_stats);
-        app.add_systems(
-            Update,
-            update_player_stats.run_if(crate::ui::systems::in_gameplay),
-        );
+        app.add_systems(Update, update_player_stats);
     }
 }
 
@@ -28,7 +25,7 @@ impl Plugin for PlayerStatsPlugin {
 mod tests {
     use super::*;
     use crate::game_state::{GameScreen, Screen};
-    use crate::plugins::entity::components::Stats;
+    use crate::stats::components::{CombatStats, MovementStats, VitalStats};
     use crate::ui::theme::UiTheme;
     use lightyear::prelude::Controlled;
 
@@ -60,7 +57,17 @@ mod tests {
         let mut app = test_app();
         app.world_mut().spawn((
             Controlled,
-            Stats::with_combat_values(0.15, 10.0, 100.0, 80.0, 4.0, 100.0),
+            MovementStats { speed: 0.15 },
+            CombatStats {
+                attack_power: 10.0,
+                armor: 100.0,
+            },
+            VitalStats {
+                current_health: 100.0,
+                max_health: 100.0,
+                max_mana: 80.0,
+                mana_regeneration: 4.0,
+            },
         ));
         app.update();
 
@@ -73,7 +80,10 @@ mod tests {
         assert_eq!(root.position_type, PositionType::Absolute);
         assert_eq!(root.right, Val::Px(16.0));
         assert_eq!(root.top, Val::Px(16.0));
-        assert_eq!(panel_text(&mut app), "Max HP: 100\nMax Mana: 80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)");
+        assert_eq!(
+            panel_text(&mut app),
+            "Max HP: 100\nMax Mana: 80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)"
+        );
     }
 
     #[test]
@@ -83,12 +93,26 @@ mod tests {
             .world_mut()
             .spawn((
                 Controlled,
-                Stats::with_combat_values(0.15, 10.0, 100.0, 80.0, 4.0, 0.0),
+                MovementStats { speed: 0.15 },
+                CombatStats {
+                    attack_power: 10.0,
+                    armor: 0.0,
+                },
+                VitalStats {
+                    current_health: 100.0,
+                    max_health: 100.0,
+                    max_mana: 80.0,
+                    mana_regeneration: 4.0,
+                },
             ))
             .id();
         app.update();
 
-        app.world_mut().entity_mut(player).get_mut::<Stats>().unwrap().max_mana = 120.0;
+        app.world_mut()
+            .entity_mut(player)
+            .get_mut::<VitalStats>()
+            .unwrap()
+            .max_mana = 120.0;
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::MainMenu;
         app.update();
 
@@ -101,6 +125,9 @@ mod tests {
 
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
         app.update();
-        assert_eq!(panel_text(&mut app), "Max HP: 100\nMax Mana: 120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)");
+        assert_eq!(
+            panel_text(&mut app),
+            "Max HP: 100\nMax Mana: 120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)"
+        );
     }
 }

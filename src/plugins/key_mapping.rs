@@ -4,6 +4,7 @@ use bevy::prelude::*;
 pub struct KeyBindings {
     pub show_scoreboard: KeyCode,
     pub toggle_pause: KeyCode,
+    pub cast_fireball: KeyCode,
 }
 
 impl Default for KeyBindings {
@@ -11,6 +12,7 @@ impl Default for KeyBindings {
         Self {
             show_scoreboard: KeyCode::Tab,
             toggle_pause: KeyCode::Escape,
+            cast_fireball: KeyCode::KeyQ,
         }
     }
 }

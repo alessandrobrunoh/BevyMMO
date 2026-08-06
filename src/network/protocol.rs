@@ -3,8 +3,8 @@ use bevy::prelude::*;
 use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::plugins::entity::components::{EntityState, GameEntity, Health, Stats};
-use crate::plugins::entity::enemy::components::EnemyAttack;
+use crate::plugins::entity::components::{EntityKind, EntityState, GameEntity};
+use crate::stats::components::{CombatStats, MovementStats, VitalStats};
 
 // Canali
 pub struct Channel1;
@@ -27,6 +27,16 @@ impl Ease for Position {
         FunctionCurve::new(Interval::UNIT, move |t| {
             Position(Vec3::lerp(start.0, end.0, t))
         })
+    }
+}
+
+/// Direzione orizzontale in cui l'entità sta guardando.
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Reflect, Deref, DerefMut)]
+pub struct LookDirection(pub Vec3);
+
+impl Default for LookDirection {
+    fn default() -> Self {
+        Self(Vec3::Z)
     }
 }
 
@@ -63,6 +73,17 @@ pub struct JoinRequest {
     pub player_name: String,
 }
 
+/// Comando client -> server per richiedere il cast di una spell.
+///
+/// Il client invia solo dati intenzionali e non autorevoli. Il server risolve
+/// l'entità caster dal peer connesso, valida spellbook/cooldown e applica gli
+/// effetti tramite il sistema spell server-authoritative.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct SpellCastCommand {
+    pub spell_id: String,
+    pub target_position: Option<Vec3>,
+}
+
 // Protocol Plugin
 pub struct ProtocolPlugin;
 
@@ -88,6 +109,9 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<JoinRequest>()
             .add_direction(NetworkDirection::ClientToServer);
 
+        app.register_message::<SpellCastCommand>()
+            .add_direction(NetworkDirection::ClientToServer);
+
         // Comandi di input
         app.add_plugins(input::native::InputPlugin::<Inputs>::default());
 
@@ -101,15 +125,19 @@ impl Plugin for ProtocolPlugin {
 
         app.component::<EntityColor>().replicate();
 
-        app.component::<Stats>().replicate().predict();
+        app.component::<LookDirection>().replicate().predict();
 
-        app.component::<EnemyAttack>().replicate();
+        app.component::<MovementStats>().replicate().predict();
+
+        app.component::<CombatStats>().replicate().predict();
+
+        app.component::<VitalStats>().replicate().predict();
 
         app.component::<EntityState>().replicate().predict();
 
         app.component::<GameEntity>().replicate();
 
-        app.component::<Health>().replicate().predict();
+        app.component::<EntityKind>().replicate();
 
         app.component::<crate::plugins::entity::components::PlayerName>()
             .replicate();

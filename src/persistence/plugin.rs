@@ -3,7 +3,7 @@
 use std::env;
 
 use bevy::prelude::*;
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 use tokio::runtime::Runtime;
 
@@ -43,5 +43,50 @@ async fn connect_and_migrate(database_url: &str) -> DatabaseConnection {
         .await
         .expect("failed to apply PostgreSQL migrations");
 
+    ensure_player_stats_table(&database)
+        .await
+        .expect("failed to ensure PostgreSQL player_stats table");
+
     database
+}
+
+async fn ensure_player_stats_table(database: &DatabaseConnection) -> Result<(), sea_orm::DbErr> {
+    database
+        .execute_unprepared(
+            r#"
+            CREATE TABLE IF NOT EXISTS player_stats (
+                player_id UUID PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+                current_health REAL NOT NULL,
+                max_health REAL NOT NULL,
+                max_mana REAL NOT NULL,
+                mana_regeneration REAL NOT NULL,
+                armor REAL NOT NULL,
+                movement_speed REAL NOT NULL,
+                attack_power REAL NOT NULL
+            )
+            "#,
+        )
+        .await?;
+
+    database
+        .execute_unprepared(
+            r#"
+            INSERT INTO player_stats (
+                player_id,
+                current_health,
+                max_health,
+                max_mana,
+                mana_regeneration,
+                armor,
+                movement_speed,
+                attack_power
+            )
+            SELECT id, 100.0, 100.0, 100.0, 5.0, 25.0, 0.15, 10.0
+            FROM players
+            ON CONFLICT (player_id) DO NOTHING
+            "#,
+        )
+        .await?;
+
+    Ok(())
 }

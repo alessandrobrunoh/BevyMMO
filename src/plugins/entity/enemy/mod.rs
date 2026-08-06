@@ -13,11 +13,7 @@ impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             FixedUpdate,
-            (
-                systems::enemy_chase,
-                systems::initialize_attack_cooldowns,
-                systems::enemy_area_attack,
-            )
+            (systems::enemy_chase, systems::enemy_auto_cast_attack)
                 .chain()
                 .run_if(crate::network::mode::has_server),
         );

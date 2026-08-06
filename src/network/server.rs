@@ -13,13 +13,16 @@ use uuid::Uuid;
 use crate::game_state::validate_player_name;
 use crate::network::protocol::*;
 use crate::persistence::{
-    normalize_name, PersistenceError, PersistenceRuntime, PlayerRecord, PlayerStore,
+    normalize_name, PersistedPlayerSnapshot, PersistenceError, PersistenceRuntime, PlayerStore,
 };
 use crate::plugins::entity::components::PlayerName;
 use crate::plugins::entity::definition::EntityDefinition;
+use crate::plugins::entity::dummy::components::Dummy;
 use crate::plugins::entity::enemy::components::Enemy;
 use crate::plugins::entity::player::components::Player;
 use crate::plugins::entity::spawn::{spawn_entity, GameEntityBundle};
+use crate::plugins::spells::{SpellCastRequest, SpellId};
+use crate::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 
 /// Impostazioni di connessione del server, conservate come risorsa.
 /// Pubblica perché usata come marker `run_if` dai sistemi che devono girare
@@ -45,7 +48,7 @@ pub struct DbPlayerId(pub Uuid);
 struct JoinLoadResult {
     client_entity: Entity,
     peer_id: PeerId,
-    result: Result<PlayerRecord, PersistenceError>,
+    result: Result<PersistedPlayerSnapshot, PersistenceError>,
 }
 
 /// Canale tra task Tokio e sistemi ECS. Il receiver è protetto perché `std::sync::mpsc::Receiver`
@@ -86,7 +89,10 @@ impl Plugin for ServerPlugins {
             1.0 / 60.0,
         )));
 
-        app.add_systems(Startup, (start_server, spawn_demo_enemy).chain());
+        app.add_systems(
+            Startup,
+            (start_server, spawn_demo_enemy, spawn_demo_dummy).chain(),
+        );
 
         app.add_observer(handle_new_client);
         app.add_observer(handle_connected_client);
@@ -94,7 +100,13 @@ impl Plugin for ServerPlugins {
 
         app.add_systems(
             Update,
-            (handle_join_request, finish_pending_joins, send_messages).chain(),
+            (
+                handle_join_request,
+                finish_pending_joins,
+                handle_spell_cast_commands,
+                send_messages,
+            )
+                .chain(),
         );
     }
 }
@@ -169,7 +181,7 @@ fn handle_join_request(
         commands.entity(client_entity).insert(PendingJoin);
         runtime.0.spawn(async move {
             let result = repository
-                .find_or_create(&normalized_name, &display_name)
+                .find_or_create_snapshot(&normalized_name, &display_name)
                 .await;
             let _ = sender.send(JoinLoadResult {
                 client_entity,
@@ -203,7 +215,7 @@ fn finish_pending_joins(
             continue;
         }
 
-        let record = match completed_join.result {
+        let snapshot = match completed_join.result {
             Ok(record) => record,
             Err(error) => {
                 error!(
@@ -217,10 +229,10 @@ fn finish_pending_joins(
             }
         };
 
-        if active_players.iter().any(|id| id.0 == record.id) {
+        if active_players.iter().any(|id| id.0 == snapshot.player.id) {
             warn!(
                 "Rejecting duplicate active player name {:?}",
-                record.display_name
+                snapshot.player.display_name
             );
             commands.trigger(Disconnect {
                 entity: completed_join.client_entity,
@@ -231,21 +243,25 @@ fn finish_pending_joins(
         let peer_bits = completed_join.peer_id.to_bits();
         let hue = ((peer_bits.wrapping_mul(137).wrapping_add(180) % 360) as f32) / 360.0;
         let color = Color::hsl(hue, 0.8, 0.5);
-        let position = Position(Vec3::new(record.pos_x, record.pos_y, record.pos_z));
+        let position = Position(Vec3::new(
+            snapshot.player.pos_x,
+            snapshot.player.pos_y,
+            snapshot.player.pos_z,
+        ));
 
         let player = commands
             .spawn((
                 GameEntityBundle::new(
                     position,
                     EntityColor(color),
-                    Player::health(),
-                    Player::stats(),
+                    snapshot.stats,
+                    crate::plugins::entity::components::EntityKind::Player,
                     NetworkTarget::All,
                 ),
-                PlayerName(record.display_name),
+                PlayerName(snapshot.player.display_name),
                 Player::bundle(),
                 PlayerId(completed_join.peer_id),
-                DbPlayerId(record.id),
+                DbPlayerId(snapshot.player.id),
                 PredictionTarget::to_clients(NetworkTarget::Single(completed_join.peer_id)),
                 InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(
                     completed_join.peer_id,
@@ -273,7 +289,18 @@ fn finish_pending_joins(
 fn handle_disconnected_client(
     trigger: On<Add, Disconnected>,
     remote_ids: Query<&RemoteId>,
-    players: Query<(Entity, &PlayerId, &DbPlayerId, &Position), With<Player>>,
+    players: Query<
+        (
+            Entity,
+            &PlayerId,
+            &DbPlayerId,
+            &Position,
+            &MovementStats,
+            &CombatStats,
+            &VitalStats,
+        ),
+        With<Player>,
+    >,
     store: Res<PlayerStore>,
     runtime: Res<PersistenceRuntime>,
     mut commands: Commands,
@@ -282,9 +309,9 @@ fn handle_disconnected_client(
         return;
     };
 
-    let Some((player_entity, _, database_id, position)) = players
+    let Some((player_entity, _, database_id, position, movement, combat, vital)) = players
         .iter()
-        .find(|(_, player_id, _, _)| player_id.0 == remote_id.0)
+        .find(|(_, player_id, _, _, _, _, _)| player_id.0 == remote_id.0)
     else {
         commands
             .entity(trigger.entity)
@@ -296,9 +323,10 @@ fn handle_disconnected_client(
     let repository = store.0.clone();
     let database_id = database_id.0;
     let position = position.0;
+    let stats = StatsBundleData::from_components(movement, combat, vital);
     runtime.0.spawn(async move {
         if let Err(error) = repository
-            .save_position(database_id, position.x, position.y, position.z)
+            .save_snapshot(database_id, position.x, position.y, position.z, &stats)
             .await
         {
             error!("Failed to save player position {database_id}: {error}");
@@ -313,12 +341,47 @@ fn handle_disconnected_client(
 }
 
 /// Spawn di un enemy demo all'avvio del server.
-/// `spawn_entity::<Enemy>()` applica automaticamente `GameEntity`, `Health`,
+/// `spawn_entity::<Enemy>()` applica automaticamente `GameEntity`, statistiche,
 /// `Position`, `EntityColor`, il bundle di `Enemy` e `Replicate`. La posizione
 /// e il colore di default sono dichiarati in `<Enemy as EntityDefinition>`.
 fn spawn_demo_enemy(mut commands: Commands) {
     let enemy = spawn_entity::<Enemy>(&mut commands);
     info!("Spawned demo enemy {:?}", enemy);
+}
+
+fn spawn_demo_dummy(mut commands: Commands) {
+    let dummy = spawn_entity::<Dummy>(&mut commands);
+    info!("Spawned demo dummy {:?}", dummy);
+}
+
+/// Traduce i comandi spell arrivati dal network in richieste ECS interne.
+///
+/// Il client non può indicare direttamente l'entità caster: il server la risolve
+/// dal peer connesso e dal `PlayerId` del player già joinato.
+fn handle_spell_cast_commands(
+    mut receivers: Query<
+        (&mut MessageReceiver<SpellCastCommand>, &RemoteId),
+        (With<Connected>, With<Joined>),
+    >,
+    players: Query<(Entity, &PlayerId), With<Player>>,
+    mut spell_cast_requests: MessageWriter<SpellCastRequest>,
+) {
+    for (mut receiver, remote_id) in receivers.iter_mut() {
+        let Some((player_entity, _)) = players
+            .iter()
+            .find(|(_, player_id)| player_id.0 == remote_id.0)
+        else {
+            continue;
+        };
+
+        for command in receiver.receive() {
+            spell_cast_requests.write(SpellCastRequest {
+                caster: player_entity,
+                spell_id: SpellId::new(command.spell_id.clone()),
+                target_position: command.target_position,
+            });
+        }
+    }
 }
 
 // Invia messaggi ai client.

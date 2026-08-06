@@ -12,6 +12,8 @@ pub mod player_stats;
 pub mod scoreboard;
 pub mod settings;
 pub mod systems;
+pub mod target_frame;
+pub mod target_indicator;
 pub mod text;
 pub mod text_input;
 pub mod theme;

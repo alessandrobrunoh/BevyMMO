@@ -8,9 +8,10 @@ use lightyear::prelude::input::native::{ActionState, InputMarker};
 use lightyear::prelude::*;
 
 use crate::network::mode;
-use crate::network::protocol::{Inputs, Position};
-use crate::plugins::entity::components::{EntityState, Stats};
+use crate::network::protocol::{Inputs, LookDirection, Position};
+use crate::plugins::entity::components::EntityState;
 use crate::plugins::entity::player::Player;
+use crate::stats::components::MovementStats;
 
 const ARRIVAL_DISTANCE: f32 = 0.05;
 const INDICATOR_DURATION: f32 = 0.55;
@@ -110,14 +111,15 @@ fn server_move_to_target(
         (
             &mut Position,
             &ActionState<Inputs>,
-            &Stats,
+            &MovementStats,
+            &mut LookDirection,
             &mut EntityState,
         ),
         With<Player>,
     >,
 ) {
-    for (position, input, stats, state) in &mut players {
-        move_towards_target(position, &input.0, stats.speed, state);
+    for (position, input, stats, look_direction, state) in &mut players {
+        move_towards_target(position, look_direction, &input.0, stats.speed, state);
     }
 }
 
@@ -128,7 +130,8 @@ fn predict_move_to_target(
         (
             &mut Position,
             &ActionState<Inputs>,
-            &Stats,
+            &MovementStats,
+            &mut LookDirection,
             &mut EntityState,
         ),
         (With<Player>, With<Predicted>),
@@ -138,13 +141,14 @@ fn predict_move_to_target(
         return;
     }
 
-    for (position, input, stats, state) in &mut players {
-        move_towards_target(position, &input.0, stats.speed, state);
+    for (position, input, stats, look_direction, state) in &mut players {
+        move_towards_target(position, look_direction, &input.0, stats.speed, state);
     }
 }
 
 fn move_towards_target(
     mut position: Mut<Position>,
+    mut look_direction: Mut<LookDirection>,
     input: &Inputs,
     speed: f32,
     mut state: Mut<EntityState>,
@@ -160,6 +164,9 @@ fn move_towards_target(
 
     let offset = *target - position.0;
     let distance = offset.length();
+    if distance > 0.001 {
+        look_direction.0 = (offset / distance).normalize_or_zero();
+    }
     if distance <= ARRIVAL_DISTANCE {
         position.0 = *target;
         *state = EntityState::Idle;

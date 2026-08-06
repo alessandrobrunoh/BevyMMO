@@ -1,15 +1,16 @@
 //! Definizione di spawn del Player.
 //!
 //! `bundle()` contiene solo il marker `Player`. Le componenti generiche
-//! (`Position`, `EntityColor`, `Health`) sono gestite centralmente.
+//! (`Position`, `EntityColor`, statistiche) sono gestite centralmente.
 //! Il player ha comunque network custom (prediction/interpolation
 //! dipendenti dall'owner) gestita in `network::server::handle_connected_client`.
 
 use bevy::prelude::*;
 
 use super::components::Player;
-use crate::plugins::entity::components::{Health, Stats};
 use crate::plugins::entity::definition::EntityDefinition;
+use crate::plugins::spells::{SpellCooldowns, SpellId, Spellbook};
+use crate::stats::components::StatsBundleData;
 
 impl EntityDefinition for Player {
     fn name() -> &'static str {
@@ -17,18 +18,22 @@ impl EntityDefinition for Player {
     }
 
     fn bundle() -> impl Bundle {
-        (Player,)
+        (
+            Player,
+            Spellbook::from_ids([SpellId::new("attack"), SpellId::new("fireball")]),
+            SpellCooldowns::default(),
+        )
     }
 
     fn initial_color() -> Color {
         Color::srgb(0.2, 0.8, 0.2)
     }
 
-    fn health() -> Health {
-        Health::new(100.0)
+    fn stats() -> StatsBundleData {
+        crate::stats::defaults::player_defaults()
     }
 
-    fn stats() -> Stats {
-        Stats::with_combat_values(0.15, 10.0, 100.0, 100.0, 5.0, 25.0)
+    fn entity_kind() -> crate::plugins::entity::components::EntityKind {
+        crate::plugins::entity::components::EntityKind::Player
     }
 }

@@ -55,9 +55,22 @@ fn spawn_entity_meshes(
 }
 
 /// Sync Transform della mesh da `Position` (replicata via lightyear).
-fn sync_transforms(mut entities: Query<(&Position, &mut Transform), Changed<Position>>) {
-    for (position, mut transform) in entities.iter_mut() {
+fn sync_transforms(
+    mut entities: Query<
+        (&Position, Option<&LookDirection>, &mut Transform),
+        Or<(Changed<Position>, Changed<LookDirection>)>,
+    >,
+) {
+    for (position, look_direction, mut transform) in entities.iter_mut() {
         transform.translation = position.0;
+        if let Some(look_direction) = look_direction {
+            let direction = Vec3::new(look_direction.x, 0.0, look_direction.z);
+            if direction.length_squared() > 0.001 {
+                transform.rotation = Transform::default()
+                    .looking_to(direction.normalize(), Vec3::Y)
+                    .rotation;
+            }
+        }
     }
 }
 

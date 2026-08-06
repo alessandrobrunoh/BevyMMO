@@ -12,9 +12,11 @@ mod network;
 mod persistence;
 mod plugins;
 mod scenes;
+mod spells;
+mod stats;
 mod ui;
 
-const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5050);
+const SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5051);
 const CLIENT_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
 const FIXED_TIMESTEP: f64 = 60.0;
 const LOG_FILTER: &str = "warn,bevy_lightyear_game=debug,lightyear=info";
@@ -125,8 +127,11 @@ fn build_app(config: &AppConfig) -> App {
     }
 
     app.add_plugins(network::protocol::ProtocolPlugin);
+    app.add_plugins(stats::StatsPlugin);
     app.add_plugins(plugins::entity::EntityPlugin);
     app.add_plugins(plugins::player_movement::PlayerMovementPlugin);
+    app.add_plugins(plugins::targeting::TargetingPlugin);
+    app.add_plugins(plugins::spells::SpellsPlugin);
 
     if config.mode.has_client() {
         app.add_plugins(plugins::key_mapping::KeyMappingPlugin);

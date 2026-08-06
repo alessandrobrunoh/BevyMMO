@@ -5,29 +5,30 @@
 
 use bevy::prelude::*;
 
-use super::components::EnemyAttack;
+use super::components::Enemy;
 use crate::game_state::{GameScreen, Screen};
-use crate::network::protocol::Position;
 use crate::network::mode::has_client;
+use crate::network::protocol::Position;
 
 #[derive(Component)]
-struct EnemyAttackIndicator;
+struct AttackIndicator;
 
 pub fn spawn_attack_indicators(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    enemies: Query<(Entity, &EnemyAttack, Option<&Children>), With<Position>>,
-    indicators: Query<(), With<EnemyAttackIndicator>>,
+    enemies: Query<(Entity, Option<&Children>), (With<Position>, With<Enemy>)>,
+    indicators: Query<(), With<AttackIndicator>>,
 ) {
-    for (enemy, attack, children) in enemies.iter() {
+    let radius: f32 = 3.0; // Hardcoded radius matching the Attack spell
+    for (enemy, children) in enemies.iter() {
         let already_spawned = children
             .is_some_and(|children| children.iter().any(|child| indicators.get(child).is_ok()));
         if already_spawned {
             continue;
         }
 
-        let mesh = meshes.add(Cylinder::new(attack.radius.max(0.0), 0.04));
+        let mesh = meshes.add(Cylinder::new(radius.max(0.0), 0.04));
         let material = materials.add(StandardMaterial {
             base_color: Color::srgba(1.0, 0.0, 0.0, 0.3),
             alpha_mode: AlphaMode::Blend,
@@ -40,7 +41,7 @@ pub fn spawn_attack_indicators(
                 Mesh3d(mesh),
                 MeshMaterial3d(material),
                 Transform::from_xyz(0.0, 0.03, 0.0),
-                EnemyAttackIndicator,
+                AttackIndicator,
             ));
         });
     }
@@ -48,7 +49,7 @@ pub fn spawn_attack_indicators(
 
 pub fn cleanup_attack_indicators(
     mut commands: Commands,
-    indicators: Query<Entity, With<EnemyAttackIndicator>>,
+    indicators: Query<Entity, With<AttackIndicator>>,
 ) {
     for indicator in indicators.iter() {
         commands.entity(indicator).despawn();
@@ -92,16 +93,17 @@ mod tests {
         app.init_resource::<Assets<StandardMaterial>>();
         app.add_systems(Update, spawn_attack_indicators);
 
-        let enemy = app
-            .world_mut()
-            .spawn((Position(Vec3::ZERO), EnemyAttack::default()))
-            .id();
+        let enemy = app.world_mut().spawn((Position(Vec3::ZERO), Enemy)).id();
         app.update();
         app.update();
 
-        let children = app.world().entity(enemy).get::<Children>().expect("indicator child");
+        let children = app
+            .world()
+            .entity(enemy)
+            .get::<Children>()
+            .expect("indicator child");
         assert_eq!(children.len(), 1);
         let indicator = children[0];
-        assert!(app.world().entity(indicator).contains::<EnemyAttackIndicator>());
+        assert!(app.world().entity(indicator).contains::<AttackIndicator>());
     }
 }

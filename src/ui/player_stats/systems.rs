@@ -4,7 +4,7 @@ use lightyear::prelude::Controlled;
 use crate::game_state::{GameScreen, Screen};
 use crate::network::client::ClientConnectionConfig;
 use crate::network::protocol::PlayerId;
-use crate::plugins::entity::components::Stats;
+use crate::stats::components::{CombatStats, VitalStats};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 
@@ -40,7 +40,12 @@ pub fn setup_player_stats(mut commands: Commands, theme: Res<UiTheme>) {
 pub fn update_player_stats(
     screen: Res<GameScreen>,
     client_config: Option<Res<ClientConnectionConfig>>,
-    player_query: Query<(&Stats, Option<&PlayerId>, Has<Controlled>)>,
+    player_query: Query<(
+        &CombatStats,
+        &VitalStats,
+        Option<&PlayerId>,
+        Has<Controlled>,
+    )>,
     mut root_query: Query<&mut Node, With<PlayerStatsUi>>,
     mut text_query: Query<&mut Text, With<PlayerStatsText>>,
 ) {
@@ -55,17 +60,16 @@ pub fn update_player_stats(
 
     root.display = Display::Flex;
     let local_client_id = client_config.map(|config| config.client_id);
-    let Some(stats) = player_query
+    let Some((combat, vital, _, _)) = player_query
         .iter()
-        .find(|(_, _, controlled)| *controlled)
+        .find(|(_, _, _, controlled)| *controlled)
         .or_else(|| {
-            player_query.iter().find(|(_, player_id, _)| {
+            player_query.iter().find(|(_, _, player_id, _)| {
                 player_id.is_some_and(|id| {
                     local_client_id.is_some_and(|client_id| id.0.to_bits() == client_id)
                 })
             })
         })
-        .map(|(stats, _, _)| stats)
     else {
         return;
     };
@@ -73,17 +77,17 @@ pub fn update_player_stats(
         return;
     };
 
-    text.0 = format_stats(stats);
+    text.0 = format_stats(combat, vital);
 }
 
-fn format_stats(stats: &Stats) -> String {
+fn format_stats(combat: &CombatStats, vital: &VitalStats) -> String {
     format!(
         "Max HP: {}\nMax Mana: {}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)",
-        format_value(stats.max_health),
-        format_value(stats.max_mana),
-        stats.mana_regeneration,
-        format_value(stats.armor),
-        stats.damage_reduction() * 100.0,
+        format_value(vital.max_health),
+        format_value(vital.max_mana),
+        vital.mana_regeneration,
+        format_value(combat.armor),
+        combat.armor_damage_reduction() * 100.0,
     )
 }
 

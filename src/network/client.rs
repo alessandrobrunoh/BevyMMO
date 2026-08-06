@@ -13,6 +13,10 @@ use crate::game_state::{
 };
 use crate::network::mode::has_client;
 use crate::network::protocol::*;
+use crate::plugins::key_mapping::KeyBindings;
+use crate::plugins::spells::{
+    FireballVisualEffect, SpellHudCooldownStarted, SpellHudState, SpellId,
+};
 
 /// Impostazioni di connessione del client, conservate come risorsa.
 #[derive(Resource)]
@@ -76,6 +80,7 @@ impl Plugin for ClientPlugins {
         app.add_systems(Update, cleanup_disconnected_clients.run_if(has_client));
         app.add_systems(Update, receive_messages);
         app.add_systems(Update, lower_controlled_saturation);
+        app.add_systems(Update, cast_fireball_on_key.run_if(has_client));
 
         app.add_observer(handle_connected);
         app.add_observer(handle_disconnected);
@@ -233,6 +238,56 @@ fn cleanup_disconnected_clients(
     for client in clients.iter() {
         commands.entity(client).despawn();
     }
+}
+
+fn cast_fireball_on_key(
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    bindings: Option<Res<KeyBindings>>,
+    screen: Res<GameScreen>,
+    hud_state: Res<SpellHudState>,
+    mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
+    controlled_players: Query<(&Position, Option<&LookDirection>), With<Controlled>>,
+    mut visuals: MessageWriter<FireballVisualEffect>,
+    mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
+) {
+    if !matches!(screen.0, Screen::InGame | Screen::Paused) {
+        return;
+    }
+    let (Some(keys), Some(bindings)) = (keys, bindings) else {
+        return;
+    };
+    if !keys.just_pressed(bindings.cast_fireball) {
+        return;
+    }
+
+    let fireball_id = SpellId::new(crate::spells::fireball::FireballSpell::ID);
+    if hud_state.is_on_cooldown(&fireball_id) {
+        return;
+    }
+
+    let Some((player_position, look_direction)) = controlled_players.iter().next() else {
+        return;
+    };
+    let start = player_position.0;
+    let cast_range = crate::spells::fireball::FireballSpell::CAST_RANGE;
+    let direction = look_direction
+        .map(|direction| Vec3::new(direction.x, 0.0, direction.z).normalize_or_zero())
+        .filter(|direction| direction.length_squared() > 0.001)
+        .unwrap_or(Vec3::Z);
+    let target = start + direction * cast_range;
+
+    for mut sender in senders.iter_mut() {
+        sender.send::<Channel2>(SpellCastCommand {
+            spell_id: crate::spells::fireball::FireballSpell::ID.to_string(),
+            target_position: Some(target),
+        });
+    }
+
+    visuals.write(FireballVisualEffect { start, end: target });
+    hud_cooldowns.write(SpellHudCooldownStarted {
+        spell_id: SpellId::new(crate::spells::fireball::FireballSpell::ID),
+        cooldown_seconds: crate::spells::fireball::FireballSpell::COOLDOWN_SECONDS,
+    });
 }
 
 // Riduce la saturazione sulle entità predette, così il player locale è

@@ -4,10 +4,11 @@ use bevy::ecs::entity::Entity;
 use bevy::prelude::*;
 use lightyear::prelude::{NetworkTarget, Replicate};
 
-use crate::network::protocol::{EntityColor, Position};
+use crate::network::protocol::{EntityColor, LookDirection, Position};
 
-use super::components::{EntityState, GameEntity, Health, Stats};
+use super::components::{EntityKind, EntityState, GameEntity};
 use super::definition::EntityDefinition;
+use crate::stats::components::{CombatStats, MovementStats, VitalStats};
 
 /// Stato comune di un'entità di gameplay replicata.
 ///
@@ -17,10 +18,13 @@ use super::definition::EntityDefinition;
 pub struct GameEntityBundle {
     game_entity: GameEntity,
     state: EntityState,
-    health: Health,
-    stats: Stats,
+    movement_stats: MovementStats,
+    combat_stats: CombatStats,
+    vital_stats: VitalStats,
     position: Position,
+    look_direction: LookDirection,
     color: EntityColor,
+    entity_kind: EntityKind,
     replicate: Replicate,
 }
 
@@ -28,17 +32,21 @@ impl GameEntityBundle {
     pub fn new(
         position: Position,
         color: EntityColor,
-        health: Health,
-        stats: Stats,
+        stats_data: crate::stats::components::StatsBundleData,
+        entity_kind: EntityKind,
         replication_target: NetworkTarget,
     ) -> Self {
+        let (movement, combat, vital) = stats_data.into_components();
         Self {
             game_entity: GameEntity,
             state: EntityState::default(),
-            health,
-            stats,
+            movement_stats: movement,
+            combat_stats: combat,
+            vital_stats: vital,
             position,
+            look_direction: LookDirection::default(),
             color,
+            entity_kind,
             replicate: Replicate::to_clients(replication_target),
         }
     }
@@ -53,8 +61,8 @@ pub fn spawn_entity<T: EntityDefinition>(commands: &mut Commands) -> Entity {
             GameEntityBundle::new(
                 Position(T::initial_position()),
                 EntityColor(T::initial_color()),
-                T::health(),
                 T::stats(),
+                T::entity_kind(),
                 T::replication_target(),
             ),
             T::bundle(),
@@ -71,12 +79,25 @@ mod tests {
     #[test]
     fn standard_spawn_contains_shared_gameplay_components() {
         let mut world = World::new();
+        let stats = crate::stats::components::StatsBundleData {
+            movement: crate::stats::components::MovementStats { speed: 0.15 },
+            combat: crate::stats::components::CombatStats {
+                attack_power: 10.0,
+                armor: 0.0,
+            },
+            vital: crate::stats::components::VitalStats {
+                current_health: 25.0,
+                max_health: 25.0,
+                max_mana: 50.0,
+                mana_regeneration: 2.0,
+            },
+        };
         let entity = world
             .spawn(GameEntityBundle::new(
                 Position(Vec3::ZERO),
                 EntityColor(Color::WHITE),
-                Health::new(25.0),
-                Stats::default(),
+                stats,
+                EntityKind::Neutral,
                 NetworkTarget::All,
             ))
             .id();
@@ -84,10 +105,43 @@ mod tests {
         let entity_ref = world.entity(entity);
         assert!(entity_ref.contains::<GameEntity>());
         assert!(entity_ref.contains::<EntityState>());
-        assert!(entity_ref.contains::<Health>());
-        assert!(entity_ref.contains::<Stats>());
+        assert!(entity_ref.contains::<MovementStats>());
+        assert!(entity_ref.contains::<CombatStats>());
+        assert!(entity_ref.contains::<VitalStats>());
         assert!(entity_ref.contains::<Position>());
+        assert!(entity_ref.contains::<LookDirection>());
         assert!(entity_ref.contains::<EntityColor>());
+        assert!(entity_ref.contains::<EntityKind>());
         assert!(entity_ref.contains::<Replicate>());
+    }
+
+    #[test]
+    fn game_entity_bundle_contains_entity_kind() {
+        let mut world = World::new();
+        let stats = crate::stats::components::StatsBundleData {
+            movement: crate::stats::components::MovementStats { speed: 0.0 },
+            combat: crate::stats::components::CombatStats {
+                attack_power: 0.0,
+                armor: 0.0,
+            },
+            vital: crate::stats::components::VitalStats {
+                current_health: 1_000_000_000.0,
+                max_health: 1_000_000_000.0,
+                max_mana: 0.0,
+                mana_regeneration: 0.0,
+            },
+        };
+        let entity = world
+            .spawn(GameEntityBundle::new(
+                Position(Vec3::new(8.0, 0.0, 0.0)),
+                EntityColor(Color::srgb(0.7, 0.1, 0.1)),
+                stats,
+                crate::plugins::entity::components::EntityKind::Hostile,
+                NetworkTarget::All,
+            ))
+            .id();
+
+        let entity_ref = world.entity(entity);
+        assert!(entity_ref.contains::<EntityKind>());
     }
 }

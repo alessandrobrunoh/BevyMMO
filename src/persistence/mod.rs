@@ -18,8 +18,10 @@ pub mod plugin;
 pub mod repository;
 
 pub use entity::player::PlayerRecord;
+pub use entity::player_stats::Model as PlayerStatsRecord;
 pub use error::PersistenceError;
 pub use plugin::{PersistencePlugin, PersistenceRuntime, PlayerStore};
+pub use repository::player::PersistedPlayerSnapshot;
 
 /// Normalizza il nome di un giocatore per usarlo come chiave di lookup univoca.
 ///

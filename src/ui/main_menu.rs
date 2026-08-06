@@ -8,8 +8,8 @@ use bevy::prelude::*;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::ui::button::{spawn_button, UiButtonAction};
-use crate::ui::text_input::spawn_text_input;
 use crate::ui::text::spawn_text;
+use crate::ui::text_input::spawn_text_input;
 use crate::ui::theme::UiTheme;
 
 /// Marker: root del menu principale.

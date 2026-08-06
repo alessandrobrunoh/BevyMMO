@@ -13,7 +13,8 @@
 
 use crate::game_state::{GameScreen, Screen};
 use crate::network::protocol::Position;
-use crate::plugins::entity::components::{Health, PlayerName};
+use crate::plugins::entity::components::{EntityKind, PlayerName};
+use crate::stats::components::VitalStats;
 use crate::ui::theme::UiTheme;
 use bevy::prelude::*;
 
@@ -52,7 +53,14 @@ pub fn spawn_ui_for_new_entities(
     mut commands: Commands,
     root_query: Query<Entity, With<FloatingUiRoot>>,
     theme: Res<UiTheme>,
-    new_entities: Query<Entity, (With<Position>, With<Health>, Without<FloatingUiAttached>)>,
+    new_entities: Query<
+        Entity,
+        (
+            With<Position>,
+            With<VitalStats>,
+            Without<FloatingUiAttached>,
+        ),
+    >,
 ) {
     if new_entities.is_empty() {
         return;
@@ -114,16 +122,18 @@ pub fn update_floating_ui_position(
     }
 }
 
-/// Fase 2 — aggiorna contenuto (nome, fill, testo HP) tramite riferimenti diretti,
+/// Fase 2 — aggiorna contenuto (nome, fill, testo HP, colore fill) tramite riferimenti diretti,
 /// saltando le scritture invariate grazie alla cache in [`EntityBarParts`].
 pub fn update_floating_ui_content(
-    target_query: Query<(&Health, Option<&PlayerName>)>,
+    target_query: Query<(&VitalStats, Option<&PlayerName>, Option<&EntityKind>)>,
+    theme: Res<UiTheme>,
     mut ui_query: Query<(&FloatingUi, &mut EntityBarParts)>,
     mut text_query: Query<&mut Text>,
     mut node_query: Query<&mut Node>,
+    mut bg_query: Query<&mut BackgroundColor>,
 ) {
     for (floating_ui, mut parts) in ui_query.iter_mut() {
-        let Ok((health, name)) = target_query.get(floating_ui.target) else {
+        let Ok((vital, name, entity_kind)) = target_query.get(floating_ui.target) else {
             continue;
         };
 
@@ -140,7 +150,8 @@ pub fn update_floating_ui_content(
         }
 
         // Fill: clampa [0,1] -> [0,100], scrivi solo se la percentuale è cambiata.
-        let new_fill_pct = (health.current / health.max.max(0.1)).clamp(0.0, 1.0) * 100.0;
+        let new_fill_pct =
+            (vital.current_health / vital.max_health.max(0.1)).clamp(0.0, 1.0) * 100.0;
         if parts.last_fill_pct != new_fill_pct {
             let fill_entity = parts.hp_fill;
             if let Ok(mut fill_node) = node_query.get_mut(fill_entity) {
@@ -150,13 +161,25 @@ pub fn update_floating_ui_content(
         }
 
         // Testo HP: "current/max" intero, scrivi solo se la stringa è cambiata.
-        let new_hp_text = format!("{}/{}", health.current as i32, health.max as i32);
+        let new_hp_text = format!(
+            "{}/{}",
+            vital.current_health as i32, vital.max_health as i32
+        );
         if parts.last_hp_text != new_hp_text {
             let hp_text_entity = parts.hp_text;
             if let Ok(mut text) = text_query.get_mut(hp_text_entity) {
                 text.0 = new_hp_text.clone();
             }
             parts.last_hp_text = new_hp_text;
+        }
+
+        // Colore fill: in base a EntityKind, scrivi solo se il colore è cambiato.
+        let new_fill_color = get_hp_fill_color(entity_kind, &theme);
+        let fill_entity = parts.hp_fill;
+        if let Ok(mut bg) = bg_query.get_mut(fill_entity) {
+            if bg.0 != new_fill_color {
+                bg.0 = new_fill_color;
+            }
         }
     }
 }
@@ -223,8 +246,15 @@ mod tests {
     #[test]
     fn container_is_hidden_until_first_projection() {
         let mut app = content_app();
-        app.world_mut()
-            .spawn((Position(Vec3::ZERO), Health::new(50.0)));
+        app.world_mut().spawn((
+            Position(Vec3::ZERO),
+            VitalStats {
+                current_health: 50.0,
+                max_health: 50.0,
+                max_mana: 40.0,
+                mana_regeneration: 2.0,
+            },
+        ));
         app.update();
 
         let mut q = app.world_mut().query_filtered::<&Node, With<FloatingUi>>();
@@ -241,9 +271,11 @@ mod tests {
         let mut app = content_app();
         app.world_mut().spawn((
             Position(Vec3::ZERO),
-            Health {
-                current: 150.0,
-                max: 100.0,
+            VitalStats {
+                current_health: 150.0,
+                max_health: 100.0,
+                max_mana: 40.0,
+                mana_regeneration: 2.0,
             },
         ));
         app.update();
@@ -258,9 +290,11 @@ mod tests {
         let mut app = content_app();
         app.world_mut().spawn((
             Position(Vec3::ZERO),
-            Health {
-                current: -10.0,
-                max: 100.0,
+            VitalStats {
+                current_health: -10.0,
+                max_health: 100.0,
+                max_mana: 40.0,
+                mana_regeneration: 2.0,
             },
         ));
         app.update();
@@ -275,9 +309,11 @@ mod tests {
         let mut app = content_app();
         app.world_mut().spawn((
             Position(Vec3::ZERO),
-            Health {
-                current: 25.0,
-                max: 100.0,
+            VitalStats {
+                current_health: 25.0,
+                max_health: 100.0,
+                max_mana: 40.0,
+                mana_regeneration: 2.0,
             },
             PlayerName("Alice".to_string()),
         ));
@@ -295,9 +331,11 @@ mod tests {
         let mut app = content_app();
         app.world_mut().spawn((
             Position(Vec3::ZERO),
-            Health {
-                current: 50.0,
-                max: 100.0,
+            VitalStats {
+                current_health: 50.0,
+                max_health: 100.0,
+                max_mana: 40.0,
+                mana_regeneration: 2.0,
             },
             PlayerName("Bob".to_string()),
         ));
@@ -325,9 +363,11 @@ mod tests {
             .world_mut()
             .spawn((
                 Position(Vec3::ZERO),
-                Health {
-                    current: 50.0,
-                    max: 100.0,
+                VitalStats {
+                    current_health: 50.0,
+                    max_health: 100.0,
+                    max_mana: 40.0,
+                    mana_regeneration: 2.0,
                 },
             ))
             .id();
@@ -336,9 +376,9 @@ mod tests {
         // Mutazione del dato replicato: al prossimo update la cache si invalida.
         app.world_mut()
             .entity_mut(target)
-            .get_mut::<Health>()
+            .get_mut::<VitalStats>()
             .unwrap()
-            .current = 25.0;
+            .current_health = 25.0;
         app.update();
 
         let mut q = app.world_mut().query::<&EntityBarParts>();
@@ -352,7 +392,12 @@ mod tests {
         let mut app = content_app();
         app.world_mut().spawn((
             Position(Vec3::ZERO),
-            Health::new(100.0), // niente PlayerName
+            VitalStats {
+                current_health: 100.0,
+                max_health: 100.0,
+                max_mana: 40.0,
+                mana_regeneration: 2.0,
+            }, // niente PlayerName
         ));
         app.update();
 
@@ -374,8 +419,15 @@ mod tests {
 
         // Enter gameplay: spawn di un'entità e della root.
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
-        app.world_mut()
-            .spawn((Position(Vec3::ZERO), Health::new(50.0)));
+        app.world_mut().spawn((
+            Position(Vec3::ZERO),
+            VitalStats {
+                current_health: 50.0,
+                max_health: 50.0,
+                max_mana: 40.0,
+                mana_regeneration: 2.0,
+            },
+        ));
         app.update();
         assert_eq!(root_count(app.world_mut()), 1);
 
@@ -403,7 +455,15 @@ mod tests {
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
         let target = app
             .world_mut()
-            .spawn((Position(Vec3::ZERO), Health::new(50.0)))
+            .spawn((
+                Position(Vec3::ZERO),
+                VitalStats {
+                    current_health: 50.0,
+                    max_health: 50.0,
+                    max_mana: 40.0,
+                    mana_regeneration: 2.0,
+                },
+            ))
             .id();
         app.update();
         assert!(app
@@ -428,9 +488,59 @@ mod tests {
     /// l'effettiva dimensione della barra spawnata (100x14).
     #[test]
     fn centering_constants_match_bar_geometry() {
-        assert_eq!(super::plugin::BAR_WIDTH, 100.0);
-        assert_eq!(super::plugin::BAR_HEIGHT, 14.0);
+        assert_eq!(crate::ui::entity_bar::plugin::BAR_WIDTH, 100.0);
+        assert_eq!(crate::ui::entity_bar::plugin::BAR_HEIGHT, 14.0);
         // STACK_HEIGHT = riga nome + gap + barra (>= altezza barra).
-        assert!(super::plugin::STACK_HEIGHT > super::plugin::BAR_HEIGHT);
+        assert!(
+            crate::ui::entity_bar::plugin::STACK_HEIGHT > crate::ui::entity_bar::plugin::BAR_HEIGHT
+        );
+    }
+
+    #[test]
+    fn hp_fill_color_is_green_for_player() {
+        let color = get_hp_fill_color(Some(&EntityKind::Player), &UiTheme::default());
+        assert_eq!(color, Color::srgb(0.3, 0.8, 0.5));
+    }
+
+    #[test]
+    fn hp_fill_color_is_green_for_friendly() {
+        let color = get_hp_fill_color(Some(&EntityKind::Friendly), &UiTheme::default());
+        assert_eq!(color, Color::srgb(0.2, 0.9, 0.3));
+    }
+
+    #[test]
+    fn hp_fill_color_is_yellow_for_neutral() {
+        let color = get_hp_fill_color(Some(&EntityKind::Neutral), &UiTheme::default());
+        assert_eq!(color, Color::srgb(0.9, 0.9, 0.2));
+    }
+
+    #[test]
+    fn hp_fill_color_is_red_for_hostile() {
+        let color = get_hp_fill_color(Some(&EntityKind::Hostile), &UiTheme::default());
+        assert_eq!(color, Color::srgb(0.9, 0.1, 0.1));
+    }
+
+    #[test]
+    fn hp_fill_color_falls_back_to_theme_when_no_entity_kind() {
+        let theme = UiTheme::default();
+        let color = get_hp_fill_color(None, &theme);
+        assert_eq!(color, theme.hp_fill);
+    }
+}
+
+/// Determina il colore della barra HP in base al tipo di entità.
+///
+/// - Player: verde-blu
+/// - Friendly: verde
+/// - Neutral: giallo
+/// - Hostile: rosso
+/// - None: fallback a theme.hp_fill
+fn get_hp_fill_color(entity_kind: Option<&EntityKind>, theme: &UiTheme) -> Color {
+    match entity_kind {
+        Some(EntityKind::Player) => Color::srgb(0.3, 0.8, 0.5),
+        Some(EntityKind::Friendly) => Color::srgb(0.2, 0.9, 0.3),
+        Some(EntityKind::Neutral) => Color::srgb(0.9, 0.9, 0.2),
+        Some(EntityKind::Hostile) => Color::srgb(0.9, 0.1, 0.1),
+        None => theme.hp_fill,
     }
 }

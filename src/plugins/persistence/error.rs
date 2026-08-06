@@ -1,20 +1,20 @@
-//! Tipi di errore per il layer di persistenza.
+//! Error types for the persistence layer.
 //!
-//! Implementati a mano (senza `thiserror`) in modo che questa crate compili
-//! senza aggiungere ulteriori dipendenze proc-macro oltre a quelle già richieste
-//! da SeaORM. [`PersistenceError`] è `Send` + `Sync` così può attraversare i
-//! confini di `tokio::spawn` e i bridge async di Bevy.
+//! Implemented manually (without `thiserror`) so that this crate compiles
+//! without adding further proc-macro dependencies beyond those already required
+//! by SeaORM. [`PersistenceError`] is `Send` + `Sync` so it can cross
+//! `tokio::spawn` boundaries and Bevy async bridges.
 
 use std::fmt;
 
-/// Errori restituiti dalle operazioni di persistenza.
+/// Errors returned by persistence operations.
 #[derive(Debug)]
 pub enum PersistenceError {
-    /// Un'operazione database SeaORM è fallita (connessione, query, vincolo, ecc.).
+    /// A SeaORM database operation failed (connection, query, constraint, etc.).
     Db(sea_orm::DbErr),
-    /// Una riga referenziata per id / chiave non è stata trovata in
-    /// un'operazione che ne richiede l'esistenza (es. `save_position` su un id
-    /// player sconosciuto).
+    /// A row referenced by id / key was not found in
+    /// an operation that requires its existence (e.g. `save_position` on an
+    /// unknown player id).
     NotFound(String),
 }
 
@@ -42,5 +42,6 @@ impl From<sea_orm::DbErr> for PersistenceError {
     }
 }
 
-/// Alias di convenienza usato nelle firme dei repository.
+/// Convenience alias used in repository signatures.
 pub type PersistenceResult<T> = Result<T, PersistenceError>;
+

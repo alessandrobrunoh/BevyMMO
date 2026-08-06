@@ -1,4 +1,4 @@
-//! Scene plugin — raccoglie le scene disponibili nel gioco.
+//! Scene plugin — collects available scenes in the game.
 
 pub mod base;
 

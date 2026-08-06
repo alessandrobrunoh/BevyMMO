@@ -1,7 +1,7 @@
-//! Sistemi specifici dell'Enemy.
+//! Enemy-specific systems.
 //!
-//! AI e attacchi sono server-authoritative: il client riceve solo la posizione
-//! e gli effetti replicati sulle entità, come la salute del Player.
+//! AI and attacks are server-authoritative: the client only receives position
+//! and replicated effects on entities, such as Player health.
 
 use bevy::prelude::*;
 
@@ -13,8 +13,8 @@ use crate::plugins::entity::player::components::Player;
 use crate::plugins::spells::{SpellCastRequest, SpellId};
 use crate::stats::components::{MovementStats, VitalStats};
 
-/// AI: insegue il player più vicino se dentro `AggroRange`.
-/// Server-only. Gli enemy in stato `Dead` sono saltati (non si muovono).
+/// AI: pursues the nearest player if within `AggroRange`.
+/// Server-only. Enemies in `Dead` state are skipped (do not move).
 pub fn enemy_chase(
     mut enemies: Query<
         (&mut Position, &AggroRange, &MovementStats, &EntityState),
@@ -30,7 +30,7 @@ pub fn enemy_chase(
         if state.is_dead() {
             continue;
         }
-        // Trova il player più vicino
+        // Find nearest player
         let nearest = players.iter().min_by(|a, b| {
             a.0.distance_squared(enemy_pos.0)
                 .partial_cmp(&b.0.distance_squared(enemy_pos.0))
@@ -47,8 +47,8 @@ pub fn enemy_chase(
     }
 }
 
-/// AI: lancia automaticamente l'attacco quando un player è nel raggio.
-/// Server-only. Gli enemy in stato `Dead` sono saltati.
+/// AI: automatically casts attack when a player is in range.
+/// Server-only. Enemies in `Dead` state are skipped.
 pub fn enemy_auto_cast_attack(
     enemies: Query<
         (Entity, &Position, &AggroRange, &EntityState),
@@ -61,7 +61,7 @@ pub fn enemy_auto_cast_attack(
         if state.is_dead() {
             continue;
         }
-        // Trova il player più vicino
+        // Find nearest player
         let nearest = players.iter().min_by(|a, b| {
             a.0.distance_squared(enemy_position.0)
                 .partial_cmp(&b.0.distance_squared(enemy_position.0))
@@ -82,10 +82,10 @@ pub fn enemy_auto_cast_attack(
     }
 }
 
-/// Attacca `Respawning` agli enemy appena entrati in `Dead`.
+/// Attaches `Respawning` to enemies that have just entered `Dead`.
 ///
-/// Filtra con `Without<Respawning>` così è idempotente: un enemy già in
-/// countdown non riceve un secondo timer.
+/// Filters with `Without<Respawning>` so it is idempotent: an enemy already in
+/// countdown does not receive a second timer.
 pub fn schedule_enemy_respawn(
     mut commands: Commands,
     enemies: Query<(Entity, &EntityState), (With<Enemy>, Without<Respawning>)>,
@@ -99,8 +99,8 @@ pub fn schedule_enemy_respawn(
     }
 }
 
-/// Decrementa il timer di respawn e, quando scade, riporta l'enemy in vita
-/// allo `SpawnPoint` con HP/mana rigenerati e `EntityState::Idle`.
+/// Decrements the respawn timer and, when expired, revives the enemy at its
+/// `SpawnPoint` with restored HP/mana and `EntityState::Idle`.
 pub fn enemy_respawn(
     time: Res<Time>,
     mut commands: Commands,
@@ -165,7 +165,7 @@ mod tests {
         let spawn_point = Vec3::new(5.0, 0.0, 5.0);
         let entity = make_dead_enemy(&mut app, spawn_point);
 
-        // Avanza il tempo oltre il timer rimanente (0.5s).
+        // Advance time past the remaining timer (0.5s).
         app.world_mut()
             .resource_mut::<Time>()
             .advance_by(std::time::Duration::from_secs_f32(1.0));
@@ -192,7 +192,7 @@ mod tests {
         let spawn_point = Vec3::new(2.0, 0.0, 1.0);
         let entity = make_dead_enemy(&mut app, spawn_point);
 
-        // Avanza il tempo di meno del rimanente.
+        // Advance time by less than the remaining duration.
         app.world_mut()
             .resource_mut::<Time>()
             .advance_by(std::time::Duration::from_secs_f32(0.1));
@@ -309,10 +309,11 @@ mod tests {
             "living enemy should have moved"
         );
 
-        // Evita unused import warnings.
+        // Avoid unused import warnings.
         let _ = CombatStats {
             attack_power: 0.0,
             armor: 0.0,
         };
     }
 }
+

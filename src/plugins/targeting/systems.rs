@@ -1,4 +1,4 @@
-//! Sistemi per il targeting con tasto destro e pulizia automatica.
+//! Systems for right-click targeting and automatic cleanup.
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -10,20 +10,20 @@ use crate::stats::components::VitalStats;
 
 const TARGETING_RADIUS: f32 = 1.2;
 
-/// Test di intersezione ray-sphere.
+/// Ray-sphere intersection test.
 ///
-/// Calcola se un ray interseca una sfera e restituisce la distanza dal ray origin
-/// al punto di intersezione più vicino.
+/// Calculates if a ray intersects a sphere and returns the distance from ray origin
+/// to the nearest intersection point.
 ///
-/// # Argomenti
-/// * `ray_origin` - punto di origine del ray
-/// * `ray_direction` - direzione normalizzata del ray
-/// * `sphere_center` - centro della sfera
-/// * `sphere_radius` - raggio della sfera
+/// # Arguments
+/// * `ray_origin` - ray origin point
+/// * `ray_direction` - normalized ray direction
+/// * `sphere_center` - sphere center
+/// * `sphere_radius` - sphere radius
 ///
-/// # Restituisce
-/// `Some(distance)` se il ray interseca la sfera, `None` altrimenti.
-/// La distanza è sempre positiva.
+/// # Returns
+/// `Some(distance)` if ray intersects sphere, `None` otherwise.
+/// Distance is always positive.
 fn ray_sphere_intersection(
     ray_origin: Vec3,
     ray_direction: Vec3,
@@ -40,12 +40,12 @@ fn ray_sphere_intersection(
         return None;
     }
 
-    // Risolviamo per la radice più piccola (intersezione più vicina)
+    // Solve for smallest root (closest intersection)
     let sqrt_discriminant = discriminant.sqrt();
     let t1 = (-b - sqrt_discriminant) / (2.0 * a);
     let t2 = (-b + sqrt_discriminant) / (2.0 * a);
 
-    // Restituiamo la più piccola positiva, o None se entrambe sono negative
+    // Return smallest positive, or None if both are negative
     if t1 >= 0.0 && t2 >= 0.0 {
         Some(t1.min(t2))
     } else if t1 >= 0.0 {
@@ -70,7 +70,7 @@ mod tests {
 
         let hit = ray_sphere_intersection(origin, direction, center, radius);
         assert!(hit.is_some());
-        // Distanza approssimativa: 5.0 - 1.0 = 4.0
+        // Approximate distance: 5.0 - 1.0 = 4.0
         assert!(hit.unwrap() > 3.9 && hit.unwrap() < 4.1);
     }
 
@@ -94,7 +94,7 @@ mod tests {
 
         let hit = ray_sphere_intersection(origin, direction, center, radius);
         assert!(hit.is_some());
-        // Dovrebbe essere positivo e relativamente piccolo
+        // Should be positive and relatively small
         assert!(hit.unwrap() >= 0.0);
     }
 
@@ -110,15 +110,15 @@ mod tests {
     }
 }
 
-/// Sistema di selezione target con tasto destro.
+/// Target selection system with right click.
 ///
-/// Esegue i seguenti passaggi:
-/// 1. Legge la posizione del cursore
-/// 2. Casta un ray dalla Camera3d
-/// 3. Trova tutte le entità targettabili (GameEntity + Position + VitalStats)
-/// 4. Filtra le entità morte
-/// 5. Test ray-sphere con ogni entità
-/// 6. Seleziona l'entità più vicina lungo il ray
+/// Executes the following steps:
+/// 1. Reads cursor position
+/// 2. Casts a ray from Camera3d
+/// 3. Finds all targetable entities (GameEntity + Position + VitalStats)
+/// 4. Filters dead entities
+/// 5. Ray-sphere test with each entity
+/// 6. Selects closest entity along ray
 pub fn select_target_with_right_click(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -130,7 +130,7 @@ pub fn select_target_with_right_click(
         return;
     };
 
-    // Solo tasto sinistro, non influenziamo il movimento (destro)
+    // Left click only, do not affect right-click movement
     if !mouse_buttons.just_pressed(MouseButton::Left) {
         return;
     }
@@ -151,7 +151,7 @@ pub fn select_target_with_right_click(
     let mut closest_hit: Option<(Entity, f32)> = None;
 
     for (entity, position, vital_stats) in targetable_entities.iter() {
-        // Ignora entità morte
+        // Ignore dead entities
         if vital_stats.is_dead() {
             continue;
         }
@@ -178,7 +178,7 @@ pub fn select_target_with_right_click(
     }
 }
 
-/// Sistema per pulire il target con il tasto Escape.
+/// System to clear target with Escape key.
 pub fn clear_target_with_escape(
     keyboard: Option<Res<ButtonInput<KeyCode>>>,
     mut current_target: ResMut<CurrentTarget>,
@@ -192,14 +192,14 @@ pub fn clear_target_with_escape(
     }
 }
 
-/// Sistema di pulizia automatica del target.
+/// Automatic target cleanup system.
 ///
-/// Controlla periodicamente che il target corrente sia ancora valido:
-/// - L'entità esiste ancora
-/// - Ha ancora i componenti Position e VitalStats
-/// - Non è morta
+/// Periodically checks if the current target is still valid:
+/// - Entity still exists
+/// - Still has Position and VitalStats components
+/// - Is not dead
 ///
-/// Se una di queste condizioni fallisce, il target viene pulito.
+/// If any condition fails, target is cleared.
 pub fn cleanup_invalid_target(
     mut current_target: ResMut<CurrentTarget>,
     targetable_entities: Query<(&Position, &VitalStats), With<GameEntity>>,
@@ -208,14 +208,15 @@ pub fn cleanup_invalid_target(
         return;
     };
 
-    // Verifica che l'entità esista e abbia i componenti richiesti
+    // Verify entity exists and has required components
     let Ok((_position, vital_stats)) = targetable_entities.get(target_entity) else {
         current_target.clear();
         return;
     };
 
-    // Verifica che l'entità non sia morta
+    // Verify entity is not dead
     if vital_stats.is_dead() {
         current_target.clear();
     }
 }
+

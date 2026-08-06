@@ -1,9 +1,10 @@
-//! Definizione di spawn dell'Enemy.
+//! Enemy spawn definition.
 //!
-//! Usando `spawn_entity::<Enemy>()` l'enemy viene creato con `GameEntity`,
-//! statistiche, `Position`, `EntityColor`, il bundle qui sotto e
-//! `Replicate::to_clients(NetworkTarget::All)` in automatico, quindi è
-//! subito sincronizzato sul network.
+//! Using `spawn_entity::<Enemy>()` creates the enemy with `GameEntity`,
+//! stats, `Position`, `EntityColor`, the bundle below, and
+//! `Replicate::to_clients(NetworkTarget::All)` automatically, so it is
+//! immediately synchronized over the network.
+
 
 use bevy::color::Color;
 use bevy::prelude::*;

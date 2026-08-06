@@ -1,25 +1,25 @@
-//! Componenti runtime delle statistiche di gioco.
+//! Runtime components for game stats.
 //!
-//! Le statistiche sono divise in tre componenti ECS separate per mantenere
-//! le query granulari e ridurre l'accoppiamento:
-//! - [`MovementStats`] — velocità e parametri di movimento
-//! - [`CombatStats`] — potere d'attacco e armatura
-//! - [`VitalStats`] — salute, mana e rigenerazione
+//! Stats are split into three separate ECS components to keep
+//! queries granular and reduce coupling:
+//! - [`MovementStats`] — movement speed and parameters
+//! - [`CombatStats`] — attack power and armor
+//! - [`VitalStats`] — health, mana, and regeneration
 //!
-//! [`StatsBundleData`] è un aggregato DTO usato ai confini di spawn,
-//! configurazione e persistenza; non sostituisce i componenti ECS a runtime.
+//! [`StatsBundleData`] is a DTO aggregate used at spawn boundaries,
+//! configuration, and persistence; it does not replace runtime ECS components.
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Statistiche di movimento.
+/// Movement stats.
 #[derive(Component, Debug, Clone, Copy, Reflect, Serialize, Deserialize, PartialEq)]
 #[reflect(Component)]
 pub struct MovementStats {
     pub speed: f32,
 }
 
-/// Statistiche di combattimento.
+/// Combat stats.
 #[derive(Component, Debug, Clone, Copy, Reflect, Serialize, Deserialize, PartialEq)]
 #[reflect(Component)]
 pub struct CombatStats {
@@ -28,17 +28,17 @@ pub struct CombatStats {
 }
 
 impl CombatStats {
-    /// Frazione di danno incoming prevenuta dall'armatura.
+    /// Fraction of incoming damage prevented by armor.
     ///
     /// Formula: `armor / (armor + 100)`, clamped `[0, 1]`.
-    /// Valori negativi di armor vengono trattati come 0.
+    /// Negative armor values are treated as 0.
     pub fn armor_damage_reduction(&self) -> f32 {
         let armor = self.armor.max(0.0);
         (armor / (armor + 100.0)).clamp(0.0, 1.0)
     }
 }
 
-/// Statistiche vitali: salute corrente/massima, mana e rigenerazione.
+/// Vital stats: current/max health, mana, and regeneration.
 #[derive(Component, Debug, Clone, Copy, Reflect, Serialize, Deserialize, PartialEq)]
 #[reflect(Component)]
 pub struct VitalStats {
@@ -49,28 +49,28 @@ pub struct VitalStats {
 }
 
 impl VitalStats {
-    /// True se la salute corrente è esaurita.
+    /// True if current health is depleted.
     pub fn is_dead(&self) -> bool {
         self.current_health <= 0.0
     }
 
-    /// Rettifica `current_health` per non superare `max_health` e non scendere
-    /// sotto zero. Utile dopo modifiche a `max_health` o caricamento da DB.
+    /// Adjusts `current_health` not to exceed `max_health` and not to drop
+    /// below zero. Useful after modifications to `max_health` or loading from DB.
     pub fn clamp_health(&mut self) {
         self.current_health = self.current_health.clamp(0.0, self.max_health);
     }
 }
 
-/// Aggregato DTO di tutte le statistiche.
+/// Aggregate DTO for all stats.
 ///
-/// Usato per:
-/// - default di entità (`EntityDefinition`, definizioni enemy/spell)
-/// - serializzazione/persistenza
-/// - spawn helper
+/// Used for:
+/// - entity defaults (`EntityDefinition`, enemy/spell definitions)
+/// - serialization/persistence
+/// - spawn helpers
 ///
-/// A runtime, i valori vivono nei tre componenti ECS separati; usa
-/// [`StatsBundleData::into_components`] per ottenere la tupla di componenti
-/// da inserire in un'entità.
+/// At runtime, values live in three separate ECS components; use
+/// [`StatsBundleData::into_components`] to get the tuple of components
+/// to insert into an entity.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct StatsBundleData {
     pub movement: MovementStats,
@@ -79,7 +79,7 @@ pub struct StatsBundleData {
 }
 
 impl StatsBundleData {
-    /// Costruisce il bundle dai tre componenti runtime.
+    /// Constructs the bundle from the three runtime components.
     pub fn from_components(
         movement: &MovementStats,
         combat: &CombatStats,
@@ -92,7 +92,7 @@ impl StatsBundleData {
         }
     }
 
-    /// Decompone il DTO nella tupla di componenti ECS.
+    /// Decomposes the DTO into the tuple of ECS components.
     pub fn into_components(self) -> (MovementStats, CombatStats, VitalStats) {
         (self.movement, self.combat, self.vital)
     }

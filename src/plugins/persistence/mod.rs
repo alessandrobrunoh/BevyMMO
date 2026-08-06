@@ -1,16 +1,15 @@
-//! Layer di persistenza PostgreSQL (SeaORM).
+//! PostgreSQL persistence layer (SeaORM).
 //!
-//! Questo modulo è volutamente disaccoppiato dal game loop Bevy e dallo strato
-//! di rete. Tutti i metodi del repository sono `async` e devono essere guidati
-//! da un runtime non bloccante (es. un task Tokio avviato fuori dalla schedule
-//! principale). Non invocare `.await` sui metodi del repository da dentro
-//! sistemi Bevy in esecuzione sulla schedule di render/fixed-update.
+//! This module is intentionally decoupled from the Bevy game loop and network
+//! layer. All repository methods are `async` and must be driven by a non-blocking
+//! runtime (e.g., a Tokio task spawned outside the main schedule).
+//! Do not invoke `.await` on repository methods from within Bevy systems running on
+//! render/fixed-update schedules.
 //!
-//! Il modulo **non** è inizializzato qui. La costruzione della
-//! [`DatabaseConnection`] e il collegamento alle risorse Bevy sono
-//! responsabilità del [`crate::plugins::persistence::plugin::PersistencePlugin`].
-//! Le migrazioni SeaORM sono definite in [`crate::migrations`], separate dalla
-//! logica di plugin.
+//! The module is **not** initialized here. Constructing the
+//! [`DatabaseConnection`] and attaching it to Bevy resources is the responsibility
+//! of [`crate::plugins::persistence::plugin::PersistencePlugin`].
+//! SeaORM migrations are defined in [`crate::migrations`], separate from plugin logic.
 
 pub mod entity;
 pub mod error;
@@ -23,13 +22,12 @@ pub use error::PersistenceError;
 pub use plugin::{PersistencePlugin, PersistenceRuntime, PlayerStore};
 pub use repository::player::PersistedPlayerSnapshot;
 
-/// Normalizza il nome di un giocatore per usarlo come chiave di lookup univoca.
+/// Normalizes a player name for use as a unique lookup key.
 ///
-/// La normalizzazione attuale è un lowercase + trim degli spazi, mantenuta
-/// pura e deterministica così che lo stesso input produca sempre la stessa
-/// chiave. Centralizzarla qui garantisce che i chiamanti di
-/// [`PlayerRepository::find_or_create`] non possano divergere accidentalmente
-/// sulla forma della chiave.
+/// The current normalization performs lowercasing + trimming of whitespace, kept
+/// pure and deterministic so that the same input always produces the same key.
+/// Centralizing it here ensures that callers of [`PlayerRepository::find_or_create`]
+/// cannot accidentally diverge on key representation.
 pub fn normalize_name(name: &str) -> String {
     name.trim().to_lowercase()
 }
@@ -54,9 +52,10 @@ mod tests {
 
     #[test]
     fn normalize_collapses_only_whitespace_and_case() {
-        // Gli spazi bianchi interni sono preservati (viene applicato solo il
-        // trim esterno), quindi "A B" e "a b" condividono la chiave ma "a  b" no.
+        // Internal whitespace is preserved (only outer trim is applied),
+        // so "A B" and "a b" share key but "a  b" does not.
         assert_eq!(normalize_name("A B"), "a b");
         assert_ne!(normalize_name("A B"), normalize_name("A  B"));
     }
 }
+

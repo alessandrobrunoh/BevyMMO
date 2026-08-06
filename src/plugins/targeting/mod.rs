@@ -1,9 +1,10 @@
-//! Sistema di targeting con tasto destro e ray-sphere intersection.
+//! Right-click targeting system with ray-sphere intersection.
 //!
-//! Fornisce:
-//! - [`CurrentTarget`] resource per tenere traccia del target selezionato
-//! - Sistema di picking geometrico semplice senza dipendenze da collider
-//! - Auto-pulizia del target quando l'entità sparisce o perde componenti richiesti
+//! Provides:
+//! - [`CurrentTarget`] resource to track the selected target
+//! - Simple geometric picking system without collider dependencies
+//! - Auto-cleanup of target when entity disappears or loses required components
+
 
 mod plugin;
 mod resources;

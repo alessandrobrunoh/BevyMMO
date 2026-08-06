@@ -1,9 +1,9 @@
 use bevy::color::Color;
 use bevy::prelude::*;
 
-/// Genera un nodo di sfondo e un nodo di riempimento a posizionamento
-/// assoluto per la barra, agganciati a `parent`.
-/// Ritorna `(bar_entity, fill_entity)`.
+/// Spawns a background node and an absolutely positioned fill node
+/// for the bar, attached to `parent`.
+/// Returns `(bar_entity, fill_entity)`.
 pub fn spawn_bar(
     commands: &mut Commands,
     parent: Entity,
@@ -21,8 +21,8 @@ pub fn spawn_bar(
                 width: Val::Px(size.x),
                 height: Val::Px(size.y),
                 border: UiRect::all(Val::Px(1.0)),
-                // Centra eventuali figli (come il testo) che potrebbero
-                // essere aggiunti a questa barra.
+                // Centers any children (like text) that might
+                // be added to this bar.
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
                 ..default()
@@ -34,7 +34,7 @@ pub fn spawn_bar(
 
     commands.entity(parent).add_child(bar_entity);
 
-    // Nodo di riempimento
+    // Fill node
     let fill = commands
         .spawn((
             Node {

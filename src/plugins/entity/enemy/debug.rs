@@ -1,7 +1,8 @@
-//! Visualizzazione temporanea dell'area di attacco dell'Enemy.
+//! Temporary visualization of the Enemy's attack area.
 //!
-//! Questo modulo è volutamente separato dalla logica di combat: può essere
-//! rimosso insieme alla sua registrazione nel plugin senza modificare il danno.
+//! This module is deliberately separated from combat logic: it can be
+//! removed along with its registration in the plugin without affecting damage logic.
+
 
 use bevy::color::Color;
 use bevy::prelude::*;

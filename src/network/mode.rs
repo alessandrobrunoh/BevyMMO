@@ -1,11 +1,11 @@
-//! Ruolo dell'applicazione e condizioni di esecuzione per i sistemi Bevy.
+//! Application role and run conditions for Bevy systems.
 
 use bevy::prelude::*;
 
-/// Determina quali capability locali sono presenti nell'applicazione.
+/// Determines which local capabilities are present in the application.
 ///
-/// `HostClient` esegue sia simulazione autoritativa sia presentazione/client
-/// nello stesso processo ed è destinato a sviluppo e debug locale.
+/// `HostClient` runs both authoritative simulation and presentation/client
+/// in the same process and is intended for local development and debugging.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AppMode {
     Client,

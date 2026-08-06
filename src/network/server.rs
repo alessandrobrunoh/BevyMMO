@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::game_state::validate_player_name;
 use crate::network::protocol::*;
+use crate::plugins::entity::boss::Boss;
 use crate::plugins::entity::components::{EntityState, PlayerName, SpawnPoint};
 use crate::plugins::entity::dummy::components::Dummy;
 use crate::plugins::entity::enemy::components::Enemy;
@@ -28,24 +29,24 @@ use crate::plugins::spells::{
 };
 use crate::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 
-/// Impostazioni di connessione del server, conservate come risorsa.
-/// Pubblica perché usata come marker `run_if` dai sistemi che devono girare
-/// solo lato server (es. AI degli enemy).
+/// Server connection settings, stored as a resource.
+/// Public because used as a `run_if` marker by systems that should only
+/// run server-side (e.g. enemy AI).
 #[derive(Resource)]
 pub struct ServerConnectionConfig {
     pub server_addr: SocketAddr,
 }
 
-/// Marker applicato al link server-side dopo che il player è stato caricato e
-/// spawnato, per evitare join multipli dello stesso peer.
+/// Marker applied to the server-side link after the player is loaded and
+/// spawned, to prevent multiple joins from the same peer.
 #[derive(Component, Default)]
 pub struct Joined;
 
-/// Marker temporaneo: una query di caricamento/creazione è già in corso per il link.
+/// Temporary marker: a load/create query is already in progress for the link.
 #[derive(Component, Default)]
 pub struct PendingJoin;
 
-/// Identificatore del record PostgreSQL. Resta esclusivamente lato server.
+/// PostgreSQL record identifier. Remains strictly server-side.
 #[derive(Component, Clone, Copy)]
 pub struct DbPlayerId(pub Uuid);
 
@@ -55,8 +56,8 @@ struct JoinLoadResult {
     result: Result<PersistedPlayerSnapshot, PersistenceError>,
 }
 
-/// Canale tra task Tokio e sistemi ECS. Il receiver è protetto perché `std::sync::mpsc::Receiver`
-/// non è `Sync`, requisito necessario per una Bevy `Resource`.
+/// Channel between Tokio tasks and ECS systems. The receiver is protected because `std::sync::mpsc::Receiver`
+/// is not `Sync`, which is required for a Bevy `Resource`.
 #[derive(Resource)]
 struct JoinLoadResults {
     sender: mpsc::Sender<JoinLoadResult>,
@@ -95,7 +96,7 @@ impl Plugin for ServerPlugins {
 
         app.add_systems(
             Startup,
-            (start_server, spawn_demo_enemy, spawn_demo_dummy).chain(),
+            (start_server, spawn_demo_enemy, spawn_demo_dummy, spawn_boss).chain(),
         );
 
         app.add_observer(handle_new_client);
@@ -118,7 +119,7 @@ impl Plugin for ServerPlugins {
     }
 }
 
-// Avvia il server: spawna l'entità server e inizia ad ascoltare.
+// Starts the server: spawns the server entity and begins listening.
 fn start_server(config: Res<ServerConnectionConfig>, mut commands: Commands) {
     let server = commands
         .spawn((
@@ -134,15 +135,15 @@ fn start_server(config: Res<ServerConnectionConfig>, mut commands: Commands) {
     commands.trigger(Start { entity: server });
 }
 
-// Aggiunge il replication sender ai nuovi link client.
+// Adds the replication sender to new client links.
 fn handle_new_client(trigger: On<Add, LinkOf>, mut commands: Commands) {
     commands
         .entity(trigger.entity)
         .insert((ReplicationSender, Name::from("Client")));
 }
 
-// Solo logging al `Connected`: il player viene spawnato dal sistema
-// `handle_join_request` quando arriva il `JoinRequest` con il nome scelto.
+// Logging only on `Connected`: the player is spawned by the
+// `handle_join_request` system when `JoinRequest` arrives with the chosen name.
 fn handle_connected_client(trigger: On<Add, Connected>, query: Query<&RemoteId>) {
     info!(
         "handle_connected_client triggered for entity {:?}",
@@ -155,8 +156,8 @@ fn handle_connected_client(trigger: On<Add, Connected>, query: Query<&RemoteId>)
     info!("Client connected: peer {:?}", client_id.0);
 }
 
-// Consuma il primo `JoinRequest` per link connesso e avvia il caricamento DB.
-// Il marker `PendingJoin` rende l'operazione idempotente mentre il task async è in corso.
+// Consumes the first `JoinRequest` for a connected link and starts DB loading.
+// The `PendingJoin` marker makes the operation idempotent while the async task is in progress.
 fn handle_join_request(
     mut receivers: Query<
         (Entity, &mut MessageReceiver<JoinRequest>, &RemoteId),
@@ -199,7 +200,7 @@ fn handle_join_request(
     }
 }
 
-// Riceve i risultati DB sul main thread e solo qui crea entità Bevy.
+// Receives DB results on the main thread and creates Bevy entities only here.
 fn finish_pending_joins(
     results: Res<JoinLoadResults>,
     connected: Query<(), With<Connected>>,
@@ -294,7 +295,7 @@ fn finish_pending_joins(
     }
 }
 
-// Cattura l'ultima posizione autorevole prima di rimuovere il player server-side.
+// Captures the last authoritative position before removing the player server-side.
 fn handle_disconnected_client(
     trigger: On<Add, Disconnected>,
     remote_ids: Query<&RemoteId>,
@@ -358,10 +359,10 @@ fn handle_disconnected_client(
         .remove::<PendingJoin>();
 }
 
-/// Spawn di un enemy demo all'avvio del server.
-/// `spawn_entity::<Enemy>()` applica automaticamente `GameEntity`, statistiche,
-/// `Position`, `EntityColor`, il bundle di `Enemy` e `Replicate`. La posizione
-/// e il colore di default sono dichiarati in `<Enemy as EntityDefinition>`.
+/// Spawns a demo enemy at server startup.
+/// `spawn_entity::<Enemy>()` automatically applies `GameEntity`, stats,
+/// `Position`, `EntityColor`, the `Enemy` bundle, and `Replicate`. Default position
+/// and color are declared in `<Enemy as EntityDefinition>`.
 fn spawn_demo_enemy(mut commands: Commands) {
     let enemy = spawn_entity::<Enemy>(&mut commands);
     info!("Spawned demo enemy {:?}", enemy);
@@ -372,10 +373,21 @@ fn spawn_demo_dummy(mut commands: Commands) {
     info!("Spawned demo dummy {:?}", dummy);
 }
 
-/// Traduce i comandi spell arrivati dal network in richieste ECS interne.
+/// Spawns the dragon boss at server startup.
 ///
-/// Il client non può indicare direttamente l'entità caster: il server la risolve
-/// dal peer connesso e dal `PlayerId` del player già joinato.
+/// `spawn_entity::<Boss>()` applies `GameEntity`, stats, `Position`,
+/// `EntityColor`, the boss bundle (`Boss`, `BossPhase::Dormant`, `BossArena`,
+/// threat/spellbook/rotation state) and `Replicate`. The boss starts dormant
+/// until a player enters the arena ring (handled in Phase 1).
+fn spawn_boss(mut commands: Commands) {
+    let boss = spawn_entity::<Boss>(&mut commands);
+    info!("Spawned boss {:?}", boss);
+}
+
+/// Translates spell commands arriving from the network into internal ECS requests.
+///
+/// The client cannot directly specify the caster entity: the server resolves it
+/// from the connected peer and the `PlayerId` of the already joined player.
 fn handle_spell_cast_commands(
     mut receivers: Query<
         (&mut MessageReceiver<SpellCastCommand>, &RemoteId),
@@ -430,9 +442,8 @@ fn handle_spell_cast_commands(
     }
 }
 
-/// Traduce i comandi di rilascio spell (`SpellCastRelease`) in eventi interni
-/// [`SpellReleaseRequest`] che il sistema di spells consuma per terminare
-/// channeling o cancellare cast-time.
+/// Translates spell release commands (`SpellCastRelease`) into internal [`SpellReleaseRequest`]
+/// events that the spell system consumes to terminate channeling or cancel cast-time.
 fn handle_spell_release_commands(
     mut receivers: Query<
         (&mut MessageReceiver<SpellCastRelease>, &RemoteId),
@@ -458,10 +469,10 @@ fn handle_spell_release_commands(
     }
 }
 
-/// Processa le richieste di respawn: solo i player `Dead` vengono riportati
-/// in vita, gli altri vengono ignorati (no-op silenzioso). La mutazione è
-/// server-authoritative e viene replicata ai client tramite `Position`,
-/// `VitalStats` ed `EntityState`.
+/// Processes respawn requests: only `Dead` players are brought back
+/// to life, others are ignored (silent no-op). The mutation is
+/// server-authoritative and replicated to clients via `Position`,
+/// `VitalStats`, and `EntityState`.
 fn handle_respawn_requests(
     mut receivers: Query<
         (&mut MessageReceiver<RespawnRequest>, &RemoteId),
@@ -481,7 +492,7 @@ fn handle_respawn_requests(
     mut respawned: MessageWriter<RespawnedEvent>,
 ) {
     for (mut receiver, remote_id) in receivers.iter_mut() {
-        // `RespawnRequest` non ha payload: ci basta consumerlo se presente.
+        // `RespawnRequest` has no payload: consuming it if present is sufficient.
         let mut requested = false;
         for _ in receiver.receive() {
             requested = true;
@@ -497,7 +508,7 @@ fn handle_respawn_requests(
                 continue;
             }
             if *state != EntityState::Dead {
-                // Player ancora vivo: ignora.
+                // Player still alive: ignore.
                 continue;
             }
 
@@ -518,7 +529,7 @@ fn handle_respawn_requests(
     }
 }
 
-// Invia messaggi ai client.
+// Sends messages to clients.
 fn send_messages(
     keys: Option<Res<ButtonInput<KeyCode>>>,
     mut sender: ServerMultiMessageSender,

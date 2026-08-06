@@ -3,6 +3,7 @@
 //! This module contains all the game's concrete spell implementations.
 
 pub mod attack;
+pub mod dragon_enemy;
 pub mod fireball;
 pub mod healing_circle;
 pub mod meteorite;

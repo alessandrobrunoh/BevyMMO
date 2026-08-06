@@ -1,9 +1,9 @@
 //! Swift spell implementation.
 //!
-//! Channeling self-buff: mentre il caster tiene premuto F riceve un modifier
-//! `Speed * 1.20` che viene refreshato ogni `TICK_INTERVAL_SECONDS`. Il
-//! channel dura al massimo `CHANNEL_DURATION_SECONDS`; rilasciare F lo interrompe
-//! prima. Il modifier scade naturalmente poco dopo l'ultimo tick.
+//! Channeling self-buff: while the caster holds F they receive a
+//! `Speed * 1.35` modifier that refreshes every `TICK_INTERVAL_SECONDS`. The
+//! channel lasts at most `CHANNEL_DURATION_SECONDS`; releasing F interrupts it
+//! earlier. The modifier expires naturally shortly after the last tick.
 
 use crate::plugins::spells::{
     ChannelMovementPolicy, ModifierEffect, ModifierKind, Spell, SpellCastContext, SpellConfig,

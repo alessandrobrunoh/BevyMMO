@@ -1,4 +1,4 @@
-//! Player: entità controllata da un client.
+//! Player: client-controlled entity.
 
 pub mod components;
 pub mod spawn;
@@ -12,7 +12,8 @@ pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, _app: &mut App) {
-        // La transizione a `Dead` è gestita centralmente in `EntityPlugin`
-        // (`mark_dead_entities`), valida per tutte le entità.
+        // Transition to `Dead` is managed centrally in `EntityPlugin`
+        // (`mark_dead_entities`), applicable to all entities.
     }
 }
+

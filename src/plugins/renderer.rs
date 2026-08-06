@@ -6,36 +6,36 @@ pub struct RendererPlugin;
 
 impl Plugin for RendererPlugin {
     fn build(&self, app: &mut App) {
-        // I sistemi di presentazione girano solo mentre il giocatore vede il
-        // mondo (`InGame`/`Paused`). In `Paused` non fermano simulazione/rete:
-        // riguardano solo mesh/material/transform locali.
+        // Presentation systems run only while the player sees the world
+        // (`InGame`/`Paused`). In `Paused` they do not stop simulation/network:
+        // they only affect local mesh/material/transform components.
         app.add_systems(
             Update,
             (spawn_entity_meshes, sync_transforms, update_colors)
                 .chain()
                 .run_if(in_game_or_paused),
         )
-        // Uscendo dal game i componenti render locali vengono rimossi; le
-        // repliche gameplay (Position/EntityColor) restano e il renderer può
-        // ricrearli al re-entry.
+        // Leaving the game removes local render components;
+        // gameplay replicas (Position/EntityColor) remain and the renderer can
+        // recreate them upon re-entry.
         .add_systems(Update, cleanup_entity_render.run_if(not_in_game));
     }
 }
 
-/// Condizione di esecuzione: visibile solo nelle schermate che mostrano il mondo.
+/// Run condition: visible only on screens that display the world.
 fn in_game_or_paused(screen: Res<GameScreen>) -> bool {
     matches!(screen.0, Screen::InGame | Screen::Paused)
 }
 
-/// Condizione di esecuzione: tutte le schermate non-mondo (menu/settings/connecting).
+/// Run condition: all non-world screens (menu/settings/connecting).
 fn not_in_game(screen: Res<GameScreen>) -> bool {
     !matches!(screen.0, Screen::InGame | Screen::Paused)
 }
 
-/// Genera una mesh per le entità di gioco replicate non appena entrambi i
-/// componenti dati di render sono disponibili.
-/// `Position` ed `EntityColor` sono replicati; i componenti di render restano
-/// locali al client.
+/// Spawns a mesh for replicated game entities as soon as both render data
+/// components are available.
+/// `Position` and `EntityColor` are replicated; render components remain
+/// local to the client.
 fn spawn_entity_meshes(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -70,7 +70,7 @@ fn spawn_entity_meshes(
     }
 }
 
-/// Sync Transform della mesh da `Position` (replicata via lightyear).
+/// Syncs mesh Transform from `Position` (replicated via lightyear).
 fn sync_transforms(
     mut entities: Query<
         (&Position, Option<&LookDirection>, &mut Transform),
@@ -90,7 +90,7 @@ fn sync_transforms(
     }
 }
 
-/// Aggiorna il colore della mesh quando `EntityColor` cambia.
+/// Updates mesh color when `EntityColor` changes.
 fn update_colors(
     entities: Query<(&EntityColor, &MeshMaterial3d<StandardMaterial>), Changed<EntityColor>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -102,11 +102,11 @@ fn update_colors(
     }
 }
 
-/// Rimuove i componenti render locali (Mesh3d, MeshMaterial3d, Transform)
-/// dalle entità di gioco quando non siamo più in `InGame`/`Paused`.
+/// Removes local render components (Mesh3d, MeshMaterial3d, Transform)
+/// from game entities when no longer in `InGame`/`Paused`.
 ///
-/// Le entità e i loro componenti replicati (`Position`, `EntityColor`, ...)
-/// restano: il renderer li ricrea al re-entry grazie a `spawn_entity_meshes`.
+/// Entities and their replicated components (`Position`, `EntityColor`, ...)
+/// remain: the renderer recreates them upon re-entry thanks to `spawn_entity_meshes`.
 fn cleanup_entity_render(mut commands: Commands, entities: Query<Entity, With<Mesh3d>>) {
     for entity in entities.iter() {
         commands
@@ -116,3 +116,4 @@ fn cleanup_entity_render(mut commands: Commands, entities: Query<Entity, With<Me
             .remove::<Transform>();
     }
 }
+

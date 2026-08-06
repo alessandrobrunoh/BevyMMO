@@ -1,11 +1,12 @@
-//! Componenti specifici del Dummy.
+//! Components specific to the Dummy entity.
 
 use bevy::prelude::*;
 
-/// Marker component per identificare un'entità Dummy.
+/// Marker component to identify a Dummy entity.
 ///
-/// Il Dummy è un bersaglio statico con HP enormi, usato per testare
-/// sistema danni, UI targeting e spell. Non ha AI, non si muove e non
-/// ha spellbook.
+/// The Dummy is a static target with massive HP, used for testing
+/// damage systems, targeting UI, and spells. It has no AI, does not move,
+/// and has no spellbook.
 #[derive(Component, Debug, Default, Clone, Copy)]
 pub struct Dummy;
+

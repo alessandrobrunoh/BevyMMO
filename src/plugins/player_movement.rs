@@ -1,4 +1,4 @@
-//! Movimento punta-e-clicca del player e indicatore visivo del comando.
+//! Point-and-click player movement and visual command indicator.
 
 #[cfg(feature = "client")]
 use bevy::color::Color;
@@ -60,7 +60,7 @@ impl Plugin for PlayerMovementPlugin {
     }
 }
 
-/// Legge il click sinistro sul terreno e salva il punto da inviare al server.
+/// Reads left click on terrain and stores the point to send to the server.
 #[cfg(feature = "client")]
 fn select_move_target(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
@@ -75,8 +75,8 @@ fn select_move_target(
         return;
     };
 
-    // Distinguiamo il click iniziale (con indicatore visivo) dal tasto tenuto:
-    // in quest'ultimo caso aggiorniamo solo la destinazione, senza spammare anelli.
+    // We distinguish initial click (with visual indicator) from held key:
+    // in the latter case we only update destination without spamming rings.
     let just_pressed = mouse_buttons.just_pressed(MouseButton::Right);
     let held = mouse_buttons.pressed(MouseButton::Right);
     if !held {
@@ -113,7 +113,7 @@ fn select_move_target(
     spawn_click_indicator(&mut commands, &mut meshes, &mut materials, target);
 }
 
-/// Scrive lo stesso input per ogni tick, così il server mantiene il comando fino all'arrivo.
+/// Writes the same input for each tick, so the server retains the command until arrival.
 fn buffer_move_input(
     move_target: Res<MoveTarget>,
     mut players: Query<&mut ActionState<Inputs>, With<InputMarker<Inputs>>>,
@@ -125,7 +125,7 @@ fn buffer_move_input(
     }
 }
 
-/// Movimento autoritativo: il server aggiorna soltanto i Player verso il target ricevuto.
+/// Authoritative movement: the server updates only Players towards the received target.
 fn server_move_to_target(
     mut players: Query<
         (
@@ -159,7 +159,7 @@ fn server_move_to_target(
     }
 }
 
-/// Stesso calcolo sul Player predetto, per una risposta immediata al click.
+/// Same calculation on predicted Player for immediate click response.
 #[cfg(feature = "client")]
 fn predict_move_to_target(
     synced_client: Query<(), (With<Client>, With<IsSynced<()>>)>,
@@ -200,8 +200,8 @@ fn predict_move_to_target(
     }
 }
 
-/// Calcola la velocità effettiva applicando tutti i modifier `Speed` attivi
-/// sull'entità. Senza modifier, ritorna il valore base invariato.
+/// Calculates effective speed applying all active `Speed` modifiers
+/// on the entity. Without modifiers, returns unchanged base value.
 /// Calculates movement speed after active stat modifiers.
 ///
 /// This is shared by movement and the stats UI so the value displayed to the
@@ -345,7 +345,7 @@ fn spawn_click_indicator(
     ));
 }
 
-/// Due anelli si espandono e scompaiono rapidamente, come un indicatore di comando MOBA.
+/// Two rings expand and vanish quickly, like a MOBA command indicator.
 #[cfg(feature = "client")]
 fn animate_click_indicators(
     time: Res<Time>,
@@ -365,3 +365,4 @@ fn animate_click_indicators(
         transform.scale = Vec3::splat(0.2 + progress * 1.1);
     }
 }
+

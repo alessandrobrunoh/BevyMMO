@@ -20,33 +20,33 @@ use crate::plugins::spells::{
 };
 use crate::plugins::targeting::CurrentTarget;
 
-/// Impostazioni di connessione del client, conservate come risorsa.
+/// Client connection settings, stored as a resource.
 #[derive(Resource)]
 pub struct ClientConnectionConfig {
-    /// Deve essere unico tra client connessi allo stesso server Netcode.
+    /// Must be unique among clients connected to the same Netcode server.
     pub client_id: u64,
     pub server_addr: SocketAddr,
     pub client_addr: SocketAddr,
 }
 
-/// Nome validato in attesa di essere inviato al server.
+/// Validated player name waiting to be sent to the server.
 ///
-/// Viene popolato quando l'utente richiede la connessione e consumato
-/// non appena il `Client` lightyear passa nello stato `Connected`.
+/// Populated when the user requests a connection and consumed
+/// as soon as the lightyear `Client` enters the `Connected` state.
 #[derive(Resource, Default, Debug)]
 pub struct PendingJoinRequest(pub Option<String>);
 
-/// Il link ha completato almeno una connessione Lightyear. Distingue un vero
-/// disconnect dallo stato `Disconnected` iniziale creato da `Link::new(None)`.
+/// The link has completed at least one Lightyear connection. Distinguishes a true
+/// disconnect from the initial `Disconnected` state created by `Link::new(None)`.
 #[derive(Component)]
 pub(crate) struct ConnectedClient;
 
-/// L'utente ha richiesto esplicitamente il disconnect mentre il link era attivo.
+/// The user explicitly requested a disconnect while the link was active.
 #[derive(Component)]
 struct DisconnectRequested;
 
-/// Cleanup differito: evita di despawnare il link nello stesso frame in cui
-/// Lightyear applica i propri comandi di teardown.
+/// Deferred cleanup: avoids despawning the link in the same frame that
+/// Lightyear applies its own teardown commands.
 #[derive(Component)]
 struct PendingClientCleanup;
 
@@ -70,8 +70,8 @@ impl Plugin for ClientPlugins {
             tick_duration: self.tick_duration,
         });
 
-        // Il client non viene più spawnato in `Startup`: la socket UDP esiste
-        // solo dopo che l'utente ha richiesto esplicitamente la connessione.
+        // The client is no longer spawned in `Startup`: the UDP socket exists
+        // only after the user has explicitly requested connection.
         app.add_systems(
             Update,
             (connect_on_intent, disconnect_on_intent)
@@ -93,8 +93,8 @@ impl Plugin for ClientPlugins {
     }
 }
 
-// Consuma l'intento `Connect`: crea l'entità `Client`, apre la socket UDP e
-// avvia la connessione. Salva il nome validato per inviarlo dopo `Connected`.
+// Consumes the `Connect` intent: creates the `Client` entity, opens the UDP socket, and
+// starts the connection. Saves the validated name to send it after `Connected`.
 fn connect_on_intent(
     mut request: ResMut<ConnectionRequest>,
     mut pending: ResMut<PendingJoinRequest>,
@@ -111,7 +111,7 @@ fn connect_on_intent(
     request.0 = None;
     failure.0 = None;
 
-    // Evita doppie connessioni se l'utente clicca Play più volte.
+    // Prevents duplicate connections if the user clicks Play multiple times.
     if !clients.is_empty() {
         return;
     }
@@ -158,9 +158,8 @@ fn connect_on_intent(
     screen.0 = Screen::Connecting;
 }
 
-// Consuma l'intento `Disconnect`: triggera la disconnessione lightyear sul
-// `Client` corrente. Il cleanup locale vero e proprio avviene nell'observer
-// `handle_disconnected`.
+// Consumes the `Disconnect` intent: triggers lightyear disconnect on the
+// current `Client`. The actual local cleanup occurs in the `handle_disconnected` observer.
 fn disconnect_on_intent(
     mut request: ResMut<ConnectionRequest>,
     clients: Query<Entity, With<Client>>,
@@ -178,8 +177,8 @@ fn disconnect_on_intent(
     commands.trigger(Disconnect { entity: client });
 }
 
-// Non appena il client è connesso, invia la `JoinRequest` col nome validato
-// e passa allo schermo `InGame`.
+// As soon as the client is connected, sends the `JoinRequest` with the validated name
+// and transitions to the `InGame` screen.
 fn handle_connected(
     trigger: On<Add, Connected>,
     mut commands: Commands,
@@ -199,8 +198,8 @@ fn handle_connected(
     screen.0 = Screen::InGame;
 }
 
-// Su disconnect (manuale o da errore di rete), ripulisce lo stato pendente
-// e riporta la UI al MainMenu, eventualmente segnalando il motivo di fallimento.
+// On disconnect (manual or from network error), cleans up pending state
+// and returns the UI to MainMenu, optionally reporting the failure reason.
 fn handle_disconnected(
     trigger: On<Add, Disconnected>,
     disconnected: Query<&Disconnected>,
@@ -215,8 +214,8 @@ fn handle_disconnected(
         .ok()
         .and_then(|d| d.reason.clone());
 
-    // `Link::new(None)` riceve inizialmente `Disconnected` senza motivo: non è
-    // un fallimento e il client deve restare vivo per poter ricevere `Connect`.
+    // `Link::new(None)` initially receives `Disconnected` without a reason: this is not
+    // a failure and the client must remain alive to be able to receive `Connect`.
     if reason.is_none() && lifecycle.get(trigger.entity).is_err() {
         return;
     }
@@ -229,8 +228,8 @@ fn handle_disconnected(
     }
     screen.0 = Screen::MainMenu;
 
-    // Lightyear rimuove ancora componenti dal link in questo frame. Il despawn
-    // viene effettuato dal sistema dedicato al frame successivo.
+    // Lightyear is still removing components from the link in this frame. Despawning
+    // is performed by the dedicated system on the next frame.
     commands.entity(trigger.entity).insert(PendingClientCleanup);
 }
 
@@ -373,8 +372,8 @@ fn cast_spells_on_key(
     }
 }
 
-// Riduce la saturazione sulle entità predette, così il player locale è
-// visivamente distinto.
+// Reduces saturation on predicted entities so the local player is
+// visually distinct.
 fn handle_predicted_spawn(
     trigger: On<Add, (PlayerId, Predicted)>,
     mut predicted: Query<&mut EntityColor, Without<Controlled>>,
@@ -388,8 +387,8 @@ fn handle_predicted_spawn(
     }
 }
 
-// Riduce la saturazione del player controllato (locale) ancora di più.
-// Garantito girare solo dopo che il marker `Controlled` è stato aggiunto.
+// Reduces saturation of the controlled (local) player even further.
+// Guaranteed to run only after the `Controlled` marker has been added.
 fn lower_controlled_saturation(mut controlled: Query<&mut EntityColor, Added<Controlled>>) {
     for mut color in controlled.iter_mut() {
         let hsva = Hsva {
@@ -400,7 +399,7 @@ fn lower_controlled_saturation(mut controlled: Query<&mut EntityColor, Added<Con
     }
 }
 
-// Aggiunge `InputMarker` al player controllato (locale).
+// Adds `InputMarker` to the controlled (local) player.
 fn handle_controlled_spawn(
     trigger: On<Add, Controlled>,
     mut commands: Commands,
@@ -417,7 +416,7 @@ fn handle_controlled_spawn(
     ));
 }
 
-// Riduce la saturazione sulle entità interpolate (altri player / altre entità).
+// Reduces saturation on interpolated entities (other players / other entities).
 fn handle_interpolated_spawn(
     trigger: On<Add, Interpolated>,
     mut interpolated: Query<&mut EntityColor>,
@@ -431,15 +430,15 @@ fn handle_interpolated_spawn(
     }
 }
 
-// Riceve i messaggi dal server.
+// Receives messages from the server.
 fn receive_messages(mut receiver: Single<&mut MessageReceiver<PlayerMessage>>) {
     for message in receiver.receive() {
         info!("Received message: {:?}", message);
     }
 }
 
-// Converte i messaggi visual server -> client in messaggi Bevy locali letti dai
-// sistemi di presentazione in `plugins::spells::effects`.
+// Converts server -> client visual messages into local Bevy messages read by
+// presentation systems in `plugins::spells::effects`.
 fn receive_spell_visual_effects(
     mut receivers: Query<&mut MessageReceiver<SpellVisualEffect>, With<ConnectedClient>>,
     mut local_effects: MessageWriter<SpellVisualEffect>,

@@ -1,5 +1,5 @@
-# Ambiente di sviluppo: il server gira in locale con il compose docker.
-# I secret (password DB) vanno in config/local.toml (gitignored).
+# Development environment: the server runs locally with docker compose.
+# Secrets (DB password) go into config/local.toml (gitignored).
 
 database_url = "postgresql://bevy:bevy@127.0.0.1:5433/bevy_mmo"
 

@@ -1,7 +1,7 @@
-//! Visual client-side per la spell Healing Circle.
+//! Client-side visual for the Healing Circle spell.
 //!
-//! Il dispatcher in `plugins::spells::effects` chiama `spawn` quando arriva un
-//! `SpellVisualEffect` con l'id di Healing Circle.
+//! The dispatcher in `plugins::spells::effects` calls `spawn` when receiving a
+//! `SpellVisualEffect` with the Healing Circle id.
 
 use bevy::color::Color;
 use bevy::prelude::*;
@@ -18,7 +18,7 @@ pub struct HealingCircleVisual {
     duration_seconds: f32,
 }
 
-/// Spawn della rappresentazione visiva di Healing Circle.
+/// Spawns the visual representation of Healing Circle.
 pub fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -45,8 +45,8 @@ pub fn spawn(
     ));
 }
 
-/// Anima le entità `HealingCircleVisual` (rotazione leggera) e le despawna a
-/// fine durata.
+/// Animates `HealingCircleVisual` entities (slight rotation) and despawns them
+/// when the duration ends.
 pub fn animate(
     time: Res<Time>,
     mut commands: Commands,

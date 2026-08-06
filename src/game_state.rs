@@ -1,10 +1,10 @@
-//! Stato locale della schermata e intenti di connessione del client.
+//! Local screen state and client connection intents.
 
 use bevy::prelude::*;
 
-/// Schermata locale mostrata dal client.
+/// Local screen displayed by the client.
 ///
-/// `Paused` è solo un overlay: non ferma la simulazione né la rete.
+/// `Paused` is only an overlay: it does not pause simulation or network.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Screen {
     #[default]
@@ -36,7 +36,7 @@ pub enum PlayerNameError {
     TooLong,
 }
 
-/// Normalizza e valida il nome scelto dal giocatore.
+/// Normalizes and validates the player's chosen name.
 pub fn validate_player_name(name: &str) -> Result<String, PlayerNameError> {
     let name = name.trim();
     let length = name.chars().count();

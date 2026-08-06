@@ -1,9 +1,9 @@
-//! Spawn del projectile replicato per la spell Fireball.
+//! Spawn of the replicated projectile for the Fireball spell.
 //!
-//! A differenza di RayOfLight/HealingCircle (il cui visual è un effetto effimero
-//! client-side gestito tramite `SpellVisualEffect`), la Fireball crea una
-//! entity server-authoritative replicata: position, colore, marker visual e
-//! componente homing. Tutta la costruzione del bundle vive qui.
+//! Unlike RayOfLight/HealingCircle (whose visual is an ephemeral
+//! client-side effect managed via `SpellVisualEffect`), Fireball creates a
+//! server-authoritative replicated entity: position, color, visual marker, and
+//! homing component. All bundle construction lives here.
 
 use bevy::color::Color;
 use bevy::prelude::*;
@@ -14,10 +14,10 @@ use crate::plugins::spells::ProjectileSpawnRequest;
 
 use lightyear::prelude::{NetworkTarget, Replicate};
 
-/// Colore del proiettile Fireball (azzurro).
+/// Fireball projectile color (light blue).
 pub const PROJECTILE_COLOR: Color = Color::srgb(0.2, 0.8, 1.0);
 
-/// Spawna l'entità projectile replicata per Fireball.
+/// Spawns the replicated projectile entity for Fireball.
 pub fn spawn(commands: &mut Commands, start: Vec3, request: ProjectileSpawnRequest) {
     commands.spawn((
         Position(start),

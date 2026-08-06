@@ -1,4 +1,4 @@
-//! Lifecycle della scena di gioco, guidato da [`GameScreen`].
+//! Lifecycle of the game scene, driven by [`GameScreen`].
 
 use bevy::color::Color;
 use bevy::prelude::*;
@@ -7,33 +7,33 @@ use lightyear::prelude::Controlled;
 use crate::game_state::{GameScreen, Screen};
 use crate::network::protocol::Position;
 
-/// Marker per la root della scena di gioco (camera, luce, terreno).
+/// Marker for the game scene root (camera, light, ground).
 ///
-/// Esiste una sola entità con questo componente per client: il sistema di
-/// lifecycle lo usa sia per evitare spawn duplicati sia per il cleanup.
+/// Only one entity exists with this component per client: the lifecycle
+/// system uses it both to prevent duplicate spawns and for cleanup.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct GameSceneRoot;
 
-/// Marker della camera 3D della scena di gioco.
+/// Marker for the 3D camera of the game scene.
 ///
-/// Serve al sistema di follow per individuarla in modo univoco (il client ha
-/// anche una `Camera2d` per la UI e una o piu' `Camera3d` di debug/test).
+/// Used by the follow system to uniquely identify it (the client also has
+/// a `Camera2d` for the UI and one or more `Camera3d` for debug/testing).
 #[derive(Component, Debug, Clone, Copy)]
 pub struct GameCamera;
 
-/// Offset costante della camera rispetto al player seguito.
+/// Constant camera offset relative to the followed player.
 ///
-/// Mantiene la stessa inquadratura isometrica di spawn anche mentre il player
-/// si muove: 25 unita' in altezza e 25 in profondita' rispetto al target.
+/// Maintains the same isometric framing from spawn even as the player
+/// moves: 25 units high and 25 in depth relative to the target.
 const CAMERA_OFFSET: Vec3 = Vec3::new(0.0, 25.0, 25.0);
 
-/// Spawn/despawn la scena di gioco in base a [`GameScreen`].
+/// Spawns/despawns the game scene based on [`GameScreen`].
 ///
-/// - `InGame`/`Paused` + nessuna root: spawna la scena.
-/// - `MainMenu`/`Settings`/`Connecting` + root presente: despawn ricorsivo.
+/// - `InGame`/`Paused` + no root: spawns the scene.
+/// - `MainMenu`/`Settings`/`Connecting` + root present: recursive despawn.
 ///
-/// Il sistema è idempotente: può girare ogni frame senza effetti collaterali
-/// quando lo stato non cambia.
+/// The system is idempotent: it can run every frame without side effects
+/// when the state doesn't change.
 pub fn update_game_scene_lifecycle(
     mut commands: Commands,
     screen: Res<GameScreen>,
@@ -48,23 +48,23 @@ pub fn update_game_scene_lifecycle(
         spawn_game_scene(&mut commands, &mut meshes, &mut materials);
     } else if !in_game && has_root {
         for root in roots.iter() {
-            // despawn ricorsivo: rimuove camera, luce e terreno.
+            // recursive despawn: removes camera, light, and ground.
             commands.entity(root).despawn();
         }
     }
 }
 
-/// Sposta la camera di gioco per seguire il player locale (`Controlled`).
+/// Moves the game camera to follow the local player (`Controlled`).
 ///
-/// Mantenendo un offset costante ([`CAMERA_OFFSET`]) rispetto alla `Position`
-/// del player locale si ottiene un effetto "third-person isometrico" senza
-/// rotazioni: la camera rimane fissa sul player mentre il server replica i
-/// movimenti. Se il player locale non e' ancora spawnato (menu/login) la
-/// camera resta dove l'ha messa lo spawn della scena.
+/// By maintaining a constant offset ([`CAMERA_OFFSET`]) relative to the local
+/// player's `Position`, a rotation-free "third-person isometric" effect is achieved:
+/// the camera remains fixed on the player while the server replicates movements.
+/// If the local player is not yet spawned (menu/login), the camera remains
+/// where scene spawn placed it.
 ///
-/// # Esempio
+/// # Example
 /// ```ignore
-/// // Player in (10, 0, 5) -> camera in (10, 25, 30) rivolta verso il player.
+/// // Player at (10, 0, 5) -> camera at (10, 25, 30) looking at the player.
 /// ```
 pub fn follow_controlled_player(
     player: Query<&Position, With<Controlled>>,
@@ -159,7 +159,7 @@ mod tests {
         set_screen(&mut app, Screen::InGame);
         app.update();
 
-        // Player locale controllato dal client.
+        // Local player controlled by the client.
         app.world_mut()
             .spawn((Controlled, Position(Vec3::new(10.0, 0.0, 5.0))));
         app.update();
@@ -190,7 +190,7 @@ mod tests {
             .single(app.world())
             .expect("game camera spawned")
             .translation;
-        assert_eq!(before, after, "nessun player controllato -> camera ferma");
+        assert_eq!(before, after, "no controlled player -> stationary camera");
     }
 
     #[test]
@@ -198,7 +198,7 @@ mod tests {
         let mut app = test_app();
         set_screen(&mut app, Screen::MainMenu);
         app.update();
-        assert_eq!(root_count(&mut app), 0, "nessuna scena nel menu");
+        assert_eq!(root_count(&mut app), 0, "no scene in menu");
     }
 
     #[test]
@@ -207,7 +207,7 @@ mod tests {
         set_screen(&mut app, Screen::InGame);
         app.update();
         assert_eq!(root_count(&mut app), 1);
-        // idempotente: un secondo update non duplica.
+        // idempotent: a second update does not duplicate.
         app.update();
         assert_eq!(root_count(&mut app), 1);
     }
@@ -221,7 +221,7 @@ mod tests {
 
         set_screen(&mut app, Screen::Paused);
         app.update();
-        assert_eq!(root_count(&mut app), 1, "Paused e' un overlay, non despawn");
+        assert_eq!(root_count(&mut app), 1, "Paused is an overlay, not despawn");
     }
 
     #[test]
@@ -234,11 +234,11 @@ mod tests {
         for target in [Screen::MainMenu, Screen::Settings, Screen::Connecting] {
             set_screen(&mut app, Screen::InGame);
             app.update();
-            assert_eq!(root_count(&mut app), 1, "re-entry fallita per {:?}", target);
+            assert_eq!(root_count(&mut app), 1, "re-entry failed for {:?}", target);
 
             set_screen(&mut app, target);
             app.update();
-            assert_eq!(root_count(&mut app), 0, "cleanup fallito per {:?}", target);
+            assert_eq!(root_count(&mut app), 0, "cleanup failed for {:?}", target);
         }
     }
 
@@ -247,55 +247,55 @@ mod tests {
         let mut app = test_app();
         app.add_plugins(RendererPlugin);
 
-        // Entità di gioco replicata: ha Position/EntityColor ma niente render.
+        // Replicated game entity: has Position/EntityColor but no rendering.
         let entity = app
             .world_mut()
             .spawn((Position(Vec3::ZERO), EntityColor(Color::BLACK)))
             .id();
 
-        // InGame: il renderer aggiunge Mesh3d/MeshMaterial3d/Transform.
+        // InGame: renderer adds Mesh3d/MeshMaterial3d/Transform.
         set_screen(&mut app, Screen::InGame);
         app.update();
         app.update();
         let world = app.world();
         assert!(
             world.entity(entity).get::<Mesh3d>().is_some(),
-            "il renderer doveva aver spawnato la mesh InGame"
+            "renderer should have spawned mesh InGame"
         );
 
-        // Torna al menu: i componenti render locali vengono rimossi ma
-        // Position/EntityColor restano (sono replicati, non locali).
+        // Return to menu: local render components are removed but
+        // Position/EntityColor remain (replicated, not local).
         set_screen(&mut app, Screen::MainMenu);
         app.update();
         let world = app.world();
         let entity_ref = world.entity(entity);
-        assert!(entity_ref.get::<Mesh3d>().is_none(), "Mesh3d deve sparire");
+        assert!(entity_ref.get::<Mesh3d>().is_none(), "Mesh3d should disappear");
         assert!(
             entity_ref
                 .get::<MeshMaterial3d<StandardMaterial>>()
                 .is_none(),
-            "MeshMaterial3d deve sparire"
+            "MeshMaterial3d should disappear"
         );
         assert!(
             entity_ref.get::<Transform>().is_none(),
-            "Transform deve sparire"
+            "Transform should disappear"
         );
         assert!(
             entity_ref.get::<Position>().is_some(),
-            "Position e' replicata"
+            "Position is replicated"
         );
         assert!(
             entity_ref.get::<EntityColor>().is_some(),
-            "EntityColor e' replicata"
+            "EntityColor is replicated"
         );
 
-        // Re-entry: il renderer ricrea i componenti render.
+        // Re-entry: renderer recreates render components.
         set_screen(&mut app, Screen::InGame);
         app.update();
         app.update();
         assert!(
             app.world().entity(entity).get::<Mesh3d>().is_some(),
-            "il renderer deve ricreare la mesh al re-entry"
+            "renderer should recreate mesh on re-entry"
         );
     }
 }

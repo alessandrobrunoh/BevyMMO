@@ -1,8 +1,8 @@
-//! Fireball: spell che spawna un proiettile homing verso il target selezionato.
+//! Fireball: spell that spawns a homing projectile toward the selected target.
 //!
-//! A differenza della RayOfLight (AoE su posizione), la Fireball crea una
-//! entity projectile che insegue il target entity. Il danno viene applicato
-//! al contatto dal sistema `update_homing_projectiles`.
+//! Unlike RayOfLight (position-based AoE), Fireball creates a
+//! projectile entity that pursues the target entity. Damage is applied
+//! on contact by the `update_homing_projectiles` system.
 
 use crate::plugins::spells::{Spell, SpellCastContext, SpellConfig, SpellId, TargetingMode};
 
@@ -13,12 +13,12 @@ impl FireballSpell {
     pub const ID: &'static str = "fireball";
     pub const DISPLAY_NAME: &'static str = "Fireball";
     pub const COOLDOWN_SECONDS: f32 = 10.0;
-    /// Velocità del proiettile in unità/secondo.
+    /// Projectile speed in units/second.
     ///
-    /// Deve essere significativamente superiore alla velocità di movimento
-    /// dei player (che nel `FixedUpdate` viaggiano a ~9 unità/sec di base,
-    /// più eventuali modifier come `Swift`), altrimenti il target può
-    /// semplicemente correre via e sfuggire al proiettile.
+    /// Must be significantly higher than player movement speed
+    /// (which in `FixedUpdate` travels at ~9 units/sec base,
+    /// plus any modifiers like `Swift`), otherwise the target can
+    /// simply run away and outrun the projectile.
     pub const PROJECTILE_SPEED: f32 = 24.0;
     pub const HIT_RADIUS: f32 = 0.5;
     pub const DAMAGE_MULTIPLIER: f32 = 1.2;
@@ -39,7 +39,7 @@ impl Spell for FireballSpell {
 
     fn cast(&self, ctx: &mut SpellCastContext) {
         let Some(target) = ctx.target_entity else {
-            // Nessun target entity: non fare nulla
+            // No target entity: do nothing
             return;
         };
 

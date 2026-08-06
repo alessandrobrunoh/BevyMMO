@@ -1,6 +1,6 @@
-//! Entità SeaORM per la tabella `players`.
+//! SeaORM entity for the `players` table.
 //!
-//! Schema inferito (PostgreSQL):
+//! Inferred schema (PostgreSQL):
 //!
 //! ```sql
 //! CREATE TABLE players (
@@ -13,17 +13,17 @@
 //! );
 //! ```
 //!
-//! `normalized_name` è unica a livello DB per garantire la correttezza di
-//! `find_or_create` sotto inserimenti concorrenti; l'helper di normalizzazione
-//! lato applicazione si trova in [`crate::plugins::persistence::normalize_name`].
+//! `normalized_name` is unique at DB level to ensure correctness of
+//! `find_or_create` under concurrent inserts; the application-side normalization
+//! helper is located in [`crate::plugins::persistence::normalize_name`].
 
 use sea_orm::entity::prelude::*;
 use uuid::Uuid;
 
-/// Alias di dominio per il model di lettura.
+/// Domain alias for the read model.
 ///
-/// `PlayerRecord` è ciò che i chiamanti ricevono dalle letture del repository;
-/// le mutazioni passano tramite [`PlayerActiveModel`].
+/// `PlayerRecord` is what callers receive from repository reads;
+/// mutations pass through [`PlayerActiveModel`].
 pub type PlayerRecord = Model;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
@@ -31,11 +31,11 @@ pub type PlayerRecord = Model;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// Chiave di lookup stabile (lowercase, trimmata). Supportata da un indice UNIQUE.
+    /// Stable lookup key (lowercase, trimmed). Supported by a UNIQUE index.
     pub normalized_name: String,
-    /// Display name in formato libero, come fornito dal player.
+    /// Free-form display name, as provided by the player.
     pub display_name: String,
-    /// Posizione mondiale del player, decomposta per assi (f32 corrisponde a `Vec3` di Bevy).
+    /// Player world position, decomposed into axes (f32 corresponds to Bevy's `Vec3`).
     pub pos_x: f32,
     pub pos_y: f32,
     pub pos_z: f32,
@@ -45,3 +45,4 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+

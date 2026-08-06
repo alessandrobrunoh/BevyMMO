@@ -1,14 +1,14 @@
-# Ambiente di produzione.
-# Il server gira sulla macchina 193.70.42.29; i client si connettono a quell'IP.
-# `database_url` NON va messo qui: viene iniettato come env var dal deploy
-# (es. docker-compose: DATABASE_URL=postgresql://...).
+# Production environment.
+# Server runs on host 193.70.42.29; clients connect to that IP.
+# `database_url` should NOT be put here: it is injected as env var by deployment
+# (e.g. docker-compose: DATABASE_URL=postgresql://...).
 
 log_filter = "warn,bevy_lightyear_game=info,lightyear=warn"
 
 [server]
-# Accetta connessioni su tutte le interfacce.
+# Accepts connections on all interfaces.
 bind_addr = "0.0.0.0:5051"
 
 [client]
-# Il client punta al server di produzione.
+# Client targets the production server.
 server_addr = "193.70.42.29:5051"

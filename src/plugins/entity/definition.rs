@@ -1,10 +1,10 @@
-//! Contratto di definizione di un'entità di gioco.
+//! Definition contract of a game entity.
 //!
-//! `EntityDefinition` NON è un trait OOP "è-un": è un contratto di *dato*
-//! che ogni entità concreta implementa per centralizzare lo spawn e la
-//! configurazione di rete. In Bevy è idiomatico avere componenti marker
-//! + bundle di dati, non polimorfismo runtime. Questo trait dichiara
-//! "come si costruisce" un'entità e quali componenti di rete vuole.
+//! `EntityDefinition` is NOT an OOP "is-a" trait: it is a *data* contract
+//! that each concrete entity implements to centralize spawning and network
+//! configuration. In Bevy it is idiomatic to have marker components
+//! + data bundles, not runtime polymorphism. This trait declares
+//! "how an entity is built" and which network components it requires.
 
 use bevy::color::Color;
 use bevy::prelude::*;
@@ -13,36 +13,36 @@ use lightyear::prelude::NetworkTarget;
 use crate::plugins::entity::components::EntityKind;
 use crate::stats::components::StatsBundleData;
 
-/// Ogni entità di gioco implementa questo trait. L'helper `spawn_entity::<T>()`
-/// lo usa per costruire l'entità in modo uniforme, applicando automaticamente
-/// `GameEntity`, i componenti statistici (`MovementStats`, `CombatStats`, `VitalStats`),
-/// `Position`, `EntityColor` e la replicazione lightyear. Così ogni nuova entità
-/// è automaticamente sincronizzata sul network senza configurazione manuale.
+/// Every game entity implements this trait. The `spawn_entity::<T>()` helper
+/// uses it to construct the entity uniformly, automatically applying
+/// `GameEntity`, stat components (`MovementStats`, `CombatStats`, `VitalStats`),
+/// `Position`, `EntityColor`, and lightyear replication. Thus every new entity
+/// is automatically synchronized over the network without manual configuration.
 pub trait EntityDefinition: Component {
-    /// Nome leggibile (logging, debug).
+    /// Readable name (logging, debug).
     fn name() -> &'static str;
 
-    /// Bundle di componenti identità/dati specifiche (solo marker + componenti
-    /// proprie di questa entità, NON `Position`/`EntityColor`/statistiche che sono
-    /// gestite dal sistema di spawn centrale).
+    /// Bundle of specific identity/data components (only markers + components
+    /// belonging to this entity, NOT `Position`/`EntityColor`/stats which are
+    /// managed by the central spawn system).
     fn bundle() -> impl Bundle;
 
-    /// Posizione iniziale. Default `Vec3::ZERO`.
+    /// Initial position. Default `Vec3::ZERO`.
     fn initial_position() -> Vec3 {
         Vec3::ZERO
     }
 
-    /// Colore iniziale. Default grigio neutro.
+    /// Initial color. Default neutral gray.
     fn initial_color() -> Color {
         Color::srgb(0.5, 0.5, 0.5)
     }
 
-    /// Tipo di entità per targeting/UI. Default `Neutral`.
+    /// Entity kind for targeting/UI. Default `Neutral`.
     fn entity_kind() -> EntityKind {
         EntityKind::Neutral
     }
 
-    /// Statistiche iniziali di movimento, combattimento e vitali.
+    /// Initial movement, combat, and vital stats.
     fn stats() -> StatsBundleData {
         StatsBundleData {
             movement: crate::stats::components::MovementStats { speed: 0.15 },
@@ -59,9 +59,10 @@ pub trait EntityDefinition: Component {
         }
     }
 
-    /// Target di replicazione lightyear di default. Override solo se serve
-    /// un target diverso (es. `NetworkTarget::AllExceptSingle(peer)`).
+    /// Default lightyear replication target. Override only if a different target
+    /// is needed (e.g. `NetworkTarget::AllExceptSingle(peer)`).
     fn replication_target() -> NetworkTarget {
         NetworkTarget::All
     }
 }
+

@@ -1,7 +1,8 @@
-//! Definizione di spawn del Dummy.
+//! Dummy spawn definition.
 //!
-//! Il Dummy è un'entità statica con HP enormi, usata per testare
-//! il sistema danni, UI targeting e spell. Non ha AI e non si muove.
+//! The Dummy is a static entity with massive HP, used for testing
+//! the damage system, targeting UI, and spells. It has no AI and does not move.
+
 
 use bevy::color::Color;
 use bevy::prelude::*;

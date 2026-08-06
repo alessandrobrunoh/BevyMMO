@@ -1,9 +1,9 @@
-//! Migrazione: rinomina l'id della spell `fireball` in `ray_of_light`.
+//! Migration: renames spell id `fireball` to `ray_of_light`.
 //!
-//! A seguito del refactor della spell (da projectile a beam), l'id testuale
-//! usato in `Spellbook` e nella tabella `player_spells` è cambiato. Senza
-//! questa migrazione i player esistenti si ritroverebbero con uno slot
-//! orfano (id non più registrato nel `SpellRegistry`) e senza il nuovo ray.
+//! Following the spell refactor (from projectile to beam), the textual id
+//! used in `Spellbook` and in the `player_spells` table has changed. Without
+//! this migration, existing players would end up with an orphan slot
+//! (id no longer registered in `SpellRegistry`) and without the new ray.
 
 use sea_orm_migration::prelude::*;
 
@@ -18,8 +18,8 @@ impl MigrationName for Migration {
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // ON CONFLICT DO NOTHING per gestire DB in cui `ray_of_light` esistesse
-        // già (es. seed manuale): non blocchiamo la migrazione.
+        // ON CONFLICT DO NOTHING to handle DBs where `ray_of_light` already
+        // exists (e.g. manual seed): we don't block the migration.
         let rename = r#"
             UPDATE player_spells
             SET spell_id = 'ray_of_light'
@@ -32,7 +32,7 @@ impl MigrationTrait for Migration {
         "#;
         manager.get_connection().execute_unprepared(rename).await?;
 
-        // Cleanup degli slot duplicati residuali nel caso limite sopra.
+        // Cleanup residual duplicate slots in the edge case above.
         let cleanup = r#"
             DELETE FROM player_spells
             WHERE spell_id = 'fireball'

@@ -1,8 +1,8 @@
-//! Overlay di pausa: Resume e Return to Main Menu.
+//! Pause overlay: Resume and Return to Main Menu.
 //!
-//! È un puro overlay UI: non modifica `Time`, `FixedUpdate` o la rete. La
-//! transizione `InGame <-> Paused` è gestita da [`crate::ui::systems::toggle_pause`]
-//! (il tasto configurato in `KeyBindings`) e dai pulsanti stessi.
+//! Pure UI overlay: does not mutate `Time`, `FixedUpdate`, or network. The
+//! `InGame <-> Paused` transition is managed by [`crate::ui::systems::toggle_pause`]
+//! (the key configured in `KeyBindings`) and by the buttons themselves.
 
 use bevy::prelude::*;
 
@@ -11,7 +11,7 @@ use crate::ui::button::{spawn_button, UiButtonAction};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 
-/// Marker: root del pause overlay.
+/// Marker: pause overlay root.
 #[derive(Component)]
 pub struct PauseMenuUi;
 

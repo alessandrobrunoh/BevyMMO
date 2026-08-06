@@ -1,2 +1,3 @@
-- [ ] @spells e @crowd_control non ha senso che siano staccati poi dovrei sistemare le cartelle perche non si capisce molto ora
-- [ ] Fare un controllo di pulizia se ci sono DesignPattern usati male o migliori o roba inutilizzata
+- [ ] @spells and @crowd_control do not make sense as separate items, should clean up folders because structure is confusing now
+- [ ] Perform cleanup audit for misapplied or better Design Patterns or unused code
+- [x] translate all comments into English

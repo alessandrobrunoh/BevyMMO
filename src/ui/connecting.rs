@@ -1,8 +1,8 @@
-//! Schermata `Connecting`: overlay minimale con solo il testo "Connecting…".
+//! `Connecting` screen: minimal overlay with only the text "Connecting…".
 //!
-//! Visibile solo quando [`crate::game_state::Screen`] è `Connecting`. Lo spawn
-//! avviene una sola volta in `Startup`; la visibilità è gestita cambiando solo
-//! [`Display`] sul nodo root.
+//! Visible only when [`crate::game_state::Screen`] is `Connecting`. Spawning
+//! happens once in `Startup`; visibility is managed by changing only
+//! [`Display`] on the root node.
 
 use bevy::prelude::*;
 
@@ -10,7 +10,7 @@ use crate::game_state::{GameScreen, Screen};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 
-/// Marker: root della schermata `Connecting`.
+/// Marker: root of the `Connecting` screen.
 #[derive(Component)]
 pub struct ConnectingUi;
 

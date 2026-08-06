@@ -1,8 +1,8 @@
-//! Migrazione: rinomina l'id della spell `followball` in `fireball`.
+//! Migration: renames spell id `followball` to `fireball`.
 //!
-//! La spell homing è stata ribattezzata `Fireball` (e resa molto più veloce).
-//! Senza questa migrazione i player esistenti manterrebbero uno slot con id
-//! `followball`, orfano rispetto al `SpellRegistry` che ora registra `fireball`.
+//! The homing spell has been renamed to `Fireball` (and made much faster).
+//! Without this migration, existing players would keep a slot with id
+//! `followball`, orphaned relative to `SpellRegistry` which now registers `fireball`.
 
 use sea_orm_migration::prelude::*;
 
@@ -17,8 +17,8 @@ impl MigrationName for Migration {
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Se `fireball` fosse già presente per il player (seed manuale),
-        // evitiamo la violazione della primary key (player_id, spell_id).
+        // If `fireball` is already present for the player (manual seed),
+        // we avoid primary key violation (player_id, spell_id).
         let rename = r#"
             UPDATE player_spells
             SET spell_id = 'fireball'
@@ -31,7 +31,7 @@ impl MigrationTrait for Migration {
         "#;
         manager.get_connection().execute_unprepared(rename).await?;
 
-        // Cleanup degli slot residuali nel caso limite sopra.
+        // Cleanup residual slots in the edge case above.
         let cleanup = r#"
             DELETE FROM player_spells
             WHERE spell_id = 'followball'

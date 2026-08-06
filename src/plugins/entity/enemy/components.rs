@@ -1,12 +1,12 @@
-//! Componenti specifiche dell'Enemy.
+//! Enemy-specific components.
 
 use bevy::prelude::*;
 
-/// Marker component per enemy (AI controllata dal server).
+/// Marker component for enemy (server-controlled AI).
 #[derive(Component, Debug, Default, Clone, Copy)]
 pub struct Enemy;
 
-/// Raggio di aggro: entro questa distanza dal target, l'enemy lo insegue.
+/// Aggro radius: within this distance from the target, the enemy pursues it.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
 #[reflect(Component)]
 pub struct AggroRange(pub f32);
@@ -17,14 +17,15 @@ impl Default for AggroRange {
     }
 }
 
-/// Timer di respawn: attachato a un `Enemy` quando entra in `EntityState::Dead`.
-/// Il sistema `enemy_respawn` lo decrementa finché non scade, dopodiché
-/// l'enemy torna in vita allo `SpawnPoint`.
+/// Respawn timer: attached to an `Enemy` when it enters `EntityState::Dead`.
+/// The `enemy_respawn` system decrements it until expiry, after which
+/// the enemy is revived at its `SpawnPoint`.
 #[derive(Component, Debug, Clone, Copy, Reflect)]
 #[reflect(Component)]
 pub struct Respawning {
     pub remaining: f32,
 }
 
-/// Tempo di respawn del nemico dopo la morte, in secondi.
+/// Respawn duration of the enemy after death, in seconds.
 pub const ENEMY_RESPAWN_SECONDS: f32 = 10.0;
+

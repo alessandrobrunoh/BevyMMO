@@ -1,7 +1,7 @@
-//! Sistemi delle statistiche: applicazione danno/cura/modifier, scadenza
-//! modifier e gestione morte.
+//! Stats systems: applying damage/healing/modifiers, modifier expiration,
+//! and death management.
 //!
-//! Tutti i sistemi che mutano lo stato di gameplay sono server-authoritative.
+//! All systems that mutate gameplay state are server-authoritative.
 
 use bevy::prelude::*;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,7 +15,7 @@ use crate::stats::modifiers::{
 
 static NEXT_MODIFIER_ID: AtomicU64 = AtomicU64::new(0);
 
-/// Applica i `DamageEvent` accumulati: riduzione armatura + clamp.
+/// Applies accumulated `DamageEvent`s: armor reduction + clamping.
 pub fn apply_damage(
     mut events: MessageReader<DamageEvent>,
     mut targets: Query<(&mut VitalStats, &CombatStats)>,
@@ -29,7 +29,7 @@ pub fn apply_damage(
     }
 }
 
-/// Applica i `HealEvent` accumulati, clamping al massimo.
+/// Applies accumulated `HealEvent`s, clamping to maximum.
 pub fn apply_healing(mut events: MessageReader<HealEvent>, mut targets: Query<&mut VitalStats>) {
     for event in events.read() {
         let Ok(mut vital) = targets.get_mut(event.target) else {
@@ -39,8 +39,8 @@ pub fn apply_healing(mut events: MessageReader<HealEvent>, mut targets: Query<&m
     }
 }
 
-/// Converte `ApplyStatModifierEvent` in `StatModifierInstance` attaccati
-/// al bersaglio via `ActiveStatModifiers`.
+/// Converts `ApplyStatModifierEvent` into `StatModifierInstance` attached
+/// to the target via `ActiveStatModifiers`.
 pub fn apply_stat_modifiers(
     mut commands: Commands,
     mut events: MessageReader<ApplyStatModifierEvent>,
@@ -219,7 +219,7 @@ fn are_modifier_values_equal(left: f32, right: f32) -> bool {
     (left - right).abs() <= f32::EPSILON
 }
 
-/// Decrementa la durata dei modifier attivi e rimuove quelli scaduti.
+/// Decrements the duration of active modifiers and removes expired ones.
 pub fn tick_stat_modifiers(
     time: Res<Time>,
     mut targets: Query<(Entity, &mut ActiveStatModifiers)>,
@@ -276,9 +276,9 @@ pub fn tick_stat_modifiers(
     }
 }
 
-/// Calcola il valore effective di un `StatField` dato il valore base e i
-/// modifier attivi. L'ordine è: tutti gli `Add` prima, poi `Multiply`,
-/// infine un eventuale `Override` vince su tutto.
+/// Calculates the effective value of a `StatField` given the base value and active
+/// modifiers. Order: all `Add` first, then `Multiply`,
+/// and finally an `Override` wins over everything.
 pub fn effective_value(field: StatField, base: f32, modifiers: &[StatModifierInstance]) -> f32 {
     let mut result = base;
     let mut override_value: Option<f32> = None;

@@ -1,12 +1,12 @@
 //! Client-only visual spell effects.
 //!
-//! Questo modulo è solo un **dispatcher**: legge i messaggi `SpellVisualEffect`
-//! replicati dal server e invoca la funzione `spawn` del modulo `visual` della
-//! spell corrispondente (es. `crate::spells::ray_of_light::visual`).
+//! This module is purely a **dispatcher**: it reads `SpellVisualEffect` messages
+//! replicated from the server and calls the `spawn` function in the corresponding
+//! spell's `visual` module (e.g. `crate::spells::ray_of_light::visual`).
 //!
-//! Le singole spell contengono sia il componente marker visivo che le relative
-//! funzioni di spawn/animazione. Il cleanup centralizzato si basa sul marker
-//! `SpellVisual` applicato a ogni entità visiva.
+//! Individual spells contain both the visual marker component and related
+//! spawn/animation functions. Centralized cleanup is based on the
+//! `SpellVisual` marker placed on each visual entity.
 
 use bevy::prelude::*;
 
@@ -20,8 +20,8 @@ use crate::spells::meteorite::MeteoriteSpell;
 use crate::spells::ray_of_light::RayOfLightSpell;
 use crate::spells::stun_field::StunFieldSpell;
 
-/// Marker applicato a tutte le entità visual delle spell. Permette il cleanup
-/// centralizzato quando si esce dal gameplay.
+/// Marker placed on all spell visual entities. Enables centralized cleanup
+/// when leaving gameplay.
 #[derive(Component)]
 pub struct SpellVisual;
 
@@ -116,7 +116,7 @@ fn spawn_spell_visuals(
                 );
             }
             other => {
-                bevy::log::debug!("SpellVisualEffect senza visual registrato: {other}");
+                bevy::log::debug!("SpellVisualEffect without registered visual: {other}");
             }
         }
     }
@@ -185,12 +185,13 @@ fn should_spawn_visual(
     true
 }
 
-/// Despawna tutte le entità visual quando non si è in gameplay.
+/// Despawns all visual entities when not in gameplay.
 fn cleanup_spell_visuals(mut commands: Commands, visuals: Query<Entity, With<SpellVisual>>) {
     for entity in visuals.iter() {
         commands.entity(entity).despawn();
     }
 }
+
 
 #[cfg(test)]
 mod tests {

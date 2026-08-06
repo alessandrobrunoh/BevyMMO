@@ -12,53 +12,52 @@ use crate::stats::events::{
     ApplyStatModifierEvent, DamageEvent, HealEvent, ModifierEffect, ModifierKind,
 };
 
-/// Come una spell seleziona i propri bersagli al momento del cast.
+/// How a spell selects its targets at cast time.
 ///
-/// Questo enum tipizza ciò che prima era implicito nei costruttori di
-/// [`SpellConfig`], e viene usato sia per validare l'input (es. un cast di
-/// `SingleEntity` senza `target_entity` fallisce), sia per scegliere la UI di
-/// targeting lato client (cursor diverso, preview del cerchio, ecc.).
+/// This enum types what was previously implicit in [`SpellConfig`] constructors,
+/// and is used both for input validation (e.g., a `SingleEntity` cast
+/// without `target_entity` fails), and for choosing client-side targeting UI
+/// (different cursor, circle preview, etc.).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetingMode {
-    /// Centrata sul caster, colpisce tutto in un raggio (es. `Attack`).
+    /// Centered on the caster, affects everything in a radius (e.g. `Attack`).
     SelfCentered,
-    /// Tiro in linea d'aria lungo la direzione di sguardo (es. `RayOfLight`).
+    /// Line-of-sight line shot along look direction (e.g. `RayOfLight`).
     DirectionalLine,
-    /// Una singola entità selezionata (es. `Fireball`).
+    /// A single selected entity (e.g. `Fireball`).
     SingleEntity,
-    /// AoE a terra nella posizione indicata (es. `HealingCircle`).
+    /// Ground AoE at the indicated position (e.g. `HealingCircle`).
     GroundAoe,
 }
 
-/// Classifica il modello temporale di una spell ai fini del pipeline di cast.
+/// Classifies the timing model of a spell for the cast pipeline.
 ///
-/// Il valore è derivato in [`Spell::cast_kind`] dalla [`SpellConfig`], ma può
-/// essere sovrascritto dalle implementazioni quando serve un comportamento
-/// speciale (raro).
+/// The value is derived in [`Spell::cast_kind`] from [`SpellConfig`], but can
+/// be overridden by implementations when special behavior is needed (rare).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CastKind {
-    /// Effetto immediato allo `just_pressed` (comportamento storico).
+    /// Immediate effect on `just_pressed` (historical behavior).
     #[default]
     Instant,
-    /// Wind-up bloccante: il caster deve restare fermo per `cast_time_seconds`
-    /// prima che l'effetto parta. Il movimento interrompe sempre il cast.
+    /// Blocking wind-up: caster must remain stationary for `cast_time_seconds`
+    /// before the effect fires. Movement always cancels the cast.
     CastTime,
-    /// Effetto ripetuto finché il caster mantiene premuto il tasto. Il
-    /// movimento interrompe o meno in base a [`SpellConfig::channel_movement`].
+    /// Repeated effect as long as the caster holds down the key.
+    /// Movement interrupts or not according to [`SpellConfig::channel_movement`].
     Channeling,
 }
 
-/// Regola di interruzione del channeling in funzione del movimento.
+/// Channeling movement interrupt rule.
 ///
-/// Le spell CastTime sono _sempre_ interrotte dal movimento e ignorano questo
-/// enum; è rilevante solo per le spell channeling.
+/// CastTime spells are _always_ interrupted by movement and ignore this
+/// enum; it is relevant only for channeling spells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChannelMovementPolicy {
-    /// Il movimento cancella il channeling (default per spell offensive).
+    /// Movement cancels channeling (default for offensive spells).
     #[default]
     InterruptOnMove,
-    /// Il movimento è consentito; solo release / re-press / morte terminano
-    /// il channeling (es. Swift: devi poter beneficiare del buff mentre corri).
+    /// Movement is allowed; only release / re-press / death terminate
+    /// channeling (e.g. Swift: must be able to benefit from buff while running).
     AllowMovement,
 }
 
@@ -77,17 +76,17 @@ pub struct SpellConfig {
     /// - Used for spells that affect multiple targets in an area
     /// - 0.0 means single-target or no area component
     pub area_radius: f32,
-    /// Modalità con cui la spell seleziona i bersagli al momento del cast.
+    /// How the spell selects targets at cast time.
     pub targeting: TargetingMode,
-    /// Durata del wind-up prima dell'effetto (0.0 = istantanea).
+    /// Wind-up duration before effect (0.0 = instant).
     pub cast_time_seconds: f32,
-    /// `true` = spell channeling: effetto ripetuto finché rilasciato.
+    /// `true` = channeling spell: repeated effect while held.
     pub is_channel: bool,
-    /// Policy di interruzione del channeling col movimento. Ignorata per le
-    /// spell Instant e CastTime (per le quali vale la regola fissa di Phase 2).
+    /// Movement interrupt policy for channeling. Ignored for
+    /// Instant and CastTime spells (which follow fixed Phase 2 rules).
     pub channel_movement: ChannelMovementPolicy,
-    /// Durata massima opzionale di un channeling. `None` mantiene il modello
-    /// open-ended finché il client rilascia il tasto.
+    /// Optional max duration of channeling. `None` keeps the open-ended
+    /// model until client releases key.
     pub channel_duration_seconds: Option<f32>,
 }
 
@@ -121,9 +120,9 @@ impl SpellConfig {
         )
     }
 
-    /// Create a configuration for a ranged spell che colpisce lungo una linea
-    /// o una singola entità: il chiamante deve specificare esplicitamente la
-    /// modalità (`DirectionalLine` o `SingleEntity`).
+    /// Create a configuration for a ranged spell hitting along a line
+    /// or a single entity: caller must explicitly specify
+    /// mode (`DirectionalLine` or `SingleEntity`).
     pub const fn ranged_single_target(
         cooldown_seconds: f32,
         cast_range: f32,
@@ -142,44 +141,44 @@ impl SpellConfig {
         )
     }
 
-    /// Builder: imposta il wind-up di una spell CastTime.
+    /// Builder: sets wind-up duration for a CastTime spell.
     pub const fn with_cast_time(mut self, seconds: f32) -> Self {
         self.cast_time_seconds = seconds;
         self
     }
 
-    /// Builder: trasforma la spell in channeling e imposta la policy di
-    /// interruzione col movimento.
+    /// Builder: turns spell into channeling and sets movement
+    /// interrupt policy.
     pub const fn with_channel(mut self, movement_policy: ChannelMovementPolicy) -> Self {
         self.is_channel = true;
         self.channel_movement = movement_policy;
         self
     }
 
-    /// Builder: imposta una durata finita per una spell channeling.
+    /// Builder: sets a finite duration for a channeling spell.
     pub const fn with_channel_duration(mut self, seconds: f32) -> Self {
         self.channel_duration_seconds = Some(seconds);
         self
     }
 }
 
-/// Regola di filtraggio target applicata da [`crate::plugins::spells::aoe`] alle
-/// entità nell'area. Permette di discriminare caster, alleati (todo) e nemici
-/// senza dover dispatchare sul `spell_id`.
+/// Target filtering rule applied by [`crate::plugins::spells::aoe`] to
+/// entities in area. Allows discriminating caster, allies (todo), and enemies
+/// without dispatching on `spell_id`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AoeTargeting {
-    /// Colpise tutte le entità in range (comportamento storico).
+    /// Hits all entities in range (historical behavior).
     #[default]
     Everyone,
-    /// Solo il caster (es. Healing Circle corretto: cura solo se stesso).
+    /// Caster only (e.g. corrected Healing Circle: heals self only).
     CasterOnly,
-    /// Tutti tranne il caster (es. Meteorite: il caster non si danneggia).
+    /// Everyone except caster (e.g. Meteorite: caster is not damaged).
     ExcludeCaster,
 }
 
 impl AoeTargeting {
-    /// Restituisce `true` se `target` è un bersaglio valido per questa policy,
-    /// dato il `caster` che ha originato l'AoE.
+    /// Returns `true` if `target` is a valid target for this policy,
+    /// given the `caster` originating the AoE.
     pub fn allows(self, caster: Entity, target: Entity) -> bool {
         match self {
             AoeTargeting::Everyone => true,
@@ -189,7 +188,7 @@ impl AoeTargeting {
     }
 }
 
-/// Richiesta di spawn di un proiettile homing, emessa da una spell durante il cast.
+/// Homing projectile spawn request, emitted by a spell during cast.
 #[derive(Debug, Clone)]
 pub struct ProjectileSpawnRequest {
     pub target: Entity,
@@ -198,56 +197,57 @@ pub struct ProjectileSpawnRequest {
     pub hit_radius: f32,
 }
 
-/// Effetto applicato da una regione AoE alle entità che vi entrano.
+/// Effect applied by an AoE region to entities entering it.
 ///
-/// Vive nel payload della richiesta di spawn (come già avviene per i
-/// proiettili con `ProjectileSpawnRequest`), in modo che il sistema centrale
-/// `update_aoe_regions` resti generico e ignori l'identità della spell.
+/// Lives in spawn request payload (as already done for
+/// projectiles with `ProjectileSpawnRequest`), so the central system
+/// `update_aoe_regions` remains generic and ignores spell identity.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AoeEffect {
-    /// Applica un [`ApplyStatModifierEvent`] alle entità nell'area.
+    /// Applies an [`ApplyStatModifierEvent`] to entities in area.
     ApplyModifier {
         effects: Vec<ModifierEffect>,
-        /// `None` = permanente finché non rimosso esplicitamente.
+        /// `None` = permanent until explicitly removed.
         duration_seconds: Option<f32>,
         kind: ModifierKind,
-        /// `true`: ogni entità riceve l'effetto una sola volta (es. healing
-        /// circle: entra → buff applicato, poi ignorata).
-        /// `false`: l'effetto viene ri-applicato finché l'entità resta dentro
-        /// (es. poison cloud che fa DoT continuo).
+        /// `true`: each entity receives effect only once (e.g. healing
+        /// circle: enters → buff applied, then ignored).
+        /// `false`: effect is re-applied as long as entity stays inside
+        /// (e.g. poison cloud doing continuous DoT).
         once_per_entity: bool,
-        /// Filtra quali entità sono bersagli valide rispetto al caster.
+        /// Filters which entities are valid targets relative to caster.
         targeting: AoeTargeting,
     },
-    /// Burst di danno applicato una tantum alle entità nell'area al momento
-    /// dell'impatto (o all'ingresso, se non delaytato). Usato da spell
-    /// "bomb-style" come Meteorite.
+    /// Damage burst applied one-off to entities in area at moment
+    /// of impact (or entry, if not delayed). Used by "bomb-style"
+    /// spells like Meteorite.
     Damage {
         amount: f32,
         targeting: AoeTargeting,
     },
-    /// Burst di cura applicato una tantum alle entità nell'area.
+    /// Heal burst applied one-off to entities in area.
     Heal {
         amount: f32,
         targeting: AoeTargeting,
     },
-    /// Applica un effetto di Crowd Control (es. Stun) alle entità nell'area
-    /// al momento dell'impatto. La durata dell'effetto vive poi sul target,
-    /// indipendentemente dal ciclo di vita della regione AoE.
+    /// Applies a Crowd Control effect (e.g. Stun) to entities in area
+    /// at moment of impact. Effect duration then lives on target,
+    /// independent of AoE region lifetime.
     CrowdControl {
         kind: crate::plugins::crowd_control::CrowdControlKind,
         duration_seconds: f32,
-        /// `true`: ogni entità riceve l'effetto una sola volta (tipico per
-        /// burst AoE una tantum come Stun Field).
+        /// `true`: each entity receives effect only once (typical for
+        /// one-off AoE bursts like Stun Field).
         once_per_entity: bool,
         targeting: AoeTargeting,
     },
 }
 
 impl AoeEffect {
-    /// Restituisce la policy di targeting associata all'effetto.
+    /// Returns targeting policy associated with effect.
     pub fn targeting(&self) -> AoeTargeting {
         match self {
+
             AoeEffect::ApplyModifier { targeting, .. }
             | AoeEffect::Damage { targeting, .. }
             | AoeEffect::Heal { targeting, .. }
@@ -256,18 +256,18 @@ impl AoeEffect {
     }
 }
 
-/// Richiesta di spawn di una regione ad area (AoE) persistente.
+/// Spawn request for a persistent Area-of-Effect (AoE) region.
 #[derive(Debug, Clone)]
 pub struct AoeSpawnRequest {
     pub center: Vec3,
     pub radius: f32,
-    /// Durata totale della regione. Per il modello "delay + impatto singolo"
-    /// (Meteorite) equivale a `initial_delay_seconds` (la regione despawna
-    /// subito dopo aver applicato l'effetto).
+    /// Total duration of the region. For "delay + single impact" model
+    /// (Meteorite) this equals `initial_delay_seconds` (region despawns
+    /// immediately after applying effect).
     pub duration_seconds: f32,
-    /// Tempo di delay prima che l'effetto venga applicato la prima volta.
-    /// Durante questo intervallo la regione esiste (utile per il visual marker
-    /// del Meteorite) ma non applica damage/heal/modifier. Default `0.0`.
+    /// Delay time before effect is first applied.
+    /// During this interval region exists (useful for Meteorite's visual
+    /// warning marker) but applies no damage/heal/modifier. Default `0.0`.
     pub initial_delay_seconds: f32,
     pub spell_id: String,
     pub effect: AoeEffect,
@@ -305,8 +305,8 @@ pub struct SpellCastContext<'a> {
     pub pending_projectiles: Vec<ProjectileSpawnRequest>,
     /// Pending AoE spawn requests.
     pub pending_aoes: Vec<AoeSpawnRequest>,
-    /// Pending single-target stat modifier requests (buff/debuff applicati
-    /// fuori da una AoE, es. self-buff di Swift).
+    /// Pending single-target stat modifier requests (buff/debuff applied
+    /// outside an AoE, e.g. Swift self-buff).
     pub pending_modifiers: Vec<ApplyStatModifierEvent>,
     /// Pending replicated visual effects to broadcast to clients after validation.
     pub pending_visuals: Vec<SpellVisualEffect>,
@@ -370,8 +370,8 @@ impl<'a> SpellCastContext<'a> {
 
     /// Emit an AoE spawn request.
     ///
-    /// `effect` porta con sé il payload dell'effetto (danno, cura, modifier,
-    /// ecc.) in modo che il sistema centrale non debba fare dispatch su
+    /// `effect` carries the effect payload (damage, heal, modifier,
+    /// etc.) so the central system does not need to dispatch on
     /// `spell_id`.
     pub fn emit_aoe(
         &mut self,
@@ -384,8 +384,8 @@ impl<'a> SpellCastContext<'a> {
         self.emit_aoe_with_delay(center, radius, duration_seconds, 0.0, spell_id, effect);
     }
 
-    /// Come [`emit_aoe`] ma con un delay iniziale prima che l'effetto parta
-    /// (es. Meteorite: 2s di cerchio rosso di warning prima dell'impatto).
+    /// Like [`emit_aoe`] but with an initial delay before effect fires
+    /// (e.g. Meteorite: 2s red warning circle before impact).
     pub fn emit_aoe_with_delay(
         &mut self,
         center: Vec3,
@@ -407,9 +407,9 @@ impl<'a> SpellCastContext<'a> {
 
     /// Emit a one-shot stat modifier (buff/debuff) on a single target.
     ///
-    /// Utility wrapper around [`ApplyStatModifierEvent`]: le spell che devono
-    /// solo applicare un buff al caster (es. Swift) non devono costruire
-    /// manualmente l'evento.
+    /// Utility wrapper around [`ApplyStatModifierEvent`]: spells that only
+    /// need to apply a buff to caster (e.g. Swift) do not need to manually
+    /// construct the event.
     pub fn emit_modifier(
         &mut self,
         target: Entity,
@@ -472,9 +472,9 @@ pub trait Spell: Send + Sync + 'static {
     /// Get the static configuration for this spell.
     fn config(&self) -> SpellConfig;
 
-    /// Classifica il modello temporale di questa spell ai fini del pipeline
-    /// di cast (Phase 2). L'implementazione di default deriva il valore dalla
-    /// [`SpellConfig`] e copre la stragrande maggioranza dei casi.
+    /// Classifies the timing model of this spell for the cast pipeline
+    /// (Phase 2). Default implementation derives the value from
+    /// [`SpellConfig`] and covers the vast majority of cases.
     fn cast_kind(&self) -> CastKind {
         let config = self.config();
         if config.is_channel {
@@ -486,13 +486,14 @@ pub trait Spell: Send + Sync + 'static {
         }
     }
 
-    /// Intervallo di accumulo tra un tick di channeling e il successivo.
-    /// Rilevante solo per le spell channeling: il sistema centrale accumula il
-    /// tempo trascorso e invoca [`cast`](Self::cast) solo quando supera questo
-    /// intervallo. Default `0.25s`.
+    /// Accumulation interval between channeling ticks.
+    /// Relevant only for channeling spells: central system accumulates elapsed
+    /// time and invokes [`cast`](Self::cast) only when exceeding this
+    /// interval. Default `0.25s`.
     fn channel_tick_interval_seconds(&self) -> f32 {
         0.25
     }
+
 
     /// Execute the spell's logic.
     ///

@@ -1,8 +1,8 @@
-# Copia questo file in `config/local.toml` per sovrascrivere localmente qualsiasi
-# valore di default/development/production senza committare i secret.
+# Copy this file to `config/local.toml` to override locally any
+# default/development/production value without committing secrets.
 #
-# `local.toml` e' in .gitignore: mettere qui password, URL DB con credenziali
-# vere, e qualsiasi tweak locale.
+# `local.toml` is in .gitignore: put passwords, DB URLs with real
+# credentials here, and any local tweak.
 
 # Esempio:
 # database_url = "postgresql://user:password@host:port/db"

@@ -1,4 +1,4 @@
-//! Migrazioni SeaORM versionate, applicate dal [`PersistencePlugin`] durante l'avvio.
+//! Versioned SeaORM migrations, applied by [`PersistencePlugin`] during startup.
 //!
 //! [`PersistencePlugin`]: crate::plugins::persistence::plugin::PersistencePlugin
 

@@ -4,7 +4,7 @@ use lightyear::prelude::Controlled;
 use crate::game_state::{GameScreen, Screen};
 use crate::network::client::ClientConnectionConfig;
 use crate::network::protocol::PlayerId;
-use crate::stats::components::{CombatStats, VitalStats};
+use crate::stats::components::{CombatStats, MovementStats, VitalStats};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 
@@ -41,6 +41,7 @@ pub fn update_player_stats(
     screen: Res<GameScreen>,
     client_config: Option<Res<ClientConnectionConfig>>,
     player_query: Query<(
+        &MovementStats,
         &CombatStats,
         &VitalStats,
         Option<&PlayerId>,
@@ -60,11 +61,11 @@ pub fn update_player_stats(
 
     root.display = Display::Flex;
     let local_client_id = client_config.map(|config| config.client_id);
-    let Some((combat, vital, _, _)) = player_query
+    let Some((movement, combat, vital, _, _)) = player_query
         .iter()
-        .find(|(_, _, _, controlled)| *controlled)
+        .find(|(_, _, _, _, controlled)| *controlled)
         .or_else(|| {
-            player_query.iter().find(|(_, _, player_id, _)| {
+            player_query.iter().find(|(_, _, _, player_id, _)| {
                 player_id.is_some_and(|id| {
                     local_client_id.is_some_and(|client_id| id.0.to_bits() == client_id)
                 })
@@ -77,17 +78,20 @@ pub fn update_player_stats(
         return;
     };
 
-    text.0 = format_stats(combat, vital);
+    text.0 = format_stats(movement, combat, vital);
 }
 
-fn format_stats(combat: &CombatStats, vital: &VitalStats) -> String {
+fn format_stats(movement: &MovementStats, combat: &CombatStats, vital: &VitalStats) -> String {
     format!(
-        "Max HP: {}\nMax Mana: {}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)",
+        "HP: {}/{}\nMax Mana: {}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)\nAttack Power: {}\nMove Speed: {:.2}",
+        format_value(vital.current_health),
         format_value(vital.max_health),
         format_value(vital.max_mana),
         vital.mana_regeneration,
         format_value(combat.armor),
         combat.armor_damage_reduction() * 100.0,
+        format_value(combat.attack_power),
+        movement.speed,
     )
 }
 

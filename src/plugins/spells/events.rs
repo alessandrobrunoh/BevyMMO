@@ -56,3 +56,15 @@ impl SpellCastRequest {
         }
     }
 }
+
+/// Richiesta di rilascio di una spell in fase di cast/channel.
+///
+/// Originate dal comando client `SpellCastRelease`, tradotto qui in evento
+/// interno per mantenere la spell logic indipendente dal protocollo.
+#[derive(Debug, Clone, PartialEq, Message)]
+pub struct SpellReleaseRequest {
+    /// L'entità caster che richiede il rilascio.
+    pub caster: Entity,
+    /// La spell da rilasciare.
+    pub spell_id: SpellId,
+}

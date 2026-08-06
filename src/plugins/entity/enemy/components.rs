@@ -16,3 +16,15 @@ impl Default for AggroRange {
         Self(10.0)
     }
 }
+
+/// Timer di respawn: attachato a un `Enemy` quando entra in `EntityState::Dead`.
+/// Il sistema `enemy_respawn` lo decrementa finché non scade, dopodiché
+/// l'enemy torna in vita allo `SpawnPoint`.
+#[derive(Component, Debug, Clone, Copy, Reflect)]
+#[reflect(Component)]
+pub struct Respawning {
+    pub remaining: f32,
+}
+
+/// Tempo di respawn del nemico dopo la morte, in secondi.
+pub const ENEMY_RESPAWN_SECONDS: f32 = 10.0;

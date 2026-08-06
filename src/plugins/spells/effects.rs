@@ -16,6 +16,8 @@ use crate::network::protocol::SpellVisualEffect;
 
 use crate::spells::fireball::FireballSpell;
 use crate::spells::healing_circle::HealingCircleSpell;
+use crate::spells::meteorite::MeteoriteSpell;
+use crate::spells::swift::SwiftSpell;
 
 /// Marker applicato a tutte le entità visual delle spell. Permette il cleanup
 /// centralizzato quando si esce dal gameplay.
@@ -29,6 +31,8 @@ pub fn client_effect_systems(app: &mut App) {
             spawn_spell_visuals,
             crate::spells::fireball::visual::animate,
             crate::spells::healing_circle::visual::animate,
+            crate::spells::meteorite::visual::animate,
+            crate::spells::swift::visual::animate,
         )
             .chain()
             .run_if(has_client)
@@ -68,6 +72,22 @@ fn spawn_spell_visuals(
             }
             HealingCircleSpell::ID => {
                 crate::spells::healing_circle::visual::spawn(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    effect,
+                );
+            }
+            MeteoriteSpell::ID => {
+                crate::spells::meteorite::visual::spawn(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    effect,
+                );
+            }
+            SwiftSpell::ID => {
+                crate::spells::swift::visual::spawn(
                     &mut commands,
                     &mut meshes,
                     &mut materials,

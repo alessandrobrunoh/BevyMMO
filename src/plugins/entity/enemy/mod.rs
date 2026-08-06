@@ -8,13 +8,21 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+pub use components::{Enemy, Respawning};
+
 pub struct EnemyPlugin;
 
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
+        app.register_type::<Respawning>();
         app.add_systems(
             FixedUpdate,
-            (systems::enemy_chase, systems::enemy_auto_cast_attack)
+            (
+                systems::enemy_chase,
+                systems::enemy_auto_cast_attack,
+                systems::schedule_enemy_respawn,
+                systems::enemy_respawn,
+            )
                 .chain()
                 .run_if(crate::network::mode::has_server),
         );

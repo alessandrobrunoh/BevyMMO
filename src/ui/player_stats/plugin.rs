@@ -82,7 +82,7 @@ mod tests {
         assert_eq!(root.top, Val::Px(16.0));
         assert_eq!(
             panel_text(&mut app),
-            "Max HP: 100\nMax Mana: 80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)"
+            "HP: 100/100\nMax Mana: 80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)\nAttack Power: 10\nMove Speed: 0.15"
         );
     }
 
@@ -127,7 +127,7 @@ mod tests {
         app.update();
         assert_eq!(
             panel_text(&mut app),
-            "Max HP: 100\nMax Mana: 120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)"
+            "HP: 100/100\nMax Mana: 120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15"
         );
     }
 }

@@ -16,6 +16,9 @@ use crate::network::protocol::{Inputs, LookDirection, Position};
 use crate::plugins::entity::components::EntityState;
 use crate::plugins::entity::player::Player;
 use crate::stats::components::MovementStats;
+use crate::stats::events::StatField;
+use crate::stats::modifiers::ActiveStatModifiers;
+use crate::stats::systems::effective_value;
 
 const ARRIVAL_DISTANCE: f32 = 0.05;
 const INDICATOR_DURATION: f32 = 0.55;
@@ -70,7 +73,12 @@ fn select_move_target(
     let Some(mouse_buttons) = mouse_buttons else {
         return;
     };
-    if !mouse_buttons.just_pressed(MouseButton::Left) {
+
+    // Distinguiamo il click iniziale (con indicatore visivo) dal tasto tenuto:
+    // in quest'ultimo caso aggiorniamo solo la destinazione, senza spammare anelli.
+    let just_pressed = mouse_buttons.just_pressed(MouseButton::Left);
+    let held = mouse_buttons.pressed(MouseButton::Left);
+    if !held {
         return;
     }
 
@@ -93,6 +101,10 @@ fn select_move_target(
 
     let target = Vec3::new(target.x, 0.0, target.z);
     move_target.0 = Some(target);
+
+    if !just_pressed {
+        return;
+    }
 
     let (Some(mut meshes), Some(mut materials)) = (meshes, materials) else {
         return;
@@ -121,12 +133,14 @@ fn server_move_to_target(
             &MovementStats,
             &mut LookDirection,
             &mut EntityState,
+            Option<&ActiveStatModifiers>,
         ),
         With<Player>,
     >,
 ) {
-    for (position, input, stats, look_direction, state) in &mut players {
-        move_towards_target(position, look_direction, &input.0, stats.speed, state);
+    for (position, input, stats, look_direction, state, modifiers) in &mut players {
+        let effective_speed = effective_speed(stats.speed, modifiers);
+        move_towards_target(position, look_direction, &input.0, effective_speed, state);
     }
 }
 
@@ -140,6 +154,7 @@ fn predict_move_to_target(
             &MovementStats,
             &mut LookDirection,
             &mut EntityState,
+            Option<&ActiveStatModifiers>,
         ),
         (With<Player>, With<Predicted>),
     >,
@@ -148,9 +163,19 @@ fn predict_move_to_target(
         return;
     }
 
-    for (position, input, stats, look_direction, state) in &mut players {
-        move_towards_target(position, look_direction, &input.0, stats.speed, state);
+    for (position, input, stats, look_direction, state, modifiers) in &mut players {
+        let effective_speed = effective_speed(stats.speed, modifiers);
+        move_towards_target(position, look_direction, &input.0, effective_speed, state);
     }
+}
+
+/// Calcola la velocità effettiva applicando tutti i modifier `Speed` attivi
+/// sull'entità. Senza modifier, ritorna il valore base invariato.
+fn effective_speed(base_speed: f32, modifiers: Option<&ActiveStatModifiers>) -> f32 {
+    let Some(active) = modifiers else {
+        return base_speed;
+    };
+    effective_value(StatField::Speed, base_speed, &active.modifiers)
 }
 
 fn move_towards_target(

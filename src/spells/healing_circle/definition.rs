@@ -3,8 +3,6 @@
 //! Spawns a healing circle on the ground that applies a HoT to entities
 //! that walk into it.
 
-use bevy::prelude::{Entity, Vec3};
-
 use crate::plugins::spells::{AoeEffect, Spell, SpellCastContext, SpellConfig, SpellId};
 use crate::stats::events::{ModifierEffect, ModifierKind};
 
@@ -45,6 +43,8 @@ impl Spell for HealingCircleSpell {
 
         // L'effetto dell'HoT è ora un payload portato dalla spell: il sistema
         // centrale `update_aoe_regions` non sa più nulla di "healing_circle".
+        // `AoeTargeting::CasterOnly` garantisce che la cura venga applicata
+        // esclusivamente al caster che ha generato il cerchio.
         let effect = AoeEffect::ApplyModifier {
             effects: vec![ModifierEffect::HealOverTime {
                 amount_per_tick: Self::HOT_AMOUNT_PER_TICK,
@@ -53,15 +53,10 @@ impl Spell for HealingCircleSpell {
             duration_seconds: Some(Self::HOT_DURATION_SECONDS),
             kind: ModifierKind::Buff,
             once_per_entity: true,
+            targeting: crate::plugins::spells::AoeTargeting::CasterOnly,
         };
 
-        ctx.emit_aoe(
-            center,
-            Self::AREA_RADIUS,
-            3.0,
-            Self::ID,
-            effect,
-        );
+        ctx.emit_aoe(center, Self::AREA_RADIUS, 3.0, Self::ID, effect);
 
         ctx.emit_visual(Self::ID, center, center);
     }

@@ -2,8 +2,10 @@
 
 use bevy::color::Color;
 use bevy::prelude::*;
+use lightyear::prelude::Controlled;
 
 use crate::game_state::{GameScreen, Screen};
+use crate::network::protocol::Position;
 
 /// Marker per la root della scena di gioco (camera, luce, terreno).
 ///
@@ -11,6 +13,19 @@ use crate::game_state::{GameScreen, Screen};
 /// lifecycle lo usa sia per evitare spawn duplicati sia per il cleanup.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct GameSceneRoot;
+
+/// Marker della camera 3D della scena di gioco.
+///
+/// Serve al sistema di follow per individuarla in modo univoco (il client ha
+/// anche una `Camera2d` per la UI e una o piu' `Camera3d` di debug/test).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct GameCamera;
+
+/// Offset costante della camera rispetto al player seguito.
+///
+/// Mantiene la stessa inquadratura isometrica di spawn anche mentre il player
+/// si muove: 25 unita' in altezza e 25 in profondita' rispetto al target.
+const CAMERA_OFFSET: Vec3 = Vec3::new(0.0, 25.0, 25.0);
 
 /// Spawn/despawn la scena di gioco in base a [`GameScreen`].
 ///
@@ -39,6 +54,35 @@ pub fn update_game_scene_lifecycle(
     }
 }
 
+/// Sposta la camera di gioco per seguire il player locale (`Controlled`).
+///
+/// Mantenendo un offset costante ([`CAMERA_OFFSET`]) rispetto alla `Position`
+/// del player locale si ottiene un effetto "third-person isometrico" senza
+/// rotazioni: la camera rimane fissa sul player mentre il server replica i
+/// movimenti. Se il player locale non e' ancora spawnato (menu/login) la
+/// camera resta dove l'ha messa lo spawn della scena.
+///
+/// # Esempio
+/// ```ignore
+/// // Player in (10, 0, 5) -> camera in (10, 25, 30) rivolta verso il player.
+/// ```
+pub fn follow_controlled_player(
+    player: Query<&Position, With<Controlled>>,
+    mut camera: Query<&mut Transform, With<GameCamera>>,
+) {
+    let Ok(player_position) = player.single() else {
+        return;
+    };
+    let Ok(mut camera_transform) = camera.single_mut() else {
+        return;
+    };
+
+    let target = player_position.0 + CAMERA_OFFSET;
+    let look_at = player_position.0;
+    camera_transform.translation = target;
+    camera_transform.look_at(look_at, Vec3::Y);
+}
+
 fn spawn_game_scene(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -58,7 +102,12 @@ fn spawn_game_scene(
             Visibility::default(),
         ))
         .with_children(|parent| {
-            parent.spawn((Name::new("Game Camera"), Camera3d::default(), cam_transform));
+            parent.spawn((
+                Name::new("Game Camera"),
+                GameCamera,
+                Camera3d::default(),
+                cam_transform,
+            ));
 
             parent.spawn((
                 Name::new("Sun Light"),
@@ -102,6 +151,46 @@ mod tests {
             .query::<&GameSceneRoot>()
             .iter(app.world())
             .count()
+    }
+
+    #[test]
+    fn camera_follows_controlled_player_position() {
+        let mut app = test_app();
+        set_screen(&mut app, Screen::InGame);
+        app.update();
+
+        // Player locale controllato dal client.
+        app.world_mut()
+            .spawn((Controlled, Position(Vec3::new(10.0, 0.0, 5.0))));
+        app.update();
+
+        let mut cams = app
+            .world_mut()
+            .query_filtered::<&Transform, With<GameCamera>>();
+        let cam = cams.single(app.world()).expect("game camera spawned");
+        assert_eq!(cam.translation, Vec3::new(10.0, 25.0, 30.0));
+    }
+
+    #[test]
+    fn camera_stays_put_without_controlled_player() {
+        let mut app = test_app();
+        set_screen(&mut app, Screen::InGame);
+        app.update();
+
+        let before = app
+            .world_mut()
+            .query_filtered::<&Transform, With<GameCamera>>()
+            .single(app.world())
+            .expect("game camera spawned")
+            .translation;
+        app.update();
+        let after = app
+            .world_mut()
+            .query_filtered::<&Transform, With<GameCamera>>()
+            .single(app.world())
+            .expect("game camera spawned")
+            .translation;
+        assert_eq!(before, after, "nessun player controllato -> camera ferma");
     }
 
     #[test]

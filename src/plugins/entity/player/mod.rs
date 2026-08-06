@@ -11,7 +11,8 @@ pub use components::Player;
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Update, super::systems::despawn_dead_entities);
+    fn build(&self, _app: &mut App) {
+        // La transizione a `Dead` è gestita centralmente in `EntityPlugin`
+        // (`mark_dead_entities`), valida per tutte le entità.
     }
 }

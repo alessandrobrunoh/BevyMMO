@@ -13,6 +13,10 @@ use crate::plugins::entity::definition::EntityDefinition;
 use crate::plugins::spells::{SpellCooldowns, SpellId, Spellbook};
 use crate::stats::components::StatsBundleData;
 
+/// Posizione iniziale del Player. Usata sia da `initial_position()` sia dal
+/// sistema di respawn lato server per riportare il player in vita.
+pub const PLAYER_SPAWN_POINT: Vec3 = Vec3::ZERO;
+
 impl EntityDefinition for Player {
     fn name() -> &'static str {
         "Player"
@@ -29,6 +33,10 @@ impl EntityDefinition for Player {
             ]),
             SpellCooldowns::default(),
         )
+    }
+
+    fn initial_position() -> Vec3 {
+        PLAYER_SPAWN_POINT
     }
 
     fn initial_color() -> Color {

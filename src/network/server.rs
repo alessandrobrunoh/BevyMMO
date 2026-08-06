@@ -13,16 +13,18 @@ use uuid::Uuid;
 
 use crate::game_state::validate_player_name;
 use crate::network::protocol::*;
-use crate::plugins::entity::components::PlayerName;
+use crate::plugins::entity::components::{EntityState, PlayerName, SpawnPoint};
 use crate::plugins::entity::definition::EntityDefinition;
 use crate::plugins::entity::dummy::components::Dummy;
 use crate::plugins::entity::enemy::components::Enemy;
+use crate::plugins::entity::events::RespawnedEvent;
 use crate::plugins::entity::player::components::Player;
+use crate::plugins::entity::player::spawn::PLAYER_SPAWN_POINT;
 use crate::plugins::entity::spawn::{spawn_entity, GameEntityBundle};
 use crate::plugins::persistence::{
     normalize_name, PersistedPlayerSnapshot, PersistenceError, PersistenceRuntime, PlayerStore,
 };
-use crate::plugins::spells::{SpellCastRequest, SpellId};
+use crate::plugins::spells::{SpellCastRequest, SpellId, SpellReleaseRequest};
 use crate::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 
 /// Impostazioni di connessione del server, conservate come risorsa.
@@ -105,6 +107,8 @@ impl Plugin for ServerPlugins {
                 handle_join_request,
                 finish_pending_joins,
                 handle_spell_cast_commands,
+                handle_spell_release_commands,
+                handle_respawn_requests,
                 send_messages,
             )
                 .chain(),
@@ -409,6 +413,94 @@ fn handle_spell_cast_commands(
                 target_position: command.target_position,
                 target_entity,
             });
+        }
+    }
+}
+
+/// Traduce i comandi di rilascio spell (`SpellCastRelease`) in eventi interni
+/// [`SpellReleaseRequest`] che il sistema di spells consuma per terminare
+/// channeling o cancellare cast-time.
+fn handle_spell_release_commands(
+    mut receivers: Query<
+        (&mut MessageReceiver<SpellCastRelease>, &RemoteId),
+        (With<Connected>, With<Joined>),
+    >,
+    players: Query<(Entity, &PlayerId), With<Player>>,
+    mut release_requests: MessageWriter<SpellReleaseRequest>,
+) {
+    for (mut receiver, remote_id) in receivers.iter_mut() {
+        let Some((player_entity, _)) = players
+            .iter()
+            .find(|(_, player_id)| player_id.0 == remote_id.0)
+        else {
+            continue;
+        };
+
+        for command in receiver.receive() {
+            release_requests.write(SpellReleaseRequest {
+                caster: player_entity,
+                spell_id: SpellId::new(command.spell_id.clone()),
+            });
+        }
+    }
+}
+
+/// Processa le richieste di respawn: solo i player `Dead` vengono riportati
+/// in vita, gli altri vengono ignorati (no-op silenzioso). La mutazione è
+/// server-authoritative e viene replicata ai client tramite `Position`,
+/// `VitalStats` ed `EntityState`.
+fn handle_respawn_requests(
+    mut receivers: Query<
+        (&mut MessageReceiver<RespawnRequest>, &RemoteId),
+        (With<Connected>, With<Joined>),
+    >,
+    mut players: Query<
+        (
+            Entity,
+            &PlayerId,
+            &mut Position,
+            &mut VitalStats,
+            &mut EntityState,
+            Option<&SpawnPoint>,
+        ),
+        With<Player>,
+    >,
+    mut respawned: MessageWriter<RespawnedEvent>,
+) {
+    for (mut receiver, remote_id) in receivers.iter_mut() {
+        // `RespawnRequest` non ha payload: ci basta consumerlo se presente.
+        let mut requested = false;
+        for _ in receiver.receive() {
+            requested = true;
+        }
+        if !requested {
+            continue;
+        }
+
+        for (player_entity, player_id, mut position, mut vital, mut state, spawn_point) in
+            players.iter_mut()
+        {
+            if player_id.0 != remote_id.0 {
+                continue;
+            }
+            if *state != EntityState::Dead {
+                // Player ancora vivo: ignora.
+                continue;
+            }
+
+            let target_position = spawn_point.map(|s| s.0).unwrap_or(PLAYER_SPAWN_POINT);
+            position.0 = target_position;
+            vital.current_health = vital.max_health;
+            vital.clamp_health();
+            *state = EntityState::Idle;
+            respawned.write(RespawnedEvent {
+                entity: player_entity,
+            });
+            info!(
+                "Player {:?} respawned at {:?}",
+                player_entity, target_position
+            );
+            break;
         }
     }
 }

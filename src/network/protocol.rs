@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::plugins::entity::components::{EntityKind, EntityState, GameEntity};
+use crate::plugins::entity::components::{EntityKind, EntityState, GameEntity, SpawnPoint};
 use crate::plugins::spells::Spellbook;
 use crate::stats::components::{CombatStats, MovementStats, VitalStats};
 
@@ -96,6 +96,47 @@ pub struct SpellCastCommand {
     pub target_id: Option<u64>,
 }
 
+/// Comando client -> server per rilasciare una spell channeling o
+/// interrompere una spell CastTime. Il client lo invia su `just_released`
+/// della spell key attualmente channeling, oppure su re-press della stessa
+/// spell key (D2c: re-press = interrompi).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct SpellCastRelease {
+    pub spell_id: String,
+}
+
+/// Snapshot periodico inviato dal server a tutti i client per replicare lo
+/// stato di una spell in fase di cast o channeling. Usato dal client per
+/// posizionare e riempire la barra di cast world-space sopra il caster.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, bevy::prelude::Message)]
+pub struct SpellCastProgress {
+    /// `NetworkEntityId` del caster, stabile tra server e client.
+    pub caster_network_id: u64,
+    pub spell_id: String,
+    /// 0 = CastTime, 1 = Channeling.
+    pub kind: u8,
+    pub elapsed_seconds: f32,
+    /// Per CastTime: durata totale del wind-up. Per Channeling: 0.0 (aperto).
+    pub required_seconds: f32,
+}
+
+/// Notifica server -> client che una spell in fase di cast/channeling è
+/// terminata (completata o interrotta). Il client rimuove la barra.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, bevy::prelude::Message)]
+pub struct SpellCastEnded {
+    pub caster_network_id: u64,
+    pub spell_id: String,
+    /// `true` = cast completato normalmente, `false` = interrotto/cancellato.
+    pub completed: bool,
+}
+
+/// Comando client -> server per richiedere il respawn del player locale.
+///
+/// Il server risolve il player dal peer mittente e, se è in stato `Dead`,
+/// lo riporta allo spawn point con statistiche rigenerate.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct RespawnRequest;
+
 /// Messaggio server -> client per replicare un effetto visivo spell.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, bevy::prelude::Message)]
 pub struct SpellVisualEffect {
@@ -132,7 +173,19 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<SpellCastCommand>()
             .add_direction(NetworkDirection::ClientToServer);
 
+        app.register_message::<SpellCastRelease>()
+            .add_direction(NetworkDirection::ClientToServer);
+
+        app.register_message::<RespawnRequest>()
+            .add_direction(NetworkDirection::ClientToServer);
+
         app.register_message::<SpellVisualEffect>()
+            .add_direction(NetworkDirection::ServerToClient);
+
+        app.register_message::<SpellCastProgress>()
+            .add_direction(NetworkDirection::ServerToClient);
+
+        app.register_message::<SpellCastEnded>()
             .add_direction(NetworkDirection::ServerToClient);
 
         // Comandi di input
@@ -165,6 +218,8 @@ impl Plugin for ProtocolPlugin {
         app.component::<Spellbook>().replicate().predict();
 
         app.component::<GameEntity>().replicate();
+
+        app.component::<SpawnPoint>().replicate();
 
         app.component::<EntityKind>().replicate();
 

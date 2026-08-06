@@ -284,6 +284,8 @@ fn key_label(key: KeyCode) -> &'static str {
         KeyCode::KeyW => "W",
         KeyCode::KeyE => "E",
         KeyCode::KeyR => "R",
+        KeyCode::KeyT => "T",
+        KeyCode::KeyF => "F",
         KeyCode::Space => "Space",
         _ => "?",
     }

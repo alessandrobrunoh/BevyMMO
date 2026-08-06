@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::network::protocol::{EntityColor, LookDirection, NetworkEntityId, Position};
 
-use super::components::{EntityKind, EntityState, GameEntity};
+use super::components::{EntityKind, EntityState, GameEntity, SpawnPoint};
 use super::definition::EntityDefinition;
 use crate::stats::components::{CombatStats, MovementStats, VitalStats};
 
@@ -30,6 +30,7 @@ pub struct GameEntityBundle {
     combat_stats: CombatStats,
     vital_stats: VitalStats,
     position: Position,
+    spawn_point: SpawnPoint,
     look_direction: LookDirection,
     color: EntityColor,
     network_entity_id: NetworkEntityId,
@@ -46,6 +47,7 @@ impl GameEntityBundle {
         replication_target: NetworkTarget,
     ) -> Self {
         let (movement, combat, vital) = stats_data.into_components();
+        let spawn_point = SpawnPoint(position.0);
         Self {
             game_entity: GameEntity,
             state: EntityState::default(),
@@ -53,6 +55,7 @@ impl GameEntityBundle {
             combat_stats: combat,
             vital_stats: vital,
             position,
+            spawn_point,
             look_direction: LookDirection::default(),
             color,
             network_entity_id: next_network_entity_id(),
@@ -119,11 +122,46 @@ mod tests {
         assert!(entity_ref.contains::<CombatStats>());
         assert!(entity_ref.contains::<VitalStats>());
         assert!(entity_ref.contains::<Position>());
+        assert!(entity_ref.contains::<SpawnPoint>());
         assert!(entity_ref.contains::<LookDirection>());
         assert!(entity_ref.contains::<EntityColor>());
         assert!(entity_ref.contains::<NetworkEntityId>());
         assert!(entity_ref.contains::<EntityKind>());
         assert!(entity_ref.contains::<Replicate>());
+    }
+
+    #[test]
+    fn spawn_point_is_initialized_from_position() {
+        let mut world = World::new();
+        let stats = crate::stats::components::StatsBundleData {
+            movement: crate::stats::components::MovementStats { speed: 0.0 },
+            combat: crate::stats::components::CombatStats {
+                attack_power: 0.0,
+                armor: 0.0,
+            },
+            vital: crate::stats::components::VitalStats {
+                current_health: 1.0,
+                max_health: 1.0,
+                max_mana: 0.0,
+                mana_regeneration: 0.0,
+            },
+        };
+        let initial = Vec3::new(3.0, 0.0, -2.0);
+        let entity = world
+            .spawn(GameEntityBundle::new(
+                Position(initial),
+                EntityColor(Color::WHITE),
+                stats,
+                EntityKind::Neutral,
+                NetworkTarget::All,
+            ))
+            .id();
+
+        let spawn = world
+            .entity(entity)
+            .get::<SpawnPoint>()
+            .expect("SpawnPoint");
+        assert_eq!(spawn.0, initial);
     }
 
     #[test]

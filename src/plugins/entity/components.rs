@@ -3,6 +3,15 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+/// Posizione di spawn originale di un'entità.
+///
+/// Inserita a spawn time (server-side) e usata dai sistemi di respawn per
+/// ripristinare l'entità alla posizione iniziale. Non è modificata a runtime:
+/// la posizione corrente vive in `Position`.
+#[derive(Component, Debug, Clone, Copy, Reflect, Serialize, Deserialize, PartialEq)]
+#[reflect(Component)]
+pub struct SpawnPoint(pub Vec3);
+
 /// Marker per qualsiasi entità di gioco (Player, Enemy, NPC, ...).
 ///
 /// Il nome evita ambiguità con `bevy::ecs::entity::Entity`, che identifica

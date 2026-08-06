@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::context::{CastKind, ChannelMovementPolicy};
 use super::registry::SpellId;
 
 // TODO: QUesto sará da modificare e rimuovere perché le spell sono attaccate agli Enemy o agli Items e non anche ai Player.
@@ -98,4 +99,36 @@ impl SpellCooldowns {
     pub fn cleanup_finished(&mut self) {
         self.timers.retain(|_, timer| !timer.is_finished());
     }
+}
+
+/// Soglia di spostamento orizzontale (in unità) oltre la quale un cast-time
+/// o un channeling `InterruptOnMove` viene cancellato. Tunable.
+pub const MOVEMENT_INTERRUPT_EPSILON: f32 = 0.05;
+
+/// Stato server-authoritative di una spell in fase di cast (CastTime) o
+/// channeling. Il sistema [`crate::plugins::spells::systems::advance_cast_progress`]
+/// lo ticka ogni frame e decide quando lanciare l'effetto.
+///
+/// Una sola istanza per caster: starting una nuova spell mentre questo
+/// componente esiste cancella quella precedente.
+#[derive(Component, Debug)]
+pub struct CastProgress {
+    pub spell_id: SpellId,
+    pub kind: CastKind,
+    pub elapsed_seconds: f32,
+    /// Per `CastTime`: tempo richiesto prima del fire. Per `Channeling` è
+    /// ignorato (open-ended).
+    pub required_seconds: f32,
+    /// Policy di interruzione col movimento, copiata dalla `SpellConfig` al
+    /// momento dello spawn per evitare un lookup ad ogni tick.
+    pub channel_movement: ChannelMovementPolicy,
+    /// Snapshot della posizione del caster all'ultimo tick, per rilevare
+    /// spostamenti che debbano interrompere il cast.
+    pub last_position: Vec3,
+    pub target_position: Option<Vec3>,
+    pub target_entity: Option<Entity>,
+    /// Accumulatore per il tick interval del channeling. Quando supera
+    /// `tick_interval_seconds` la spell viene ri-eseguita.
+    pub channel_tick_accumulator_seconds: f32,
+    pub tick_interval_seconds: f32,
 }

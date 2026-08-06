@@ -3,6 +3,12 @@
 //! Il dispatcher in `plugins::spells::effects` chiama `spawn` quando arriva un
 //! `SpellVisualEffect` con l'id di Fireball. L'animazione è registrata nello
 //! stesso punto.
+//!
+//! A differenza di un'interpolazione `start -> end`, la fireball è modellata
+//! come proiettile a velocità costante: continua a viaggiare nella direzione
+//! di lancio finché non scade il `LIFETIME_SECONDS`. Questo evita il despawn
+//! immediato appena raggiunge la posizione di impatto e le permette di
+//! attraversare la scena per minuti interi.
 
 use bevy::color::Color;
 use bevy::prelude::*;
@@ -10,18 +16,29 @@ use bevy::prelude::*;
 use crate::network::protocol::SpellVisualEffect;
 use crate::plugins::spells::SpellVisual;
 
-const DURATION_SECONDS: f32 = 0.35;
+/// Tempo totale di vita del proiettile visivo.
+///
+/// Tenuto volutamente lungo (20 minuti) per evitare che la fireball sparisca
+/// poco dopo il cast: il danno viene applicato istantaneamente lato server,
+/// ma la rappresentazione visiva deve persistere come un proiettile in volo.
+pub const LIFETIME_SECONDS: f32 = 20.0 * 60.0;
+
+/// Velocità di volo in unità mondo al secondo.
+pub const SPEED: f32 = 8.0;
+
 const SIZE: f32 = 0.28;
+const SPAWN_HEIGHT_OFFSET: f32 = 0.8;
 
 #[derive(Component)]
 pub struct FireballVisual {
-    start: Vec3,
-    end: Vec3,
+    velocity: Vec3,
     elapsed_seconds: f32,
-    duration_seconds: f32,
 }
 
 /// Spawn della rappresentazione visiva di Fireball.
+///
+/// La direzione di volo è derivata dal vettore `start -> end` fornito dal
+/// server; il proiettile poi continua dritto per `LIFETIME_SECONDS`.
 pub fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -35,8 +52,10 @@ pub fn spawn(
         ..default()
     });
 
-    let start = effect.start + Vec3::Y * 0.8;
-    let end = effect.end + Vec3::Y * 0.8;
+    let start = effect.start + Vec3::Y * SPAWN_HEIGHT_OFFSET;
+    let direction = (effect.end - effect.start)
+        .try_normalize()
+        .unwrap_or(Vec3::Z);
 
     commands.spawn((
         Mesh3d(mesh),
@@ -44,15 +63,14 @@ pub fn spawn(
         Transform::from_translation(start),
         SpellVisual,
         FireballVisual {
-            start,
-            end,
+            velocity: direction * SPEED,
             elapsed_seconds: 0.0,
-            duration_seconds: DURATION_SECONDS,
         },
     ));
 }
 
-/// Anima le entità `FireballVisual` verso il target e le despawna a fine corsa.
+/// Anima le entità `FireballVisual` muovendole in linea retta e le despawna
+/// solo allo scadere del lifetime.
 pub fn animate(
     time: Res<Time>,
     mut commands: Commands,
@@ -61,11 +79,9 @@ pub fn animate(
     let delta = time.delta().as_secs_f32();
     for (entity, mut transform, mut visual) in visuals.iter_mut() {
         visual.elapsed_seconds += delta;
-        let t = (visual.elapsed_seconds / visual.duration_seconds).clamp(0.0, 1.0);
-        transform.translation = visual.start.lerp(visual.end, t);
-        transform.scale = Vec3::splat(1.0 + t * 0.6);
+        transform.translation += visual.velocity * delta;
 
-        if t >= 1.0 {
+        if visual.elapsed_seconds >= LIFETIME_SECONDS {
             commands.entity(entity).despawn();
         }
     }

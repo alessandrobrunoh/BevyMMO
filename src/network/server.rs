@@ -14,7 +14,6 @@ use uuid::Uuid;
 use crate::game_state::validate_player_name;
 use crate::network::protocol::*;
 use crate::plugins::entity::components::{EntityState, PlayerName, SpawnPoint};
-
 use crate::plugins::entity::dummy::components::Dummy;
 use crate::plugins::entity::enemy::components::Enemy;
 use crate::plugins::entity::events::RespawnedEvent;

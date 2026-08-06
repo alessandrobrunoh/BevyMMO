@@ -7,6 +7,7 @@
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    TransactionTrait,
 };
 
 use crate::plugins::persistence::entity::player::{ActiveModel, Column, Entity, PlayerRecord};
@@ -221,26 +222,30 @@ impl PlayerRepository {
         player_id: Uuid,
         spellbook: &Spellbook,
     ) -> PersistenceResult<()> {
+        let transaction = self.db.begin().await?;
+
         SpellEntity::delete_many()
             .filter(SpellColumn::PlayerId.eq(player_id))
-            .exec(&self.db)
+            .exec(&transaction)
             .await?;
 
-        if spellbook.spells.is_empty() {
-            return Ok(());
+        if !spellbook.spells.is_empty() {
+            let spell_rows = spellbook
+                .spells
+                .iter()
+                .enumerate()
+                .map(|(slot_index, spell_id)| SpellActiveModel {
+                    player_id: Set(player_id),
+                    spell_id: Set(spell_id.as_str().to_string()),
+                    slot_index: Set(slot_index as i32),
+                });
+
+            SpellEntity::insert_many(spell_rows)
+                .exec(&transaction)
+                .await?;
         }
 
-        let spell_rows = spellbook
-            .spells
-            .iter()
-            .enumerate()
-            .map(|(slot_index, spell_id)| SpellActiveModel {
-                player_id: Set(player_id),
-                spell_id: Set(spell_id.as_str().to_string()),
-                slot_index: Set(slot_index as i32),
-            });
-
-        SpellEntity::insert_many(spell_rows).exec(&self.db).await?;
+        transaction.commit().await?;
         Ok(())
     }
 

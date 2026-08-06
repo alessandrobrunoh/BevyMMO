@@ -35,6 +35,7 @@ pub struct CrowdControlPlugin;
 
 impl Plugin for CrowdControlPlugin {
     fn build(&self, app: &mut App) {
+        app.add_message::<ApplyCrowdControlEvent>();
         app.add_systems(
             FixedUpdate,
             (

@@ -56,6 +56,32 @@ pub fn farthest_target<'a>(players: &'a [PlayerRef], origin: Vec3) -> Option<&'a
     })
 }
 
+/// Returns the nearest living player to `origin`, or `None` if no players.
+///
+/// Used as the fallback target when no player has accrued threat yet, so the
+/// boss starts fighting the moment a player enters the arena ring.
+pub fn nearest_player<'a>(players: &'a [PlayerRef], origin: Vec3) -> Option<&'a PlayerRef> {
+    players.iter().min_by(|left, right| {
+        left.position
+            .distance_squared(origin)
+            .partial_cmp(&right.position.distance_squared(origin))
+            .unwrap_or(core::cmp::Ordering::Equal)
+    })
+}
+
+/// Resolves the boss's primary target: the highest-threat living player, or —
+/// if no one has threat yet — the nearest living player to `origin`.
+///
+/// This guarantees the boss engages immediately on arena enter instead of
+/// standing idle until a player lands the first hit.
+pub fn main_target<'a>(
+    threat: &ThreatTable,
+    players: &'a [PlayerRef],
+    origin: Vec3,
+) -> Option<&'a PlayerRef> {
+    highest_threat(threat, players).or_else(|| nearest_player(players, origin))
+}
+
 /// Returns the centroid of the `n` most clustered living players.
 ///
 /// Strategy: try every combination of `n` players, pick the group whose

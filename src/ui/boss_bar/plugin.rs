@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use super::components::{BossBanner, BossBannerState, BossBarFill, BossBarRoot};
+use super::components::BossBannerState;
 use super::systems::{setup_boss_bar, tick_boss_banner, update_boss_banner, update_boss_bar};
 
 pub struct BossBarPlugin;

@@ -17,5 +17,17 @@ services:
       timeout: 3s
       retries: 10
 
+  server:
+    image: ghcr.io/alessandrobrunoh/bevymmo:latest
+    container_name: bevytest2_server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5051:5051/udp"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
 volumes:
   postgres_data:

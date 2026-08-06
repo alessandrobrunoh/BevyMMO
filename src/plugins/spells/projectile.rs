@@ -4,7 +4,7 @@
 //! vita di qualsiasi entità dotata del componente [`HomingProjectile`]. Il
 //! payload dell'effetto (damage, hit_radius, speed) è già portato dal
 //! componente stesso, quindi il sistema è del tutto agnostico rispetto alla
-//! spell che ha spawnato il proiettile (oggi solo `Followball`, domani
+//! spell che ha spawnato il proiettile (oggi solo `Fireball`, domani
 //! potenzialmente altre spell homing).
 
 use bevy::prelude::*;

@@ -10,9 +10,9 @@ use super::registry::SpellId;
 const DEFAULT_PLAYER_SPELL_IDS: [&str; 6] = [
     "attack",
     "fireball",
-    "followball",
     "healing_circle",
     "meteorite",
+    "stun_field",
     "swift",
 ];
 
@@ -150,6 +150,9 @@ pub struct CastProgress {
     pub last_position: Vec3,
     pub target_position: Option<Vec3>,
     pub target_entity: Option<Entity>,
+    /// Comando movimento attivo quando il cast è iniziato. Serve per ignorare
+    /// il movimento precedente e interrompere solo su un nuovo click/input.
+    pub movement_input_at_start: Option<Vec3>,
     /// Accumulatore per il tick interval del channeling. Quando supera
     /// `tick_interval_seconds` la spell viene ri-eseguita.
     pub channel_tick_accumulator_seconds: f32,

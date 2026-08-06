@@ -5,6 +5,7 @@ mod plugin;
 pub mod bar;
 pub mod button;
 pub mod connecting;
+pub mod crowd_control_bar;
 pub mod death_screen;
 pub mod entity_bar;
 pub mod main_menu;

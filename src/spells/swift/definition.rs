@@ -16,8 +16,8 @@ pub struct SwiftSpell;
 impl SwiftSpell {
     pub const ID: &'static str = "swift";
     pub const DISPLAY_NAME: &'static str = "Swift";
-    pub const COOLDOWN_SECONDS: f32 = 0.0;
-    pub const SPEED_MULTIPLIER: f32 = 1.20;
+    pub const COOLDOWN_SECONDS: f32 = 10.0;
+    pub const SPEED_MULTIPLIER: f32 = 1.35;
     pub const TICK_INTERVAL_SECONDS: f32 = 0.25;
     pub const CHANNEL_DURATION_SECONDS: f32 = 4.0;
     pub const MODIFIER_DURATION_SECONDS: f32 = 0.5;

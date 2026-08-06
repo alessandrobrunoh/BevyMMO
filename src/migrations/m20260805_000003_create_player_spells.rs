@@ -55,7 +55,7 @@ impl MigrationTrait for Migration {
             CROSS JOIN (
                 VALUES
                     ('attack', 0),
-                    ('fireball', 1),
+                    ('ray_of_light', 1),
                     ('followball', 2),
                     ('healing_circle', 3),
                     ('meteorite', 4),

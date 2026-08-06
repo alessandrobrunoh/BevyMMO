@@ -1,3 +1,4 @@
+pub mod crowd_control;
 pub mod entity;
 #[cfg(feature = "client")]
 pub mod key_mapping;

@@ -1,0 +1,37 @@
+//! Screen-space Crowd Control bar (orange, draining) projected above stunned entities.
+
+pub mod components;
+mod systems;
+
+use bevy::prelude::*;
+
+pub struct CrowdControlBarPlugin;
+
+impl Plugin for CrowdControlBarPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            Update,
+            (systems::sync_screen_cc_bars, systems::update_screen_cc_bars)
+                .chain()
+                .run_if(crate::network::mode::has_client)
+                .run_if(in_gameplay),
+        );
+        app.add_systems(
+            Update,
+            systems::cleanup_screen_cc_bars
+                .run_if(crate::network::mode::has_client)
+                .run_if(not_in_gameplay),
+        );
+    }
+}
+
+fn in_gameplay(screen: Res<crate::game_state::GameScreen>) -> bool {
+    matches!(
+        screen.0,
+        crate::game_state::Screen::InGame | crate::game_state::Screen::Paused
+    )
+}
+
+fn not_in_gameplay(screen: Res<crate::game_state::GameScreen>) -> bool {
+    !in_gameplay(screen)
+}

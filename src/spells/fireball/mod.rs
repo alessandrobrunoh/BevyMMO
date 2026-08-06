@@ -1,7 +1,6 @@
 //! Fireball spell.
 
-pub mod definition;
-#[cfg(feature = "client")]
-pub mod visual;
+mod definition;
+pub mod projectile;
 
 pub use definition::FireballSpell;

@@ -10,13 +10,14 @@ use bevy::prelude::*;
 use std::sync::Arc;
 
 use crate::network::protocol::{
-    Channel1, LookDirection, NetworkEntityId, Position, SpellCastEnded, SpellCastProgress,
+    Channel1, Inputs, LookDirection, NetworkEntityId, Position, SpellCastEnded, SpellCastProgress,
     SpellVisualEffect,
 };
 use crate::plugins::entity::components::GameEntity;
 use crate::plugins::entity::player::Player;
 use crate::stats::components::{CombatStats, VitalStats};
 use crate::stats::events::{ApplyStatModifierEvent, DamageEvent, HealEvent};
+use lightyear::prelude::input::native::ActionState;
 use lightyear::prelude::{NetworkTarget, ServerMultiMessageSender};
 
 use super::{
@@ -38,6 +39,7 @@ const CAST_PROGRESS_REPLICATION_INTERVAL_SECONDS: f32 = 0.1;
 /// ticka fino al completamento. Prima di spawnare un nuovo `CastProgress`,
 /// qualsiasi cast già attivo sul caster viene cancellato con emissione di
 /// [`SpellCastEnded`].
+#[allow(clippy::type_complexity)]
 pub fn process_cast_requests(
     mut commands: Commands,
     mut requests: MessageReader<SpellCastRequest>,
@@ -47,8 +49,10 @@ pub fn process_cast_requests(
         &mut SpellCooldowns,
         &Position,
         Option<&CastProgress>,
+        Option<&crate::plugins::crowd_control::CrowdControlState>,
     )>,
     caster_stats: Query<(&LookDirection, &CombatStats)>,
+    caster_inputs: Query<&ActionState<Inputs>>,
     caster_network_ids: Query<&NetworkEntityId>,
     targets_query: Query<(Entity, &Position, &VitalStats), With<GameEntity>>,
     mut damage_events: MessageWriter<DamageEvent>,
@@ -70,7 +74,7 @@ pub fn process_cast_requests(
         let spell_config = spell.config();
 
         // Step 2: validate spellbook + cooldowns
-        let Ok((spellbook, cooldowns, caster_position, existing_cast)) =
+        let Ok((spellbook, cooldowns, caster_position, existing_cast, cc_state)) =
             casters.get_mut(request.caster)
         else {
             bevy::log::warn!("Caster {} missing spell state", request.caster);
@@ -95,12 +99,22 @@ pub fn process_cast_requests(
             continue;
         }
 
+        if cc_state.map(|c| c.has_blocking_cc()).unwrap_or(false) {
+            bevy::log::debug!(
+                "Caster {} is CC'd, rejecting spell {:?}",
+                request.caster,
+                request.spell_id
+            );
+            continue;
+        }
+
         // Drop the borrow before potentially spawning CastProgress / firing.
         let caster_position = caster_position.0;
         let has_active_cast = existing_cast.is_some();
         let _ = spellbook;
         drop(cooldowns);
         let _ = existing_cast;
+        let _ = cc_state;
 
         // If the caster already has a CastProgress, cancel it (server-side swap).
         if has_active_cast {
@@ -160,7 +174,7 @@ pub fn process_cast_requests(
                 );
 
                 // Cooldown parte subito per le spell instant
-                if let Ok((_, mut cooldowns, _, _)) = casters.get_mut(request.caster) {
+                if let Ok((_, mut cooldowns, _, _, _)) = casters.get_mut(request.caster) {
                     cooldowns
                         .start_cooldown(request.spell_id.clone(), spell_config.cooldown_seconds);
                 }
@@ -180,6 +194,11 @@ pub fn process_cast_requests(
                     _ => spell_config.cast_time_seconds,
                 };
 
+                let movement_input_at_start = caster_inputs
+                    .get(request.caster)
+                    .ok()
+                    .and_then(move_target_from_input);
+
                 commands.entity(request.caster).insert(CastProgress {
                     spell_id: request.spell_id.clone(),
                     kind: cast_kind,
@@ -189,12 +208,45 @@ pub fn process_cast_requests(
                     last_position: caster_position,
                     target_position: request.target_position,
                     target_entity: request.target_entity,
+                    movement_input_at_start,
                     channel_tick_accumulator_seconds,
                     tick_interval_seconds,
                 });
             }
         }
     }
+}
+
+/// Extracts the current point-and-click movement target from replicated input.
+///
+/// Casts snapshot this value at start so old movement commands do not cancel a
+/// newly-started CastTime; only a different target clicked during the cast does.
+///
+/// # Example
+/// ```rust,ignore
+/// let target = move_target_from_input(action_state);
+/// ```
+fn move_target_from_input(input: &ActionState<Inputs>) -> Option<Vec3> {
+    match &input.0 {
+        Inputs::MoveTo(target) => Some(*target),
+        Inputs::Stop => None,
+    }
+}
+
+/// Checks whether a movement command represents a new click during casting.
+///
+/// `None -> Some(_)` also counts as new movement: the caster was stationary
+/// when the spell started and clicked afterward.
+///
+/// # Example
+/// ```rust,ignore
+/// assert!(movement_target_changed(None, Vec3::X));
+/// ```
+fn movement_target_changed(start_target: Option<Vec3>, current_target: Vec3) -> bool {
+    let Some(start_target) = start_target else {
+        return true;
+    };
+    start_target.distance(current_target) > MOVEMENT_INTERRUPT_EPSILON
 }
 
 /// Applica tutti gli effetti pendenti di uno [`SpellCastContext`] al mondo.
@@ -219,7 +271,7 @@ fn apply_spell_effects(
         heal_events.write(heal_event);
     }
     for proj in ctx.pending_projectiles.drain(..) {
-        crate::spells::followball::projectile::spawn(commands, caster_position, proj);
+        crate::spells::fireball::projectile::spawn(commands, caster_position, proj);
     }
     for aoe in ctx.pending_aoes.drain(..) {
         spawn_aoe_region(commands, caster, aoe);
@@ -244,6 +296,7 @@ pub fn advance_cast_progress(
         &mut CastProgress,
         &Position,
         &VitalStats,
+        Option<&ActionState<Inputs>>,
         Option<&mut SpellCooldowns>,
     )>,
     caster_stats: Query<(&LookDirection, &CombatStats)>,
@@ -261,7 +314,8 @@ pub fn advance_cast_progress(
     let delta = time.delta_secs();
     let mut ended: Vec<(Entity, SpellId, bool)> = Vec::new();
 
-    for (caster_entity, mut cast, position, vital, cooldowns) in casters.iter_mut() {
+    for (caster_entity, mut cast, position, vital, movement_input, cooldowns) in casters.iter_mut()
+    {
         // Morte: cancella sempre.
         if vital.is_dead() {
             ended.push((caster_entity, cast.spell_id.clone(), false));
@@ -281,7 +335,11 @@ pub fn advance_cast_progress(
             CastKind::Instant => false,
         };
 
-        if moved && movement_cancels {
+        let movement_input_changed = movement_input
+            .and_then(move_target_from_input)
+            .is_some_and(|target| movement_target_changed(cast.movement_input_at_start, target));
+
+        if movement_cancels && (moved || movement_input_changed) {
             ended.push((caster_entity, cast.spell_id.clone(), false));
             continue;
         }
@@ -594,11 +652,11 @@ pub fn register_builtin_spells(mut registry: ResMut<SpellRegistry>) {
     let attack_spell: Arc<dyn Spell> = Arc::new(crate::spells::attack::AttackSpell);
     registry.register(attack_spell);
 
+    let ray_of_light_spell: Arc<dyn Spell> = Arc::new(crate::spells::ray_of_light::RayOfLightSpell);
+    registry.register(ray_of_light_spell);
+
     let fireball_spell: Arc<dyn Spell> = Arc::new(crate::spells::fireball::FireballSpell);
     registry.register(fireball_spell);
-
-    let followball_spell: Arc<dyn Spell> = Arc::new(crate::spells::followball::FollowballSpell);
-    registry.register(followball_spell);
 
     let healing_circle_spell: Arc<dyn Spell> =
         Arc::new(crate::spells::healing_circle::definition::HealingCircleSpell);

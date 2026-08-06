@@ -189,6 +189,7 @@ fn build_app(config: &AppConfig) -> App {
     app.add_plugins(stats::StatsPlugin);
     app.add_plugins(plugins::entity::EntityPlugin);
     app.add_plugins(plugins::player_movement::PlayerMovementPlugin);
+    app.add_plugins(plugins::crowd_control::CrowdControlPlugin);
     #[cfg(feature = "client")]
     app.add_plugins(plugins::targeting::TargetingPlugin);
     app.add_plugins(plugins::spells::SpellsPlugin);

@@ -11,7 +11,7 @@ pub struct HealingCircleSpell;
 impl HealingCircleSpell {
     pub const ID: &'static str = "healing_circle";
     pub const DISPLAY_NAME: &'static str = "Healing Circle";
-    pub const COOLDOWN_SECONDS: f32 = 8.0;
+    pub const COOLDOWN_SECONDS: f32 = 20.0;
     pub const CAST_RANGE: f32 = 12.0;
     pub const AREA_RADIUS: f32 = 4.0;
 

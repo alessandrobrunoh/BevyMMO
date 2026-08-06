@@ -22,9 +22,9 @@ use crate::stats::events::{
 pub enum TargetingMode {
     /// Centrata sul caster, colpisce tutto in un raggio (es. `Attack`).
     SelfCentered,
-    /// Tiro in linea d'aria lungo la direzione di sguardo (es. `Fireball`).
+    /// Tiro in linea d'aria lungo la direzione di sguardo (es. `RayOfLight`).
     DirectionalLine,
-    /// Una singola entità selezionata (es. `Followball`).
+    /// Una singola entità selezionata (es. `Fireball`).
     SingleEntity,
     /// AoE a terra nella posizione indicata (es. `HealingCircle`).
     GroundAoe,
@@ -231,6 +231,17 @@ pub enum AoeEffect {
         amount: f32,
         targeting: AoeTargeting,
     },
+    /// Applica un effetto di Crowd Control (es. Stun) alle entità nell'area
+    /// al momento dell'impatto. La durata dell'effetto vive poi sul target,
+    /// indipendentemente dal ciclo di vita della regione AoE.
+    CrowdControl {
+        kind: crate::plugins::crowd_control::CrowdControlKind,
+        duration_seconds: f32,
+        /// `true`: ogni entità riceve l'effetto una sola volta (tipico per
+        /// burst AoE una tantum come Stun Field).
+        once_per_entity: bool,
+        targeting: AoeTargeting,
+    },
 }
 
 impl AoeEffect {
@@ -239,7 +250,8 @@ impl AoeEffect {
         match self {
             AoeEffect::ApplyModifier { targeting, .. }
             | AoeEffect::Damage { targeting, .. }
-            | AoeEffect::Heal { targeting, .. } => *targeting,
+            | AoeEffect::Heal { targeting, .. }
+            | AoeEffect::CrowdControl { targeting, .. } => *targeting,
         }
     }
 }

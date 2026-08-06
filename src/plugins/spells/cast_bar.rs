@@ -12,6 +12,7 @@ use crate::game_state::{GameScreen, Screen};
 use crate::network::client::ConnectedClient;
 use crate::network::mode::has_client;
 use crate::network::protocol::{NetworkEntityId, Position, SpellCastEnded, SpellCastProgress};
+use crate::plugins::spells::{SpellHudCooldownStarted, SpellId, SpellRegistry};
 use crate::ui::bar::spawn_bar;
 use crate::ui::theme::UiTheme;
 use lightyear::prelude::MessageReceiver;
@@ -132,18 +133,54 @@ fn read_cast_progress(
 
 fn read_cast_ended(
     mut observed: ResMut<ObservedCasts>,
+    registry: Res<SpellRegistry>,
+    mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
     mut local_messages: MessageReader<SpellCastEnded>,
     mut receivers: Query<&mut MessageReceiver<SpellCastEnded>, With<ConnectedClient>>,
 ) {
     for message in local_messages.read() {
         observed.0.remove(&message.caster_network_id);
+        start_cooldown_from_cast_end(&registry, &mut hud_cooldowns, message);
     }
 
     for mut receiver in receivers.iter_mut() {
         for message in receiver.receive() {
             observed.0.remove(&message.caster_network_id);
+            start_cooldown_from_cast_end(&registry, &mut hud_cooldowns, &message);
         }
     }
+}
+
+/// Starts HUD cooldown when a server-authoritative cast/channel ends successfully.
+///
+/// Swift does not emit a visual effect, so relying only on visual messages would
+/// leave the HUD permanently ready even though the server started a cooldown.
+///
+/// # Example
+/// ```rust,ignore
+/// start_cooldown_from_cast_end(&registry, &mut hud_cooldowns, &message);
+/// ```
+fn start_cooldown_from_cast_end(
+    registry: &SpellRegistry,
+    hud_cooldowns: &mut MessageWriter<SpellHudCooldownStarted>,
+    message: &SpellCastEnded,
+) {
+    if !message.completed {
+        return;
+    }
+    let spell_id = SpellId::new(message.spell_id.clone());
+    let Some(spell) = registry.get(&spell_id) else {
+        return;
+    };
+    let cooldown_seconds = spell.config().cooldown_seconds;
+    if cooldown_seconds <= 0.0 {
+        return;
+    }
+
+    hud_cooldowns.write(SpellHudCooldownStarted {
+        spell_id,
+        cooldown_seconds,
+    });
 }
 
 /// Stores the latest authoritative cast snapshot per caster.

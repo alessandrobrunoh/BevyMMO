@@ -15,11 +15,11 @@ impl Default for KeyBindings {
             KeyCode::Space,
         );
         spells.insert(
-            crate::plugins::spells::SpellId::new("fireball"),
+            crate::plugins::spells::SpellId::new("ray_of_light"),
             KeyCode::KeyQ,
         );
         spells.insert(
-            crate::plugins::spells::SpellId::new("followball"),
+            crate::plugins::spells::SpellId::new("fireball"),
             KeyCode::KeyE,
         );
         spells.insert(
@@ -29,6 +29,10 @@ impl Default for KeyBindings {
         spells.insert(
             crate::plugins::spells::SpellId::new("meteorite"),
             KeyCode::KeyT,
+        );
+        spells.insert(
+            crate::plugins::spells::SpellId::new("stun_field"),
+            KeyCode::KeyG,
         );
         spells.insert(crate::plugins::spells::SpellId::new("swift"), KeyCode::KeyF);
         Self {

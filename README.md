@@ -420,8 +420,8 @@ Default controls are defined in `src/plugins/key_mapping.rs` and related input s
 | Left mouse button | Move to world position |
 | Right mouse button | Select target |
 | `Space` | Cast basic attack |
-| `Q` | Cast fireball |
-| `E` | Cast followball |
+| `Q` | Cast ray of light |
+| `E` | Cast fireball |
 | `R` | Cast healing circle |
 | `T` | Cast meteorite |
 | `F` | Cast swift |

@@ -3,8 +3,8 @@
 use bevy::prelude::*;
 
 use super::{
-    connecting, death_screen, entity_bar, main_menu, pause_menu, player_stats, scoreboard,
-    settings, systems, target_frame, target_indicator,
+    connecting, crowd_control_bar, death_screen, entity_bar, main_menu, pause_menu, player_stats,
+    scoreboard, settings, systems, target_frame, target_indicator,
 };
 
 use crate::ui::theme::UiTheme;
@@ -31,6 +31,7 @@ impl Plugin for UiPlugin {
             target_indicator::TargetIndicatorPlugin,
             target_frame::TargetFramePlugin,
             death_screen::DeathScreenPlugin,
+            crowd_control_bar::CrowdControlBarPlugin,
         ));
 
         app.add_systems(

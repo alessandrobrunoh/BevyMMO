@@ -10,6 +10,7 @@ use bevy::prelude::*;
 use std::collections::HashSet;
 
 use crate::network::protocol::Position;
+use crate::plugins::crowd_control::ApplyCrowdControlEvent;
 use crate::plugins::entity::components::GameEntity;
 use crate::plugins::spells::context::{AoeEffect, AoeSpawnRequest};
 use crate::stats::components::VitalStats;
@@ -66,6 +67,7 @@ pub fn update_aoe_regions(
     mut stat_modifiers: MessageWriter<ApplyStatModifierEvent>,
     mut damage_events: MessageWriter<DamageEvent>,
     mut heal_events: MessageWriter<HealEvent>,
+    mut cc_events: MessageWriter<ApplyCrowdControlEvent>,
 ) {
     let delta = time.delta_secs();
     let mut regions_to_despawn: Vec<Entity> = Vec::new();
@@ -88,6 +90,7 @@ pub fn update_aoe_regions(
                 &mut stat_modifiers,
                 &mut damage_events,
                 &mut heal_events,
+                &mut cc_events,
             );
         }
 
@@ -113,6 +116,7 @@ fn apply_aoe_effect_to_targets(
     stat_modifiers: &mut MessageWriter<ApplyStatModifierEvent>,
     damage_events: &mut MessageWriter<DamageEvent>,
     heal_events: &mut MessageWriter<HealEvent>,
+    cc_events: &mut MessageWriter<ApplyCrowdControlEvent>,
 ) {
     let targeting = region.effect.targeting();
 
@@ -183,6 +187,25 @@ fn apply_aoe_effect_to_targets(
                     amount: *amount,
                 });
                 region.affected_entities.insert(target_entity);
+            }
+            AoeEffect::CrowdControl {
+                kind,
+                duration_seconds,
+                once_per_entity,
+                targeting: _,
+            } => {
+                if *once_per_entity && region.affected_entities.contains(&target_entity) {
+                    continue;
+                }
+                cc_events.write(ApplyCrowdControlEvent {
+                    target: target_entity,
+                    source: Some(region.caster),
+                    kind: *kind,
+                    duration_seconds: *duration_seconds,
+                });
+                if *once_per_entity {
+                    region.affected_entities.insert(target_entity);
+                }
             }
         }
     }

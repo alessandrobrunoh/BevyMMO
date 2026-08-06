@@ -225,5 +225,9 @@ impl Plugin for ProtocolPlugin {
 
         app.component::<crate::plugins::entity::components::PlayerName>()
             .replicate();
+
+        app.component::<crate::plugins::crowd_control::CrowdControlState>()
+            .replicate()
+            .predict();
     }
 }

@@ -1,26 +1,27 @@
-//! Meteorite spell implementation.
+//! Stun Field spell implementation.
 //!
-//! 1s CastTime → al completamento appare un cerchio di warning sul punto target;
-//! dopo 2 secondi (`IMPACT_DELAY_SECONDS`) il meteorite impatta: 50 danni a
-//! tutte le entità nel raggio, tranne il caster (`ExcludeCaster`).
+//! Instant-cast AoE spell that creates a stun field after a short delay.
+//! The caster places a warning circle on the ground; after 0.5 seconds
+//! (`IMPACT_DELAY_SECONDS`) the field activates and stuns all enemies
+//! in the area for 2 seconds, excluding the caster.
 
 use bevy::prelude::Vec3;
 
+use crate::plugins::crowd_control::CrowdControlKind;
 use crate::plugins::spells::{
     AoeEffect, AoeTargeting, Spell, SpellCastContext, SpellConfig, SpellId,
 };
 
-pub struct MeteoriteSpell;
+pub struct StunFieldSpell;
 
-impl MeteoriteSpell {
-    pub const ID: &'static str = "meteorite";
-    pub const DISPLAY_NAME: &'static str = "Meteorite";
-    pub const COOLDOWN_SECONDS: f32 = 25.0;
-    pub const CAST_RANGE: f32 = 14.0;
-    pub const AREA_RADIUS: f32 = 3.5;
-    pub const CAST_TIME_SECONDS: f32 = 1.0;
-    pub const IMPACT_DELAY_SECONDS: f32 = 2.0;
-    pub const DAMAGE: f32 = 50.0;
+impl StunFieldSpell {
+    pub const ID: &'static str = "stun_field";
+    pub const DISPLAY_NAME: &'static str = "Stun Field";
+    pub const COOLDOWN_SECONDS: f32 = 15.0;
+    pub const CAST_RANGE: f32 = 12.0;
+    pub const AREA_RADIUS: f32 = 4.0;
+    pub const IMPACT_DELAY_SECONDS: f32 = 0.5;
+    pub const STUN_DURATION_SECONDS: f32 = 2.0;
 
     /// Clampa il punto target al `CAST_RANGE` attorno al caster.
     fn clamp_target_to_range(caster_position: Vec3, target: Vec3) -> Vec3 {
@@ -36,7 +37,7 @@ impl MeteoriteSpell {
     }
 }
 
-impl Spell for MeteoriteSpell {
+impl Spell for StunFieldSpell {
     fn id(&self) -> SpellId {
         SpellId::new(Self::ID)
     }
@@ -47,7 +48,6 @@ impl Spell for MeteoriteSpell {
 
     fn config(&self) -> SpellConfig {
         SpellConfig::ranged_aoe(Self::COOLDOWN_SECONDS, Self::CAST_RANGE, Self::AREA_RADIUS)
-            .with_cast_time(Self::CAST_TIME_SECONDS)
     }
 
     fn cast(&self, ctx: &mut SpellCastContext) {
@@ -56,21 +56,18 @@ impl Spell for MeteoriteSpell {
             .map(|target| Self::clamp_target_to_range(ctx.caster_position, target))
             .unwrap_or(ctx.caster_position);
 
-        // Payload Damage burst con delay iniziale di IMPACT_DELAY_SECONDS.
-        // La regione vive esattamente il tempo del delay: al tick di impatto
-        // applica il danno una tantum e despawna.
-        let effect = AoeEffect::Damage {
-            amount: Self::DAMAGE,
-            targeting: AoeTargeting::ExcludeCaster,
-        };
-
         ctx.emit_aoe_with_delay(
             center,
             Self::AREA_RADIUS,
             Self::IMPACT_DELAY_SECONDS,
             Self::IMPACT_DELAY_SECONDS,
             Self::ID,
-            effect,
+            AoeEffect::CrowdControl {
+                kind: CrowdControlKind::Stun,
+                duration_seconds: Self::STUN_DURATION_SECONDS,
+                once_per_entity: true,
+                targeting: AoeTargeting::ExcludeCaster,
+            },
         );
 
         ctx.emit_visual(Self::ID, center, center);

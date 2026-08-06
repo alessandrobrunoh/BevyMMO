@@ -136,11 +136,19 @@ fn server_move_to_target(
             &mut EntityState,
             Option<&ActiveStatModifiers>,
             Option<&CastProgress>,
+            Option<&crate::plugins::crowd_control::CrowdControlState>,
         ),
         With<Player>,
     >,
 ) {
-    for (position, input, stats, look_direction, mut state, modifiers, cast) in &mut players {
+    for (position, input, stats, look_direction, mut state, modifiers, cast, cc_state) in
+        &mut players
+    {
+        if cc_state.map(|c| c.has_blocking_cc()).unwrap_or(false) {
+            *state = EntityState::Idle;
+            continue;
+        }
+
         if should_block_movement_for_cast(cast) {
             *state = EntityState::Idle;
             continue;
@@ -165,6 +173,7 @@ fn predict_move_to_target(
             &mut LookDirection,
             &mut EntityState,
             Option<&ActiveStatModifiers>,
+            Option<&crate::plugins::crowd_control::CrowdControlState>,
         ),
         (With<Player>, With<Predicted>),
     >,
@@ -173,7 +182,14 @@ fn predict_move_to_target(
         return;
     }
 
-    for (position, input, stats, network_id, look_direction, state, modifiers) in &mut players {
+    for (position, input, stats, network_id, look_direction, mut state, modifiers, cc_state) in
+        &mut players
+    {
+        if cc_state.map(|c| c.has_blocking_cc()).unwrap_or(false) {
+            *state = EntityState::Idle;
+            continue;
+        }
+
         let effective_speed = predicted_effective_speed(
             stats.speed,
             modifiers,

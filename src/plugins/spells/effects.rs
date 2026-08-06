@@ -2,7 +2,7 @@
 //!
 //! Questo modulo è solo un **dispatcher**: legge i messaggi `SpellVisualEffect`
 //! replicati dal server e invoca la funzione `spawn` del modulo `visual` della
-//! spell corrispondente (es. `crate::spells::fireball::visual`).
+//! spell corrispondente (es. `crate::spells::ray_of_light::visual`).
 //!
 //! Le singole spell contengono sia il componente marker visivo che le relative
 //! funzioni di spawn/animazione. Il cleanup centralizzato si basa sul marker
@@ -13,11 +13,12 @@ use bevy::prelude::*;
 use crate::game_state::{GameScreen, Screen};
 use crate::network::mode::has_client;
 use crate::network::protocol::SpellVisualEffect;
-use crate::plugins::spells::{CastKind, SpellHudCooldownStarted, SpellId, SpellRegistry};
 
-use crate::spells::fireball::FireballSpell;
+use crate::plugins::spells::{CastKind, SpellHudCooldownStarted, SpellId, SpellRegistry};
 use crate::spells::healing_circle::HealingCircleSpell;
 use crate::spells::meteorite::MeteoriteSpell;
+use crate::spells::ray_of_light::RayOfLightSpell;
+use crate::spells::stun_field::StunFieldSpell;
 
 /// Marker applicato a tutte le entità visual delle spell. Permette il cleanup
 /// centralizzato quando si esce dal gameplay.
@@ -36,9 +37,10 @@ pub fn client_effect_systems(app: &mut App) {
         Update,
         (
             spawn_spell_visuals,
-            crate::spells::fireball::visual::animate,
+            crate::spells::ray_of_light::visual::animate,
             crate::spells::healing_circle::visual::animate,
             crate::spells::meteorite::visual::animate,
+            crate::spells::stun_field::visual::animate,
         )
             .chain()
             .run_if(has_client)
@@ -81,8 +83,8 @@ fn spawn_spell_visuals(
         start_authoritative_cooldown(&registry, &mut hud_cooldowns, effect.spell_id.as_str());
 
         match effect.spell_id.as_str() {
-            FireballSpell::ID => {
-                crate::spells::fireball::visual::spawn(
+            RayOfLightSpell::ID => {
+                crate::spells::ray_of_light::visual::spawn(
                     &mut commands,
                     &mut meshes,
                     &mut materials,
@@ -99,6 +101,14 @@ fn spawn_spell_visuals(
             }
             MeteoriteSpell::ID => {
                 crate::spells::meteorite::visual::spawn(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    effect,
+                );
+            }
+            StunFieldSpell::ID => {
+                crate::spells::stun_field::visual::spawn(
                     &mut commands,
                     &mut meshes,
                     &mut materials,
@@ -189,7 +199,7 @@ mod tests {
     #[test]
     fn spell_visual_effect_stores_start_and_end_points() {
         let effect = SpellVisualEffect {
-            spell_id: "fireball".to_string(),
+            spell_id: "ray_of_light".to_string(),
             start: Vec3::ZERO,
             end: Vec3::Z,
         };

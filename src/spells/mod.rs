@@ -4,7 +4,8 @@
 
 pub mod attack;
 pub mod fireball;
-pub mod followball;
 pub mod healing_circle;
 pub mod meteorite;
+pub mod ray_of_light;
+pub mod stun_field;
 pub mod swift;

@@ -7,12 +7,12 @@
 use bevy::prelude::*;
 
 use super::components::{Boss, BossArena, BossPhase, BossRotationState, ThreatTable};
-use super::target_select::{highest_threat, PlayerRef};
-use crate::network::protocol::Position;
+use super::target_select::{densest_cluster, farthest_target, main_target, PlayerRef};
+use crate::network::protocol::{LookDirection, Position};
 use crate::plugins::entity::player::components::Player;
 use crate::plugins::spells::{CastProgress, SpellCastRequest, SpellCooldowns, SpellId};
 use crate::spells::dragon_enemy::dragon_claw::DragonClawSpell;
-use crate::stats::components::VitalStats;
+use crate::stats::components::{MovementStats, VitalStats};
 use crate::stats::events::DamageEvent;
 
 /// Hard enrage safety net: forces `Berserk` after this many seconds engaged.
@@ -154,8 +154,10 @@ pub fn accrue_threat(
 
 /// How an ability resolves its target.
 enum Targeting {
-    /// The highest-threat living player (entity + position).
+    /// The current primary target (highest threat, or nearest before threat exists).
     MainThreat,
+    /// The farthest living player, used in Berserk to punish backline safety.
+    Farthest,
     /// Centered on the boss itself (self-AoE like wing buffet, molten eruption).
     CasterCentered,
     /// The centroid of the `n` most-clustered living players (cinder storm).
@@ -212,7 +214,7 @@ fn priority_list_for(phase: BossPhase) -> Vec<RotationEntry> {
             },
             RotationEntry {
                 spell_id: SpellId::new("searing_breath"),
-                targeting: Targeting::MainThreat,
+                targeting: Targeting::Farthest,
             },
             RotationEntry {
                 spell_id: SpellId::new("cinder_storm"),
@@ -231,6 +233,71 @@ fn priority_list_for(phase: BossPhase) -> Vec<RotationEntry> {
         _ => vec![],
     }
 }
+
+/// Stops chasing once within `MELEE_REACH` so the dragon doesn't climb on top
+/// of the player. Aerial phase skips ground chase (the dragon is flying).
+pub fn boss_chase(
+    mut bosses: Query<
+        (
+            &mut Position,
+            &mut LookDirection,
+            &BossArena,
+            &BossPhase,
+            &ThreatTable,
+            &MovementStats,
+        ),
+        With<Boss>,
+    >,
+    players: Query<(Entity, &Position, &VitalStats), (With<Player>, Without<Boss>)>,
+) {
+    let living: Vec<PlayerRef> = players
+        .iter()
+        .filter(|(_, _, vital)| !vital.is_dead())
+        .map(|(entity, position, _)| PlayerRef {
+            entity,
+            position: position.0,
+        })
+        .collect();
+    if living.is_empty() {
+        return;
+    }
+
+    for (mut boss_pos, mut look, arena, phase, threat, stats) in bosses.iter_mut() {
+        // Aerial is flying: no ground chase. Dormant/Dead don't move.
+        if !arena.is_engaged
+            || matches!(
+                *phase,
+                BossPhase::Dormant | BossPhase::Dead | BossPhase::Aerial
+            )
+        {
+            continue;
+        }
+
+        let Some(target) = main_target(threat, &living, boss_pos.0) else {
+            continue;
+        };
+
+        let offset = target.position - boss_pos.0;
+        let horizontal = Vec3::new(offset.x, 0.0, offset.z);
+        let distance = horizontal.length();
+        if distance < 0.001 {
+            continue;
+        }
+        let direction = horizontal / distance;
+
+        // Face the target so cone attacks (searing_breath, tail_sweep) point
+        // the right way.
+        look.0 = direction;
+
+        // Only move when outside melee reach; otherwise hold position and fight.
+        if distance > MELEE_REACH {
+            boss_pos.0 += direction * stats.speed;
+        }
+    }
+}
+
+/// Minimum distance the dragon keeps from its target so it doesn't overlap.
+const MELEE_REACH: f32 = 3.0;
 
 /// Full boss rotation driver.
 ///
@@ -272,12 +339,12 @@ pub fn run_boss_rotation(
             continue;
         }
 
-        let main_target = highest_threat(threat, &living);
-        if main_target.is_none() {
-            // No aggro target yet: nothing to cast at.
+        // Main target is highest-threat if anyone has aggro, otherwise the
+        // nearest living player — so the dragon starts attacking the instant
+        // the arena ring is crossed, before any damage is dealt.
+        let Some(main) = main_target(threat, &living, boss_position.0) else {
             continue;
-        }
-        let _ = main_target;
+        };
 
         let priority = priority_list_for(*phase);
         for entry in &priority {
@@ -285,7 +352,7 @@ pub fn run_boss_rotation(
                 continue;
             }
             let Some((target_entity, target_position)) =
-                resolve_target(&entry.targeting, boss_position.0, &living, threat)
+                resolve_target(&entry.targeting, boss_position.0, &living, main)
             else {
                 continue;
             };
@@ -304,21 +371,22 @@ pub fn run_boss_rotation(
 /// Resolves a `Targeting` into an optional (entity, position) pair.
 ///
 /// `CasterCentered` always resolves (position = boss, entity = None).
-/// `MainThreat` requires a living player with threat. `DensestCluster` requires
-/// at least `n` living players; it returns the centroid with no entity.
+/// `MainThreat` resolves to the pre-computed `main` target. `Farthest` resolves
+/// to the living player farthest from the boss. `DensestCluster` requires at
+/// least `n` living players; it returns the centroid with no entity.
 fn resolve_target(
     targeting: &Targeting,
     caster_position: Vec3,
     living: &[PlayerRef],
-    threat: &ThreatTable,
+    main: &PlayerRef,
 ) -> Option<(Option<Entity>, Option<Vec3>)> {
     match targeting {
         Targeting::CasterCentered => Some((None, Some(caster_position))),
-        Targeting::MainThreat => highest_threat(threat, living)
+        Targeting::MainThreat => Some((Some(main.entity), Some(main.position))),
+        Targeting::Farthest => farthest_target(living, caster_position)
             .map(|player| (Some(player.entity), Some(player.position))),
         Targeting::DensestCluster(n) => {
-            crate::plugins::entity::boss::target_select::densest_cluster(living, *n)
-                .map(|centroid| (None, Some(centroid)))
+            densest_cluster(living, *n).map(|centroid| (None, Some(centroid)))
         }
     }
 }
@@ -428,6 +496,42 @@ mod tests {
 
         let entity_ref = app.world().entity(boss);
         assert!(!entity_ref.get::<BossArena>().unwrap().is_engaged);
+    }
+
+    #[test]
+    fn boss_chase_uses_nearest_player_before_threat_exists() {
+        let mut app = App::new();
+        app.add_systems(Update, boss_chase);
+
+        let boss_start = Vec3::new(0.0, 0.0, 0.0);
+        let boss = app
+            .world_mut()
+            .spawn((
+                Boss,
+                Position(boss_start),
+                LookDirection::default(),
+                BossArena {
+                    center: boss_start,
+                    radius: ARENA_RADIUS,
+                    is_engaged: true,
+                },
+                BossPhase::Ground,
+                ThreatTable::default(),
+                MovementStats { speed: 0.5 },
+            ))
+            .id();
+        spawn_player(&mut app, Vec3::new(10.0, 0.0, 0.0), true);
+
+        app.update();
+
+        let entity_ref = app.world().entity(boss);
+        let position = entity_ref.get::<Position>().unwrap().0;
+        let look = entity_ref.get::<LookDirection>().unwrap().0;
+        assert!(
+            position.x > boss_start.x,
+            "boss should move toward the player"
+        );
+        assert!(look.x > 0.9, "boss should face the player for cone attacks");
     }
 
     #[test]

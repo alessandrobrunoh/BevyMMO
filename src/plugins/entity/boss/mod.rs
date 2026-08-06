@@ -42,6 +42,7 @@ impl Plugin for BossPlugin {
                 systems::boss_aggro_check,
                 systems::accrue_threat,
                 systems::update_boss_phase,
+                systems::boss_chase,
                 systems::run_boss_rotation,
             )
                 .chain()

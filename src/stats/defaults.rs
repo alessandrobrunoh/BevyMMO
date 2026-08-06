@@ -42,11 +42,11 @@ pub fn enemy_defaults() -> StatsBundleData {
 
 /// Default statistical profile for the dragon boss.
 ///
-/// The boss has no movement speed of its own (Phase 1 chase is driven by an
-/// AI step size), heavy HP for a multi-phase encounter, and solid armor.
+/// The boss has slow server-authoritative chase movement, heavy HP for a
+/// multi-phase encounter, and solid armor.
 pub fn boss_defaults() -> StatsBundleData {
     StatsBundleData {
-        movement: MovementStats { speed: 0.0 },
+        movement: MovementStats { speed: 0.05 },
         combat: CombatStats {
             attack_power: 28.0,
             armor: 30.0,

@@ -53,6 +53,7 @@ pub fn process_cast_requests(
     caster_stats: Query<(&LookDirection, &CombatStats)>,
     caster_inputs: Query<&ActionState<Inputs>>,
     caster_network_ids: Query<&NetworkEntityId>,
+    boss_spellbooks: Query<&crate::plugins::entity::boss::components::BossSpellbook>,
     targets_query: Query<(Entity, &Position, &VitalStats), With<GameEntity>>,
     mut damage_events: MessageWriter<DamageEvent>,
     mut heal_events: MessageWriter<HealEvent>,
@@ -80,7 +81,12 @@ pub fn process_cast_requests(
             continue;
         };
 
-        if !hotbar.contains(&request.spell_id) {
+        // Players cast via hotbar; the boss casts via its BossSpellbook
+        // (it has more than 3 abilities, so it bypasses the Q/W/E hotbar).
+        let in_boss_spellbook = boss_spellbooks
+            .get(request.caster)
+            .is_ok_and(|spellbook| spellbook.contains(&request.spell_id));
+        if !hotbar.contains(&request.spell_id) && !in_boss_spellbook {
             bevy::log::warn!("Caster attempted to cast a spell not assigned to the hotbar");
             continue;
         }
@@ -592,7 +598,6 @@ pub fn replicate_cast_progress(
     }
 }
 
-
 fn send_spell_visual(
     sender: &mut ServerMultiMessageSender,
     local_visuals: &mut MessageWriter<SpellVisualEffect>,
@@ -666,6 +671,34 @@ pub fn register_builtin_spells(mut registry: ResMut<SpellRegistry>) {
 
     let swift_spell: Arc<dyn Spell> = Arc::new(crate::spells::swift::SwiftSpell);
     registry.register(swift_spell);
+
+    let dragon_claw_spell: Arc<dyn Spell> =
+        Arc::new(crate::spells::dragon_enemy::dragon_claw::DragonClawSpell);
+    registry.register(dragon_claw_spell);
+
+    let tail_sweep_spell: Arc<dyn Spell> =
+        Arc::new(crate::spells::dragon_enemy::tail_sweep::TailSweepSpell);
+    registry.register(tail_sweep_spell);
+
+    let searing_breath_spell: Arc<dyn Spell> =
+        Arc::new(crate::spells::dragon_enemy::searing_breath::SearingBreathSpell);
+    registry.register(searing_breath_spell);
+
+    let cinder_storm_spell: Arc<dyn Spell> =
+        Arc::new(crate::spells::dragon_enemy::cinder_storm::CinderStormSpell);
+    registry.register(cinder_storm_spell);
+
+    let wing_buffet_spell: Arc<dyn Spell> =
+        Arc::new(crate::spells::dragon_enemy::wing_buffet::WingBuffetSpell);
+    registry.register(wing_buffet_spell);
+
+    let molten_eruption_spell: Arc<dyn Spell> =
+        Arc::new(crate::spells::dragon_enemy::molten_eruption::MoltenEruptionSpell);
+    registry.register(molten_eruption_spell);
+
+    let cataclysm_spell: Arc<dyn Spell> =
+        Arc::new(crate::spells::dragon_enemy::cataclysm::CataclysmSpell);
+    registry.register(cataclysm_spell);
 
     bevy::log::info!("Registered {} built-in spells", registry.len());
 }

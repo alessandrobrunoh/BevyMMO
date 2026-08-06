@@ -130,8 +130,8 @@ pub fn select_target_with_right_click(
         return;
     };
 
-    // Solo tasto destro, non influenziamo il movimento (sinistro)
-    if !mouse_buttons.just_pressed(MouseButton::Right) {
+    // Solo tasto sinistro, non influenziamo il movimento (destro)
+    if !mouse_buttons.just_pressed(MouseButton::Left) {
         return;
     }
 

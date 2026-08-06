@@ -417,8 +417,8 @@ Default controls are defined in `src/plugins/key_mapping.rs` and related input s
 
 | Input | Action |
 | --- | --- |
-| Left mouse button | Move to world position |
-| Right mouse button | Select target |
+| Right mouse button | Move to world position |
+| Left mouse button | Select target |
 | `Space` | Cast basic attack |
 | `Q` | Cast ray of light |
 | `E` | Cast fireball |

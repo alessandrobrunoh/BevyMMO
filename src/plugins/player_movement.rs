@@ -77,8 +77,8 @@ fn select_move_target(
 
     // Distinguiamo il click iniziale (con indicatore visivo) dal tasto tenuto:
     // in quest'ultimo caso aggiorniamo solo la destinazione, senza spammare anelli.
-    let just_pressed = mouse_buttons.just_pressed(MouseButton::Left);
-    let held = mouse_buttons.pressed(MouseButton::Left);
+    let just_pressed = mouse_buttons.just_pressed(MouseButton::Right);
+    let held = mouse_buttons.pressed(MouseButton::Right);
     if !held {
         return;
     }

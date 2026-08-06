@@ -6,6 +6,7 @@
 //! + bundle di dati, non polimorfismo runtime. Questo trait dichiara
 //! "come si costruisce" un'entità e quali componenti di rete vuole.
 
+use bevy::color::Color;
 use bevy::prelude::*;
 use lightyear::prelude::NetworkTarget;
 

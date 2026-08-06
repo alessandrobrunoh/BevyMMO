@@ -3,6 +3,7 @@
 //! Questo modulo è volutamente separato dalla logica di combat: può essere
 //! rimosso insieme alla sua registrazione nel plugin senza modificare il danno.
 
+use bevy::color::Color;
 use bevy::prelude::*;
 
 use super::components::Enemy;

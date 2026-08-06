@@ -1,5 +1,6 @@
 //! Lifecycle della scena di gioco, guidato da [`GameScreen`].
 
+use bevy::color::Color;
 use bevy::prelude::*;
 
 use crate::game_state::{GameScreen, Screen};

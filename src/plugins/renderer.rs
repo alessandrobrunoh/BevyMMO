@@ -40,15 +40,31 @@ fn spawn_entity_meshes(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    entities: Query<(Entity, &Position, &EntityColor), Without<Mesh3d>>,
+    entities: Query<(Entity, &Position, &EntityColor, Option<&ProjectileVisual>), Without<Mesh3d>>,
 ) {
-    for (entity, position, color) in entities.iter() {
-        commands.entity(entity).insert((
-            Mesh3d(meshes.add(Cuboid::new(2.0, 2.0, 2.0))),
-            MeshMaterial3d(materials.add(StandardMaterial {
+    for (entity, position, color, projectile_visual) in entities.iter() {
+        let is_projectile = projectile_visual.is_some();
+        let mesh = if is_projectile {
+            meshes.add(Cuboid::new(0.45, 0.45, 0.45))
+        } else {
+            meshes.add(Cuboid::new(2.0, 2.0, 2.0))
+        };
+        let material = if is_projectile {
+            materials.add(StandardMaterial {
+                base_color: color.0,
+                emissive: LinearRgba::rgb(0.1, 0.7, 1.0),
+                ..default()
+            })
+        } else {
+            materials.add(StandardMaterial {
                 base_color: color.0,
                 ..default()
-            })),
+            })
+        };
+
+        commands.entity(entity).insert((
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
             Transform::from_translation(position.0),
         ));
     }

@@ -3,6 +3,7 @@
 //! Il Dummy è un'entità statica con HP enormi, usata per testare
 //! il sistema danni, UI targeting e spell. Non ha AI e non si muove.
 
+use bevy::color::Color;
 use bevy::prelude::*;
 
 use super::components::Dummy;

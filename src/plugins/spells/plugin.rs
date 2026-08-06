@@ -3,15 +3,15 @@ use crate::network::protocol::SpellVisualEffect;
 use bevy::prelude::*;
 
 use super::{
-    effects,
+    aoe,
     events::SpellCastRequest,
+    projectile::update_homing_projectiles,
     registry::SpellRegistry,
-    systems::{
-        process_cast_requests, register_builtin_spells, tick_spell_cooldowns,
-        update_homing_projectiles,
-    },
-    ui,
+    systems::{process_cast_requests, register_builtin_spells, tick_spell_cooldowns},
 };
+
+#[cfg(feature = "client")]
+use super::{effects, ui};
 
 /// Plugin that sets up the spells framework.
 ///
@@ -31,9 +31,10 @@ impl Plugin for SpellsPlugin {
             .add_systems(
                 FixedUpdate,
                 (
-                    tick_spell_cooldowns,
                     process_cast_requests,
                     update_homing_projectiles,
+                    aoe::update_aoe_regions,
+                    tick_spell_cooldowns,
                 )
                     .chain()
                     .run_if(has_server),

@@ -4,17 +4,20 @@ use bevy::prelude::*;
 pub struct KeyBindings {
     pub show_scoreboard: KeyCode,
     pub toggle_pause: KeyCode,
-    pub cast_fireball: KeyCode,
-    pub cast_followball: KeyCode,
+    pub spells: std::collections::HashMap<crate::plugins::spells::SpellId, KeyCode>,
 }
 
 impl Default for KeyBindings {
     fn default() -> Self {
+        let mut spells = std::collections::HashMap::new();
+        spells.insert(crate::plugins::spells::SpellId::new("attack"), KeyCode::Space);
+        spells.insert(crate::plugins::spells::SpellId::new("fireball"), KeyCode::KeyQ);
+        spells.insert(crate::plugins::spells::SpellId::new("followball"), KeyCode::KeyE);
+        spells.insert(crate::plugins::spells::SpellId::new("healing_circle"), KeyCode::KeyR);
         Self {
             show_scoreboard: KeyCode::Tab,
             toggle_pause: KeyCode::Escape,
-            cast_fireball: KeyCode::KeyQ,
-            cast_followball: KeyCode::KeyE,
+            spells,
         }
     }
 }

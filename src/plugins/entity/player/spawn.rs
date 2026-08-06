@@ -5,6 +5,7 @@
 //! Il player ha comunque network custom (prediction/interpolation
 //! dipendenti dall'owner) gestita in `network::server::handle_connected_client`.
 
+use bevy::color::Color;
 use bevy::prelude::*;
 
 use super::components::Player;
@@ -24,6 +25,7 @@ impl EntityDefinition for Player {
                 SpellId::new("attack"),
                 SpellId::new("fireball"),
                 SpellId::new("followball"),
+                SpellId::new("healing_circle"),
             ]),
             SpellCooldowns::default(),
         )

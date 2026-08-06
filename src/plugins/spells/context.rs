@@ -8,7 +8,25 @@ use bevy::math::Vec3;
 
 use crate::network::protocol::SpellVisualEffect;
 use crate::stats::components::CombatStats;
-use crate::stats::events::{DamageEvent, HealEvent};
+use crate::stats::events::{DamageEvent, HealEvent, ModifierEffect, ModifierKind};
+
+/// Come una spell seleziona i propri bersagli al momento del cast.
+///
+/// Questo enum tipizza ciò che prima era implicito nei costruttori di
+/// [`SpellConfig`], e viene usato sia per validare l'input (es. un cast di
+/// `SingleEntity` senza `target_entity` fallisce), sia per scegliere la UI di
+/// targeting lato client (cursor diverso, preview del cerchio, ecc.).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetingMode {
+    /// Centrata sul caster, colpisce tutto in un raggio (es. `Attack`).
+    SelfCentered,
+    /// Tiro in linea d'aria lungo la direzione di sguardo (es. `Fireball`).
+    DirectionalLine,
+    /// Una singola entità selezionata (es. `Followball`).
+    SingleEntity,
+    /// AoE a terra nella posizione indicata (es. `HealingCircle`).
+    GroundAoe,
+}
 
 /// Configuration data for a spell.
 ///
@@ -25,43 +43,55 @@ pub struct SpellConfig {
     /// - Used for spells that affect multiple targets in an area
     /// - 0.0 means single-target or no area component
     pub area_radius: f32,
+    /// Modalità con cui la spell seleziona i bersagli al momento del cast.
+    pub targeting: TargetingMode,
 }
 
 impl SpellConfig {
     /// Create a new spell configuration.
-    pub const fn new(cooldown_seconds: f32, cast_range: f32, area_radius: f32) -> Self {
+    pub const fn new(
+        cooldown_seconds: f32,
+        cast_range: f32,
+        area_radius: f32,
+        targeting: TargetingMode,
+    ) -> Self {
         Self {
             cooldown_seconds,
             cast_range,
             area_radius,
+            targeting,
         }
     }
 
     /// Create a configuration for a self-centered melee spell.
     pub const fn melee_aoe(cooldown_seconds: f32, area_radius: f32) -> Self {
-        Self {
+        Self::new(
             cooldown_seconds,
-            cast_range: 0.0,
+            0.0,
             area_radius,
-        }
+            TargetingMode::SelfCentered,
+        )
     }
 
-    /// Create a configuration for a ranged single-target spell.
-    pub const fn ranged_single_target(cooldown_seconds: f32, cast_range: f32) -> Self {
-        Self {
-            cooldown_seconds,
-            cast_range,
-            area_radius: 0.0,
-        }
+    /// Create a configuration for a ranged spell che colpisce lungo una linea
+    /// o una singola entità: il chiamante deve specificare esplicitamente la
+    /// modalità (`DirectionalLine` o `SingleEntity`).
+    pub const fn ranged_single_target(
+        cooldown_seconds: f32,
+        cast_range: f32,
+        targeting: TargetingMode,
+    ) -> Self {
+        Self::new(cooldown_seconds, cast_range, 0.0, targeting)
     }
 
-    /// Create a configuration for a ranged area-of-effect spell.
+    /// Create a configuration for a ranged area-of-effect spell placed on the ground.
     pub const fn ranged_aoe(cooldown_seconds: f32, cast_range: f32, area_radius: f32) -> Self {
-        Self {
+        Self::new(
             cooldown_seconds,
             cast_range,
             area_radius,
-        }
+            TargetingMode::GroundAoe,
+        )
     }
 }
 
@@ -72,6 +102,37 @@ pub struct ProjectileSpawnRequest {
     pub speed: f32,
     pub damage: f32,
     pub hit_radius: f32,
+}
+
+/// Effetto applicato da una regione AoE alle entità che vi entrano.
+///
+/// Vive nel payload della richiesta di spawn (come già avviene per i
+/// proiettili con `ProjectileSpawnRequest`), in modo che il sistema centrale
+/// `update_aoe_regions` resti generico e ignori l'identità della spell.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AoeEffect {
+    /// Applica un [`ApplyStatModifierEvent`] alle entità nell'area.
+    ApplyModifier {
+        effects: Vec<ModifierEffect>,
+        /// `None` = permanente finché non rimosso esplicitamente.
+        duration_seconds: Option<f32>,
+        kind: ModifierKind,
+        /// `true`: ogni entità riceve l'effetto una sola volta (es. healing
+        /// circle: entra → buff applicato, poi ignorata).
+        /// `false`: l'effetto viene ri-applicato finché l'entità resta dentro
+        /// (es. poison cloud che fa DoT continuo).
+        once_per_entity: bool,
+    },
+}
+
+/// Richiesta di spawn di una regione ad area (AoE) persistente.
+#[derive(Debug, Clone)]
+pub struct AoeSpawnRequest {
+    pub center: Vec3,
+    pub radius: f32,
+    pub duration_seconds: f32,
+    pub spell_id: String,
+    pub effect: AoeEffect,
 }
 
 /// Context provided to a spell during casting.
@@ -104,6 +165,8 @@ pub struct SpellCastContext<'a> {
     pub pending_healing: Vec<HealEvent>,
     /// Pending projectile spawn requests.
     pub pending_projectiles: Vec<ProjectileSpawnRequest>,
+    /// Pending AoE spawn requests.
+    pub pending_aoes: Vec<AoeSpawnRequest>,
     /// Pending replicated visual effects to broadcast to clients after validation.
     pub pending_visuals: Vec<SpellVisualEffect>,
 }
@@ -130,6 +193,7 @@ impl<'a> SpellCastContext<'a> {
             pending_damage: Vec::new(),
             pending_healing: Vec::new(),
             pending_projectiles: Vec::new(),
+            pending_aoes: Vec::new(),
             pending_visuals: Vec::new(),
         }
     }
@@ -159,6 +223,28 @@ impl<'a> SpellCastContext<'a> {
             speed,
             damage,
             hit_radius,
+        });
+    }
+
+    /// Emit an AoE spawn request.
+    ///
+    /// `effect` porta con sé il payload dell'effetto (danno, cura, modifier,
+    /// ecc.) in modo che il sistema centrale non debba fare dispatch su
+    /// `spell_id`.
+    pub fn emit_aoe(
+        &mut self,
+        center: Vec3,
+        radius: f32,
+        duration_seconds: f32,
+        spell_id: impl Into<String>,
+        effect: AoeEffect,
+    ) {
+        self.pending_aoes.push(AoeSpawnRequest {
+            center,
+            radius,
+            duration_seconds,
+            spell_id: spell_id.into(),
+            effect,
         });
     }
 

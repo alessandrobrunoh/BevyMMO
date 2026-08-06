@@ -16,6 +16,7 @@ use crate::network::protocol::Position;
 use crate::plugins::entity::components::{EntityKind, PlayerName};
 use crate::stats::components::VitalStats;
 use crate::ui::theme::UiTheme;
+use bevy::color::Color;
 use bevy::prelude::*;
 
 use super::{spawn_entity_bar, EntityBarParts, FloatingUi};

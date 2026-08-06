@@ -6,7 +6,7 @@
 
 use bevy::prelude::{Entity, Vec3};
 
-use crate::plugins::spells::{Spell, SpellCastContext, SpellConfig, SpellId};
+use crate::plugins::spells::{Spell, SpellCastContext, SpellConfig, SpellId, TargetingMode};
 
 /// Fireball: projectile-like ranged AoE spell.
 pub struct FireballSpell;
@@ -80,7 +80,11 @@ impl Spell for FireballSpell {
     }
 
     fn config(&self) -> SpellConfig {
-        SpellConfig::ranged_single_target(Self::COOLDOWN_SECONDS, Self::CAST_RANGE)
+        SpellConfig::ranged_single_target(
+            Self::COOLDOWN_SECONDS,
+            Self::CAST_RANGE,
+            TargetingMode::DirectionalLine,
+        )
     }
 
     fn cast(&self, ctx: &mut SpellCastContext) {

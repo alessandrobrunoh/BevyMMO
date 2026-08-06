@@ -15,7 +15,7 @@ use crate::network::mode::has_client;
 use crate::network::protocol::SpellVisualEffect;
 use crate::network::protocol::*;
 use crate::plugins::key_mapping::KeyBindings;
-use crate::plugins::spells::{SpellHudCooldownStarted, SpellHudState, SpellId};
+use crate::plugins::spells::{SpellHudCooldownStarted, SpellHudState};
 use crate::plugins::targeting::CurrentTarget;
 
 /// Impostazioni di connessione del client, conservate come risorsa.
@@ -37,7 +37,7 @@ pub struct PendingJoinRequest(pub Option<String>);
 /// Il link ha completato almeno una connessione Lightyear. Distingue un vero
 /// disconnect dallo stato `Disconnected` iniziale creato da `Link::new(None)`.
 #[derive(Component)]
-struct ConnectedClient;
+pub(crate) struct ConnectedClient;
 
 /// L'utente ha richiesto esplicitamente il disconnect mentre il link era attivo.
 #[derive(Component)]
@@ -79,9 +79,9 @@ impl Plugin for ClientPlugins {
 
         app.add_systems(Update, cleanup_disconnected_clients.run_if(has_client));
         app.add_systems(Update, receive_messages);
+        app.add_systems(Update, receive_spell_visual_effects.run_if(has_client));
         app.add_systems(Update, lower_controlled_saturation);
-        app.add_systems(Update, cast_fireball_on_key.run_if(has_client));
-        app.add_systems(Update, cast_followball_on_key.run_if(has_client));
+        app.add_systems(Update, cast_spells_on_key.run_if(has_client));
 
         app.add_observer(handle_connected);
         app.add_observer(handle_disconnected);
@@ -241,68 +241,19 @@ fn cleanup_disconnected_clients(
     }
 }
 
-fn cast_fireball_on_key(
-    keys: Option<Res<ButtonInput<KeyCode>>>,
-    bindings: Option<Res<KeyBindings>>,
-    screen: Res<GameScreen>,
-    hud_state: Res<SpellHudState>,
-    mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
-    controlled_players: Query<(&Position, Option<&LookDirection>), With<Controlled>>,
-    mut visuals: MessageWriter<SpellVisualEffect>,
-    mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
-) {
-    if !matches!(screen.0, Screen::InGame | Screen::Paused) {
-        return;
-    }
-    let (Some(keys), Some(bindings)) = (keys, bindings) else {
-        return;
-    };
-    if !keys.just_pressed(bindings.cast_fireball) {
-        return;
-    }
-
-    bevy::log::info!("Fireball key pressed, attempting cast");
-
-    let fireball_id = SpellId::new(crate::spells::fireball::FireballSpell::ID);
-    if hud_state.is_on_cooldown(&fireball_id) {
-        return;
-    }
-
-    let Some((player_position, look_direction)) = controlled_players.iter().next() else {
-        return;
-    };
-    let start = player_position.0;
-    let cast_range = crate::spells::fireball::FireballSpell::CAST_RANGE;
-    let direction = look_direction
-        .map(|direction| Vec3::new(direction.x, 0.0, direction.z).normalize_or_zero())
-        .filter(|direction| direction.length_squared() > 0.001)
-        .unwrap_or(Vec3::Z);
-    let target = start + direction * cast_range;
-
-    for mut sender in senders.iter_mut() {
-        sender.send::<Channel2>(SpellCastCommand {
-            spell_id: crate::spells::fireball::FireballSpell::ID.to_string(),
-            target_position: Some(target),
-            target_entity: None,
-        });
-    }
-
-    hud_cooldowns.write(SpellHudCooldownStarted {
-        spell_id: SpellId::new(crate::spells::fireball::FireballSpell::ID),
-        cooldown_seconds: crate::spells::fireball::FireballSpell::COOLDOWN_SECONDS,
-    });
-}
-
-/// Cast Followball: invia il target entity selezionato al server.
-/// Se non c'è un target selezionato, non invia nulla.
-fn cast_followball_on_key(
+fn cast_spells_on_key(
     keys: Option<Res<ButtonInput<KeyCode>>>,
     bindings: Option<Res<KeyBindings>>,
     screen: Res<GameScreen>,
     hud_state: Res<SpellHudState>,
     current_target: Res<CurrentTarget>,
+    target_ids: Query<&NetworkEntityId>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    controlled_players: Query<&crate::plugins::spells::Spellbook, With<Controlled>>,
     mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
+    registry: Res<crate::plugins::spells::SpellRegistry>,
 ) {
     if !matches!(screen.0, Screen::InGame | Screen::Paused) {
         return;
@@ -310,31 +261,61 @@ fn cast_followball_on_key(
     let (Some(keys), Some(bindings)) = (keys, bindings) else {
         return;
     };
-    if !keys.just_pressed(bindings.cast_followball) {
-        return;
-    }
 
-    let followball_id = SpellId::new(crate::spells::followball::FollowballSpell::ID);
-    if hud_state.is_on_cooldown(&followball_id) {
-        return;
-    }
-
-    let Some(target_entity) = current_target.entity else {
+    let Ok(spellbook) = controlled_players.single() else {
         return;
     };
 
-    for mut sender in senders.iter_mut() {
-        sender.send::<Channel2>(SpellCastCommand {
-            spell_id: crate::spells::followball::FollowballSpell::ID.to_string(),
-            target_position: None,
-            target_entity: Some(target_entity),
-        });
+    // Calculate common inputs for spells
+    let mut target_position = None;
+    if let Ok(window) = windows.single() {
+        if let Some(cursor_position) = window.cursor_position() {
+            if let Some((camera, camera_transform)) = cameras.iter().next() {
+                if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+                    if let Some(target) = ray.plane_intersection_point(
+                        Vec3::ZERO,
+                        bevy::math::primitives::InfinitePlane3d::new(Vec3::Y),
+                    ) {
+                        target_position = Some(Vec3::new(target.x, 0.0, target.z));
+                    }
+                }
+            }
+        }
     }
 
-    hud_cooldowns.write(SpellHudCooldownStarted {
-        spell_id: followball_id,
-        cooldown_seconds: crate::spells::followball::FollowballSpell::COOLDOWN_SECONDS,
-    });
+    let mut target_id = None;
+    if let Some(target_entity) = current_target.entity {
+        if let Ok(net_id) = target_ids.get(target_entity) {
+            target_id = Some(net_id.0);
+        }
+    }
+
+    for spell_id in spellbook.spells.iter() {
+        let Some(&key) = bindings.spells.get(spell_id) else {
+            continue;
+        };
+
+        if keys.just_pressed(key) {
+            if hud_state.is_on_cooldown(spell_id) {
+                continue;
+            }
+
+            for mut sender in senders.iter_mut() {
+                sender.send::<Channel2>(SpellCastCommand {
+                    spell_id: spell_id.0.to_string(),
+                    target_position,
+                    target_id,
+                });
+            }
+
+            if let Some(spell_def) = registry.get(spell_id) {
+                hud_cooldowns.write(SpellHudCooldownStarted {
+                    spell_id: spell_id.clone(),
+                    cooldown_seconds: spell_def.config().cooldown_seconds,
+                });
+            }
+        }
+    }
 }
 
 // Riduce la saturazione sulle entità predette, così il player locale è
@@ -348,7 +329,7 @@ fn handle_predicted_spawn(
             saturation: 0.4,
             ..Hsva::from(color.0)
         };
-        color.0 = bevy::prelude::Color::from(hsva);
+        color.0 = bevy::color::Color::from(hsva);
     }
 }
 
@@ -360,7 +341,7 @@ fn lower_controlled_saturation(mut controlled: Query<&mut EntityColor, Added<Con
             saturation: 0.2,
             ..Hsva::from(color.0)
         };
-        color.0 = bevy::prelude::Color::from(hsva);
+        color.0 = bevy::color::Color::from(hsva);
     }
 }
 
@@ -391,7 +372,7 @@ fn handle_interpolated_spawn(
             saturation: 0.1,
             ..Hsva::from(color.0)
         };
-        color.0 = bevy::prelude::Color::from(hsva);
+        color.0 = bevy::color::Color::from(hsva);
     }
 }
 
@@ -399,5 +380,18 @@ fn handle_interpolated_spawn(
 fn receive_messages(mut receiver: Single<&mut MessageReceiver<PlayerMessage>>) {
     for message in receiver.receive() {
         info!("Received message: {:?}", message);
+    }
+}
+
+// Converte i messaggi visual server -> client in messaggi Bevy locali letti dai
+// sistemi di presentazione in `plugins::spells::effects`.
+fn receive_spell_visual_effects(
+    mut receivers: Query<&mut MessageReceiver<SpellVisualEffect>, With<ConnectedClient>>,
+    mut local_effects: MessageWriter<SpellVisualEffect>,
+) {
+    for mut receiver in receivers.iter_mut() {
+        for effect in receiver.receive() {
+            local_effects.write(effect.clone());
+        }
     }
 }

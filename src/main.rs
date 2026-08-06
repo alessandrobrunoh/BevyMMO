@@ -1,5 +1,6 @@
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
+#[cfg(feature = "client")]
 use bevy::window::PresentMode;
 use clap::{Parser, Subcommand};
 use core::time::Duration;
@@ -174,22 +175,30 @@ mod tests {
 
 fn add_platform_plugins(app: &mut App, config: &AppConfig) {
     if config.mode.has_client() {
-        app.add_plugins(
-            DefaultPlugins
-                .set(LogPlugin {
-                    filter: LOG_FILTER.to_string(),
-                    ..default()
-                })
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: format!("{:?} {}", config.mode, config.client_id()),
-                        resolution: (800, 600).into(),
-                        present_mode: PresentMode::AutoVsync,
+        #[cfg(feature = "client")]
+        {
+            app.add_plugins(
+                DefaultPlugins
+                    .set(LogPlugin {
+                        filter: LOG_FILTER.to_string(),
+                        ..default()
+                    })
+                    .set(WindowPlugin {
+                        primary_window: Some(Window {
+                            title: format!("{:?} {}", config.mode, config.client_id()),
+                            resolution: (800, 600).into(),
+                            present_mode: PresentMode::AutoVsync,
+                            ..default()
+                        }),
                         ..default()
                     }),
-                    ..default()
-                }),
-        );
+            );
+        }
+        #[cfg(not(feature = "client"))]
+        {
+            let _ = config;
+            panic!("client mode requires the 'client' cargo feature to be enabled");
+        }
     } else {
         app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin));
         app.add_plugins(LogPlugin {

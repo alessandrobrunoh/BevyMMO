@@ -1,3 +1,4 @@
+use bevy::color::Color;
 use bevy::prelude::*;
 
 /// Genera un nodo di sfondo e un nodo di riempimento a posizionamento

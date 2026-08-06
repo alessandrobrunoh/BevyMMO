@@ -4,6 +4,7 @@ use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::plugins::entity::components::{EntityKind, EntityState, GameEntity};
+use crate::plugins::spells::Spellbook;
 use crate::stats::components::{CombatStats, MovementStats, VitalStats};
 
 // Canali
@@ -42,7 +43,7 @@ impl Default for LookDirection {
 
 /// Colore generico di un'entità di gioco, replicato via lightyear.
 #[derive(Component, Deserialize, Serialize, Clone, Debug, PartialEq)]
-pub struct EntityColor(pub bevy::prelude::Color);
+pub struct EntityColor(pub bevy::color::Color);
 
 /// Identificatore gameplay stabile assegnato dal server alle entità replicate.
 ///
@@ -160,6 +161,8 @@ impl Plugin for ProtocolPlugin {
         app.component::<VitalStats>().replicate().predict();
 
         app.component::<EntityState>().replicate().predict();
+
+        app.component::<Spellbook>().replicate().predict();
 
         app.component::<GameEntity>().replicate();
 

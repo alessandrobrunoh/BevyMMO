@@ -57,7 +57,25 @@ pub struct HealEvent {
     pub amount: f32,
 }
 
-/// Richiesta di applicare un modifier (buff o debuff) a una stat di `target`.
+/// Un singolo effetto di un modifier.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ModifierEffect {
+    Stat {
+        field: StatField,
+        operation: ModifierOp,
+        value: f32,
+    },
+    HealOverTime {
+        amount_per_tick: f32,
+        tick_interval: f32,
+    },
+    DamageOverTime {
+        amount_per_tick: f32,
+        tick_interval: f32,
+    },
+}
+
+/// Richiesta di applicare un modifier (buff o debuff) a un `target`.
 ///
 /// I modifier sono temporanei: il sistema
 /// [`crate::stats::systems::tick_stat_modifiers`] decrementa la durata e
@@ -66,9 +84,7 @@ pub struct HealEvent {
 pub struct ApplyStatModifierEvent {
     pub target: Entity,
     pub source: Option<Entity>,
-    pub field: StatField,
-    pub operation: ModifierOp,
-    pub value: f32,
+    pub effects: Vec<ModifierEffect>,
     /// `None` = permanente finché non rimosso esplicitamente.
     pub duration_seconds: Option<f32>,
     pub kind: ModifierKind,

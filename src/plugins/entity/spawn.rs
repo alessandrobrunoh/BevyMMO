@@ -1,5 +1,6 @@
 //! Bundle e helper di spawn per le entità di gioco.
 
+use bevy::color::Color;
 use bevy::ecs::entity::Entity;
 use bevy::prelude::*;
 use lightyear::prelude::{NetworkTarget, Replicate};

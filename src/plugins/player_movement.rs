@@ -1,7 +1,11 @@
 //! Movimento punta-e-clicca del player e indicatore visivo del comando.
 
+#[cfg(feature = "client")]
+use bevy::color::Color;
+#[cfg(feature = "client")]
 use bevy::math::primitives::InfinitePlane3d;
 use bevy::prelude::*;
+#[cfg(feature = "client")]
 use bevy::window::PrimaryWindow;
 use lightyear::prelude::client::input::InputSystems;
 use lightyear::prelude::input::native::{ActionState, InputMarker};

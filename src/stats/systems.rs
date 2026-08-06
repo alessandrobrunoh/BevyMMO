@@ -45,12 +45,38 @@ pub fn apply_stat_modifiers(
     mut targets: Query<&mut ActiveStatModifiers>,
 ) {
     for event in events.read() {
+        let mut effect_instances = Vec::new();
+        for effect in &event.effects {
+            let instance = match effect {
+                crate::stats::events::ModifierEffect::Stat { field, operation, value } => {
+                    crate::stats::modifiers::ModifierEffectInstance::Stat {
+                        field: *field,
+                        operation: *operation,
+                        value: *value,
+                    }
+                }
+                crate::stats::events::ModifierEffect::HealOverTime { amount_per_tick, tick_interval } => {
+                    crate::stats::modifiers::ModifierEffectInstance::HealOverTime {
+                        amount_per_tick: *amount_per_tick,
+                        tick_interval: *tick_interval,
+                        time_since_last_tick: 0.0,
+                    }
+                }
+                crate::stats::events::ModifierEffect::DamageOverTime { amount_per_tick, tick_interval } => {
+                    crate::stats::modifiers::ModifierEffectInstance::DamageOverTime {
+                        amount_per_tick: *amount_per_tick,
+                        tick_interval: *tick_interval,
+                        time_since_last_tick: 0.0,
+                    }
+                }
+            };
+            effect_instances.push(instance);
+        }
+
         let instance = StatModifierInstance {
             id: ModifierId(NEXT_MODIFIER_ID.fetch_add(1, Ordering::Relaxed)),
             source: event.source,
-            field: event.field,
-            operation: event.operation,
-            value: event.value,
+            effects: effect_instances,
             remaining_seconds: event.duration_seconds,
             kind: event.kind,
         };
@@ -68,16 +94,58 @@ pub fn apply_stat_modifiers(
 }
 
 /// Decrementa la durata dei modifier attivi e rimuove quelli scaduti.
-pub fn tick_stat_modifiers(time: Res<Time>, mut targets: Query<&mut ActiveStatModifiers>) {
+pub fn tick_stat_modifiers(
+    time: Res<Time>,
+    mut targets: Query<(Entity, &mut ActiveStatModifiers)>,
+    mut heals: MessageWriter<HealEvent>,
+    mut damages: MessageWriter<DamageEvent>,
+) {
     let delta = time.delta().as_secs_f32();
-    for mut active in targets.iter_mut() {
+    for (entity, mut active) in targets.iter_mut() {
         active.modifiers.retain_mut(|modifier| {
+            let mut keep = true;
             if let Some(remaining) = modifier.remaining_seconds.as_mut() {
                 *remaining -= delta;
-                *remaining > 0.0
-            } else {
-                true
+                keep = *remaining > 0.0;
             }
+
+            for effect in &mut modifier.effects {
+                match effect {
+                    crate::stats::modifiers::ModifierEffectInstance::Stat { .. } => {}
+                    crate::stats::modifiers::ModifierEffectInstance::HealOverTime {
+                        amount_per_tick,
+                        tick_interval,
+                        time_since_last_tick,
+                    } => {
+                        *time_since_last_tick += delta;
+                        while *time_since_last_tick >= *tick_interval {
+                            *time_since_last_tick -= *tick_interval;
+                            heals.write(HealEvent {
+                                target: entity,
+                                source: modifier.source,
+                                amount: *amount_per_tick,
+                            });
+                        }
+                    }
+                    crate::stats::modifiers::ModifierEffectInstance::DamageOverTime {
+                        amount_per_tick,
+                        tick_interval,
+                        time_since_last_tick,
+                    } => {
+                        *time_since_last_tick += delta;
+                        while *time_since_last_tick >= *tick_interval {
+                            *time_since_last_tick -= *tick_interval;
+                            damages.write(DamageEvent {
+                                target: entity,
+                                source: modifier.source,
+                                amount: *amount_per_tick,
+                            });
+                        }
+                    }
+                }
+            }
+
+            keep
         });
     }
 }
@@ -90,13 +158,22 @@ pub fn effective_value(field: StatField, base: f32, modifiers: &[StatModifierIns
     let mut override_value: Option<f32> = None;
 
     for modifier in modifiers {
-        if modifier.field != field {
-            continue;
-        }
-        match modifier.operation {
-            ModifierOp::Add => result += modifier.value,
-            ModifierOp::Multiply => result *= modifier.value,
-            ModifierOp::Override => override_value = Some(modifier.value),
+        for effect in &modifier.effects {
+            if let crate::stats::modifiers::ModifierEffectInstance::Stat {
+                field: effect_field,
+                operation,
+                value,
+            } = effect
+            {
+                if *effect_field != field {
+                    continue;
+                }
+                match operation {
+                    ModifierOp::Add => result += value,
+                    ModifierOp::Multiply => result *= value,
+                    ModifierOp::Override => override_value = Some(*value),
+                }
+            }
         }
     }
 
@@ -113,18 +190,22 @@ mod tests {
             StatModifierInstance {
                 id: ModifierId(0),
                 source: None,
-                field: StatField::Armor,
-                operation: ModifierOp::Add,
-                value: 20.0,
+                effects: vec![crate::stats::modifiers::ModifierEffectInstance::Stat {
+                    field: StatField::Armor,
+                    operation: ModifierOp::Add,
+                    value: 20.0,
+                }],
                 remaining_seconds: None,
                 kind: crate::stats::events::ModifierKind::Buff,
             },
             StatModifierInstance {
                 id: ModifierId(1),
                 source: None,
-                field: StatField::Armor,
-                operation: ModifierOp::Multiply,
-                value: 1.5,
+                effects: vec![crate::stats::modifiers::ModifierEffectInstance::Stat {
+                    field: StatField::Armor,
+                    operation: ModifierOp::Multiply,
+                    value: 1.5,
+                }],
                 remaining_seconds: None,
                 kind: crate::stats::events::ModifierKind::Buff,
             },
@@ -139,9 +220,11 @@ mod tests {
         let modifiers = vec![StatModifierInstance {
             id: ModifierId(0),
             source: None,
-            field: StatField::Speed,
-            operation: ModifierOp::Override,
-            value: 99.0,
+            effects: vec![crate::stats::modifiers::ModifierEffectInstance::Stat {
+                field: StatField::Speed,
+                operation: ModifierOp::Override,
+                value: 99.0,
+            }],
             remaining_seconds: None,
             kind: crate::stats::events::ModifierKind::Debuff,
         }];

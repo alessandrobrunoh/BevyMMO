@@ -1,3 +1,4 @@
+use bevy::color::Color;
 use bevy::prelude::*;
 use core::time::Duration;
 use lightyear::connection::client::Connected;
@@ -364,6 +365,10 @@ fn handle_spell_cast_commands(
         (With<Connected>, With<Joined>),
     >,
     players: Query<(Entity, &PlayerId), With<Player>>,
+    targets: Query<
+        (Entity, &NetworkEntityId),
+        With<crate::plugins::entity::components::GameEntity>,
+    >,
     mut spell_cast_requests: MessageWriter<SpellCastRequest>,
 ) {
     for (mut receiver, remote_id) in receivers.iter_mut() {
@@ -375,16 +380,34 @@ fn handle_spell_cast_commands(
         };
 
         for command in receiver.receive() {
+            let target_entity = command.target_id.and_then(|target_id| {
+                targets
+                    .iter()
+                    .find(|(_, network_id)| network_id.0 == target_id)
+                    .map(|(entity, _)| entity)
+            });
+
+            if command.target_id.is_some() && target_entity.is_none() {
+                bevy::log::warn!(
+                    "Player {:?} cast {} with unknown target_id {:?}",
+                    player_entity,
+                    command.spell_id,
+                    command.target_id
+                );
+            }
+
             bevy::log::info!(
-                "Received spell cast command from player {:?}: spell={}",
+                "Received spell cast command from player {:?}: spell={}, target_id={:?}, resolved_target={:?}",
                 player_entity,
-                command.spell_id
+                command.spell_id,
+                command.target_id,
+                target_entity
             );
             spell_cast_requests.write(SpellCastRequest {
                 caster: player_entity,
                 spell_id: SpellId::new(command.spell_id.clone()),
                 target_position: command.target_position,
-                target_entity: command.target_entity,
+                target_entity,
             });
         }
     }

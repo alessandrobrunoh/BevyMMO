@@ -5,3 +5,4 @@
 pub mod attack;
 pub mod fireball;
 pub mod followball;
+pub mod healing_circle;

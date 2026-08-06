@@ -8,14 +8,32 @@ use bevy::prelude::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ModifierId(pub u64);
 
+/// Stato a runtime di un singolo effetto.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ModifierEffectInstance {
+    Stat {
+        field: StatField,
+        operation: ModifierOp,
+        value: f32,
+    },
+    HealOverTime {
+        amount_per_tick: f32,
+        tick_interval: f32,
+        time_since_last_tick: f32,
+    },
+    DamageOverTime {
+        amount_per_tick: f32,
+        tick_interval: f32,
+        time_since_last_tick: f32,
+    },
+}
+
 /// Istanza di un modifier attivo su un'entità.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StatModifierInstance {
     pub id: ModifierId,
     pub source: Option<Entity>,
-    pub field: StatField,
-    pub operation: ModifierOp,
-    pub value: f32,
+    pub effects: Vec<ModifierEffectInstance>,
     /// `None` = permanente finché non rimosso esplicitamente.
     pub remaining_seconds: Option<f32>,
     pub kind: ModifierKind,

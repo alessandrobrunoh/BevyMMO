@@ -5,6 +5,7 @@
 //! `Replicate::to_clients(NetworkTarget::All)` in automatico, quindi è
 //! subito sincronizzato sul network.
 
+use bevy::color::Color;
 use bevy::prelude::*;
 
 use super::components::{AggroRange, Enemy};

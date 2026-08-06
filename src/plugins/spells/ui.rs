@@ -8,12 +8,14 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 
 use crate::game_state::{GameScreen, Screen};
+use crate::network::client::ConnectedClient;
 use crate::network::mode::has_client;
+use crate::network::protocol::{Channel2, NetworkEntityId, SpellCastCommand};
 use crate::plugins::key_mapping::KeyBindings;
 use crate::plugins::spells::SpellId;
-use crate::spells::fireball::FireballSpell;
-use crate::spells::followball::FollowballSpell;
+use crate::plugins::targeting::CurrentTarget;
 use crate::ui::theme::UiTheme;
+use lightyear::prelude::MessageSender;
 
 #[derive(Message, Debug, Clone, PartialEq)]
 pub struct SpellHudCooldownStarted {
@@ -25,7 +27,12 @@ pub struct SpellHudCooldownStarted {
 pub struct SpellHudState {
     remaining_seconds: HashMap<SpellId, f32>,
 }
-// TODO: Da vedere se c'é un modo per integrarlo con lo spellbook
+
+#[derive(Resource, Default)]
+struct SpellHudLayoutState {
+    initialized: bool,
+    signature: Vec<(SpellId, KeyCode)>,
+}
 
 impl SpellHudState {
     /// Returns true if the spell is still on cooldown on the client.
@@ -52,11 +59,13 @@ struct SpellHudEntry {
 
 pub fn spell_hud_systems(app: &mut App) {
     app.init_resource::<SpellHudState>();
+    app.init_resource::<SpellHudLayoutState>();
     app.add_message::<SpellHudCooldownStarted>();
     app.add_systems(Startup, setup_spell_hud.run_if(has_client));
     app.add_systems(
         Update,
-        update_spell_hud
+        (sync_spell_hud, cast_spell_from_hud_click, update_spell_hud)
+            .chain()
             .run_if(has_client)
             .run_if(in_gameplay_or_paused),
     );
@@ -75,48 +84,146 @@ fn in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
 fn not_in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
     !in_gameplay_or_paused(screen)
 }
-
-fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>, bindings: Res<KeyBindings>) {
-    let entries = [
-        SpellHudEntry {
-            spell_id: SpellId::new(FireballSpell::ID),
-            display_name: FireballSpell::DISPLAY_NAME,
-            key_label: key_label(bindings.cast_fireball),
+fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(20.0),
+            left: Val::Percent(50.0),
+            padding: UiRect::all(Val::Px(10.0)),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
+            ..default()
         },
-        SpellHudEntry {
-            spell_id: SpellId::new(FollowballSpell::ID),
-            display_name: FollowballSpell::DISPLAY_NAME,
-            key_label: key_label(bindings.cast_followball),
-        },
-    ];
+        BackgroundColor(theme.panel_bg),
+        SpellHudRoot,
+    ));
+}
 
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(20.0),
-                left: Val::Percent(50.0),
-                padding: UiRect::all(Val::Px(10.0)),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(4.0),
-                ..default()
-            },
-            BackgroundColor(theme.panel_bg),
-            SpellHudRoot,
-        ))
-        .with_children(|parent| {
-            for entry in entries {
-                parent.spawn((
-                    Text(format_spell_label(&entry, 0.0)),
-                    TextFont {
-                        font_size: FontSize::Px(theme.button_font_size),
+fn sync_spell_hud(
+    mut commands: Commands,
+    theme: Res<UiTheme>,
+    bindings: Res<KeyBindings>,
+    registry: Res<crate::plugins::spells::SpellRegistry>,
+    mut layout_state: ResMut<SpellHudLayoutState>,
+    player_query: Query<&crate::plugins::spells::Spellbook, With<lightyear::prelude::Controlled>>,
+    hud_query: Query<Entity, With<SpellHudRoot>>,
+) {
+    let Ok(spellbook) = player_query.single() else {
+        return;
+    };
+    let Ok(root_entity) = hud_query.single() else {
+        return;
+    };
+
+    let mut signature = Vec::new();
+    let mut entries = Vec::new();
+
+    for spell_id in spellbook.spells.iter() {
+        let Some(&key) = bindings.spells.get(spell_id) else {
+            continue;
+        };
+        let Some(spell_def) = registry.get(spell_id) else {
+            continue;
+        };
+
+        signature.push((spell_id.clone(), key));
+        entries.push(SpellHudEntry {
+            spell_id: spell_id.clone(),
+            display_name: spell_def.display_name(),
+            key_label: key_label(key),
+        });
+    }
+
+    if layout_state.initialized && layout_state.signature == signature {
+        return;
+    }
+    layout_state.initialized = true;
+    layout_state.signature = signature;
+
+    commands.entity(root_entity).despawn_related::<Children>();
+
+    commands.entity(root_entity).with_children(|parent| {
+        for entry in entries {
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
                         ..default()
                     },
-                    TextColor(theme.text_color),
-                    entry,
-                ));
+                    BackgroundColor(theme.button_bg),
+                    entry.clone(),
+                ))
+                .with_children(|button| {
+                    button.spawn((
+                        Text(format_spell_label(&entry, 0.0)),
+                        TextFont {
+                            font_size: FontSize::Px(theme.button_font_size),
+                            ..default()
+                        },
+                        TextColor(theme.text_color),
+                        entry,
+                    ));
+                });
+        }
+    });
+}
+
+fn cast_spell_from_hud_click(
+    interactions: Query<(&Interaction, &SpellHudEntry), (Changed<Interaction>, With<Button>)>,
+    hud_state: Res<SpellHudState>,
+    current_target: Res<CurrentTarget>,
+    target_ids: Query<&NetworkEntityId>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
+    mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
+    registry: Res<crate::plugins::spells::SpellRegistry>,
+) {
+    for (interaction, entry) in interactions.iter() {
+        if *interaction != Interaction::Pressed || hud_state.is_on_cooldown(&entry.spell_id) {
+            continue;
+        }
+
+        let mut target_position = None;
+        if let Ok(window) = windows.single() {
+            if let Some(cursor_position) = window.cursor_position() {
+                if let Some((camera, camera_transform)) = cameras.iter().next() {
+                    if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+                        if let Some(target) = ray.plane_intersection_point(
+                            Vec3::ZERO,
+                            bevy::math::primitives::InfinitePlane3d::new(Vec3::Y),
+                        ) {
+                            target_position = Some(Vec3::new(target.x, 0.0, target.z));
+                        }
+                    }
+                }
             }
-        });
+        }
+
+        let mut target_id = None;
+        if let Some(target_entity) = current_target.entity {
+            if let Ok(net_id) = target_ids.get(target_entity) {
+                target_id = Some(net_id.0);
+            }
+        }
+
+        for mut sender in senders.iter_mut() {
+            sender.send::<Channel2>(SpellCastCommand {
+                spell_id: entry.spell_id.0.to_string(),
+                target_position,
+                target_id,
+            });
+        }
+
+        if let Some(spell_def) = registry.get(&entry.spell_id) {
+            hud_cooldowns.write(SpellHudCooldownStarted {
+                spell_id: entry.spell_id.clone(),
+                cooldown_seconds: spell_def.config().cooldown_seconds,
+            });
+        }
+    }
 }
 
 fn update_spell_hud(
@@ -177,6 +284,7 @@ fn key_label(key: KeyCode) -> &'static str {
         KeyCode::KeyW => "W",
         KeyCode::KeyE => "E",
         KeyCode::KeyR => "R",
+        KeyCode::Space => "Space",
         _ => "?",
     }
 }

@@ -15,7 +15,7 @@ replication = ["lightyear/replication"]
 input_native = ["lightyear/input_native"]
 
 [dependencies]
-bevy = { version = "0.19", default-features = false }
+bevy = { version = "0.19", default-features = false, features = ["bevy_color", "bevy_log"] }
 lightyear = { version = "0.28", features = [
     "interpolation",
     "prediction",

@@ -3,22 +3,28 @@
 //! This module provides a flexible spell casting system that integrates with the
 //! stats module for damage, healing, and stat modifications.
 
+pub mod aoe;
 mod components;
-mod context;
+pub mod context;
 #[cfg(feature = "client")]
 mod effects;
 mod events;
 mod plugin;
+pub mod projectile;
 mod registry;
-mod systems;
+pub mod systems;
+#[cfg(feature = "client")]
+pub use effects::SpellVisual;
 #[cfg(feature = "client")]
 mod ui;
 
 pub use components::{SpellCooldowns, Spellbook};
-pub use context::{Spell, SpellCastContext, SpellConfig};
+pub use context::{
+    AoeEffect, ProjectileSpawnRequest, Spell, SpellCastContext, SpellConfig, TargetingMode,
+};
 pub use events::SpellCastRequest;
 pub use plugin::SpellsPlugin;
+pub use projectile::HomingProjectile;
 pub use registry::{SpellId, SpellRegistry};
-pub use systems::HomingProjectile;
 #[cfg(feature = "client")]
 pub use ui::{SpellHudCooldownStarted, SpellHudState};

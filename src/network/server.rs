@@ -24,7 +24,7 @@ use crate::plugins::persistence::{
     normalize_name, PersistedPlayerSnapshot, PersistenceError, PersistenceRuntime, PlayerStore,
 };
 use crate::plugins::spells::{
-    SpellCastRequest, SpellCooldowns, SpellId, SpellReleaseRequest, Spellbook,
+    SpellCastRequest, SpellCooldowns, SpellHotbar, SpellId, SpellRegistry, SpellReleaseRequest,
 };
 use crate::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 
@@ -109,6 +109,7 @@ impl Plugin for ServerPlugins {
                 finish_pending_joins,
                 handle_spell_cast_commands,
                 handle_spell_release_commands,
+                handle_update_hotbar_slot_requests,
                 handle_respawn_requests,
                 send_messages,
             )
@@ -266,7 +267,7 @@ fn finish_pending_joins(
                 ),
                 PlayerName(snapshot.player.display_name),
                 Player,
-                snapshot.spellbook,
+                snapshot.hotbar,
                 SpellCooldowns::default(),
                 PlayerId(completed_join.peer_id),
                 DbPlayerId(snapshot.player.id),
@@ -306,7 +307,7 @@ fn handle_disconnected_client(
             &MovementStats,
             &CombatStats,
             &VitalStats,
-            &Spellbook,
+            &SpellHotbar,
         ),
         With<Player>,
     >,
@@ -318,10 +319,9 @@ fn handle_disconnected_client(
         return;
     };
 
-    let Some((player_entity, _, database_id, position, movement, combat, vital, spellbook)) =
-        players
-            .iter()
-            .find(|(_, player_id, _, _, _, _, _, _)| player_id.0 == remote_id.0)
+    let Some((player_entity, _, database_id, position, movement, combat, vital, hotbar)) = players
+        .iter()
+        .find(|(_, player_id, _, _, _, _, _, _)| player_id.0 == remote_id.0)
     else {
         commands
             .entity(trigger.entity)
@@ -334,7 +334,7 @@ fn handle_disconnected_client(
     let database_id = database_id.0;
     let position = position.0;
     let stats = StatsBundleData::from_components(movement, combat, vital);
-    let spellbook = spellbook.clone();
+    let hotbar = hotbar.clone();
     runtime.0.spawn(async move {
         if let Err(error) = repository
             .save_snapshot(
@@ -343,7 +343,7 @@ fn handle_disconnected_client(
                 position.y,
                 position.z,
                 &stats,
-                &spellbook,
+                &hotbar,
             )
             .await
         {
@@ -536,6 +536,52 @@ fn send_messages(
             .unwrap_or_else(|e| {
                 error!("Failed to send message: {:?}", e);
             });
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn handle_update_hotbar_slot_requests(
+    mut receivers: Query<
+        (&mut MessageReceiver<UpdateHotbarSlotRequest>, &RemoteId),
+        (With<Connected>, With<Joined>),
+    >,
+    mut players: Query<(Entity, &PlayerId, &DbPlayerId, &mut SpellHotbar), With<Player>>,
+    registry: Res<SpellRegistry>,
+    store: Res<PlayerStore>,
+    runtime: Res<PersistenceRuntime>,
+) {
+    for (mut receiver, remote_id) in receivers.iter_mut() {
+        let Some((player_entity, _, database_id, mut hotbar)) = players
+            .iter_mut()
+            .find(|(_, player_id, _, _)| player_id.0 == remote_id.0)
+        else {
+            continue;
+        };
+
+        for request in receiver.receive() {
+            let spell_id = request.spell_id.map(SpellId::new);
+            if let Some(id) = &spell_id {
+                if !registry.contains(id) {
+                    bevy::log::warn!(
+                        "Player {:?} attempted to assign unknown spell {}",
+                        player_entity,
+                        id.as_str()
+                    );
+                    continue;
+                }
+            }
+
+            hotbar.assign(request.slot, spell_id);
+
+            let repository = store.0.clone();
+            let db_id = database_id.0;
+            let current_hotbar = hotbar.clone();
+            runtime.0.spawn(async move {
+                if let Err(e) = repository.save_hotbar(db_id, &current_hotbar).await {
+                    bevy::log::error!("Failed to save hotbar for {}: {}", db_id, e);
+                }
+            });
+        }
     }
 }
 

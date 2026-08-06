@@ -11,8 +11,7 @@ use crate::game_state::{GameScreen, Screen};
 use crate::network::client::ConnectedClient;
 use crate::network::mode::has_client;
 use crate::network::protocol::{Channel2, NetworkEntityId, SpellCastCommand};
-use crate::plugins::key_mapping::KeyBindings;
-use crate::plugins::spells::SpellId;
+use crate::plugins::spells::{HotbarSlot, SpellHotbar, SpellId};
 use crate::plugins::targeting::CurrentTarget;
 use crate::ui::theme::UiTheme;
 use lightyear::prelude::MessageSender;
@@ -31,7 +30,7 @@ pub struct SpellHudState {
 #[derive(Resource, Default)]
 struct SpellHudLayoutState {
     initialized: bool,
-    signature: Vec<(SpellId, KeyCode)>,
+    signature: Vec<(HotbarSlot, Option<SpellId>)>,
 }
 
 impl SpellHudState {
@@ -52,8 +51,8 @@ struct SpellHudRoot;
 
 #[derive(Component, Clone)]
 struct SpellHudEntry {
-    spell_id: SpellId,
-    display_name: &'static str,
+    spell_id: Option<SpellId>,
+    display_name: String,
     key_label: &'static str,
 }
 
@@ -103,13 +102,12 @@ fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
 fn sync_spell_hud(
     mut commands: Commands,
     theme: Res<UiTheme>,
-    bindings: Res<KeyBindings>,
     registry: Res<crate::plugins::spells::SpellRegistry>,
     mut layout_state: ResMut<SpellHudLayoutState>,
-    player_query: Query<&crate::plugins::spells::Spellbook, With<lightyear::prelude::Controlled>>,
+    player_query: Query<&SpellHotbar, With<lightyear::prelude::Controlled>>,
     hud_query: Query<Entity, With<SpellHudRoot>>,
 ) {
-    let Ok(spellbook) = player_query.single() else {
+    let Ok(hotbar) = player_query.single() else {
         return;
     };
     let Ok(root_entity) = hud_query.single() else {
@@ -119,19 +117,23 @@ fn sync_spell_hud(
     let mut signature = Vec::new();
     let mut entries = Vec::new();
 
-    for spell_id in spellbook.spells.iter() {
-        let Some(&key) = bindings.spells.get(spell_id) else {
-            continue;
-        };
-        let Some(spell_def) = registry.get(spell_id) else {
-            continue;
-        };
+    for (slot, key_label) in [
+        (HotbarSlot::Q, "Q"),
+        (HotbarSlot::W, "W"),
+        (HotbarSlot::E, "E"),
+    ] {
+        let spell_id = hotbar.spell_for_slot(slot).cloned();
+        let display_name = spell_id
+            .as_ref()
+            .and_then(|id| registry.get(id))
+            .map(|spell_def| spell_def.display_name().to_string())
+            .unwrap_or_else(|| "Empty".to_string());
 
-        signature.push((spell_id.clone(), key));
+        signature.push((slot, spell_id.clone()));
         entries.push(SpellHudEntry {
-            spell_id: spell_id.clone(),
-            display_name: spell_def.display_name(),
-            key_label: key_label(key),
+            spell_id,
+            display_name,
+            key_label,
         });
     }
 
@@ -182,7 +184,10 @@ fn cast_spell_from_hud_click(
     registry: Res<crate::plugins::spells::SpellRegistry>,
 ) {
     for (interaction, entry) in interactions.iter() {
-        if *interaction != Interaction::Pressed || hud_state.is_on_cooldown(&entry.spell_id) {
+        let Some(spell_id) = &entry.spell_id else {
+            continue;
+        };
+        if *interaction != Interaction::Pressed || hud_state.is_on_cooldown(spell_id) {
             continue;
         }
 
@@ -211,16 +216,16 @@ fn cast_spell_from_hud_click(
 
         for mut sender in senders.iter_mut() {
             sender.send::<Channel2>(SpellCastCommand {
-                spell_id: entry.spell_id.0.to_string(),
+                spell_id: spell_id.0.to_string(),
                 target_position,
                 target_id,
             });
         }
 
-        if let Some(spell_def) = registry.get(&entry.spell_id) {
+        if let Some(spell_def) = registry.get(spell_id) {
             if spell_def.cast_kind() == crate::plugins::spells::CastKind::Instant {
                 hud_cooldowns.write(SpellHudCooldownStarted {
-                    spell_id: entry.spell_id.clone(),
+                    spell_id: spell_id.clone(),
                     cooldown_seconds: spell_def.config().cooldown_seconds,
                 });
             }
@@ -262,10 +267,10 @@ fn update_spell_hud(
     *elapsed_since_label_update = 0.0;
 
     for (entry, mut text) in texts.iter_mut() {
-        let remaining = state
-            .remaining_seconds
-            .get(&entry.spell_id)
-            .copied()
+        let remaining = entry
+            .spell_id
+            .as_ref()
+            .and_then(|spell_id| state.remaining_seconds.get(spell_id).copied())
             .unwrap_or_default();
         let next_label = format_spell_label(entry, remaining);
         if text.0 == next_label {
@@ -282,6 +287,10 @@ fn hide_spell_hud(mut roots: Query<&mut Node, With<SpellHudRoot>>) {
 }
 
 fn format_spell_label(entry: &SpellHudEntry, remaining_seconds: f32) -> String {
+    if entry.spell_id.is_none() {
+        return format!("[{}] Empty", entry.key_label);
+    }
+
     let cooldown = if remaining_seconds > 0.0 {
         format!("{remaining_seconds:.1}s")
     } else {
@@ -294,37 +303,25 @@ fn format_spell_label(entry: &SpellHudEntry, remaining_seconds: f32) -> String {
     )
 }
 
-fn key_label(key: KeyCode) -> &'static str {
-    match key {
-        KeyCode::KeyQ => "Q",
-        KeyCode::KeyW => "W",
-        KeyCode::KeyE => "E",
-        KeyCode::KeyR => "R",
-        KeyCode::KeyT => "T",
-        KeyCode::KeyF => "F",
-        KeyCode::Space => "Space",
-        _ => "?",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn q_key_has_expected_label() {
-        assert_eq!(key_label(KeyCode::KeyQ), "Q");
-    }
-
-    #[test]
-    fn spell_label_formats_ready_and_cooldown_states() {
+    fn spell_label_formats_ready_cooldown_and_empty_states() {
         let entry = SpellHudEntry {
-            spell_id: SpellId::new("test"),
-            display_name: "Test Spell",
-            key_label: "T",
+            spell_id: Some(SpellId::new("test")),
+            display_name: "Test Spell".to_string(),
+            key_label: "Q",
+        };
+        let empty_entry = SpellHudEntry {
+            spell_id: None,
+            display_name: "Empty".to_string(),
+            key_label: "W",
         };
 
-        assert_eq!(format_spell_label(&entry, 0.0), "[T] Test Spell - Ready");
-        assert_eq!(format_spell_label(&entry, 1.25), "[T] Test Spell - 1.2s");
+        assert_eq!(format_spell_label(&entry, 0.0), "[Q] Test Spell - Ready");
+        assert_eq!(format_spell_label(&entry, 1.25), "[Q] Test Spell - 1.2s");
+        assert_eq!(format_spell_label(&empty_entry, 0.0), "[W] Empty");
     }
 }

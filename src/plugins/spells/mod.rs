@@ -21,7 +21,9 @@ mod ui;
 #[cfg(feature = "client")]
 pub use effects::SpellVisual;
 
-pub use components::{default_player_spellbook, CastProgress, SpellCooldowns, Spellbook};
+pub use components::{
+    default_player_hotbar, CastProgress, HotbarSlot, SpellCooldowns, SpellHotbar,
+};
 pub use context::{
     AoeEffect, AoeTargeting, CastKind, ChannelMovementPolicy, ProjectileSpawnRequest, Spell,
     SpellCastContext, SpellConfig, TargetingMode,

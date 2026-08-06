@@ -22,7 +22,7 @@ use lightyear::prelude::{NetworkTarget, ServerMultiMessageSender};
 
 use super::{
     aoe::spawn_aoe_region,
-    components::{CastProgress, SpellCooldowns, Spellbook, MOVEMENT_INTERRUPT_EPSILON},
+    components::{CastProgress, SpellCooldowns, SpellHotbar, MOVEMENT_INTERRUPT_EPSILON},
     context::{CastKind, Spell, SpellCastContext},
     events::{SpellCastRequest, SpellReleaseRequest},
     registry::SpellRegistry,
@@ -45,7 +45,7 @@ pub fn process_cast_requests(
     mut requests: MessageReader<SpellCastRequest>,
     registry: Res<SpellRegistry>,
     mut casters: Query<(
-        &Spellbook,
+        &SpellHotbar,
         &mut SpellCooldowns,
         &Position,
         Option<&CastProgress>,
@@ -73,20 +73,16 @@ pub fn process_cast_requests(
         };
         let spell_config = spell.config();
 
-        // Step 2: validate spellbook + cooldowns
-        let Ok((spellbook, cooldowns, caster_position, existing_cast, cc_state)) =
+        // Step 2: validate hotbar + cooldowns
+        let Ok((hotbar, cooldowns, caster_position, existing_cast, cc_state)) =
             casters.get_mut(request.caster)
         else {
             bevy::log::warn!("Caster {} missing spell state", request.caster);
             continue;
         };
 
-        if !spellbook.contains(&request.spell_id) {
-            bevy::log::warn!(
-                "Caster {} lacks spell {:?} in spellbook",
-                request.caster,
-                request.spell_id
-            );
+        if !hotbar.contains(&request.spell_id) {
+            bevy::log::warn!("Caster attempted to cast a spell not assigned to the hotbar");
             continue;
         }
 
@@ -111,7 +107,7 @@ pub fn process_cast_requests(
         // Drop the borrow before potentially spawning CastProgress / firing.
         let caster_position = caster_position.0;
         let has_active_cast = existing_cast.is_some();
-        let _ = spellbook;
+        let _ = hotbar;
         drop(cooldowns);
         let _ = existing_cast;
         let _ = cc_state;
@@ -198,6 +194,15 @@ pub fn process_cast_requests(
                     .get(request.caster)
                     .ok()
                     .and_then(move_target_from_input);
+
+                if matches!(cast_kind, CastKind::Channeling) {
+                    if let Ok((_, mut cooldowns, _, _, _)) = casters.get_mut(request.caster) {
+                        cooldowns.start_cooldown(
+                            request.spell_id.clone(),
+                            spell_config.cooldown_seconds,
+                        );
+                    }
+                }
 
                 commands.entity(request.caster).insert(CastProgress {
                     spell_id: request.spell_id.clone(),
@@ -401,14 +406,6 @@ pub fn advance_cast_progress(
                 }
 
                 if cast.required_seconds > 0.0 && cast.elapsed_seconds >= cast.required_seconds {
-                    if let Some(mut cd) = cooldowns {
-                        if let Some(spell) = registry.get(&cast.spell_id) {
-                            cd.start_cooldown(
-                                cast.spell_id.clone(),
-                                spell.config().cooldown_seconds,
-                            );
-                        }
-                    }
                     ended.push((caster_entity, cast.spell_id.clone(), true));
                 }
             }
@@ -506,15 +503,15 @@ fn fire_spell(
 
 /// Processa le richieste di rilascio (channeling o cancellazione CastTime).
 ///
-/// Per Channeling: marca il cast come terminato con `completed=true` e attiva
-/// il cooldown. Per CastTime: marca come `completed=false` (cancellato).
+/// Per Channeling: marca il cast come terminato con `completed=true`.
+/// Il cooldown parte già al `just_pressed`, quindi il rilascio non deve
+/// riavviarlo o estenderlo artificialmente. Per CastTime: marca come
+/// `completed=false` (cancellato).
 pub fn handle_cast_release(
     mut commands: Commands,
     mut requests: MessageReader<SpellReleaseRequest>,
     casters: Query<(Entity, &CastProgress)>,
     caster_network_ids: Query<&NetworkEntityId>,
-    registry: Res<SpellRegistry>,
-    mut cooldowns_query: Query<&mut SpellCooldowns>,
     mut visual_sender: ServerMultiMessageSender,
     mut local_cast_ended: MessageWriter<SpellCastEnded>,
     server: Single<&lightyear::prelude::server::Server>,
@@ -533,13 +530,12 @@ pub fn handle_cast_release(
         let completed = matches!(cast.kind, CastKind::Channeling);
         to_end.push((caster_entity, cast.spell_id.clone(), completed));
 
-        // Per Channeling avviamo il cooldown al rilascio.
         if completed {
-            if let Some(spell) = registry.get(&request.spell_id) {
-                if let Ok(mut cd) = cooldowns_query.get_mut(request.caster) {
-                    cd.start_cooldown(request.spell_id.clone(), spell.config().cooldown_seconds);
-                }
-            }
+            bevy::log::debug!(
+                "Channeling spell {:?} released by caster {}",
+                request.spell_id,
+                request.caster
+            );
         }
     }
 

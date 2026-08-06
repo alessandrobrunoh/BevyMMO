@@ -1,20 +1,15 @@
-//! SeaORM entity for the `player_spells` table.
-//!
-//! The table keeps the authoritative spellbook outside replicated ECS state, so
-//! reconnecting players regain the same spell unlocks and hotbar order.
-
 use crate::plugins::persistence::entity::player;
 use sea_orm::entity::prelude::*;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-#[sea_orm(table_name = "player_spells")]
+#[sea_orm(table_name = "player_hotbar")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub player_id: Uuid,
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub spell_id: String,
-    pub slot_index: i32,
+    pub q_spell: Option<String>,
+    pub w_spell: Option<String>,
+    pub e_spell: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

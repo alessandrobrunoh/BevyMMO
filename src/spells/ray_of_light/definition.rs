@@ -18,7 +18,7 @@ impl RayOfLightSpell {
     pub const DISPLAY_NAME: &'static str = "Ray of Light";
     pub const COOLDOWN_SECONDS: f32 = 1.5;
     pub const CAST_TIME_SECONDS: f32 = 0.3;
-    pub const CAST_RANGE: f32 = 8.0;
+    pub const CAST_RANGE: f32 = 20.0;
     /// Mezza larghezza del beam: determina quanto deve essere "largo" il ray.
     /// Poco inferiore al player per evitare hit spam laterali.
     pub const BEAM_HALF_WIDTH: f32 = 0.3;

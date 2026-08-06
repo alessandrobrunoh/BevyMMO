@@ -67,4 +67,20 @@ impl SpellRegistry {
     pub fn is_empty(&self) -> bool {
         self.spells.is_empty()
     }
+
+    /// Check if a spell exists in the registry.
+    pub fn contains(&self, id: &SpellId) -> bool {
+        self.spells.contains_key(id)
+    }
+
+    /// Get all registered spells, sorted alphabetically by display name.
+    pub fn sorted_spells(&self) -> Vec<(SpellId, Arc<dyn Spell>)> {
+        let mut list: Vec<_> = self
+            .spells
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        list.sort_by(|a, b| a.1.display_name().cmp(&b.1.display_name()));
+        list
+    }
 }

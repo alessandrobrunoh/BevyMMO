@@ -4,7 +4,7 @@ use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::plugins::entity::components::{EntityKind, EntityState, GameEntity, SpawnPoint};
-use crate::plugins::spells::Spellbook;
+use crate::plugins::spells::{HotbarSlot, SpellHotbar};
 use crate::stats::components::{CombatStats, MovementStats, VitalStats};
 
 // Canali
@@ -145,6 +145,12 @@ pub struct SpellVisualEffect {
     pub end: Vec3,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct UpdateHotbarSlotRequest {
+    pub slot: HotbarSlot,
+    pub spell_id: Option<String>,
+}
+
 // Protocol Plugin
 pub struct ProtocolPlugin;
 
@@ -188,6 +194,9 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<SpellCastEnded>()
             .add_direction(NetworkDirection::ServerToClient);
 
+        app.register_message::<UpdateHotbarSlotRequest>()
+            .add_direction(NetworkDirection::ClientToServer);
+
         // Comandi di input
         app.add_plugins(input::native::InputPlugin::<Inputs>::default());
 
@@ -215,7 +224,7 @@ impl Plugin for ProtocolPlugin {
 
         app.component::<EntityState>().replicate().predict();
 
-        app.component::<Spellbook>().replicate().predict();
+        app.component::<SpellHotbar>().replicate().predict();
 
         app.component::<GameEntity>().replicate();
 

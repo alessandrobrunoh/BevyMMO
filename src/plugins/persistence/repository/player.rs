@@ -5,31 +5,28 @@
 //! [`PlayerRepository`] e comunica con il game loop tramite canali; **non**
 //! attenderli da dentro un sistema Bevy sincrono.
 
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
-    TransactionTrait,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 use crate::plugins::persistence::entity::player::{ActiveModel, Column, Entity, PlayerRecord};
-use crate::plugins::persistence::entity::player_spell::{
-    ActiveModel as SpellActiveModel, Column as SpellColumn, Entity as SpellEntity,
+use crate::plugins::persistence::entity::player_hotbar::{
+    ActiveModel as HotbarActiveModel, Column as HotbarColumn, Entity as HotbarEntity,
 };
 use crate::plugins::persistence::entity::player_stats::{
     ActiveModel as StatsActiveModel, Column as StatsColumn, Entity as StatsEntity,
 };
 use crate::plugins::persistence::error::{PersistenceError, PersistenceResult};
 use crate::plugins::persistence::normalize_name;
-use crate::plugins::spells::{default_player_spellbook, SpellId, Spellbook};
+use crate::plugins::spells::{default_player_hotbar, SpellHotbar, SpellId};
 use crate::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 use crate::stats::defaults::player_defaults;
 use uuid::Uuid;
 
-/// Snapshot completo di un player persistito: record base, statistiche e spellbook.
+/// Snapshot completo di un player persistito: record base, statistiche e hotbar.
 #[derive(Clone, Debug)]
 pub struct PersistedPlayerSnapshot {
     pub player: PlayerRecord,
     pub stats: StatsBundleData,
-    pub spellbook: Spellbook,
+    pub hotbar: SpellHotbar,
 }
 
 /// Facade CRUD async sopra la tabella `players`.
@@ -102,12 +99,12 @@ impl PlayerRepository {
             }
             Err(error) => return Err(error),
         };
-        let spellbook = self.load_or_create_default_spellbook(player.id).await?;
+        let hotbar = self.load_or_create_default_hotbar(player.id).await?;
 
         Ok(PersistedPlayerSnapshot {
             player,
             stats,
-            spellbook,
+            hotbar,
         })
     }
 
@@ -118,11 +115,11 @@ impl PlayerRepository {
         pos_y: f32,
         pos_z: f32,
         stats: &StatsBundleData,
-        spellbook: &Spellbook,
+        hotbar: &SpellHotbar,
     ) -> PersistenceResult<()> {
         self.save_position(id, pos_x, pos_y, pos_z).await?;
         self.save_stats(id, stats).await?;
-        self.save_spellbook(id, spellbook).await
+        self.save_hotbar(id, hotbar).await
     }
 
     pub async fn save_position(
@@ -176,91 +173,80 @@ impl PlayerRepository {
         })
     }
 
-    /// Carica lo spellbook persistito per un player.
-    ///
-    /// L'ordinamento per `slot_index` mantiene stabile la hotbar dopo il
-    /// reconnect, invece di affidarsi all'ordine non deterministico delle righe.
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// # async fn example(repository: &PlayerRepository, player_id: uuid::Uuid) -> crate::plugins::persistence::error::PersistenceResult<()> {
-    /// let spellbook = repository.load_spellbook(player_id).await?;
-    /// assert!(!spellbook.spells.is_empty());
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn load_spellbook(&self, player_id: Uuid) -> PersistenceResult<Spellbook> {
-        let spell_rows = SpellEntity::find()
-            .filter(SpellColumn::PlayerId.eq(player_id))
-            .order_by_asc(SpellColumn::SlotIndex)
-            .all(&self.db)
+    /// Carica la hotbar persistita per un player.
+    pub async fn load_hotbar(&self, player_id: Uuid) -> PersistenceResult<Option<SpellHotbar>> {
+        let hotbar_row = HotbarEntity::find()
+            .filter(HotbarColumn::PlayerId.eq(player_id))
+            .one(&self.db)
             .await?;
 
-        Ok(Spellbook::from_ids(
-            spell_rows
-                .into_iter()
-                .map(|spell_row| SpellId::new(spell_row.spell_id)),
-        ))
+        Ok(hotbar_row.map(|row| SpellHotbar {
+            q_spell: row.q_spell.map(SpellId::new),
+            w_spell: row.w_spell.map(SpellId::new),
+            e_spell: row.e_spell.map(SpellId::new),
+        }))
     }
 
-    /// Replaces the persisted spellbook for a player.
-    ///
-    /// A delete-then-insert strategy keeps the table aligned with the ECS
-    /// component even when spells are removed or reordered. This method performs
-    /// database writes and should run on the persistence runtime, not inside a
-    /// synchronous Bevy system.
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// # async fn example(repository: &PlayerRepository, player_id: uuid::Uuid, spellbook: &crate::plugins::spells::Spellbook) -> crate::plugins::persistence::error::PersistenceResult<()> {
-    /// repository.save_spellbook(player_id, spellbook).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn save_spellbook(
+    /// Replaces the persisted hotbar for a player.
+    pub async fn save_hotbar(
         &self,
         player_id: Uuid,
-        spellbook: &Spellbook,
+        hotbar: &SpellHotbar,
     ) -> PersistenceResult<()> {
-        let transaction = self.db.begin().await?;
-
-        SpellEntity::delete_many()
-            .filter(SpellColumn::PlayerId.eq(player_id))
-            .exec(&transaction)
+        let update_result = HotbarEntity::update_many()
+            .col_expr(
+                HotbarColumn::QSpell,
+                hotbar
+                    .q_spell
+                    .as_ref()
+                    .map(|s| s.as_str().to_string())
+                    .into(),
+            )
+            .col_expr(
+                HotbarColumn::WSpell,
+                hotbar
+                    .w_spell
+                    .as_ref()
+                    .map(|s| s.as_str().to_string())
+                    .into(),
+            )
+            .col_expr(
+                HotbarColumn::ESpell,
+                hotbar
+                    .e_spell
+                    .as_ref()
+                    .map(|s| s.as_str().to_string())
+                    .into(),
+            )
+            .filter(HotbarColumn::PlayerId.eq(player_id))
+            .exec(&self.db)
             .await?;
 
-        if !spellbook.spells.is_empty() {
-            let spell_rows = spellbook
-                .spells
-                .iter()
-                .enumerate()
-                .map(|(slot_index, spell_id)| SpellActiveModel {
-                    player_id: Set(player_id),
-                    spell_id: Set(spell_id.as_str().to_string()),
-                    slot_index: Set(slot_index as i32),
-                });
+        if update_result.rows_affected == 0 {
+            let new_hotbar = HotbarActiveModel {
+                player_id: Set(player_id),
+                q_spell: Set(hotbar.q_spell.as_ref().map(|s| s.as_str().to_string())),
+                w_spell: Set(hotbar.w_spell.as_ref().map(|s| s.as_str().to_string())),
+                e_spell: Set(hotbar.e_spell.as_ref().map(|s| s.as_str().to_string())),
+            };
 
-            SpellEntity::insert_many(spell_rows)
-                .exec(&transaction)
-                .await?;
+            new_hotbar.insert(&self.db).await?;
         }
 
-        transaction.commit().await?;
         Ok(())
     }
 
-    async fn load_or_create_default_spellbook(
+    async fn load_or_create_default_hotbar(
         &self,
         player_id: Uuid,
-    ) -> PersistenceResult<Spellbook> {
-        let spellbook = self.load_spellbook(player_id).await?;
-        if !spellbook.spells.is_empty() {
-            return Ok(spellbook);
+    ) -> PersistenceResult<SpellHotbar> {
+        if let Some(hotbar) = self.load_hotbar(player_id).await? {
+            return Ok(hotbar);
         }
 
-        let default_spellbook = default_player_spellbook();
-        self.save_spellbook(player_id, &default_spellbook).await?;
-        Ok(default_spellbook)
+        let default_hotbar = default_player_hotbar();
+        self.save_hotbar(player_id, &default_hotbar).await?;
+        Ok(default_hotbar)
     }
 
     /// Salva o aggiorna le statistiche per un player.

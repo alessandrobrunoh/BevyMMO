@@ -7,77 +7,61 @@ use std::collections::HashMap;
 use super::context::{CastKind, ChannelMovementPolicy};
 use super::registry::SpellId;
 
-const DEFAULT_PLAYER_SPELL_IDS: [&str; 6] = [
-    "attack",
-    "fireball",
-    "healing_circle",
-    "meteorite",
-    "stun_field",
-    "swift",
-];
-
-/// Authoritative initial player spellbook.
-///
-/// Keeping the defaults in one function avoids drift between first-time player
-/// creation, database backfills, and non-persisted player spawns.
-///
-/// # Example
-/// ```rust
-/// let spellbook = default_player_spellbook();
-/// assert!(spellbook.contains(&SpellId::new("attack")));
-/// ```
-pub fn default_player_spellbook() -> Spellbook {
-    Spellbook::from_ids(DEFAULT_PLAYER_SPELL_IDS.map(SpellId::new))
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum HotbarSlot {
+    Q,
+    W,
+    E,
 }
 
-// TODO: QUesto sará da modificare e rimuovere perché le spell sono attaccate agli Enemy o agli Items e non anche ai Player.
-/// A collection of spells known to an entity.
-///
-/// This component represents which spells an entity (typically a player) has access to.
-#[derive(Component, Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Spellbook {
-    /// List of spell IDs that this entity can cast.
-    pub spells: Vec<SpellId>,
+#[derive(Component, Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SpellHotbar {
+    pub q_spell: Option<SpellId>,
+    pub w_spell: Option<SpellId>,
+    pub e_spell: Option<SpellId>,
 }
 
-impl Spellbook {
-    /// Create a spellbook with a single spell.
-    pub fn single(id: SpellId) -> Self {
-        Self { spells: vec![id] }
-    }
-
-    /// Create a spellbook from a list of spell ids.
-    pub fn from_ids(spells: impl IntoIterator<Item = SpellId>) -> Self {
-        Self {
-            spells: spells.into_iter().collect(),
+impl SpellHotbar {
+    pub fn spell_for_slot(&self, slot: HotbarSlot) -> Option<&SpellId> {
+        match slot {
+            HotbarSlot::Q => self.q_spell.as_ref(),
+            HotbarSlot::W => self.w_spell.as_ref(),
+            HotbarSlot::E => self.e_spell.as_ref(),
         }
     }
 
-    /// Create an empty spellbook.
-    pub fn empty() -> Self {
-        Self { spells: Vec::new() }
-    }
+    pub fn assign(&mut self, slot: HotbarSlot, spell_id: Option<SpellId>) {
+        if let Some(id) = &spell_id {
+            if self.q_spell.as_ref() == Some(id) {
+                self.q_spell = None;
+            }
+            if self.w_spell.as_ref() == Some(id) {
+                self.w_spell = None;
+            }
+            if self.e_spell.as_ref() == Some(id) {
+                self.e_spell = None;
+            }
+        }
 
-    /// Check if the spellbook contains a specific spell.
-    pub fn contains(&self, id: &SpellId) -> bool {
-        self.spells.contains(id)
-    }
-
-    /// Add a spell to the spellbook if it's not already present.
-    pub fn add(&mut self, id: SpellId) {
-        if !self.contains(&id) {
-            self.spells.push(id);
+        match slot {
+            HotbarSlot::Q => self.q_spell = spell_id,
+            HotbarSlot::W => self.w_spell = spell_id,
+            HotbarSlot::E => self.e_spell = spell_id,
         }
     }
 
-    /// Remove a spell from the spellbook.
-    pub fn remove(&mut self, id: &SpellId) -> bool {
-        if let Some(pos) = self.spells.iter().position(|s| s == id) {
-            self.spells.remove(pos);
-            true
-        } else {
-            false
-        }
+    pub fn contains(&self, spell_id: &SpellId) -> bool {
+        self.q_spell.as_ref() == Some(spell_id)
+            || self.w_spell.as_ref() == Some(spell_id)
+            || self.e_spell.as_ref() == Some(spell_id)
+    }
+}
+
+pub fn default_player_hotbar() -> SpellHotbar {
+    SpellHotbar {
+        q_spell: Some(SpellId::new("attack")),
+        w_spell: Some(SpellId::new("fireball")),
+        e_spell: Some(SpellId::new("healing_circle")),
     }
 }
 

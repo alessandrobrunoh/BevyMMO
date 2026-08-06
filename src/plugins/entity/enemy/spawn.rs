@@ -10,7 +10,7 @@ use bevy::prelude::*;
 
 use super::components::{AggroRange, Enemy};
 use crate::plugins::entity::definition::EntityDefinition;
-use crate::plugins::spells::{SpellCooldowns, SpellId, Spellbook};
+use crate::plugins::spells::{HotbarSlot, SpellCooldowns, SpellHotbar, SpellId};
 use crate::stats::components::StatsBundleData;
 
 impl EntityDefinition for Enemy {
@@ -22,7 +22,11 @@ impl EntityDefinition for Enemy {
         (
             Enemy,
             AggroRange::default(),
-            Spellbook::single(SpellId::new("attack")),
+            {
+                let mut hotbar = SpellHotbar::default();
+                hotbar.assign(HotbarSlot::Q, Some(SpellId::new("attack")));
+                hotbar
+            },
             SpellCooldowns::default(),
         )
     }

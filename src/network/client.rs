@@ -14,8 +14,9 @@ use crate::game_state::{
 use crate::network::mode::has_client;
 use crate::network::protocol::SpellVisualEffect;
 use crate::network::protocol::*;
-use crate::plugins::key_mapping::KeyBindings;
-use crate::plugins::spells::{SpellHudCooldownStarted, SpellHudState};
+use crate::plugins::spells::{
+    CastKind, HotbarSlot, SpellHotbar, SpellHudCooldownStarted, SpellHudState, SpellRegistry,
+};
 use crate::plugins::targeting::CurrentTarget;
 
 /// Impostazioni di connessione del client, conservate come risorsa.
@@ -241,28 +242,29 @@ fn cleanup_disconnected_clients(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cast_spells_on_key(
     keys: Option<Res<ButtonInput<KeyCode>>>,
-    bindings: Option<Res<KeyBindings>>,
     screen: Res<GameScreen>,
     hud_state: Res<SpellHudState>,
     current_target: Res<CurrentTarget>,
     target_ids: Query<&NetworkEntityId>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    controlled_players: Query<&crate::plugins::spells::Spellbook, With<Controlled>>,
+    controlled_players: Query<&SpellHotbar, With<Controlled>>,
     mut cast_senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
+    mut release_senders: Query<&mut MessageSender<SpellCastRelease>, With<ConnectedClient>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
-    registry: Res<crate::plugins::spells::SpellRegistry>,
+    registry: Res<SpellRegistry>,
 ) {
     if !matches!(screen.0, Screen::InGame | Screen::Paused) {
         return;
     }
-    let (Some(keys), Some(bindings)) = (keys, bindings) else {
+    let Some(keys) = keys else {
         return;
     };
 
-    let Ok(spellbook) = controlled_players.single() else {
+    let Ok(hotbar) = controlled_players.single() else {
         return;
     };
 
@@ -290,31 +292,52 @@ fn cast_spells_on_key(
         }
     }
 
-    for spell_id in spellbook.spells.iter() {
-        let Some(&key) = bindings.spells.get(spell_id) else {
-            continue;
-        };
-
-        let Some(spell_def) = registry.get(spell_id) else {
-            continue;
-        };
+    let check_slot = |key: KeyCode, slot: HotbarSlot| {
         if keys.just_pressed(key) {
-            if hud_state.is_on_cooldown(spell_id) {
-                continue;
-            }
+            hotbar.spell_for_slot(slot).map(|id| (id, true))
+        } else if keys.just_released(key) {
+            hotbar.spell_for_slot(slot).map(|id| (id, false))
+        } else {
+            None
+        }
+    };
 
-            for mut sender in cast_senders.iter_mut() {
-                sender.send::<Channel2>(SpellCastCommand {
+    for (key, slot) in [
+        (KeyCode::KeyQ, HotbarSlot::Q),
+        (KeyCode::KeyW, HotbarSlot::W),
+        (KeyCode::KeyE, HotbarSlot::E),
+    ] {
+        let Some((spell_id, just_pressed)) = check_slot(key, slot) else {
+            continue;
+        };
+        let spell_id = spell_id.clone();
+
+        if just_pressed {
+            if let Some(spell_def) = registry.get(&spell_id) {
+                if !hud_state.is_on_cooldown(&spell_id) {
+                    for mut sender in cast_senders.iter_mut() {
+                        sender.send::<Channel2>(SpellCastCommand {
+                            spell_id: spell_id.0.to_string(),
+                            target_position,
+                            target_id,
+                        });
+                    }
+
+                    if matches!(
+                        spell_def.cast_kind(),
+                        CastKind::Instant | CastKind::Channeling
+                    ) {
+                        hud_cooldowns.write(SpellHudCooldownStarted {
+                            spell_id: spell_id.clone(),
+                            cooldown_seconds: spell_def.config().cooldown_seconds,
+                        });
+                    }
+                }
+            }
+        } else {
+            for mut sender in release_senders.iter_mut() {
+                sender.send::<Channel2>(SpellCastRelease {
                     spell_id: spell_id.0.to_string(),
-                    target_position,
-                    target_id,
-                });
-            }
-
-            if spell_def.cast_kind() == crate::plugins::spells::CastKind::Instant {
-                hud_cooldowns.write(SpellHudCooldownStarted {
-                    spell_id: spell_id.clone(),
-                    cooldown_seconds: spell_def.config().cooldown_seconds,
                 });
             }
         }

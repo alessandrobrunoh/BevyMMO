@@ -10,7 +10,7 @@ use bevy::prelude::*;
 
 use super::components::Player;
 use crate::plugins::entity::definition::EntityDefinition;
-use crate::plugins::spells::{default_player_spellbook, SpellCooldowns};
+use crate::plugins::spells::{default_player_hotbar, SpellCooldowns};
 use crate::stats::components::StatsBundleData;
 
 /// Posizione iniziale del Player. Usata sia da `initial_position()` sia dal
@@ -23,11 +23,7 @@ impl EntityDefinition for Player {
     }
 
     fn bundle() -> impl Bundle {
-        (
-            Player,
-            default_player_spellbook(),
-            SpellCooldowns::default(),
-        )
+        (Player, default_player_hotbar(), SpellCooldowns::default())
     }
 
     fn initial_position() -> Vec3 {

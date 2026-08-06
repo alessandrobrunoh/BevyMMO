@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 use super::{
     connecting, crowd_control_bar, death_screen, entity_bar, main_menu, pause_menu, player_stats,
-    scoreboard, settings, systems, target_frame, target_indicator,
+    scoreboard, settings, spellbook, systems, target_frame, target_indicator,
 };
 
 use crate::ui::theme::UiTheme;
@@ -32,6 +32,7 @@ impl Plugin for UiPlugin {
             target_frame::TargetFramePlugin,
             death_screen::DeathScreenPlugin,
             crowd_control_bar::CrowdControlBarPlugin,
+            spellbook::SpellbookUiPlugin,
         ));
 
         app.add_systems(

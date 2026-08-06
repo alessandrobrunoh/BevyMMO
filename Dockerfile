@@ -3,7 +3,7 @@
 # Pre-compila solo le dipendenze sfruttando la cache layer di Docker.
 # Questo layer viene ricostruito solo se Cargo.toml / Cargo.lock cambiano.
 # =============================================================================
-FROM rust:1.88-slim-bookworm AS deps
+FROM rust:1-slim-bookworm AS deps
 
 # Installa le dipendenze di sistema necessarie per compilare (OpenSSL, libpq, ecc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \

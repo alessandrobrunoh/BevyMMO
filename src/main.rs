@@ -12,6 +12,7 @@ mod game_state;
 mod migrations;
 mod network;
 mod plugins;
+#[cfg(feature = "client")]
 mod scenes;
 mod settings;
 mod spells;

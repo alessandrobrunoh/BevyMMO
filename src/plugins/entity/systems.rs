@@ -1,19 +1,19 @@
-//! Sistemi condivisi da tutte le entità di gioco.
+//! Systems shared by all game entities.
 //!
-//! `mark_dead_entities` gestisce la transizione allo stato `Dead` quando una
-//! `VitalStats` scende a zero. Non despawn: le entità morte restano in scena
-//! (`EntityState::Dead`) finché un sistema di respawn esplicito non le
-//! riporta in vita, permettendo UI di morte, animazioni e visual feedback.
+//! `mark_dead_entities` manages the transition to `Dead` state when a
+//! `VitalStats` drops to zero. No despawning: dead entities remain in the scene
+//! (`EntityState::Dead`) until an explicit respawn system brings them back to life,
+//! allowing death UI, animations, and visual feedback.
 use bevy::prelude::*;
 
 use super::components::{EntityKind, EntityState};
 use super::events::DeathEvent;
 use crate::stats::components::VitalStats;
 
-/// Transizione `Idle/Moving -> Dead` quando `VitalStats.is_dead()`.
+/// Transition `Idle/Moving -> Dead` when `VitalStats.is_dead()`.
 ///
-/// Server-authoritative: gira solo sul server, lo stato viene poi replicato
-/// ai client tramite `EntityState`.
+/// Server-authoritative: runs only on the server, state is then replicated
+/// to clients via `EntityState`.
 pub fn mark_dead_entities(
     mut death_events: MessageWriter<DeathEvent>,
     mut query: Query<(Entity, &mut EntityState, &VitalStats, &EntityKind), Changed<VitalStats>>,
@@ -116,7 +116,7 @@ mod tests {
                     mana_regeneration: 1.0,
                 },
                 EntityKind::Hostile,
-                // Altri componenti richiesti per matchare il resto del bundle.
+                // Other components required to match the rest of the bundle.
                 MovementStats { speed: 0.0 },
                 CombatStats {
                     attack_power: 0.0,
@@ -124,8 +124,8 @@ mod tests {
                 },
             ))
             .id();
-        // Modifichiamo `VitalStats` per forzare `Changed<VitalStats>` senza
-        // cambiare il valore effettivo: ci assicura che il sistema giri.
+        // Modify `VitalStats` to trigger `Changed<VitalStats>` without
+        // changing the actual value: ensures the system runs.
         app.update();
         app.world_mut()
             .entity_mut(entity)
@@ -134,7 +134,7 @@ mod tests {
             .current_health = 0.0;
         app.update();
 
-        // Lo stato resta `Dead`: non c'è transizione spuria.
+        // State remains `Dead`: no spurious transition.
         let state = app
             .world()
             .entity(entity)
@@ -144,3 +144,4 @@ mod tests {
         assert_eq!(state, EntityState::Dead);
     }
 }
+

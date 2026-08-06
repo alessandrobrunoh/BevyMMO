@@ -1,8 +1,8 @@
-//! Schermata di menu principale.
+//! Main menu screen.
 //!
-//! Composta da titolo, campo nome e pulsanti Play / Settings / Exit. Lo spawn
-//! avviene una sola volta in `Startup`; la visibilità è governata da
-//! [`update_main_menu_visibility`] che cambia solo [`Display`].
+//! Composed of title, name field, and Play / Settings / Exit buttons. Spawning
+//! happens once in `Startup`; visibility is governed by
+//! [`update_main_menu_visibility`] which changes only [`Display`].
 
 use bevy::prelude::*;
 
@@ -12,13 +12,13 @@ use crate::ui::text::spawn_text;
 use crate::ui::text_input::spawn_text_input;
 use crate::ui::theme::UiTheme;
 
-/// Marker: root del menu principale.
+/// Marker: main menu root.
 #[derive(Component)]
 pub struct MainMenuUi;
 
-/// Marker: testo che mostra l'eventuale [`crate::game_state::ConnectionFailure`]
-/// sotto il campo nome. È separato dall'errore di validazione del
-/// [`crate::ui::text_input::TextInput`] e non lo sovrascrive.
+/// Marker: text displaying any [`crate::game_state::ConnectionFailure`]
+/// under the name field. It is separate from the validation error of
+/// [`crate::ui::text_input::TextInput`] and does not overwrite it.
 #[derive(Component)]
 pub struct MainMenuConnectionFailure;
 
@@ -58,8 +58,8 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>) {
 
     spawn_text_input(&mut commands, root, "Player name", 16, &theme);
 
-    // Slot per il messaggio di errore di connessione (separato dall'errore di
-    // validazione del campo nome). Aggiornato da `update_connection_failure`.
+    // Slot for connection failure message (separate from the validation error
+    // of the name field). Updated by `update_connection_failure`.
     let failure_text = commands
         .spawn((
             Text::new(String::new()),

@@ -1,12 +1,12 @@
-//! Profili statistici di default per Player ed Enemy.
+//! Default statistical profiles for Player and Enemy.
 //!
-//! Centralizzare i default qui mantiene coerenza tra spawn, persistence
-//! (backfill) e test. I valori ricalcolano quelli attualmente hard-coded
-//! nelle rispettive `impl EntityDefinition`.
+//! Centralizing defaults here maintains consistency across spawn, persistence
+//! (backfill), and testing. The values mirror those currently defined
+//! in respective `impl EntityDefinition`.
 
 use crate::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 
-/// Profilo statistico di default del Player.
+/// Default statistical profile for Player.
 pub fn player_defaults() -> StatsBundleData {
     StatsBundleData {
         movement: MovementStats { speed: 0.15 },
@@ -23,7 +23,7 @@ pub fn player_defaults() -> StatsBundleData {
     }
 }
 
-/// Profilo statistico di default dell'Enemy.
+/// Default statistical profile for Enemy.
 pub fn enemy_defaults() -> StatsBundleData {
     StatsBundleData {
         movement: MovementStats { speed: 0.08 },
@@ -40,10 +40,30 @@ pub fn enemy_defaults() -> StatsBundleData {
     }
 }
 
-/// Profilo statistico di default del Dummy.
+/// Default statistical profile for the dragon boss.
 ///
-/// Il Dummy è un bersaglio statico con HP enormi, usato per testare
-/// sistema danni, UI targeting e spell. Non si muove e non ha stats offensive.
+/// The boss has no movement speed of its own (Phase 1 chase is driven by an
+/// AI step size), heavy HP for a multi-phase encounter, and solid armor.
+pub fn boss_defaults() -> StatsBundleData {
+    StatsBundleData {
+        movement: MovementStats { speed: 0.0 },
+        combat: CombatStats {
+            attack_power: 28.0,
+            armor: 30.0,
+        },
+        vital: VitalStats {
+            current_health: 6000.0,
+            max_health: 6000.0,
+            max_mana: 0.0,
+            mana_regeneration: 0.0,
+        },
+    }
+}
+
+/// Default statistical profile for Dummy.
+///
+/// The Dummy is a static target with huge HP, used for testing
+/// damage systems, UI targeting, and spells. It does not move and has no offensive stats.
 pub fn dummy_defaults() -> StatsBundleData {
     StatsBundleData {
         movement: MovementStats { speed: 0.0 },
@@ -80,6 +100,18 @@ mod tests {
     fn dummy_defaults_start_at_full_health() {
         let stats = dummy_defaults();
         assert_eq!(stats.vital.current_health, stats.vital.max_health);
+    }
+
+    #[test]
+    fn boss_defaults_start_at_full_health() {
+        let stats = boss_defaults();
+        assert_eq!(stats.vital.current_health, stats.vital.max_health);
+    }
+
+    #[test]
+    fn boss_defaults_have_high_hp_pool() {
+        let stats = boss_defaults();
+        assert_eq!(stats.vital.max_health, 6000.0);
     }
 
     #[test]

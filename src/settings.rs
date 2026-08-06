@@ -1,30 +1,30 @@
 //! Layered configuration: defaults <- `config/default.toml` <-
 //! `config/<APP_ENV>.toml` <- `config/local.toml` <- env vars.
 //!
-//! I secret non vanno committati: usare `config/local.toml` (gitignored)
-//! o env vars (es. `DATABASE_URL`).
+//! Secrets should not be committed: use `config/local.toml` (gitignored)
+//! or env vars (e.g. `DATABASE_URL`).
 
 use serde::Deserialize;
 
 const DEFAULT_TOML: &str = include_str!("../config/default.toml");
 
-/// Configurazione dell'applicazione caricata dai file `config/*.toml`
-/// e dalle env vars.
+/// Application configuration loaded from `config/*.toml` files
+/// and env vars.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Settings {
-    /// Stringa di filtro per `LogPlugin` nel formato `RUST_LOG`.
+    /// Filter string for `LogPlugin` matching `RUST_LOG` format.
     #[serde(default = "default_log_filter")]
     pub log_filter: String,
 
-    /// Frequenza del tick fisso (Hz). Il `Fixed` schedule usa `1.0 / tick_rate`.
+    /// Fixed tick rate (Hz). The `Fixed` schedule uses `1.0 / tick_rate`.
     #[serde(default = "default_tick_rate")]
     pub tick_rate: f64,
 
-    /// URL di connessione a PostgreSQL, nella forma
+    /// PostgreSQL connection URL, in the format
     /// `postgresql://user:password@host:port/db`.
     ///
-    /// Obbligatorio in modalita' server: fornito da `config/<env>.toml`,
-    /// `config/local.toml`, o dalla env var `DATABASE_URL`.
+    /// Required in server mode: provided by `config/<env>.toml`,
+    /// `config/local.toml`, or env var `DATABASE_URL`.
     #[serde(default)]
     pub database_url: Option<String>,
 
@@ -37,46 +37,46 @@ pub struct Settings {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ServerSettings {
-    /// Indirizzo locale su cui il server ascolta (bind), come stringa
-    /// "host:port". Mantenuto come `String` perche' la crate `config`
-    /// deserializza da TOML/env come stringa; la conversione in `SocketAddr`
-    /// avviene nei chiamanti.
+    /// Local address the server listens on (bind), as string
+    /// "host:port". Maintained as `String` because `config` crate
+    /// deserializes from TOML/env as string; conversion to `SocketAddr`
+    /// happens at call sites.
     #[serde(default = "default_server_bind_addr")]
     pub bind_addr: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ClientSettings {
-    /// Indirizzo del server remoto a cui connettersi ("host:port").
+    /// Address of the remote server to connect to ("host:port").
     #[serde(default = "default_client_server_addr")]
     pub server_addr: String,
 
-    /// Indirizzo locale bindato dal client (tipicamente "0.0.0.0:0").
+    /// Local address bound by the client (typically "0.0.0.0:0").
     #[serde(default = "default_client_addr")]
     pub client_addr: String,
 }
 
 impl Settings {
-    /// Carica la configurazione unendo le sorgenti nell'ordine:
+    /// Loads configuration merging sources in order:
     /// `default.toml` < `config/<APP_ENV>.toml` < `config/local.toml` < env vars.
     ///
-    /// `APP_ENV` e' letto da env var (default: `development`).
+    /// `APP_ENV` is read from env var (default: `development`).
     pub fn load() -> Self {
         let env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_owned());
 
         let builder = config::Config::builder()
-            // Defaults committati.
+            // Committed defaults.
             .add_source(config::File::from_str(
                 DEFAULT_TOML,
                 config::FileFormat::Toml,
             ))
-            // Profilo corrente (development/production/...). Non required:
-            // se manca si usano solo i defaults.
+            // Current profile (development/production/...). Not required:
+            // if missing, defaults are used.
             .add_source(config::File::with_name(&format!("config/{env}")).required(false))
-            // Override locali gitignored.
+            // Local gitignored overrides.
             .add_source(config::File::with_name("config/local").required(false))
-            // Env vars sovrascrivono tutto. `try_parsing(true)` lascia che
-            // valori come "1.0" vengano interpretati come numero dove serve.
+            // Env vars override everything. `try_parsing(true)` lets
+            // values like "1.0" be parsed as numbers where needed.
             .add_source(config::Environment::default().try_parsing(true));
 
         builder

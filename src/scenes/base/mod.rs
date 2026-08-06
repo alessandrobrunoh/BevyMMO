@@ -1,9 +1,9 @@
-//! Scena base: camera, luce direzionale e piano di gioco.
+//! Base scene: camera, directional light, and ground plane.
 //!
-//! Il ciclo di vita è guidato da [`GameScreen`]: la scena viene spawnata una
-//! sola volta quando si entra in `InGame`/`Paused` e despawnata (root + figli)
-//! quando si torna a `MainMenu`/`Settings`/`Connecting`. Il marker
-//! [`GameSceneRoot`] rende lo spawn idempotente.
+//! The lifecycle is driven by [`GameScreen`]: the scene is spawned only
+//! once when entering `InGame`/`Paused` and despawned (root + children)
+//! when returning to `MainMenu`/`Settings`/`Connecting`. The [`GameSceneRoot`]
+//! marker makes the spawn idempotent.
 
 pub mod systems;
 

@@ -1,9 +1,10 @@
-//! Eventi di gameplay legati al ciclo di vita delle entità.
+//! Gameplay events related to entity lifecycle.
 //!
-//! Sono messaggi ECS locali (non network): emessi dai sistemi server-side che
-//! mutano lo stato di vita (`mark_dead_entities`, `handle_respawn_request`,
-//! `enemy_respawn`) per consentire a sistemi downstream di reagire
-//! (logging, drop loot, achievement, audio, ...).
+//! These are local ECS messages (not network messages): emitted by server-side systems that
+//! mutate life state (`mark_dead_entities`, `handle_respawn_request`,
+//! `enemy_respawn`) so downstream systems can react
+//! (logging, loot drops, achievements, audio, ...).
+
 
 use bevy::ecs::entity::Entity;
 use bevy::prelude::Message;

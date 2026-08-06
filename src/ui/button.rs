@@ -1,14 +1,14 @@
-//! Pulsante UI riusabile.
+//! Reusable UI button.
 //!
-//! Il pulsante accoppia un'azione semantica ([`UiButtonAction`]) a un nodo
-//! interattivo; la mappatura `azione -> effetto` vive nei sistemi UI centrali
-//! (`crate::ui::systems::update_button_actions`) e non nel componente.
+//! The button pairs a semantic action ([`UiButtonAction`]) with an
+//! interactive node; the `action -> effect` mapping lives in the central UI systems
+//! (`crate::ui::systems::update_button_actions`) and not in the component.
 
 use bevy::prelude::*;
 
 use crate::ui::theme::UiTheme;
 
-/// Effetto scatenato dalla pressione del pulsante.
+/// Effect triggered by pressing the button.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiButtonAction {
     Play,
@@ -19,15 +19,15 @@ pub enum UiButtonAction {
     Exit,
 }
 
-/// Pulsante UI con azione semantica associata.
+/// UI Button with associated semantic action.
 #[derive(Component)]
 pub struct UiButton {
     pub action: UiButtonAction,
 }
 
-/// Genera un pulsante con label e stile coerente col tema, attaccato a `parent`.
+/// Spawns a button with label and theme-consistent style, attached to `parent`.
 ///
-/// Ritorna l'entity del pulsante (utile per test o per riferimenti futuri).
+/// Returns the button entity (useful for testing or future references).
 pub fn spawn_button(
     commands: &mut Commands,
     parent: Entity,

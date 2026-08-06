@@ -1,55 +1,55 @@
 # Database
 
-PostgreSQL locale per il test multiplayer, esposto via Docker. L'accesso avviene tramite SeaORM.
+Local PostgreSQL for multiplayer testing, exposed via Docker. Access is done through SeaORM.
 
-## Prerequisiti
+## Prerequisites
 
-- Docker con il plugin Compose v2 (`docker compose ...`).
+- Docker with Compose v2 plugin (`docker compose ...`).
 
-## Avvio
+## Starting
 
 ```sh
 cp .env.example .env
 docker compose up -d
 ```
 
-Il container `bevytest2_postgres` espone PostgreSQL sulla porta `POSTGRES_PORT` (default `5432`). Lo stato è persistito nel volume `postgres_data`.
+The `bevytest2_postgres` container exposes PostgreSQL on port `POSTGRES_PORT` (default `5432`). State is persisted in the `postgres_data` volume.
 
-Verifica che sia pronto:
+Verify that it is ready:
 
 ```sh
 docker compose ps
 ```
 
-La healthcheck di Compose marca il service `healthy` quando PostgreSQL accetta connessioni.
+The Compose healthcheck marks the service `healthy` when PostgreSQL accepts connections.
 
 ## Connection string
 
-L'app legge `DATABASE_URL` (vedi `.env`). Per i default locali:
+The app reads `DATABASE_URL` (see `.env`). For local defaults:
 
 ```
 DATABASE_URL=postgresql://bevytest2:bevytest2_dev@localhost:5432/bevytest2
 ```
 
-## Migrazioni
+## Migrations
 
-Il server applica automaticamente le migrazioni SeaORM pendenti all'avvio, prima di accettare connessioni. La prima crea `players`, con `normalized_name` univoco e posizione persistita.
+The server automatically applies pending SeaORM migrations on startup, before accepting connections. The first creates `players`, with unique `normalized_name` and persisted position.
 
-Avvia PostgreSQL prima del server:
+Start PostgreSQL before the server:
 
 ```sh
 docker compose up -d
 cargo run -- server
 ```
 
-Lo storico è registrato nella tabella `seaql_migrations`. Non modificare una migration già distribuita: per cambiamenti futuri aggiungi una nuova migration in `src/persistence/migration.rs`.
+History is recorded in the `seaql_migrations` table. Do not edit an already deployed migration: for future changes add a new migration in `src/persistence/migration.rs`.
 
 ## Stop / reset
 
 ```sh
-# ferma il container mantenendo i dati
+# stops container keeping data
 docker compose down
 
-# ferma e cancella il volume (reset completo del DB)
+# stops and removes volume (full DB reset)
 docker compose down -v
 ```

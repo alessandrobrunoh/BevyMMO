@@ -23,7 +23,7 @@ impl StunFieldSpell {
     pub const IMPACT_DELAY_SECONDS: f32 = 0.5;
     pub const STUN_DURATION_SECONDS: f32 = 2.0;
 
-    /// Clampa il punto target al `CAST_RANGE` attorno al caster.
+    /// Clamps the target point to `CAST_RANGE` around the caster.
     fn clamp_target_to_range(caster_position: Vec3, target: Vec3) -> Vec3 {
         let offset = target - caster_position;
         let horizontal = Vec3::new(offset.x, 0.0, offset.z);

@@ -1,8 +1,8 @@
-//! Entity plugin — container per tutte le entità di gioco (Player, Enemy, ...).
+//! Entity plugin — container for all game entities (Player, Enemy, ...).
 //!
-//! Ogni entità concreta vive in un proprio sotto-modulo e registra il proprio
-//! `EntityPlugin` figlio. Il plugin "padre" `EntityPlugin` raccoglie i figli
-//! ed espone i tipi condivisi (`GameEntity`, stato, nome, ...).
+//! Each concrete entity lives in its own sub-module and registers its own
+//! child `EntityPlugin`. The parent `EntityPlugin` gathers the children
+//! and exposes shared types (`GameEntity`, state, name, ...).
 
 pub mod components;
 pub mod definition;
@@ -11,6 +11,7 @@ pub mod events;
 pub mod spawn;
 pub mod systems;
 
+pub mod boss;
 pub mod enemy;
 pub mod player;
 
@@ -21,7 +22,7 @@ use crate::network::mode::has_server;
 use components::SpawnPoint;
 use events::{DeathEvent, RespawnedEvent};
 
-/// Plugin padre: registra tutti i plugin delle entità concrete.
+/// Parent plugin: registers all concrete entity plugins.
 pub struct EntityPlugin;
 
 impl Plugin for EntityPlugin {
@@ -33,11 +34,11 @@ impl Plugin for EntityPlugin {
         app.add_plugins(player::PlayerPlugin);
         app.add_plugins(enemy::EnemyPlugin);
         app.add_plugins(dummy::DummyPlugin);
+        app.add_plugins(boss::BossPlugin);
 
-        // `mark_dead_entities` gira dopo `apply_damage` (entrambi in FixedUpdate):
-        // anche se l'ordine non è strettamente richiesto grazie al filtro
-        // `Changed<VitalStats>`, chainarlo qui evita un tick di ritardo nella
-        // transizione a `Dead`.
+        // `mark_dead_entities` runs after `apply_damage` (both in FixedUpdate):
+        // even if order is not strictly required thanks to the `Changed<VitalStats>`
+        // filter, chaining it here avoids a tick delay in transitioning to `Dead`.
         app.add_systems(FixedUpdate, systems::mark_dead_entities.run_if(has_server));
     }
 }

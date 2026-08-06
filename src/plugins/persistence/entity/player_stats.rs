@@ -1,6 +1,6 @@
-//! Entità SeaORM per la tabella `player_stats`.
+//! SeaORM entity for the `player_stats` table.
 //!
-//! Schema inferito (PostgreSQL):
+//! Inferred schema (PostgreSQL):
 //!
 //! ```sql
 //! CREATE TABLE player_stats (
@@ -15,8 +15,9 @@
 //! );
 //! ```
 //!
-//! `player_id` è la primary key e foreign key verso la tabella `players`.
-//! La relazione `BelongsTo` permette di navigare dal record stats al player.
+//! `player_id` is the primary key and foreign key to the `players` table.
+//! The `BelongsTo` relationship allows navigating from the stats record to the player.
+
 
 use crate::plugins::persistence::entity::player;
 use sea_orm::entity::prelude::*;

@@ -1,9 +1,9 @@
-//! Repository per la tabella `players`.
+//! Repository for the `players` table.
 //!
-//! Tutti i metodi sono `async`. Il sito di chiamata previsto è un task Tokio
-//! dedicato (o un task `AsyncComputeTaskPool` di Bevy) che possiede una
-//! [`PlayerRepository`] e comunica con il game loop tramite canali; **non**
-//! attenderli da dentro un sistema Bevy sincrono.
+//! All methods are `async`. The intended call site is a dedicated Tokio task
+//! (or Bevy `AsyncComputeTaskPool` task) that owns a
+//! [`PlayerRepository`] and communicates with the game loop via channels; **do not**
+//! await them from inside a synchronous Bevy system.
 
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
@@ -21,7 +21,7 @@ use crate::stats::components::{CombatStats, MovementStats, StatsBundleData, Vita
 use crate::stats::defaults::player_defaults;
 use uuid::Uuid;
 
-/// Snapshot completo di un player persistito: record base, statistiche e hotbar.
+/// Full snapshot of a persisted player: base record, stats, and hotbar.
 #[derive(Clone, Debug)]
 pub struct PersistedPlayerSnapshot {
     pub player: PlayerRecord,
@@ -29,29 +29,28 @@ pub struct PersistedPlayerSnapshot {
     pub hotbar: SpellHotbar,
 }
 
-/// Facade CRUD async sopra la tabella `players`.
+/// Async CRUD facade over the `players` table.
 #[derive(Clone)]
 pub struct PlayerRepository {
     db: DatabaseConnection,
 }
 
 impl PlayerRepository {
-    /// Wrappa una connessione SeaORM esistente. La connessione è clonabile a
-    /// basso costo (internamente con `Arc`) quindi il repository può essere
-    /// clonato a basso costo per task.
+    /// Wraps an existing SeaORM connection. The connection is cheap to clone
+    /// (internally via `Arc`) so the repository can be cheaply cloned per task.
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }
 
-    /// Restituisce il player per `normalized_name`, inserendo una nuova riga
-    /// quando è assente. `display_name` è usato solo in fase di creazione; le
-    /// righe esistenti mantengono il display name memorizzato.
+    /// Returns the player for `normalized_name`, inserting a new row
+    /// when absent. `display_name` is only used during creation;
+    /// existing rows retain their stored display name.
     ///
-    /// Nota sulla concorrenza: si affida al vincolo `UNIQUE` su
-    /// `normalized_name`. Se due chiamanti gareggiano per creare la stessa
-    /// chiave, lo sconfitto riceverà un [`PersistenceError::Db`] dovuto alla
-    /// violazione del vincolo unique; il chiamante può ripetere re-emanando la
-    /// chiamata, che a quel punto troverà la riga esistente.
+    /// Concurrency note: relies on the `UNIQUE` constraint on
+    /// `normalized_name`. If two callers race to create the same
+    /// key, the losing caller will receive a [`PersistenceError::Db`] due to
+    /// unique constraint violation; the caller can retry by re-issuing
+    /// the call, which will then find the existing row.
     pub async fn find_or_create(
         &self,
         normalized_name: &str,
@@ -79,11 +78,11 @@ impl PlayerRepository {
         Ok(inserted)
     }
 
-    /// Persiste l'ultima posizione nota per `id`.
+    /// Persists the last known position for `id`.
     ///
-    /// Restituisce [`PersistenceError::NotFound`] quando `id` non referenzia un
-    /// player memorizzato, così i chiamanti possono distinguere "nessun player"
-    /// da genuini fallimenti DB.
+    /// Returns [`PersistenceError::NotFound`] when `id` does not reference a
+    /// stored player, allowing callers to distinguish "no player"
+    /// from genuine DB failures.
     pub async fn find_or_create_snapshot(
         &self,
         normalized_name: &str,
@@ -143,10 +142,9 @@ impl PlayerRepository {
         Ok(())
     }
 
-    /// Carica le statistiche per un player dal database.
+    /// Loads stats for a player from the database.
     ///
-    /// Restituisce [`PersistenceError::NotFound`] quando non esiste una riga
-    /// stats per il player_id dato.
+    /// Returns [`PersistenceError::NotFound`] when no stats row exists for the given player_id.
     pub async fn load_stats(&self, player_id: Uuid) -> PersistenceResult<StatsBundleData> {
         let stats = StatsEntity::find()
             .filter(StatsColumn::PlayerId.eq(player_id))
@@ -173,7 +171,7 @@ impl PlayerRepository {
         })
     }
 
-    /// Carica la hotbar persistita per un player.
+    /// Loads the persisted hotbar for a player.
     pub async fn load_hotbar(&self, player_id: Uuid) -> PersistenceResult<Option<SpellHotbar>> {
         let hotbar_row = HotbarEntity::find()
             .filter(HotbarColumn::PlayerId.eq(player_id))
@@ -249,16 +247,16 @@ impl PlayerRepository {
         Ok(default_hotbar)
     }
 
-    /// Salva o aggiorna le statistiche per un player.
+    /// Saves or updates stats for a player.
     ///
-    /// Se esiste già una riga per il player_id, vengono aggiornati i valori;
-    /// altrimenti viene inserita una nuova riga.
+    /// If a row already exists for player_id, the values are updated;
+    /// otherwise a new row is inserted.
     pub async fn save_stats(
         &self,
         player_id: Uuid,
         stats: &StatsBundleData,
     ) -> PersistenceResult<()> {
-        // Prima prova l'update
+        // First try update
         let update_result = StatsEntity::update_many()
             .col_expr(
                 StatsColumn::CurrentHealth,
@@ -277,7 +275,7 @@ impl PlayerRepository {
             .exec(&self.db)
             .await?;
 
-        // Se l'update non ha righe interessate, fai un insert
+        // If update affected no rows, perform insert
         if update_result.rows_affected == 0 {
             let new_stats = StatsActiveModel {
                 player_id: Set(player_id),
@@ -296,3 +294,4 @@ impl PlayerRepository {
         Ok(())
     }
 }
+

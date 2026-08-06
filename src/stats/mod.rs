@@ -1,11 +1,11 @@
-//! Modulo delle statistiche di gioco.
+//! Game stats module.
 //!
-//! Possiede i componenti runtime ([`components`]), gli eventi
-//! ([`events`]), le formule ([`formulas`]), i modifier ([`modifiers`]),
-//! i sistemi ([`systems`]) e i profili default ([`defaults`]).
+//! Owns the runtime components ([`components`]), events
+//! ([`events`]), formulas ([`formulas`]), modifiers ([`modifiers`]),
+//! systems ([`systems`]), and default profiles ([`defaults`]).
 //!
-//! Il plugin registra tutto quanto serve per applicare danno, cura e
-//! modifier in modo server-authoritative.
+//! The plugin registers everything needed to apply damage, healing, and
+//! modifiers in a server-authoritative manner.
 
 pub mod components;
 pub mod defaults;

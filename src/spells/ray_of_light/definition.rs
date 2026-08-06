@@ -1,16 +1,16 @@
 //! Ray of Light spell implementation.
 //!
-//! Spell server-authoritative a forma di beam: parte dal caster, usa la
-//! direzione in cui il caster sta guardando e infligge danno a **tutte** le
-//! entità viventi dentro il cilindro retto davanti al caster, entro il range
-//! massimo. Il client invia solo l'intenzione di cast; il server risolve target
-//! e danno e replica solo l'effetto visivo.
+//! Beam-shaped server-authoritative spell: originates from the caster, uses the
+//! direction the caster is facing, and inflicts damage on **all** living
+//! entities inside the right cylinder in front of the caster, up to the maximum
+//! range. The client sends only the cast intent; the server resolves targets
+//! and damage and replicates only the visual effect.
 
 use bevy::prelude::{Entity, Vec3};
 
 use crate::plugins::spells::{Spell, SpellCastContext, SpellConfig, SpellId, TargetingMode};
 
-/// Ray of Light: beam lineare che attraversa e danneggia ogni entità sulla linea.
+/// Ray of Light: linear beam that pierces and damages every entity in its path.
 pub struct RayOfLightSpell;
 
 impl RayOfLightSpell {
@@ -36,11 +36,11 @@ impl RayOfLightSpell {
         }
     }
 
-    /// Restituisce ogni entità che si trova dentro il cilindro retto dal beam,
-    /// insieme alla distanza lungo la direzione di tiro (utile per test e debug).
+    /// Returns every entity located inside the beam's right cylinder,
+    /// along with the distance along the shot direction (useful for testing and debugging).
     ///
-    /// A differenza di un projectile spell, non si ferma al primo target: il ray
-    /// è pensato per attraversare e colpire tutto ciò che incontra.
+    /// Unlike a projectile spell, it does not stop at the first target: the ray
+    /// is designed to pierce and hit everything it encounters.
     pub fn targets_along_line(
         caster: Entity,
         caster_position: Vec3,

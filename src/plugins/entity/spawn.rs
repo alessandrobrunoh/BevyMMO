@@ -1,4 +1,4 @@
-//! Bundle e helper di spawn per le entità di gioco.
+//! Spawn bundle and helpers for game entities.
 
 use bevy::color::Color;
 use bevy::ecs::entity::Entity;
@@ -18,10 +18,10 @@ fn next_network_entity_id() -> NetworkEntityId {
     NetworkEntityId(NEXT_NETWORK_ENTITY_ID.fetch_add(1, Ordering::Relaxed))
 }
 
-/// Stato comune di un'entità di gameplay replicata.
+/// Shared state of a replicated gameplay entity.
 ///
-/// I tipi concreti aggiungono il proprio bundle e, se necessario, componenti
-/// Lightyear speciali come ownership, prediction e interpolation.
+/// Concrete types add their own bundle and, if necessary, special Lightyear
+/// components such as ownership, prediction, and interpolation.
 #[derive(Bundle)]
 pub struct GameEntityBundle {
     game_entity: GameEntity,
@@ -65,10 +65,11 @@ impl GameEntityBundle {
     }
 }
 
-/// Spawna un'entità standard completa di stato comune, bundle specifico e
-/// replica. Per entità con requisiti di ownership speciali usa
-/// [`GameEntityBundle`] e aggiunge le componenti Lightyear necessarie.
+/// Spawns a standard entity complete with shared state, specific bundle, and
+/// replication. For entities with special ownership requirements use
+/// [`GameEntityBundle`] and add the necessary Lightyear components.
 pub fn spawn_entity<T: EntityDefinition>(commands: &mut Commands) -> Entity {
+
     let entity = commands
         .spawn((
             GameEntityBundle::new(

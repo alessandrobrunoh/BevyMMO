@@ -1,4 +1,4 @@
-//! UI plugin — raccoglie i plugin delle singole UI di gioco.
+//! UI plugin — collects individual game UI plugins.
 
 mod plugin;
 

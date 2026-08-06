@@ -1,10 +1,10 @@
-//! Server-authoritative systems per il pipeline di cast delle spell.
+//! Server-authoritative systems for the spell cast pipeline.
 //!
-//! Tre modelli temporali sono supportati:
-//! - [`CastKind::Instant`]: effetto immediato alla pressione del tasto.
-//! - [`CastKind::CastTime`]: wind-up bloccante, movimento cancella sempre.
-//! - [`CastKind::Channeling`]: effetto tick-ripetuto finché rilasciato,
-//!   movement policy configurabile per-spell.
+//! Three timing models are supported:
+//! - [`CastKind::Instant`]: immediate effect on key press.
+//! - [`CastKind::CastTime`]: blocking wind-up, movement always cancels.
+//! - [`CastKind::Channeling`]: tick-repeated effect while held down,
+//!   per-spell configurable movement policy.
 
 use bevy::prelude::*;
 use std::sync::Arc;
@@ -31,14 +31,13 @@ use crate::plugins::spells::SpellId;
 
 const CAST_PROGRESS_REPLICATION_INTERVAL_SECONDS: f32 = 0.1;
 
-/// Processa le richieste di cast dai client.
+/// Processes cast requests from clients.
 ///
-/// Le spell Instant vengono eseguite immediatamente (comportamento storico).
-/// Le spell CastTime/Channeling non eseguono `cast` qui: spawnano un componente
-/// [`CastProgress`] sul caster, poi il sistema [`advance_cast_progress`] lo
-/// ticka fino al completamento. Prima di spawnare un nuovo `CastProgress`,
-/// qualsiasi cast già attivo sul caster viene cancellato con emissione di
-/// [`SpellCastEnded`].
+/// Instant spells execute immediately (historical behavior).
+/// CastTime/Channeling spells do not run `cast` here: they spawn a
+/// [`CastProgress`] component on the caster, which system [`advance_cast_progress`]
+/// ticks until completion. Before spawning a new `CastProgress`,
+/// any active cast on the caster is cancelled with a emitted [`SpellCastEnded`].
 #[allow(clippy::type_complexity)]
 pub fn process_cast_requests(
     mut commands: Commands,
@@ -169,7 +168,7 @@ pub fn process_cast_requests(
                     server,
                 );
 
-                // Cooldown parte subito per le spell instant
+                // Cooldown starts immediately for instant spells
                 if let Ok((_, mut cooldowns, _, _, _)) = casters.get_mut(request.caster) {
                     cooldowns
                         .start_cooldown(request.spell_id.clone(), spell_config.cooldown_seconds);
@@ -254,8 +253,8 @@ fn movement_target_changed(start_target: Option<Vec3>, current_target: Vec3) -> 
     start_target.distance(current_target) > MOVEMENT_INTERRUPT_EPSILON
 }
 
-/// Applica tutti gli effetti pendenti di uno [`SpellCastContext`] al mondo.
-/// Condiviso tra il path Instant e quello CastTime/Channeling completion.
+/// Applies all pending effects from a [`SpellCastContext`] to the world.
+/// Shared between Instant path and CastTime/Channeling completion path.
 #[allow(clippy::too_many_arguments)]
 fn apply_spell_effects(
     commands: &mut Commands,
@@ -289,9 +288,9 @@ fn apply_spell_effects(
     }
 }
 
-/// Ticka tutti i [`CastProgress`]: fa avanzare i timer, lancia le spell
-/// CastTime al completamento, esegue i tick delle spell Channeling, rileva
-/// interruzioni da movimento/morte.
+/// Ticks all [`CastProgress`]: advances timers, fires CastTime spells
+/// upon completion, executes Channeling spell ticks, detects
+/// interrupts from movement/death.
 pub fn advance_cast_progress(
     time: Res<Time>,
     mut commands: Commands,
@@ -321,13 +320,13 @@ pub fn advance_cast_progress(
 
     for (caster_entity, mut cast, position, vital, movement_input, cooldowns) in casters.iter_mut()
     {
-        // Morte: cancella sempre.
+        // Death: always cancels.
         if vital.is_dead() {
             ended.push((caster_entity, cast.spell_id.clone(), false));
             continue;
         }
 
-        // Movement detection (raggiunge sia CastTime che Channeling InterruptOnMove).
+        // Movement detection (affects both CastTime and Channeling InterruptOnMove).
         let current_position = position.0;
         let moved = current_position.distance(cast.last_position) > MOVEMENT_INTERRUPT_EPSILON;
 
@@ -410,8 +409,8 @@ pub fn advance_cast_progress(
                 }
             }
             CastKind::Instant => {
-                // Defensive: non dovrebbe mai capitare, un Instant non spawnerebbe
-                // mai un CastProgress. Rimuovilo silenziosamente.
+                // Defensive: should never happen, Instant would never spawn CastProgress.
+                // Remove silently.
                 ended.push((caster_entity, cast.spell_id.clone(), false));
             }
         }
@@ -431,14 +430,14 @@ pub fn advance_cast_progress(
     }
 }
 
-/// Risultato di un fire, usato per comunicare il cooldown da attivare.
+/// Result of a fire, used to communicate the cooldown to activate.
 struct FireResult {
     cooldown_seconds: f32,
 }
 
-/// Costruisce lo [`SpellCastContext`] per il caster, esegue `spell.cast(ctx)`
-/// e drena gli effetti. Ritorna [`FireResult`] se la spell è stata eseguita
-/// (cioè era nel registry e il caster aveva CombatStats).
+/// Constructs [`SpellCastContext`] for caster, executes `spell.cast(ctx)`
+/// and drains effects. Returns [`FireResult`] if spell was executed
+/// (i.e. was in registry and caster had CombatStats).
 #[allow(clippy::too_many_arguments)]
 fn fire_spell(
     registry: &SpellRegistry,
@@ -501,12 +500,12 @@ fn fire_spell(
     })
 }
 
-/// Processa le richieste di rilascio (channeling o cancellazione CastTime).
+/// Processes release requests (channeling or CastTime cancellation).
 ///
-/// Per Channeling: marca il cast come terminato con `completed=true`.
-/// Il cooldown parte già al `just_pressed`, quindi il rilascio non deve
-/// riavviarlo o estenderlo artificialmente. Per CastTime: marca come
-/// `completed=false` (cancellato).
+/// For Channeling: marks cast as completed with `completed=true`.
+/// Cooldown already starts at `just_pressed`, so release does not need
+/// to restart or extend it artificially. For CastTime: marks as
+/// `completed=false` (cancelled).
 pub fn handle_cast_release(
     mut commands: Commands,
     mut requests: MessageReader<SpellReleaseRequest>,
@@ -553,8 +552,8 @@ pub fn handle_cast_release(
     }
 }
 
-/// Replica periodicamente lo stato dei cast in corso a tutti i client.
-/// I client usano questi snapshot per aggiornare la barra world-space.
+/// Periodically replicates progress of active casts to all clients.
+/// Clients use these snapshots to update the world-space cast bar.
 pub fn replicate_cast_progress(
     time: Res<Time>,
     mut elapsed_since_last_send: Local<f32>,
@@ -592,6 +591,7 @@ pub fn replicate_cast_progress(
         }
     }
 }
+
 
 fn send_spell_visual(
     sender: &mut ServerMultiMessageSender,

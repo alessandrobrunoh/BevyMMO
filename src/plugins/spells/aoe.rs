@@ -1,10 +1,10 @@
-//! Regioni AoE persistenti e loro ciclo di vita server-authoritative.
+//! Persistent AoE regions and their server-authoritative lifecycle.
 //!
-//! Modulo parallelo a [`crate::plugins::spells::projectile`]: gestisce il
-//! ciclo di vita di qualsiasi entità dotata del componente [`AoeRegion`]. Il
-//! payload dell'effetto (modifier, danno, cura, targeting) è portato dal
-//! componente stesso, quindi il sistema è del tutto agnostico rispetto alla
-//! spell che ha spawnato la regione.
+//! Parallel module to [`crate::plugins::spells::projectile`]: manages the
+//! lifecycle of any entity possessing an [`AoeRegion`] component. The
+//! effect payload (modifier, damage, heal, targeting) is carried by the
+//! component itself, so the system is entirely agnostic to the
+//! spell that spawned the region.
 
 use bevy::prelude::*;
 use std::collections::HashSet;
@@ -16,25 +16,25 @@ use crate::plugins::spells::context::{AoeEffect, AoeSpawnRequest};
 use crate::stats::components::VitalStats;
 use crate::stats::events::{ApplyStatModifierEvent, DamageEvent, HealEvent};
 
-/// Componente per una regione ad area (AoE) persistente.
+/// Component for a persistent Area-of-Effect (AoE) region.
 #[derive(Component)]
 pub struct AoeRegion {
     pub caster: Entity,
     pub center: Vec3,
     pub radius: f32,
-    /// Tempo di vita residuo della regione. Quando arriva a 0 la regione
-    /// despawna (dopo aver eventualmente applicato un effetto finale).
+    /// Remaining lifetime of the region. When it reaches 0 the region
+    /// despawns (after optionally applying a final effect).
     pub remaining_seconds: f32,
     pub spell_id: String,
-    /// Tempo di delay prima che l'effetto venga applicato la prima volta.
-    /// During this window the region exists (es. cerchio rosso del Meteorite)
-    /// ma non applica damage/heal/modifier.
+    /// Delay time before the effect is applied for the first time.
+    /// During this window the region exists (e.g. Meteorite's red circle)
+    /// but does not apply damage/heal/modifier.
     pub pending_delay_seconds: f32,
-    /// Quali entità hanno già ricevuto l'effetto (usato quando
-    /// `AoeEffect::ApplyModifier.once_per_entity` è `true`).
+    /// Which entities have already received the effect (used when
+    /// `AoeEffect::ApplyModifier.once_per_entity` is `true`).
     pub affected_entities: HashSet<Entity>,
-    /// Payload dell'effetto da applicare alle entità che entrano nell'area.
-    /// Il sistema centrale legge questo campo invece di fare dispatch su
+    /// Effect payload to apply to entities entering the area.
+    /// The central system reads this field instead of dispatching on
     /// `spell_id`.
     pub effect: AoeEffect,
 }
@@ -52,13 +52,13 @@ pub fn spawn_aoe_region(commands: &mut Commands, caster: Entity, req: AoeSpawnRe
     });
 }
 
-/// Sistema server-authoritative che gestisce il ciclo di vita delle regioni AoE
-/// e applica gli effetti alle entità all'interno del raggio.
+/// Server-authoritative system that manages the lifecycle of AoE regions
+/// and applies effects to entities within range.
 ///
-/// È completamente generico rispetto alla spell: legge `region.effect` (un
-/// [`AoeEffect`] passato dalla spell al momento del cast) e non fa dispatch su
-/// `spell_id`. Aggiungere una nuova spell ad area (es. poison cloud) richiede
-/// solo un nuovo file in `src/spells/` che emetta un `AoeEffect` opportuno.
+/// It is completely generic with respect to the spell: it reads `region.effect` (an
+/// [`AoeEffect`] passed by the spell at cast time) and does not dispatch on
+/// `spell_id`. Adding a new area spell (e.g. poison cloud) only requires
+/// a new file in `src/spells/` that emits an appropriate `AoeEffect`.
 pub fn update_aoe_regions(
     time: Res<Time>,
     mut commands: Commands,
@@ -74,14 +74,14 @@ pub fn update_aoe_regions(
 
     for (region_entity, mut region) in regions.iter_mut() {
         // Tick down delay first. While the delay is active the region is
-        // visible (useful per il cerchio di warning del Meteorite) ma non
-        // applica alcun effetto.
+        // visible (useful for Meteorite's warning circle) but
+        // applies no effect.
         if region.pending_delay_seconds > 0.0 {
             region.pending_delay_seconds = (region.pending_delay_seconds - delta).max(0.0);
         }
         region.remaining_seconds -= delta;
 
-        // Applica l'effetto solo se il delay iniziale è trascorso.
+        // Apply effect only if the initial delay has elapsed.
         let effect_armed = region.pending_delay_seconds <= 0.0;
         if effect_armed {
             apply_aoe_effect_to_targets(
@@ -94,8 +94,8 @@ pub fn update_aoe_regions(
             );
         }
 
-        // Despawn alla scadenza. Per gli effetti Damage/Heal con delay
-        // (Meteorite) questo avviene subito dopo il singolo tick di impatto.
+        // Despawn on expiry. For Damage/Heal effects with delay
+        // (Meteorite) this happens right after the single impact tick.
         if region.remaining_seconds <= 0.0 {
             regions_to_despawn.push(region_entity);
         }
@@ -106,9 +106,9 @@ pub fn update_aoe_regions(
     }
 }
 
-/// Applica l'effetto della regione a tutte le entità idonee attualmente
-/// all'interno del raggio. Estratto per leggibilità e per poterlo saltare
-/// durante la fase di delay.
+/// Applies region effect to all eligible entities currently
+/// inside the radius. Extracted for readability and to allow skipping it
+/// during the delay phase.
 #[allow(clippy::too_many_arguments)]
 fn apply_aoe_effect_to_targets(
     region: &mut AoeRegion,
@@ -161,9 +161,9 @@ fn apply_aoe_effect_to_targets(
                 amount,
                 targeting: _,
             } => {
-                // Per i burst Damage assumiamo semantica "once_per_entity":
-                // tracciamo per non riapplicare finché la regione vive (di
-                // solito despawna subito dopo, ma in caso di durata > 0 serve).
+                // For burst Damage we assume "once_per_entity" semantics:
+                // track to avoid re-applying while the region lives (usually
+                // despawns immediately after, but needed in case duration > 0).
                 if region.affected_entities.contains(&target_entity) {
                     continue;
                 }
@@ -174,6 +174,7 @@ fn apply_aoe_effect_to_targets(
                 });
                 region.affected_entities.insert(target_entity);
             }
+
             AoeEffect::Heal {
                 amount,
                 targeting: _,

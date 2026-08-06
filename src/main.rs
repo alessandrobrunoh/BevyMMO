@@ -32,30 +32,30 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Mode {
     Client {
-        /// Override riproducibile dell'identita' Netcode. Se omesso, viene
-        /// generato un ID non-zero unico per questo processo.
+        /// Reproducible Netcode identity override. If omitted, a
+        /// unique non-zero ID is generated for this process.
         #[arg(short, long)]
         client_id: Option<u64>,
 
-        /// Override dell'indirizzo del server remoto a cui connettersi
-        /// (default: da config/client.toml).
+        /// Remote server address override to connect to
+        /// (default: from config/client.toml).
         #[arg(long)]
         server_addr: Option<SocketAddr>,
     },
     Server {
-        /// Override dell'indirizzo locale su cui il server ascolta
-        /// (default: da config/server.toml).
+        /// Local address override for the server to listen on
+        /// (default: from config/server.toml).
         #[arg(long)]
         bind_addr: Option<SocketAddr>,
     },
     HostClient {
-        /// Override riproducibile dell'identita' Netcode. Se omesso, viene
-        /// generato un ID non-zero unico per questo processo.
+        /// Reproducible Netcode identity override. If omitted, a
+        /// unique non-zero ID is generated for this process.
         #[arg(short, long)]
         client_id: Option<u64>,
 
-        /// Override dell'indirizzo del server locale usato dal client embedded
-        /// (default: da config/client.toml).
+        /// Local server address override used by the embedded client
+        /// (default: from config/client.toml).
         #[arg(long)]
         server_addr: Option<SocketAddr>,
     },
@@ -72,14 +72,14 @@ struct AppConfig {
 }
 
 impl AppConfig {
-    /// Unisce i default dei file `config/*.toml` con gli override CLI.
+    /// Merges default values from `config/*.toml` files with CLI overrides.
     fn resolve(mode: Mode, settings: Settings) -> Self {
         let tick_rate = settings.tick_rate;
         let log_filter = settings.log_filter.clone();
         let database_url = settings.database_url.clone();
 
-        // I `SocketAddr` arrivano come stringhe da `Settings`; parsiamo una
-        // volta sola qui. I default garantiscono valori validi.
+        // `SocketAddr` values arrive as strings from `Settings`; we parse them
+        // once here. Defaults guarantee valid values.
         let client_server_addr = parse_addr(&settings.client.server_addr, "client.server_addr");
         let client_addr = parse_addr(&settings.client.client_addr, "client.client_addr");
         let server_bind_addr = parse_addr(&settings.server.bind_addr, "server.bind_addr");
@@ -127,10 +127,10 @@ impl AppConfig {
     }
 }
 
-/// Produce un ID Netcode distinto per processi locali concorrenti.
+/// Produces a distinct Netcode ID for concurrent local processes.
 ///
-/// Il server rifiuta due client con lo stesso ID; `0` viene evitato perche' e'
-/// l'identita' placeholder usata da Lightyear per l'autenticazione assente.
+/// The server rejects two clients with the same ID; `0` is avoided because it is
+/// the placeholder identity used by Lightyear for missing authentication.
 fn resolve_client_id(override_id: Option<u64>) -> u64 {
     if let Some(id) = override_id.filter(|id| *id != 0) {
         return id;
@@ -267,11 +267,12 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
     }
 }
 
-/// Parsa un indirizzo "host:port" dai file di configurazione.
+/// Parses a "host:port" address from configuration files.
 ///
-/// Fallire qui e' un errore di configurazione: meglio panicare all'avvio con
-/// un messaggio chiaro che non a runtime.
+/// Failing here is a configuration error: it is better to panic on startup with
+/// a clear message than at runtime.
 fn parse_addr(raw: &str, field: &str) -> SocketAddr {
     raw.parse()
         .unwrap_or_else(|e| panic!("invalid socket address for {field}: {raw:?} ({e})"))
 }
+

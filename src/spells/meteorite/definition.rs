@@ -1,8 +1,8 @@
 //! Meteorite spell implementation.
 //!
-//! 1s CastTime → al completamento appare un cerchio di warning sul punto target;
-//! dopo 2 secondi (`IMPACT_DELAY_SECONDS`) il meteorite impatta: 50 danni a
-//! tutte le entità nel raggio, tranne il caster (`ExcludeCaster`).
+//! 1s CastTime → upon completion a warning circle appears at the target point;
+//! after 2 seconds (`IMPACT_DELAY_SECONDS`) the meteorite impacts: 50 damage to
+//! all entities in radius, except the caster (`ExcludeCaster`).
 
 use bevy::prelude::Vec3;
 
@@ -22,7 +22,7 @@ impl MeteoriteSpell {
     pub const IMPACT_DELAY_SECONDS: f32 = 2.0;
     pub const DAMAGE: f32 = 50.0;
 
-    /// Clampa il punto target al `CAST_RANGE` attorno al caster.
+    /// Clamps the target point to `CAST_RANGE` around the caster.
     fn clamp_target_to_range(caster_position: Vec3, target: Vec3) -> Vec3 {
         let offset = target - caster_position;
         let horizontal = Vec3::new(offset.x, 0.0, offset.z);
@@ -56,9 +56,9 @@ impl Spell for MeteoriteSpell {
             .map(|target| Self::clamp_target_to_range(ctx.caster_position, target))
             .unwrap_or(ctx.caster_position);
 
-        // Payload Damage burst con delay iniziale di IMPACT_DELAY_SECONDS.
-        // La regione vive esattamente il tempo del delay: al tick di impatto
-        // applica il danno una tantum e despawna.
+        // Burst Damage payload with initial delay of IMPACT_DELAY_SECONDS.
+        // The region lives for exactly the duration of the delay: at impact tick
+        // it applies one-time damage and despawns.
         let effect = AoeEffect::Damage {
             amount: Self::DAMAGE,
             targeting: AoeTargeting::ExcludeCaster,

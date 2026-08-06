@@ -1,9 +1,9 @@
-//! Client-side visual per la spell "Ray of Light".
+//! Client-side visual for the "Ray of Light" spell.
 //!
-//! Il server risolve start/end del beam (sempre lungo la direzione di sguardo
-//! del caster, fino al range massimo). Il client costruisce un raggio giallo
-//! emissivo che collega i due punti, fatto svanire rapidamente. Il danno è già
-//! stato applicato lato server: questa entità è puramente decorativa.
+//! The server resolves the start/end of the beam (always along the caster's
+//! facing direction, up to max range). The client constructs an emissive yellow
+//! ray connecting the two points, faded out rapidly. Damage was already
+//! applied server-side: this entity is purely decorative.
 
 use bevy::color::Color;
 use bevy::prelude::*;
@@ -11,16 +11,16 @@ use bevy::prelude::*;
 use crate::network::protocol::SpellVisualEffect;
 use crate::plugins::spells::SpellVisual;
 
-/// Durata del flash del beam. Corta: il ray è un lampo, non un effetto persistente.
+/// Beam flash duration. Short: the ray is a flash, not a persistent effect.
 pub const LIFETIME_SECONDS: f32 = 0.18;
 
-/// Spessore verticale del beam. Molto sottile per dare l'idea di una lama di luce.
+/// Vertical thickness of the beam. Very thin to give the impression of a blade of light.
 const BEAM_HEIGHT: f32 = 0.15;
-/// Larghezza del beam. Poco inferiore al player (come richiesto dal design).
+/// Width of the beam. Slightly less than the player (as requested by design).
 const BEAM_WIDTH: f32 = 0.6;
-/// Solleva il beam dal pavimento per allinearlo al centro-massa del caster.
+/// Raises the beam off the floor to align it with the caster's center of mass.
 const SPAWN_HEIGHT_OFFSET: f32 = 0.8;
-/// Trasparenza iniziale del beam. L'animazione la fade-out fino a 0.
+/// Initial transparency of the beam. The animation fades it out to 0.
 const INITIAL_ALPHA: f32 = 0.95;
 
 #[derive(Component)]
@@ -29,10 +29,10 @@ pub struct RayOfLightVisual {
     initial_alpha: f32,
 }
 
-/// Costruisce un beam locale dal segmento risolto dal server.
+/// Constructs a local beam from the segment resolved by the server.
 ///
-/// Il visual non ha autorità sul danno: replica solo il segmento comunicato dal
-/// server così che il client veda il ray fermarsi esattamente al range massimo.
+/// The visual has no authority over damage: it only replicates the segment communicated
+/// by the server so that the client sees the ray stop exactly at max range.
 ///
 /// # Example
 /// ```rust,ignore
@@ -58,10 +58,10 @@ pub fn spawn(
         ..default()
     });
 
-    // Orientamento: il Cuboid è lungo Z, quindi allineiamo +Z al displacement.
+    // Orientation: the Cuboid is long along Z, so we align +Z with displacement.
     let forward = displacement / unit_length;
     let orientation = Quat::from_rotation_arc(Vec3::Z, forward);
-    // Centriamo il beam a metà tra start ed end.
+    // Center the beam halfway between start and end.
     let midpoint = start + displacement * 0.5;
 
     commands.spawn((
@@ -76,7 +76,7 @@ pub fn spawn(
     ));
 }
 
-/// Fa svanire il beam fino a despawn. Sistema main-world only.
+/// Fades out the beam until despawning. Main-world only system.
 ///
 /// # Example
 /// ```rust,ignore
@@ -99,7 +99,7 @@ pub fn animate(
         let progress = (visual.elapsed_seconds / LIFETIME_SECONDS).clamp(0.0, 1.0);
 
         let Some(mut material) = materials.get_mut(material_handle) else {
-            // Fallback di sicurezza: despawn se il materiale è stato deallocato.
+            // Safety fallback: despawn if material was deallocated.
             if progress >= 1.0 {
                 commands.entity(entity).despawn();
             }

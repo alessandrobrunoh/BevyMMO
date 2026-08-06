@@ -108,37 +108,38 @@ impl SpellCooldowns {
     }
 }
 
-/// Soglia di spostamento orizzontale (in unità) oltre la quale un cast-time
-/// o un channeling `InterruptOnMove` viene cancellato. Tunable.
+/// Horizontal displacement threshold (in units) beyond which a cast-time
+/// or an `InterruptOnMove` channeling spell is cancelled. Tunable.
 pub const MOVEMENT_INTERRUPT_EPSILON: f32 = 0.05;
 
-/// Stato server-authoritative di una spell in fase di cast (CastTime) o
-/// channeling. Il sistema [`crate::plugins::spells::systems::advance_cast_progress`]
-/// lo ticka ogni frame e decide quando lanciare l'effetto.
+/// Server-authoritative state of a spell being cast (CastTime) or
+/// channeled. The system [`crate::plugins::spells::systems::advance_cast_progress`]
+/// ticks it every frame and decides when to trigger the effect.
 ///
-/// Una sola istanza per caster: starting una nuova spell mentre questo
-/// componente esiste cancella quella precedente.
+/// Only one instance per caster: starting a new spell while this
+/// component exists cancels the previous one.
 #[derive(Component, Debug)]
 pub struct CastProgress {
     pub spell_id: SpellId,
     pub kind: CastKind,
     pub elapsed_seconds: f32,
-    /// Per `CastTime`: tempo richiesto prima del fire. Per `Channeling` è
-    /// ignorato (open-ended).
+    /// For `CastTime`: required time before firing. For `Channeling` it is
+    /// ignored (open-ended).
     pub required_seconds: f32,
-    /// Policy di interruzione col movimento, copiata dalla `SpellConfig` al
-    /// momento dello spawn per evitare un lookup ad ogni tick.
+    /// Movement interrupt policy, copied from `SpellConfig` at
+    /// spawn time to avoid looking it up every tick.
     pub channel_movement: ChannelMovementPolicy,
-    /// Snapshot della posizione del caster all'ultimo tick, per rilevare
-    /// spostamenti che debbano interrompere il cast.
+    /// Snapshot of caster position at last tick, to detect
+    /// movement that should interrupt the cast.
     pub last_position: Vec3,
     pub target_position: Option<Vec3>,
     pub target_entity: Option<Entity>,
-    /// Comando movimento attivo quando il cast è iniziato. Serve per ignorare
-    /// il movimento precedente e interrompere solo su un nuovo click/input.
+    /// Active movement command when the cast started. Used to ignore
+    /// previous movement and interrupt only on a new click/input.
     pub movement_input_at_start: Option<Vec3>,
-    /// Accumulatore per il tick interval del channeling. Quando supera
-    /// `tick_interval_seconds` la spell viene ri-eseguita.
+    /// Accumulator for channeling tick interval. When it exceeds
+    /// `tick_interval_seconds`, the spell is re-executed.
     pub channel_tick_accumulator_seconds: f32,
     pub tick_interval_seconds: f32,
 }
+

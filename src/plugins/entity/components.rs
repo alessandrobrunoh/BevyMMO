@@ -1,29 +1,29 @@
-//! Componenti condivise da tutte le entità di gioco.
+//! Components shared by all game entities.
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Posizione di spawn originale di un'entità.
+/// Original spawn position of an entity.
 ///
-/// Inserita a spawn time (server-side) e usata dai sistemi di respawn per
-/// ripristinare l'entità alla posizione iniziale. Non è modificata a runtime:
-/// la posizione corrente vive in `Position`.
+/// Inserted at spawn time (server-side) and used by respawn systems to
+/// restore the entity to its initial position. Not modified at runtime:
+/// the current position lives in `Position`.
 #[derive(Component, Debug, Clone, Copy, Reflect, Serialize, Deserialize, PartialEq)]
 #[reflect(Component)]
 pub struct SpawnPoint(pub Vec3);
 
-/// Marker per qualsiasi entità di gioco (Player, Enemy, NPC, ...).
+/// Marker for any game entity (Player, Enemy, NPC, ...).
 ///
-/// Il nome evita ambiguità con `bevy::ecs::entity::Entity`, che identifica
-/// un'istanza ECS, non una categoria di gameplay.
+/// The name avoids ambiguity with `bevy::ecs::entity::Entity`, which identifies
+/// an ECS instance, not a gameplay category.
 #[derive(Component, Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct GameEntity;
 
-/// Stato comportamentale condiviso e replicato di un'entità di gioco.
+/// Shared and replicated behavioral state of a game entity.
 ///
-/// Le transizioni che cambiano il gameplay devono essere decise dal server.
-/// `Dead` è terminale finché un sistema esplicito di respawn non assegna un
-/// nuovo stato.
+/// Transitions that affect gameplay must be decided by the server.
+/// `Dead` is terminal until an explicit respawn system assigns a
+/// new state.
 #[derive(
     Component, Debug, Default, Clone, Copy, Reflect, Serialize, Deserialize, PartialEq, Eq,
 )]
@@ -41,25 +41,26 @@ impl EntityState {
     }
 }
 
-/// Nome del player (solo UI e logging).
+/// Player name (UI and logging only).
 #[derive(Component, Debug, Clone, Reflect, Serialize, Deserialize, PartialEq)]
 #[reflect(Component)]
 pub struct PlayerName(pub String);
 
-/// Tipo di entità di gioco per determinare alleanze e comportamento di targeting.
+/// Game entity type used to determine alliances and targeting behavior.
 ///
-/// I valori influenzano UI (healthbar color, target frame), regole di targeting
-/// e interazioni future. Il tipo viene replicato dal server e i client lo usano
-/// per visual feedback, non per logica di gameplay autorevole.
+/// Values influence UI (healthbar color, target frame), targeting rules,
+/// and future interactions. The kind is replicated by the server and clients use
+/// it for visual feedback, not authoritative gameplay logic.
 #[derive(Component, Debug, Clone, Copy, Reflect, Serialize, Deserialize, PartialEq, Eq)]
 #[reflect(Component)]
 pub enum EntityKind {
-    /// Player del client locale.
+    /// Local client player.
     Player,
-    /// NPC alleati (es. mercanti, quest giver).
+    /// Friendly NPCs (e.g. merchants, quest givers).
     Friendly,
-    /// Creature neutrali che non attaccano per prime.
+    /// Neutral creatures that do not attack first.
     Neutral,
-    /// Nemici ostili (enemy, boss, creature aggressive).
+    /// Hostile enemies (enemy, boss, aggressive creatures).
     Hostile,
 }
+

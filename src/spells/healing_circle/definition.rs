@@ -15,13 +15,13 @@ impl HealingCircleSpell {
     pub const CAST_RANGE: f32 = 12.0;
     pub const AREA_RADIUS: f32 = 4.0;
 
-    /// HP curati per ogni tick dell'HoT applicato a chi entra nel cerchio.
+    /// HP healed for each tick of the HoT applied to anyone entering the circle.
     pub const HOT_AMOUNT_PER_TICK: f32 = 10.0;
-    /// Intervallo (in secondi) tra un tick di cura e il successivo.
+    /// Interval (in seconds) between consecutive heal ticks.
     pub const HOT_TICK_INTERVAL: f32 = 0.5;
-    /// Durata dell'HoT applicato a un bersaglio entrato nel cerchio.
-    /// Indipendente da `area_radius`: chi entra all'ultimo secondo riceve
-    /// comunque un HoT a durata piena.
+    /// Duration of the HoT applied to a target that entered the circle.
+    /// Independent of `area_radius`: someone entering at the last second still
+    /// receives a full duration HoT.
     pub const HOT_DURATION_SECONDS: f32 = 3.0;
 }
 
@@ -41,10 +41,10 @@ impl Spell for HealingCircleSpell {
     fn cast(&self, ctx: &mut SpellCastContext) {
         let center = ctx.effective_center();
 
-        // L'effetto dell'HoT è ora un payload portato dalla spell: il sistema
-        // centrale `update_aoe_regions` non sa più nulla di "healing_circle".
-        // `AoeTargeting::CasterOnly` garantisce che la cura venga applicata
-        // esclusivamente al caster che ha generato il cerchio.
+        // The HoT effect is now a payload carried by the spell: the central
+        // `update_aoe_regions` system knows nothing about "healing_circle".
+        // `AoeTargeting::CasterOnly` guarantees that the heal is applied
+        // exclusively to the caster who generated the circle.
         let effect = AoeEffect::ApplyModifier {
             effects: vec![ModifierEffect::HealOverTime {
                 amount_per_tick: Self::HOT_AMOUNT_PER_TICK,

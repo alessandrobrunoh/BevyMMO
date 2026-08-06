@@ -1,12 +1,12 @@
 # =============================================================================
 # Stage 1 — Dependency cache
-# Pre-compila solo le dipendenze sfruttando la cache layer di Docker.
-# Questo layer viene ricostruito solo se Cargo.toml / Cargo.lock cambiano.
+# Pre-compiles only dependencies leveraging Docker layer cache.
+# This layer is rebuilt only if Cargo.toml / Cargo.lock change.
 # =============================================================================
 FROM rust:1-slim-bookworm AS deps
 
-# Installa le dipendenze di sistema necessarie per compilare.
-# Il server necessita solo di OpenSSL e libpq per il database.
+# Install required system dependencies for compilation.
+# Server requires only OpenSSL and libpq for the database.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
@@ -15,15 +15,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-# Copia solo i manifest per sfruttare il layer caching di Docker:
-# se il codice sorgente cambia ma Cargo.toml/lock restano uguali,
-# questo stage viene servito dalla cache senza ricompilare le dipendenze.
+# Copy only manifests to leverage Docker layer caching:
+# if source code changes but Cargo.toml/lock remain identical,
+# this stage is served from cache without recompiling dependencies.
 COPY Cargo.toml Cargo.lock ./
 
-# Crea un main.rs stub così cargo può compilare le dipendenze in isolamento
+# Create a stub main.rs so cargo can compile dependencies in isolation
 RUN mkdir src && echo 'fn main() {}' > src/main.rs
 
-# Compila solo le dipendenze in modalità server (no client, no UI, no renderer)
+# Compile only dependencies in server mode (no client, no UI, no renderer)
 RUN cargo build --release \
     --no-default-features \
     --features server,netcode,udp,replication \
@@ -32,63 +32,63 @@ RUN cargo build --release \
 
 # =============================================================================
 # Stage 2 — Builder
-# Compila il sorgente reale usando la cache delle dipendenze dello stage 1.
+# Compiles real source using dependency cache from Stage 1.
 # =============================================================================
 FROM deps AS builder
 
-# Copia il sorgente reale
+# Copy real source
 COPY src ./src
 
-# Copia i file di configurazione: servono sia a compile time
-# (`include_str!("../config/default.toml")` in `settings.rs`) sia a runtime
-# (`Settings::load` legge `config/<env>.toml` e `config/local.toml`).
+# Copy configuration files: required at compile time
+# (`include_str!("../config/default.toml")` in `settings.rs`) and at runtime
+# (`Settings::load` reads `config/<env>.toml` and `config/local.toml`).
 COPY config ./config
 
-# Invalida il timestamp del binario stub per forzare la ricompilazione del bin
+# Invalidate timestamp of stub binary to force bin recompilation
 RUN touch src/main.rs
 
-# Build release finale — solo modalità server
+# Final release build — server mode only
 RUN cargo build --release \
     --no-default-features \
     --features server,netcode,udp,replication \
     --bin game
 
-# Strip dei simboli di debug per ridurre drasticamente le dimensioni del binario
+# Strip debug symbols to drastically reduce binary size
 RUN strip target/release/game
 
 # =============================================================================
-# Stage 3 — Runtime (immagine finale minima)
-# Usa Debian slim: solo le librerie dinamiche strettamente necessarie.
-# Nessun compilatore, nessun toolchain Rust -> immagine finale ~50-80 MB.
+# Stage 3 — Runtime (minimal final image)
+# Uses Debian slim: only strictly necessary dynamic libraries.
+# No compiler, no Rust toolchain -> final image ~50-80 MB.
 # =============================================================================
 FROM debian:bookworm-slim AS runtime
 
-# Etichette OCI standard per il registry GitHub
+# Standard OCI labels for GitHub registry
 LABEL org.opencontainers.image.source="https://github.com/alessandrobrunoh/BevyMMO"
 LABEL org.opencontainers.image.description="BevyMMO dedicated game server"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Dipendenze runtime minime (libssl + libpq per SeaORM/PostgreSQL)
+# Minimal runtime dependencies (libssl + libpq for SeaORM/PostgreSQL)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     libpq5 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Utente non-root per principio del minimo privilegio
+# Non-root user for principle of least privilege
 RUN useradd --uid 1001 --no-create-home --shell /sbin/nologin server
 USER server
 
 WORKDIR /app
 
-# Copia il binario strippato dallo stage builder
+# Copy stripped binary from builder stage
 COPY --from=builder /build/target/release/game ./game
 
-# Copia i file di configurazione letti a runtime da `Settings::load`.
+# Copy configuration files read at runtime by `Settings::load`.
 COPY --from=builder /build/config ./config
 
-# Porta UDP usata da Lightyear/Netcode per i client
+# UDP port used by Lightyear/Netcode for clients
 EXPOSE 5051/udp
 
-# Avvio diretto in modalità server (senza shell per evitare PID 1 wrapping)
+# Direct startup in server mode (no shell to avoid PID 1 wrapping)
 ENTRYPOINT ["./game", "server"]

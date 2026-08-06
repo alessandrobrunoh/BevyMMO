@@ -1,53 +1,54 @@
-//! Risorse per il sistema di targeting.
+//! Targeting system resources.
 
 use bevy::prelude::*;
 
-/// Target correntemente selezionato dal player.
+/// Target currently selected by the player.
 ///
-/// Contiene l'entity handle del target selezionato, o `None` se nessun target
-/// è attivo. La resource è auto-pulita dai sistemi quando il target:
-/// - viene despawnato
-/// - perde i componenti richiesti (`Position` o `VitalStats`)
-/// - muore (`VitalStats::is_dead()`)
+/// Contains the entity handle of the selected target, or `None` if no target
+/// is active. The resource is auto-cleaned by systems when the target:
+/// - is despawned
+/// - loses required components (`Position` or `VitalStats`)
+/// - dies (`VitalStats::is_dead()`)
 #[derive(Resource, Default, Debug, Clone, Copy)]
 pub struct CurrentTarget {
-    /// Entity handle del target selezionato.
+    /// Entity handle of the selected target.
     pub entity: Option<Entity>,
 }
 
 impl CurrentTarget {
-    /// Crea un nuovo `CurrentTarget` con il target specificato.
+    /// Creates a new `CurrentTarget` with the specified target.
     pub fn new(entity: Entity) -> Self {
         Self {
             entity: Some(entity),
         }
     }
 
-    /// Crea un nuovo `CurrentTarget` vuoto (nessun target).
+    /// Creates a new empty `CurrentTarget` (no target).
     pub fn none() -> Self {
         Self { entity: None }
     }
 
-    /// Restituisce true se c'è un target attivo.
+    /// Returns true if there is an active target.
     pub fn is_some(&self) -> bool {
         self.entity.is_some()
     }
 
-    /// Restituisce true se non c'è un target attivo.
+    /// Returns true if there is no active target.
     pub fn is_none(&self) -> bool {
         self.entity.is_none()
     }
 
-    /// Pulisce il target corrente.
+    /// Clears current target.
     pub fn clear(&mut self) {
         self.entity = None;
     }
 
-    /// Imposta il target corrente.
+    /// Sets current target.
     pub fn set(&mut self, entity: Entity) {
         self.entity = Some(entity);
     }
 }
+
 
 #[cfg(test)]
 mod tests {

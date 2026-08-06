@@ -1,4 +1,5 @@
-//! Enemy: entità controllata dal server (AI).
+//! Enemy: server-controlled entity (AI).
+
 
 pub mod components;
 #[cfg(feature = "client")]

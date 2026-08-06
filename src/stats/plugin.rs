@@ -1,5 +1,5 @@
-//! Plugin delle statistiche: registra componenti, eventi e sistemi
-//! server-authoritative.
+//! Stats plugin: registers components, events, and server-authoritative
+//! systems.
 
 use bevy::prelude::*;
 

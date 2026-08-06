@@ -7,19 +7,19 @@ use crate::plugins::entity::components::{EntityKind, EntityState, GameEntity, Sp
 use crate::plugins::spells::{HotbarSlot, SpellHotbar};
 use crate::stats::components::{CombatStats, MovementStats, VitalStats};
 
-// Canali
+// Channels
 pub struct Channel1;
 
-/// Canale affidabile client -> server usato per i messaggi di join (es. `JoinRequest`).
+/// Reliable client -> server channel used for join messages (e.g. `JoinRequest`).
 pub struct Channel2;
 
-// Componenti
+// Components
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct PlayerId(pub PeerId);
 
-/// Posizione generica di un'entità di gioco, replicata via lightyear.
-/// Non è più specifica del Player: qualsiasi entità (Player, Enemy, NPC, ...)
-/// può usarla per avere una posizione nello spazio replicata.
+/// Generic position of a game entity, replicated via lightyear.
+/// No longer specific to Player: any entity (Player, Enemy, NPC, ...)
+/// can use it to have a replicated position in space.
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Reflect, Deref, DerefMut)]
 pub struct Position(pub Vec3);
 
@@ -31,7 +31,7 @@ impl Ease for Position {
     }
 }
 
-/// Direzione orizzontale in cui l'entità sta guardando.
+/// Horizontal direction the entity is facing.
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Reflect, Deref, DerefMut)]
 pub struct LookDirection(pub Vec3);
 
@@ -41,26 +41,26 @@ impl Default for LookDirection {
     }
 }
 
-/// Colore generico di un'entità di gioco, replicato via lightyear.
+/// Generic color of a game entity, replicated via lightyear.
 #[derive(Component, Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct EntityColor(pub bevy::color::Color);
 
-/// Identificatore gameplay stabile assegnato dal server alle entità replicate.
+/// Stable gameplay identifier assigned by the server to replicated entities.
 ///
-/// A differenza di `Entity`, questo valore può essere inviato dal client al
-/// server per riferirsi allo stesso target selezionato.
+/// Unlike `Entity`, this value can be sent from the client to the
+/// server to refer to the same selected target.
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
 pub struct NetworkEntityId(pub u64);
 
-/// Marker visuale replicato per distinguere i projectile spell dalle entità
-/// gameplay renderizzate con mesh generica.
+/// Replicated visual marker to distinguish spell projectiles from
+/// gameplay entities rendered with generic meshes.
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ProjectileVisual {
     pub spell_id: String,
 }
 
-// Comandi di input
-/// Comando punta-e-clicca inviato dal client al server.
+// Input commands
+/// Point-and-click command sent from client to server.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Reflect)]
 pub enum Inputs {
     MoveTo(Vec3),
@@ -77,18 +77,18 @@ impl MapEntities for Inputs {
     fn map_entities<M: EntityMapper>(&mut self, _entity_mapper: &mut M) {}
 }
 
-// Messaggi
+// Messages
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct PlayerMessage(pub usize);
 
-/// Richiesta di join inviata dal client al server subito dopo `Connected`.
-/// Il server valida `player_name` prima di spawnare il player.
+/// Join request sent from client to server right after `Connected`.
+/// The server validates `player_name` before spawning the player.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct JoinRequest {
     pub player_name: String,
 }
 
-/// Comando client -> server per richiedere il cast di una spell.
+/// Client -> server command to request a spell cast.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SpellCastCommand {
     pub spell_id: String,
@@ -96,48 +96,48 @@ pub struct SpellCastCommand {
     pub target_id: Option<u64>,
 }
 
-/// Comando client -> server per rilasciare una spell channeling o
-/// interrompere una spell CastTime. Il client lo invia su `just_released`
-/// della spell key attualmente channeling, oppure su re-press della stessa
-/// spell key (D2c: re-press = interrompi).
+/// Client -> server command to release a channeling spell or
+/// interrupt a CastTime spell. The client sends it on `just_released`
+/// of the currently channeling spell key, or on re-press of the same
+/// spell key (D2c: re-press = interrupt).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SpellCastRelease {
     pub spell_id: String,
 }
 
-/// Snapshot periodico inviato dal server a tutti i client per replicare lo
-/// stato di una spell in fase di cast o channeling. Usato dal client per
-/// posizionare e riempire la barra di cast world-space sopra il caster.
+/// Periodic snapshot sent from server to all clients to replicate the
+/// state of a spell being cast or channeled. Used by the client to
+/// position and fill the world-space cast bar above the caster.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, bevy::prelude::Message)]
 pub struct SpellCastProgress {
-    /// `NetworkEntityId` del caster, stabile tra server e client.
+    /// Caster's `NetworkEntityId`, stable between server and client.
     pub caster_network_id: u64,
     pub spell_id: String,
     /// 0 = CastTime, 1 = Channeling.
     pub kind: u8,
     pub elapsed_seconds: f32,
-    /// Per CastTime: durata totale del wind-up. Per Channeling: 0.0 (aperto).
+    /// For CastTime: total wind-up duration. For Channeling: 0.0 (open-ended).
     pub required_seconds: f32,
 }
 
-/// Notifica server -> client che una spell in fase di cast/channeling è
-/// terminata (completata o interrotta). Il client rimuove la barra.
+/// Server -> client notification that a casting/channeling spell has
+/// ended (completed or interrupted). The client removes the bar.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, bevy::prelude::Message)]
 pub struct SpellCastEnded {
     pub caster_network_id: u64,
     pub spell_id: String,
-    /// `true` = cast completato normalmente, `false` = interrotto/cancellato.
+    /// `true` = cast completed normally, `false` = interrupted/cancelled.
     pub completed: bool,
 }
 
-/// Comando client -> server per richiedere il respawn del player locale.
+/// Client -> server command to request respawn of the local player.
 ///
-/// Il server risolve il player dal peer mittente e, se è in stato `Dead`,
-/// lo riporta allo spawn point con statistiche rigenerate.
+/// The server resolves the player from the sender peer and, if in `Dead` state,
+/// brings them back to the spawn point with regenerated stats.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct RespawnRequest;
 
-/// Messaggio server -> client per replicare un effetto visivo spell.
+/// Server -> client message to replicate a spell visual effect.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, bevy::prelude::Message)]
 pub struct SpellVisualEffect {
     pub spell_id: String,
@@ -156,7 +156,7 @@ pub struct ProtocolPlugin;
 
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
-        // Canali
+        // Channels
         app.add_channel::<Channel1>(ChannelSettings {
             mode: ChannelMode::OrderedReliable(ReliableSettings::default()),
             ..default()
@@ -169,7 +169,7 @@ impl Plugin for ProtocolPlugin {
         })
         .add_direction(NetworkDirection::ClientToServer);
 
-        // Messaggi
+        // Messages
         app.register_message::<PlayerMessage>()
             .add_direction(NetworkDirection::ServerToClient);
 
@@ -197,10 +197,10 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<UpdateHotbarSlotRequest>()
             .add_direction(NetworkDirection::ClientToServer);
 
-        // Comandi di input
+        // Input commands
         app.add_plugins(input::native::InputPlugin::<Inputs>::default());
 
-        // Componenti
+        // Components
         app.component::<PlayerId>().replicate();
 
         app.component::<Position>()
@@ -231,6 +231,13 @@ impl Plugin for ProtocolPlugin {
         app.component::<SpawnPoint>().replicate();
 
         app.component::<EntityKind>().replicate();
+
+        app.component::<crate::plugins::entity::boss::components::Boss>()
+            .replicate();
+        app.component::<crate::plugins::entity::boss::components::BossPhase>()
+            .replicate();
+        app.component::<crate::plugins::entity::boss::components::BossArena>()
+            .replicate();
 
         app.component::<crate::plugins::entity::components::PlayerName>()
             .replicate();

@@ -218,22 +218,27 @@ fn cast_spell_from_hud_click(
         }
 
         if let Some(spell_def) = registry.get(&entry.spell_id) {
-            hud_cooldowns.write(SpellHudCooldownStarted {
-                spell_id: entry.spell_id.clone(),
-                cooldown_seconds: spell_def.config().cooldown_seconds,
-            });
+            if spell_def.cast_kind() == crate::plugins::spells::CastKind::Instant {
+                hud_cooldowns.write(SpellHudCooldownStarted {
+                    spell_id: entry.spell_id.clone(),
+                    cooldown_seconds: spell_def.config().cooldown_seconds,
+                });
+            }
         }
     }
 }
 
 fn update_spell_hud(
     time: Res<Time>,
+    mut elapsed_since_label_update: Local<f32>,
     mut state: ResMut<SpellHudState>,
     mut cooldown_started: MessageReader<SpellHudCooldownStarted>,
     mut roots: Query<&mut Node, With<SpellHudRoot>>,
     mut texts: Query<(&SpellHudEntry, &mut Text)>,
 ) {
+    let mut has_new_cooldown = false;
     for message in cooldown_started.read() {
+        has_new_cooldown = true;
         state
             .remaining_seconds
             .insert(message.spell_id.clone(), message.cooldown_seconds.max(0.0));
@@ -249,13 +254,24 @@ fn update_spell_hud(
         root.display = Display::Flex;
     }
 
+    *elapsed_since_label_update += delta;
+    let should_update_labels = has_new_cooldown || *elapsed_since_label_update >= 0.1;
+    if !should_update_labels {
+        return;
+    }
+    *elapsed_since_label_update = 0.0;
+
     for (entry, mut text) in texts.iter_mut() {
         let remaining = state
             .remaining_seconds
             .get(&entry.spell_id)
             .copied()
             .unwrap_or_default();
-        text.0 = format_spell_label(entry, remaining);
+        let next_label = format_spell_label(entry, remaining);
+        if text.0 == next_label {
+            continue;
+        }
+        text.0 = next_label;
     }
 }
 

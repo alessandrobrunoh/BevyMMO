@@ -413,7 +413,7 @@ fn handle_spell_cast_commands(
                 );
             }
 
-            bevy::log::info!(
+            bevy::log::debug!(
                 "Received spell cast command from player {:?}: spell={}, target_id={:?}, resolved_target={:?}",
                 player_entity,
                 command.spell_id,

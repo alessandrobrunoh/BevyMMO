@@ -1,5 +1,5 @@
 use crate::network::mode::has_server;
-use crate::network::protocol::SpellVisualEffect;
+use crate::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
 use bevy::prelude::*;
 
 use super::{
@@ -31,6 +31,8 @@ impl Plugin for SpellsPlugin {
             .add_message::<SpellCastRequest>()
             .add_message::<SpellReleaseRequest>()
             .add_message::<SpellVisualEffect>()
+            .add_message::<SpellCastProgress>()
+            .add_message::<SpellCastEnded>()
             .add_systems(Startup, register_builtin_spells)
             .add_systems(
                 FixedUpdate,

@@ -12,6 +12,8 @@ use lightyear::prelude::input::native::{ActionState, InputMarker};
 use lightyear::prelude::*;
 
 use crate::network::mode;
+#[cfg(feature = "client")]
+use crate::network::protocol::NetworkEntityId;
 use crate::network::protocol::{Inputs, LookDirection, Position};
 use crate::plugins::entity::components::EntityState;
 use crate::plugins::entity::player::Player;
@@ -19,6 +21,8 @@ use crate::stats::components::MovementStats;
 use crate::stats::events::StatField;
 use crate::stats::modifiers::ActiveStatModifiers;
 use crate::stats::systems::effective_value;
+#[cfg(feature = "client")]
+use crate::{plugins::spells::cast_bar::ObservedCasts, spells::swift::SwiftSpell};
 
 const ARRIVAL_DISTANCE: f32 = 0.05;
 const INDICATOR_DURATION: f32 = 0.55;
@@ -44,13 +48,9 @@ impl Plugin for PlayerMovementPlugin {
                 .in_set(InputSystems::WriteClientInputs)
                 .run_if(mode::has_client),
         );
-        app.add_systems(
-            FixedUpdate,
-            (
-                server_move_to_target.run_if(mode::has_server),
-                predict_move_to_target.run_if(mode::has_client),
-            ),
-        );
+        app.add_systems(FixedUpdate, server_move_to_target.run_if(mode::has_server));
+        #[cfg(feature = "client")]
+        app.add_systems(FixedUpdate, predict_move_to_target.run_if(mode::has_client));
         #[cfg(feature = "client")]
         app.add_systems(
             Update,
@@ -145,13 +145,16 @@ fn server_move_to_target(
 }
 
 /// Stesso calcolo sul Player predetto, per una risposta immediata al click.
+#[cfg(feature = "client")]
 fn predict_move_to_target(
     synced_client: Query<(), (With<Client>, With<IsSynced<()>>)>,
+    observed_casts: Option<Res<ObservedCasts>>,
     mut players: Query<
         (
             &mut Position,
             &ActionState<Inputs>,
             &MovementStats,
+            &NetworkEntityId,
             &mut LookDirection,
             &mut EntityState,
             Option<&ActiveStatModifiers>,
@@ -163,8 +166,13 @@ fn predict_move_to_target(
         return;
     }
 
-    for (position, input, stats, look_direction, state, modifiers) in &mut players {
-        let effective_speed = effective_speed(stats.speed, modifiers);
+    for (position, input, stats, network_id, look_direction, state, modifiers) in &mut players {
+        let effective_speed = predicted_effective_speed(
+            stats.speed,
+            modifiers,
+            network_id,
+            observed_casts.as_deref(),
+        );
         move_towards_target(position, look_direction, &input.0, effective_speed, state);
     }
 }
@@ -176,6 +184,37 @@ fn effective_speed(base_speed: f32, modifiers: Option<&ActiveStatModifiers>) -> 
         return base_speed;
     };
     effective_value(StatField::Speed, base_speed, &active.modifiers)
+}
+
+#[cfg(feature = "client")]
+/// Mirrors the server-authoritative Swift speed boost for predicted movement.
+///
+/// The canonical buff still lives on the server as a stat modifier. The client
+/// uses observed channel progress only to keep local prediction responsive while
+/// holding `F`, avoiding visible rubber-banding.
+///
+/// # Example
+/// ```rust,ignore
+/// let speed = predicted_effective_speed(base_speed, modifiers, network_id, observed_casts);
+/// ```
+fn predicted_effective_speed(
+    base_speed: f32,
+    modifiers: Option<&ActiveStatModifiers>,
+    network_id: &NetworkEntityId,
+    observed_casts: Option<&ObservedCasts>,
+) -> f32 {
+    let server_speed = effective_speed(base_speed, modifiers);
+    let Some(observed_casts) = observed_casts else {
+        return server_speed;
+    };
+    let Some(cast) = observed_casts.0.get(&network_id.0) else {
+        return server_speed;
+    };
+    if cast.spell_id != SwiftSpell::ID {
+        return server_speed;
+    }
+
+    server_speed * SwiftSpell::SPEED_MULTIPLIER
 }
 
 fn move_towards_target(

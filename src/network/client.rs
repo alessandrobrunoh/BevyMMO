@@ -331,10 +331,12 @@ fn cast_spells_on_key(
                 local_channel.0 = Some(spell_id.clone());
             }
 
-            hud_cooldowns.write(SpellHudCooldownStarted {
-                spell_id: spell_id.clone(),
-                cooldown_seconds: spell_def.config().cooldown_seconds,
-            });
+            if spell_def.cast_kind() == crate::plugins::spells::CastKind::Instant {
+                hud_cooldowns.write(SpellHudCooldownStarted {
+                    spell_id: spell_id.clone(),
+                    cooldown_seconds: spell_def.config().cooldown_seconds,
+                });
+            }
         } else if is_channeling_spell && keys.just_released(key) {
             if local_channel.0.as_ref() == Some(spell_id) {
                 send_release(&mut release_senders, spell_id.clone());

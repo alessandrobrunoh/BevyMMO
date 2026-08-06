@@ -28,6 +28,8 @@ use super::{
 };
 use crate::plugins::spells::SpellId;
 
+const CAST_PROGRESS_REPLICATION_INTERVAL_SECONDS: f32 = 0.1;
+
 /// Processa le richieste di cast dai client.
 ///
 /// Le spell Instant vengono eseguite immediatamente (comportamento storico).
@@ -53,6 +55,8 @@ pub fn process_cast_requests(
     mut heal_events: MessageWriter<HealEvent>,
     mut stat_modifier_events: MessageWriter<ApplyStatModifierEvent>,
     mut visual_sender: ServerMultiMessageSender,
+    mut local_visuals: MessageWriter<SpellVisualEffect>,
+    mut local_cast_ended: MessageWriter<SpellCastEnded>,
     server: Single<&lightyear::prelude::server::Server>,
 ) {
     let server = server.into_inner();
@@ -66,7 +70,7 @@ pub fn process_cast_requests(
         let spell_config = spell.config();
 
         // Step 2: validate spellbook + cooldowns
-        let Ok((spellbook, mut cooldowns, caster_position, existing_cast)) =
+        let Ok((spellbook, cooldowns, caster_position, existing_cast)) =
             casters.get_mut(request.caster)
         else {
             bevy::log::warn!("Caster {} missing spell state", request.caster);
@@ -94,15 +98,16 @@ pub fn process_cast_requests(
         // Drop the borrow before potentially spawning CastProgress / firing.
         let caster_position = caster_position.0;
         let has_active_cast = existing_cast.is_some();
-        drop(spellbook);
+        let _ = spellbook;
         drop(cooldowns);
-        drop(existing_cast);
+        let _ = existing_cast;
 
         // If the caster already has a CastProgress, cancel it (server-side swap).
         if has_active_cast {
             commands.entity(request.caster).remove::<CastProgress>();
             emit_cast_ended(
                 &mut visual_sender,
+                &mut local_cast_ended,
                 server,
                 &caster_network_ids,
                 request.caster,
@@ -150,6 +155,7 @@ pub fn process_cast_requests(
                     &mut heal_events,
                     &mut stat_modifier_events,
                     &mut visual_sender,
+                    &mut local_visuals,
                     server,
                 );
 
@@ -160,9 +166,15 @@ pub fn process_cast_requests(
                 }
             }
             CastKind::CastTime | CastKind::Channeling => {
-                // Spawn del CastProgress. Nessun effetto qui; advance_cast_progress
-                // decide quando lanciare la spell in base al kind.
-                let tick_interval = spell.channel_tick_interval_seconds();
+                // Channeling starts armed so the first server tick applies the
+                // effect immediately. Without this, short presses feel like F
+                // does nothing and prediction lags behind the authoritative buff.
+                let tick_interval_seconds = spell.channel_tick_interval_seconds();
+                let channel_tick_accumulator_seconds = match cast_kind {
+                    CastKind::Channeling => tick_interval_seconds,
+                    _ => 0.0,
+                };
+
                 commands.entity(request.caster).insert(CastProgress {
                     spell_id: request.spell_id.clone(),
                     kind: cast_kind,
@@ -172,8 +184,8 @@ pub fn process_cast_requests(
                     last_position: caster_position,
                     target_position: request.target_position,
                     target_entity: request.target_entity,
-                    channel_tick_accumulator_seconds: 0.0,
-                    tick_interval_seconds: tick_interval,
+                    channel_tick_accumulator_seconds,
+                    tick_interval_seconds,
                 });
             }
         }
@@ -192,6 +204,7 @@ fn apply_spell_effects(
     heal_events: &mut MessageWriter<HealEvent>,
     stat_modifier_events: &mut MessageWriter<ApplyStatModifierEvent>,
     visual_sender: &mut ServerMultiMessageSender,
+    local_visuals: &mut MessageWriter<SpellVisualEffect>,
     server: &lightyear::prelude::server::Server,
 ) {
     for damage_event in ctx.pending_damage.drain(..) {
@@ -210,7 +223,7 @@ fn apply_spell_effects(
         stat_modifier_events.write(modifier);
     }
     for visual in ctx.pending_visuals.drain(..) {
-        send_spell_visual(visual_sender, server, visual);
+        send_spell_visual(visual_sender, local_visuals, server, visual);
     }
 }
 
@@ -235,6 +248,8 @@ pub fn advance_cast_progress(
     mut heal_events: MessageWriter<HealEvent>,
     mut stat_modifier_events: MessageWriter<ApplyStatModifierEvent>,
     mut visual_sender: ServerMultiMessageSender,
+    mut local_visuals: MessageWriter<SpellVisualEffect>,
+    mut local_cast_ended: MessageWriter<SpellCastEnded>,
     server: Single<&lightyear::prelude::server::Server>,
 ) {
     let server = server.into_inner();
@@ -287,6 +302,7 @@ pub fn advance_cast_progress(
                         &mut heal_events,
                         &mut stat_modifier_events,
                         &mut visual_sender,
+                        &mut local_visuals,
                         server,
                     );
                     if let Some(end_data) = end_data {
@@ -316,6 +332,7 @@ pub fn advance_cast_progress(
                         &mut heal_events,
                         &mut stat_modifier_events,
                         &mut visual_sender,
+                        &mut local_visuals,
                         server,
                     );
                 }
@@ -332,6 +349,7 @@ pub fn advance_cast_progress(
         commands.entity(caster_entity).remove::<CastProgress>();
         emit_cast_ended(
             &mut visual_sender,
+            &mut local_cast_ended,
             server,
             &caster_network_ids,
             caster_entity,
@@ -364,6 +382,7 @@ fn fire_spell(
     heal_events: &mut MessageWriter<HealEvent>,
     stat_modifier_events: &mut MessageWriter<ApplyStatModifierEvent>,
     visual_sender: &mut ServerMultiMessageSender,
+    local_visuals: &mut MessageWriter<SpellVisualEffect>,
     server: &lightyear::prelude::server::Server,
 ) -> Option<FireResult> {
     let spell = registry.get(&spell_id)?;
@@ -401,6 +420,7 @@ fn fire_spell(
         heal_events,
         stat_modifier_events,
         visual_sender,
+        local_visuals,
         server,
     );
 
@@ -421,6 +441,7 @@ pub fn handle_cast_release(
     registry: Res<SpellRegistry>,
     mut cooldowns_query: Query<&mut SpellCooldowns>,
     mut visual_sender: ServerMultiMessageSender,
+    mut local_cast_ended: MessageWriter<SpellCastEnded>,
     server: Single<&lightyear::prelude::server::Server>,
 ) {
     let server = server.into_inner();
@@ -451,6 +472,7 @@ pub fn handle_cast_release(
         commands.entity(caster_entity).remove::<CastProgress>();
         emit_cast_ended(
             &mut visual_sender,
+            &mut local_cast_ended,
             server,
             &caster_network_ids,
             caster_entity,
@@ -460,13 +482,22 @@ pub fn handle_cast_release(
     }
 }
 
-/// Replica lo stato dei cast in corso a tutti i client ogni tick.
+/// Replica periodicamente lo stato dei cast in corso a tutti i client.
 /// I client usano questi snapshot per aggiornare la barra world-space.
 pub fn replicate_cast_progress(
+    time: Res<Time>,
+    mut elapsed_since_last_send: Local<f32>,
     casters: Query<(&CastProgress, &NetworkEntityId), With<Player>>,
     mut sender: ServerMultiMessageSender,
+    mut local_progress: MessageWriter<SpellCastProgress>,
     server: Single<&lightyear::prelude::server::Server>,
 ) {
+    *elapsed_since_last_send += time.delta_secs();
+    if *elapsed_since_last_send < CAST_PROGRESS_REPLICATION_INTERVAL_SECONDS {
+        return;
+    }
+    *elapsed_since_last_send = 0.0;
+
     let server = server.into_inner();
     for (cast, network_id) in casters.iter() {
         let kind_byte = match cast.kind {
@@ -485,6 +516,7 @@ pub fn replicate_cast_progress(
             elapsed_seconds: cast.elapsed_seconds,
             required_seconds: required,
         };
+        local_progress.write(progress.clone());
         if let Err(error) =
             sender.send::<SpellCastProgress, Channel1>(&progress, server, &NetworkTarget::All)
         {
@@ -495,9 +527,11 @@ pub fn replicate_cast_progress(
 
 fn send_spell_visual(
     sender: &mut ServerMultiMessageSender,
+    local_visuals: &mut MessageWriter<SpellVisualEffect>,
     server: &lightyear::prelude::server::Server,
     visual: SpellVisualEffect,
 ) {
+    local_visuals.write(visual.clone());
     if let Err(error) =
         sender.send::<SpellVisualEffect, Channel1>(&visual, server, &NetworkTarget::All)
     {
@@ -507,6 +541,7 @@ fn send_spell_visual(
 
 fn emit_cast_ended(
     sender: &mut ServerMultiMessageSender,
+    local_cast_ended: &mut MessageWriter<SpellCastEnded>,
     server: &lightyear::prelude::server::Server,
     caster_network_ids: &Query<&NetworkEntityId>,
     caster: Entity,
@@ -521,6 +556,7 @@ fn emit_cast_ended(
         spell_id: spell_id.as_str().to_string(),
         completed,
     };
+    local_cast_ended.write(message.clone());
     if let Err(error) =
         sender.send::<SpellCastEnded, Channel1>(&message, server, &NetworkTarget::All)
     {

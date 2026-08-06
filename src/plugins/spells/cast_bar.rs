@@ -68,6 +68,7 @@ fn not_in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
 fn read_cast_progress(
     time: Res<Time>,
     mut observed: ResMut<ObservedCasts>,
+    mut local_messages: MessageReader<SpellCastProgress>,
     mut receivers: Query<&mut MessageReceiver<SpellCastProgress>, With<ConnectedClient>>,
 ) {
     let delta = time.delta_secs();
@@ -81,32 +82,55 @@ fn read_cast_progress(
         .0
         .retain(|_, entry| entry.since_update_seconds < entry.stale_after_seconds);
 
+    for message in local_messages.read() {
+        observe_cast_progress(&mut observed, message);
+    }
+
     for mut receiver in receivers.iter_mut() {
         for message in receiver.receive() {
-            observed.0.insert(
-                message.caster_network_id,
-                ObservedCast {
-                    spell_id: message.spell_id.clone(),
-                    kind: message.kind,
-                    elapsed_seconds: message.elapsed_seconds,
-                    required_seconds: message.required_seconds,
-                    since_update_seconds: 0.0,
-                    stale_after_seconds: 1.0,
-                },
-            );
+            observe_cast_progress(&mut observed, &message);
         }
     }
 }
 
 fn read_cast_ended(
     mut observed: ResMut<ObservedCasts>,
+    mut local_messages: MessageReader<SpellCastEnded>,
     mut receivers: Query<&mut MessageReceiver<SpellCastEnded>, With<ConnectedClient>>,
 ) {
+    for message in local_messages.read() {
+        observed.0.remove(&message.caster_network_id);
+    }
+
     for mut receiver in receivers.iter_mut() {
         for message in receiver.receive() {
             observed.0.remove(&message.caster_network_id);
         }
     }
+}
+
+/// Stores authoritative cast snapshots from either local host-client messages or network receivers.
+///
+/// Keeping both sources behind the same helper prevents host-client mode from
+/// depending on a loopback network delivery path while preserving normal
+/// dedicated client/server behavior.
+///
+/// # Example
+/// ```rust,ignore
+/// observe_cast_progress(&mut observed_casts, &progress_message);
+/// ```
+fn observe_cast_progress(observed: &mut ObservedCasts, message: &SpellCastProgress) {
+    observed.0.insert(
+        message.caster_network_id,
+        ObservedCast {
+            spell_id: message.spell_id.clone(),
+            kind: message.kind,
+            elapsed_seconds: message.elapsed_seconds,
+            required_seconds: message.required_seconds,
+            since_update_seconds: 0.0,
+            stale_after_seconds: 1.0,
+        },
+    );
 }
 
 /// Sincronizza le entità UI `WorldCastBar` con lo stato osservato: spawn,

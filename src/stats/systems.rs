@@ -9,7 +9,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::stats::components::{CombatStats, VitalStats};
 use crate::stats::events::{ApplyStatModifierEvent, DamageEvent, HealEvent, ModifierOp, StatField};
 use crate::stats::formulas::damage_after_armor;
-use crate::stats::modifiers::{ActiveStatModifiers, ModifierId, StatModifierInstance};
+use crate::stats::modifiers::{
+    ActiveStatModifiers, ModifierEffectInstance, ModifierId, StatModifierInstance,
+};
 
 static NEXT_MODIFIER_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -48,27 +50,31 @@ pub fn apply_stat_modifiers(
         let mut effect_instances = Vec::new();
         for effect in &event.effects {
             let instance = match effect {
-                crate::stats::events::ModifierEffect::Stat { field, operation, value } => {
-                    crate::stats::modifiers::ModifierEffectInstance::Stat {
-                        field: *field,
-                        operation: *operation,
-                        value: *value,
-                    }
-                }
-                crate::stats::events::ModifierEffect::HealOverTime { amount_per_tick, tick_interval } => {
-                    crate::stats::modifiers::ModifierEffectInstance::HealOverTime {
-                        amount_per_tick: *amount_per_tick,
-                        tick_interval: *tick_interval,
-                        time_since_last_tick: 0.0,
-                    }
-                }
-                crate::stats::events::ModifierEffect::DamageOverTime { amount_per_tick, tick_interval } => {
-                    crate::stats::modifiers::ModifierEffectInstance::DamageOverTime {
-                        amount_per_tick: *amount_per_tick,
-                        tick_interval: *tick_interval,
-                        time_since_last_tick: 0.0,
-                    }
-                }
+                crate::stats::events::ModifierEffect::Stat {
+                    field,
+                    operation,
+                    value,
+                } => crate::stats::modifiers::ModifierEffectInstance::Stat {
+                    field: *field,
+                    operation: *operation,
+                    value: *value,
+                },
+                crate::stats::events::ModifierEffect::HealOverTime {
+                    amount_per_tick,
+                    tick_interval,
+                } => crate::stats::modifiers::ModifierEffectInstance::HealOverTime {
+                    amount_per_tick: *amount_per_tick,
+                    tick_interval: *tick_interval,
+                    time_since_last_tick: 0.0,
+                },
+                crate::stats::events::ModifierEffect::DamageOverTime {
+                    amount_per_tick,
+                    tick_interval,
+                } => crate::stats::modifiers::ModifierEffectInstance::DamageOverTime {
+                    amount_per_tick: *amount_per_tick,
+                    tick_interval: *tick_interval,
+                    time_since_last_tick: 0.0,
+                },
             };
             effect_instances.push(instance);
         }
@@ -82,8 +88,7 @@ pub fn apply_stat_modifiers(
         };
 
         match targets.get_mut(event.target) {
-            Ok(mut active) => active.modifiers.push(instance),
-            // L'entità non ha ancora `ActiveStatModifiers`: inseriscilo e riprova.
+            Ok(mut active) => refresh_or_insert_modifier(&mut active, instance),
             _ => {
                 commands.entity(event.target).insert(ActiveStatModifiers {
                     modifiers: vec![instance],
@@ -91,6 +96,127 @@ pub fn apply_stat_modifiers(
             }
         }
     }
+}
+
+/// Keeps repeating buffs stable without stacking identical timed effects.
+///
+/// Channeling spells refresh their modifier frequently. Reusing an existing
+/// modifier avoids multiplicative speed explosions and reduces the number of
+/// active modifiers that movement must scan every tick.
+///
+/// # Example
+/// ```rust,ignore
+/// refresh_or_insert_modifier(&mut active_modifiers, swift_modifier);
+/// ```
+fn refresh_or_insert_modifier(active: &mut ActiveStatModifiers, instance: StatModifierInstance) {
+    let Some(existing) = active
+        .modifiers
+        .iter_mut()
+        .find(|modifier| has_same_modifier_signature(modifier, &instance))
+    else {
+        active.modifiers.push(instance);
+        return;
+    };
+
+    existing.remaining_seconds = instance.remaining_seconds;
+}
+
+/// Compares the gameplay identity of two modifiers while ignoring runtime-only
+/// timer state.
+///
+/// HoT/DoT effects keep per-instance tick accumulators, so equality cannot be
+/// used directly when deciding whether an incoming modifier should refresh an
+/// existing one.
+///
+/// # Example
+/// ```rust,ignore
+/// assert!(has_same_modifier_signature(&old_swift, &new_swift));
+/// ```
+fn has_same_modifier_signature(left: &StatModifierInstance, right: &StatModifierInstance) -> bool {
+    left.source == right.source
+        && left.kind == right.kind
+        && left.effects.len() == right.effects.len()
+        && left
+            .effects
+            .iter()
+            .zip(right.effects.iter())
+            .all(|(left_effect, right_effect)| has_same_effect_signature(left_effect, right_effect))
+}
+
+/// Matches modifier effects by stat field and magnitude, excluding mutable tick
+/// accumulators used by periodic effects.
+///
+/// # Example
+/// ```rust,ignore
+/// assert!(has_same_effect_signature(&left_effect, &right_effect));
+/// ```
+fn has_same_effect_signature(
+    left: &ModifierEffectInstance,
+    right: &ModifierEffectInstance,
+) -> bool {
+    match (left, right) {
+        (
+            ModifierEffectInstance::Stat {
+                field: left_field,
+                operation: left_operation,
+                value: left_value,
+            },
+            ModifierEffectInstance::Stat {
+                field: right_field,
+                operation: right_operation,
+                value: right_value,
+            },
+        ) => {
+            left_field == right_field
+                && left_operation == right_operation
+                && are_modifier_values_equal(*left_value, *right_value)
+        }
+        (
+            ModifierEffectInstance::HealOverTime {
+                amount_per_tick: left_amount,
+                tick_interval: left_interval,
+                time_since_last_tick: _,
+            },
+            ModifierEffectInstance::HealOverTime {
+                amount_per_tick: right_amount,
+                tick_interval: right_interval,
+                time_since_last_tick: _,
+            },
+        ) => {
+            are_modifier_values_equal(*left_amount, *right_amount)
+                && are_modifier_values_equal(*left_interval, *right_interval)
+        }
+        (
+            ModifierEffectInstance::DamageOverTime {
+                amount_per_tick: left_amount,
+                tick_interval: left_interval,
+                time_since_last_tick: _,
+            },
+            ModifierEffectInstance::DamageOverTime {
+                amount_per_tick: right_amount,
+                tick_interval: right_interval,
+                time_since_last_tick: _,
+            },
+        ) => {
+            are_modifier_values_equal(*left_amount, *right_amount)
+                && are_modifier_values_equal(*left_interval, *right_interval)
+        }
+        _ => false,
+    }
+}
+
+/// Compares gameplay tuning floats with a tiny tolerance to avoid direct float equality.
+///
+/// Modifier values are constants authored by gameplay code, but using a small
+/// epsilon keeps the signature matcher robust if values are later loaded from
+/// config or persistence.
+///
+/// # Example
+/// ```rust,ignore
+/// assert!(are_modifier_values_equal(1.2, 1.2));
+/// ```
+fn are_modifier_values_equal(left: f32, right: f32) -> bool {
+    (left - right).abs() <= f32::EPSILON
 }
 
 /// Decrementa la durata dei modifier attivi e rimuove quelli scaduti.

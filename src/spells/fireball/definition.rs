@@ -1,11 +1,10 @@
 //! Fireball spell implementation.
 //!
-//! Spell ranged ad area: colpisce i target vicini al punto scelto dal client.
-//! La simulazione resta server-authoritative: il client invia solo un comando
-//! intenzionale (`SpellCastCommand`), mentre il server valida spellbook/cooldown
-//! ed emette `DamageEvent`.
+//! Spell frontale server-authoritative: parte dal caster, usa la direzione in
+//! cui il caster sta guardando e colpisce la prima entità viva davanti entro
+//! range. Il client invia solo l'intenzione di cast, non decide il target.
 
-use bevy::math::Vec3;
+use bevy::prelude::{Entity, Vec3};
 
 use crate::plugins::spells::{Spell, SpellCastContext, SpellConfig, SpellId};
 
@@ -17,25 +16,57 @@ impl FireballSpell {
     pub const DISPLAY_NAME: &'static str = "Fireball";
     pub const COOLDOWN_SECONDS: f32 = 1.2;
     pub const CAST_RANGE: f32 = 8.0;
-    pub const AREA_RADIUS: f32 = 1.5;
+    pub const HIT_RADIUS: f32 = 1.0;
     pub const DAMAGE_MULTIPLIER: f32 = 1.4;
 
-    pub fn fallback_target(caster_position: Vec3) -> Vec3 {
-        caster_position + Vec3::Z * Self::CAST_RANGE
-    }
-
-    pub fn clamp_target_to_range(caster_position: Vec3, target_position: Vec3) -> Vec3 {
-        let offset = target_position - caster_position;
-        let distance = offset.length();
-        if distance <= Self::CAST_RANGE || distance <= f32::EPSILON {
-            target_position
+    fn normalized_flat_direction(direction: Vec3) -> Vec3 {
+        let flat = Vec3::new(direction.x, 0.0, direction.z);
+        if flat.length_squared() > 0.001 {
+            flat.normalize_or_zero()
         } else {
-            caster_position + offset / distance * Self::CAST_RANGE
+            Vec3::Z
         }
     }
 
-    pub fn is_in_blast_radius(center: Vec3, target: Vec3, radius: f32) -> bool {
-        center.distance_squared(target) <= radius.max(0.0).powi(2)
+    /// Trova il primo target lungo una linea di tiro frontale.
+    pub fn first_target_in_front(
+        caster: Entity,
+        caster_position: Vec3,
+        look_direction: Vec3,
+        potential_targets: &[(Entity, Vec3)],
+        max_range: f32,
+        hit_radius: f32,
+    ) -> Option<(Entity, Vec3, f32)> {
+        let direction = Self::normalized_flat_direction(look_direction);
+        let mut closest_hit: Option<(Entity, Vec3, f32)> = None;
+
+        for (target, position) in potential_targets.iter().copied() {
+            if target == caster {
+                continue;
+            }
+
+            let to_target = position - caster_position;
+            let forward_distance = to_target.dot(direction);
+            if forward_distance <= 0.0 || forward_distance > max_range {
+                continue;
+            }
+
+            let closest_point_on_line = caster_position + direction * forward_distance;
+            let lateral_distance = position.distance(closest_point_on_line);
+            if lateral_distance > hit_radius {
+                continue;
+            }
+
+            match closest_hit {
+                None => closest_hit = Some((target, position, forward_distance)),
+                Some((_, _, current_distance)) if forward_distance < current_distance => {
+                    closest_hit = Some((target, position, forward_distance));
+                }
+                _ => {}
+            }
+        }
+
+        closest_hit
     }
 }
 
@@ -49,24 +80,29 @@ impl Spell for FireballSpell {
     }
 
     fn config(&self) -> SpellConfig {
-        SpellConfig::ranged_aoe(Self::COOLDOWN_SECONDS, Self::CAST_RANGE, Self::AREA_RADIUS)
+        SpellConfig::ranged_single_target(Self::COOLDOWN_SECONDS, Self::CAST_RANGE)
     }
 
     fn cast(&self, ctx: &mut SpellCastContext) {
-        let requested_center = ctx
-            .target_position
-            .unwrap_or_else(|| Self::fallback_target(ctx.caster_position));
-        let center = Self::clamp_target_to_range(ctx.caster_position, requested_center);
+        let direction = Self::normalized_flat_direction(ctx.caster_look_direction);
+        let fallback_end = ctx.caster_position + direction * Self::CAST_RANGE;
         let damage = ctx.caster_combat.attack_power * Self::DAMAGE_MULTIPLIER;
 
-        for (target, position) in ctx.potential_targets.iter().copied() {
-            if target == ctx.caster {
-                continue;
-            }
-            if Self::is_in_blast_radius(center, position, Self::AREA_RADIUS) {
-                ctx.emit_damage(target, damage);
-            }
-        }
+        let end = if let Some((target, hit_position, _)) = Self::first_target_in_front(
+            ctx.caster,
+            ctx.caster_position,
+            direction,
+            ctx.potential_targets,
+            Self::CAST_RANGE,
+            Self::HIT_RADIUS,
+        ) {
+            ctx.emit_damage(target, damage);
+            hit_position
+        } else {
+            fallback_end
+        };
+
+        ctx.emit_visual(Self::ID, ctx.caster_position, end);
     }
 }
 
@@ -75,32 +111,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn blast_radius_includes_boundary_and_excludes_outside() {
-        let center = Vec3::ZERO;
-        assert!(FireballSpell::is_in_blast_radius(
-            center,
-            Vec3::new(1.5, 0.0, 0.0),
-            1.5
-        ));
-        assert!(!FireballSpell::is_in_blast_radius(
-            center,
-            Vec3::new(1.51, 0.0, 0.0),
-            1.5
-        ));
+    fn first_target_in_front_selects_closest_target_on_line() {
+        let caster = Entity::from_bits(1);
+        let near = Entity::from_bits(2);
+        let far = Entity::from_bits(3);
+        let targets = [
+            (far, Vec3::new(0.0, 0.0, 6.0)),
+            (near, Vec3::new(0.0, 0.0, 3.0)),
+        ];
+
+        let hit = FireballSpell::first_target_in_front(
+            caster,
+            Vec3::ZERO,
+            Vec3::Z,
+            &targets,
+            FireballSpell::CAST_RANGE,
+            FireballSpell::HIT_RADIUS,
+        );
+
+        assert_eq!(hit.map(|(entity, _, _)| entity), Some(near));
     }
 
     #[test]
-    fn target_is_clamped_to_cast_range() {
-        let caster = Vec3::ZERO;
-        let target = Vec3::new(0.0, 0.0, 20.0);
-        let clamped = FireballSpell::clamp_target_to_range(caster, target);
-        assert_eq!(clamped, Vec3::new(0.0, 0.0, FireballSpell::CAST_RANGE));
-    }
+    fn first_target_in_front_ignores_targets_behind_or_too_far_lateral() {
+        let caster = Entity::from_bits(1);
+        let behind = Entity::from_bits(2);
+        let side = Entity::from_bits(3);
+        let targets = [
+            (behind, Vec3::new(0.0, 0.0, -2.0)),
+            (side, Vec3::new(2.5, 0.0, 3.0)),
+        ];
 
-    #[test]
-    fn target_inside_range_is_preserved() {
-        let caster = Vec3::ZERO;
-        let target = Vec3::new(0.0, 0.0, 4.0);
-        assert_eq!(FireballSpell::clamp_target_to_range(caster, target), target);
+        let hit = FireballSpell::first_target_in_front(
+            caster,
+            Vec3::ZERO,
+            Vec3::Z,
+            &targets,
+            FireballSpell::CAST_RANGE,
+            FireballSpell::HIT_RADIUS,
+        );
+
+        assert!(hit.is_none());
     }
 }

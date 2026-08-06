@@ -6,6 +6,7 @@
 use bevy::ecs::entity::Entity;
 use bevy::math::Vec3;
 
+use crate::network::protocol::SpellVisualEffect;
 use crate::stats::components::CombatStats;
 use crate::stats::events::{DamageEvent, HealEvent};
 
@@ -86,6 +87,8 @@ pub struct SpellCastContext<'a> {
     pub caster_position: Vec3,
     /// The combat stats of the caster (for damage calculations).
     pub caster_combat: &'a CombatStats,
+    /// Horizontal direction the caster is facing, resolved server-side.
+    pub caster_look_direction: Vec3,
     /// The optional target position for the spell.
     pub target_position: Option<Vec3>,
     /// The optional target entity for homing/projectile spells.
@@ -101,6 +104,8 @@ pub struct SpellCastContext<'a> {
     pub pending_healing: Vec<HealEvent>,
     /// Pending projectile spawn requests.
     pub pending_projectiles: Vec<ProjectileSpawnRequest>,
+    /// Pending replicated visual effects to broadcast to clients after validation.
+    pub pending_visuals: Vec<SpellVisualEffect>,
 }
 
 impl<'a> SpellCastContext<'a> {
@@ -109,6 +114,7 @@ impl<'a> SpellCastContext<'a> {
         caster: Entity,
         caster_position: Vec3,
         caster_combat: &'a CombatStats,
+        caster_look_direction: Vec3,
         target_position: Option<Vec3>,
         target_entity: Option<Entity>,
         potential_targets: &'a [(Entity, Vec3)],
@@ -117,12 +123,14 @@ impl<'a> SpellCastContext<'a> {
             caster,
             caster_position,
             caster_combat,
+            caster_look_direction,
             target_position,
             target_entity,
             potential_targets,
             pending_damage: Vec::new(),
             pending_healing: Vec::new(),
             pending_projectiles: Vec::new(),
+            pending_visuals: Vec::new(),
         }
     }
 
@@ -151,6 +159,15 @@ impl<'a> SpellCastContext<'a> {
             speed,
             damage,
             hit_radius,
+        });
+    }
+
+    /// Emit a replicated visual effect after a successful server-side cast.
+    pub fn emit_visual(&mut self, spell_id: impl Into<String>, start: Vec3, end: Vec3) {
+        self.pending_visuals.push(SpellVisualEffect {
+            spell_id: spell_id.into(),
+            start,
+            end,
         });
     }
 

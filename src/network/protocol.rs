@@ -44,6 +44,20 @@ impl Default for LookDirection {
 #[derive(Component, Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct EntityColor(pub bevy::prelude::Color);
 
+/// Identificatore gameplay stabile assegnato dal server alle entità replicate.
+///
+/// A differenza di `Entity`, questo valore può essere inviato dal client al
+/// server per riferirsi allo stesso target selezionato.
+#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
+pub struct NetworkEntityId(pub u64);
+
+/// Marker visuale replicato per distinguere i projectile spell dalle entità
+/// gameplay renderizzate con mesh generica.
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ProjectileVisual {
+    pub spell_id: String,
+}
+
 // Comandi di input
 /// Comando punta-e-clicca inviato dal client al server.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Reflect)]
@@ -78,7 +92,7 @@ pub struct JoinRequest {
 pub struct SpellCastCommand {
     pub spell_id: String,
     pub target_position: Option<Vec3>,
-    pub target_entity: Option<Entity>,
+    pub target_id: Option<u64>,
 }
 
 /// Messaggio server -> client per replicare un effetto visivo spell.
@@ -117,6 +131,9 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<SpellCastCommand>()
             .add_direction(NetworkDirection::ClientToServer);
 
+        app.register_message::<SpellVisualEffect>()
+            .add_direction(NetworkDirection::ServerToClient);
+
         // Comandi di input
         app.add_plugins(input::native::InputPlugin::<Inputs>::default());
 
@@ -129,6 +146,10 @@ impl Plugin for ProtocolPlugin {
             .add_linear_interpolation();
 
         app.component::<EntityColor>().replicate();
+
+        app.component::<NetworkEntityId>().replicate();
+
+        app.component::<ProjectileVisual>().replicate();
 
         app.component::<LookDirection>().replicate().predict();
 

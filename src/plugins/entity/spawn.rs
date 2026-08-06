@@ -3,12 +3,19 @@
 use bevy::ecs::entity::Entity;
 use bevy::prelude::*;
 use lightyear::prelude::{NetworkTarget, Replicate};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::network::protocol::{EntityColor, LookDirection, Position};
+use crate::network::protocol::{EntityColor, LookDirection, NetworkEntityId, Position};
 
 use super::components::{EntityKind, EntityState, GameEntity};
 use super::definition::EntityDefinition;
 use crate::stats::components::{CombatStats, MovementStats, VitalStats};
+
+static NEXT_NETWORK_ENTITY_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_network_entity_id() -> NetworkEntityId {
+    NetworkEntityId(NEXT_NETWORK_ENTITY_ID.fetch_add(1, Ordering::Relaxed))
+}
 
 /// Stato comune di un'entità di gameplay replicata.
 ///
@@ -24,6 +31,7 @@ pub struct GameEntityBundle {
     position: Position,
     look_direction: LookDirection,
     color: EntityColor,
+    network_entity_id: NetworkEntityId,
     entity_kind: EntityKind,
     replicate: Replicate,
 }
@@ -46,6 +54,7 @@ impl GameEntityBundle {
             position,
             look_direction: LookDirection::default(),
             color,
+            network_entity_id: next_network_entity_id(),
             entity_kind,
             replicate: Replicate::to_clients(replication_target),
         }
@@ -111,6 +120,7 @@ mod tests {
         assert!(entity_ref.contains::<Position>());
         assert!(entity_ref.contains::<LookDirection>());
         assert!(entity_ref.contains::<EntityColor>());
+        assert!(entity_ref.contains::<NetworkEntityId>());
         assert!(entity_ref.contains::<EntityKind>());
         assert!(entity_ref.contains::<Replicate>());
     }

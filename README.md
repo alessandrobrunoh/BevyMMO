@@ -61,25 +61,22 @@ The default `game` binary is a combined build that can run as a client, a dedica
 
 ```text
 .
+├── bins/
+│   └── game/               # Composition root CLI binary
 ├── config/                 # Runtime configuration files
 │   ├── default.toml         # Shared defaults
 │   ├── development.toml     # Development environment overrides
 │   ├── production.toml      # Production environment overrides
 │   └── local.toml.example   # Template for gitignored local overrides
+├── crates/
+│   ├── client/             # Client-only input, targeting, movement logic
+│   ├── editor/             # Editor-mode plugin placeholder
+│   ├── presentation/       # Visual presentation, rendering, UI widgets, scenes
+│   ├── server/             # Authoritative simulation, persistence, migrations
+│   └── shared/             # Shared entities, protocol, settings, state
 ├── docs/                   # Architecture and contributor documentation
 ├── plans/                  # Design notes and feature/refactor plans
-├── src/
-│   ├── game_state.rs       # Shared application state plugin
-│   ├── main.rs             # CLI parsing, mode resolution, app bootstrap
-│   ├── migrations/         # SeaORM migrations applied at startup
-│   ├── network/            # Lightyear client/server/protocol/mode code
-│   ├── plugins/            # Gameplay, presentation, UI-adjacent plugins
-│   ├── scenes/             # Client-only world/camera/lighting setup
-│   ├── settings.rs         # Layered configuration loader
-│   ├── spells/             # Spell domain model and identifiers
-│   ├── stats/              # Stats domain model and plugin
-│   └── ui/                 # Client-only UI systems and widgets
-├── Cargo.toml
+├── Cargo.toml              # Workspace root Cargo manifest
 ├── docker-compose.yml
 ├── Dockerfile
 └── LICENSE
@@ -283,7 +280,7 @@ docker compose up -d postgres
 
 ### Migrations
 
-Migrations live in `src/migrations/` and are applied automatically when the server starts. There is no manual SeaORM CLI step required for existing migrations.
+Migrations live in `crates/server/src/migrations/` and are applied automatically when the server starts. There is no manual SeaORM CLI step required for existing migrations.
 
 Current migration responsibilities include:
 
@@ -368,7 +365,7 @@ The application is built from Bevy plugins. Each plugin owns one observable capa
 
 ```mermaid
 flowchart TD
-    CLI[CLI mode] --> Bootstrap[main.rs bootstrap]
+    CLI[CLI mode] --> Bootstrap[bins/game main.rs bootstrap]
     Bootstrap --> AppMode[AppMode]
     AppMode --> Network[Network plugins]
     AppMode --> Gameplay[Gameplay plugins]
@@ -413,7 +410,7 @@ This separation keeps simulation state portable and avoids coupling authoritativ
 
 ## Controls
 
-Default controls are defined in `src/plugins/key_mapping.rs` and related input systems.
+Default controls are defined in `crates/client/src/input/key_mapping.rs` and related input systems.
 
 | Input | Action |
 | --- | --- |
@@ -430,10 +427,10 @@ Default controls are defined in `src/plugins/key_mapping.rs` and related input s
 
 ## Adding Gameplay Content
 
-Gameplay entities are organized under `src/plugins/entity/`. A typical entity plugin contains:
+Gameplay entities are organized under `crates/shared/src/entity/`. A typical entity module contains:
 
 ```text
-src/plugins/entity/<name>/
+crates/shared/src/entity/<name>/
 ├── mod.rs
 ├── components.rs
 ├── spawn.rs
@@ -446,7 +443,7 @@ To add a replicated entity:
 2. Define a marker component.
 3. Implement `EntityDefinition`.
 4. Register systems in the entity plugin.
-5. Register the plugin in `src/plugins/entity/mod.rs`.
+5. Register the plugin in `crates/shared/src/entity/mod.rs`.
 6. Spawn it through the shared entity spawn helpers where appropriate.
 
 See [`docs/create-a-new-plugin.md`](docs/create-a-new-plugin.md) for the detailed guide.

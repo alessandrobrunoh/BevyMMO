@@ -19,16 +19,34 @@ WORKDIR /build
 # if source code changes but Cargo.toml/lock remain identical,
 # this stage is served from cache without recompiling dependencies.
 COPY Cargo.toml Cargo.lock ./
+COPY bins/game/Cargo.toml ./bins/game/Cargo.toml
+COPY crates/shared/Cargo.toml ./crates/shared/Cargo.toml
+COPY crates/server/Cargo.toml ./crates/server/Cargo.toml
+COPY crates/client/Cargo.toml ./crates/client/Cargo.toml
+COPY crates/presentation/Cargo.toml ./crates/presentation/Cargo.toml
+COPY crates/editor/Cargo.toml ./crates/editor/Cargo.toml
 
-# Create a stub main.rs so cargo can compile dependencies in isolation
-RUN mkdir src && echo 'fn main() {}' > src/main.rs
+# Create stub sources for every workspace member so cargo can resolve the
+# workspace graph and compile dependencies in isolation.
+RUN mkdir -p bins/game/src \
+        crates/shared/src \
+        crates/server/src \
+        crates/client/src \
+        crates/presentation/src \
+        crates/editor/src \
+    && echo 'fn main() {}' > bins/game/src/main.rs \
+    && touch crates/shared/src/lib.rs \
+    && touch crates/server/src/lib.rs \
+    && touch crates/client/src/lib.rs \
+    && touch crates/presentation/src/lib.rs \
+    && touch crates/editor/src/lib.rs
 
 # Compile only dependencies in server mode (no client, no UI, no renderer)
 RUN cargo build --release \
     --no-default-features \
     --features server,netcode,udp,replication \
     --bin game \
-    && rm -rf src
+    && rm -rf bins/game/src crates
 
 # =============================================================================
 # Stage 2 — Builder
@@ -36,8 +54,9 @@ RUN cargo build --release \
 # =============================================================================
 FROM deps AS builder
 
-# Copy real source
-COPY src ./src
+# Copy real source for every workspace member
+COPY bins/game/src ./bins/game/src
+COPY crates ./crates
 
 # Copy configuration files: required at compile time
 # (`include_str!("../config/default.toml")` in `settings.rs`) and at runtime
@@ -45,7 +64,7 @@ COPY src ./src
 COPY config ./config
 
 # Invalidate timestamp of stub binary to force bin recompilation
-RUN touch src/main.rs
+RUN touch bins/game/src/main.rs
 
 # Final release build — server mode only
 RUN cargo build --release \

@@ -13,6 +13,7 @@ pub mod entity;
 pub mod game_state;
 pub mod movement;
 pub mod network;
+pub mod paths;
 pub mod settings;
 pub mod spells;
 pub mod spells_impl;

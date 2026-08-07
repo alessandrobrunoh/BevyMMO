@@ -1,11 +1,45 @@
-//! Mouse picking: ground raycast (for placement) and entity raycast (for selection).
+//! Mouse picking: ground raycast (placement) and OBB raycast (selection).
+//!
+//! The editor intentionally uses its own lightweight raycasts instead of the
+//! built-in mesh picking: it needs to treat the terrain as a normal pickable
+//! body, ignore gizmo handles, and distinguish "clicked empty space".
 
+use bevy::gizmos::transform_gizmo::TransformGizmoState;
 use bevy::input::mouse::{MouseButton, MouseButtonInput};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevymmo_shared::world::TransformData;
+use bevymmo_shared::world::{Prop, TransformData};
 
-use crate::state::{EditorProp, EditorState, EditorTool, SelectedMarker};
+use crate::camera::EditorCamera;
+use crate::ground::spawn_terrain_entity;
+use crate::state::{
+    quat_from_rotation_deg, EditorProp, EditorState, EditorTerrain, EditorTool, SelectedMarker,
+};
+
+/// Palette kinds shown in the left panel.
+pub const PALETTE_KINDS: &[&str] = &[
+    "cube",
+    "crate_01",
+    "bush_01",
+    "tree_oak",
+    "rock_01",
+    "rock_02",
+    "fence_01",
+    "lamp_01",
+    "statue_01",
+    "house_simple",
+];
+
+/// A body that can be clicked in the editor: a prop or the terrain cube.
+/// `half` is the half-extent of the *rendered* mesh (props render a 2x2x2
+/// cuboid, terrain a unit cuboid).
+#[derive(Clone, Copy)]
+struct PickBody {
+    entity: Entity,
+    center: Vec3,
+    rotation: Quat,
+    half: Vec3,
+}
 
 /// Raycasts the ground plane (y = 0) from the editor camera through the mouse
 /// position. Returns the world-space hit point or None if the ray misses.
@@ -14,7 +48,9 @@ fn ground_raycast(
     camera_transform: &GlobalTransform,
     cursor_pos: Vec2,
 ) -> Option<Vec3> {
-    let ray = camera.viewport_to_world(camera_transform, cursor_pos).ok()?;
+    let ray = camera
+        .viewport_to_world(camera_transform, cursor_pos)
+        .ok()?;
     let dir = ray.direction;
     if dir.y.abs() < 1e-6 {
         return None;
@@ -66,43 +102,90 @@ fn ray_aabb(origin: Vec3, dir: Vec3, min: Vec3, max: Vec3) -> Option<f32> {
     }
 }
 
-/// Casts a ray and finds the closest editor prop hit (AABB test).
-fn pick_prop(
+/// Oriented box ray test: transforms the ray into the box's local space and
+/// runs the slab test there, so rotated/scaled props pick correctly.
+fn ray_obb(origin: Vec3, dir: Vec3, center: Vec3, rotation: Quat, half: Vec3) -> Option<f32> {
+    let inv_rot = rotation.inverse();
+    let local_origin = inv_rot * (origin - center);
+    let local_dir = (inv_rot * dir).normalize_or_zero();
+    if local_dir == Vec3::ZERO {
+        return None;
+    }
+    ray_aabb(local_origin, local_dir, -half, half)
+}
+
+/// Casts a ray and finds the closest pickable body.
+fn pick_closest(
     camera: &Camera,
     camera_transform: &GlobalTransform,
     cursor_pos: Vec2,
-    props: &[(Entity, Vec3, Vec3)],
+    bodies: &[PickBody],
 ) -> Option<Entity> {
-    let ray = camera.viewport_to_world(camera_transform, cursor_pos).ok()?;
+    let ray = camera
+        .viewport_to_world(camera_transform, cursor_pos)
+        .ok()?;
     let origin = ray.origin;
     let dir = ray.direction.normalize_or_zero();
     if dir == Vec3::ZERO {
         return None;
     }
     let mut best: Option<(Entity, f32)> = None;
-    for (entity, center, half_extents) in props {
-        let min = *center - *half_extents;
-        let max = *center + *half_extents;
-        if let Some(t) = ray_aabb(origin, dir, min, max) {
+    for body in bodies {
+        if let Some(t) = ray_obb(origin, dir, body.center, body.rotation, body.half) {
             if best.map_or(true, |(_, best_t)| t < best_t) {
-                best = Some((*entity, t));
+                best = Some((body.entity, t));
             }
         }
     }
-    best.map(|(e, _)| e)
+    best.map(|(entity, _)| entity)
 }
 
+/// Collects every clickable body (props + terrain) with its rendered half
+/// extents: props render a 2x2x2 cuboid, the terrain a unit cuboid.
+fn collect_bodies(
+    prop_q: &Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
+    terrain_q: &Query<(Entity, &Transform), (With<EditorTerrain>, Without<EditorProp>)>,
+) -> Vec<PickBody> {
+    let mut bodies = Vec::with_capacity(prop_q.iter().len() + 1);
+    for (entity, _prop, transform) in prop_q {
+        bodies.push(PickBody {
+            entity,
+            center: transform.translation,
+            rotation: transform.rotation,
+            half: transform.scale.abs(),
+        });
+    }
+    for (entity, transform) in terrain_q {
+        bodies.push(PickBody {
+            entity,
+            center: transform.translation,
+            rotation: transform.rotation,
+            half: transform.scale.abs() * 0.5,
+        });
+    }
+    bodies
+}
+
+/// Handles left clicks: select/move tools pick bodies, Place drops a new prop
+/// on the ground, Erase deletes a prop under the cursor.
 pub fn place_or_select(
     mut mouse_events: MessageReader<MouseButtonInput>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform)>,
+    cameras: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    prop_q: Query<(Entity, &EditorProp, &Transform)>,
+    prop_q: Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
+    terrain_q: Query<(Entity, &Transform), (With<EditorTerrain>, Without<EditorProp>)>,
     selected_q: Query<Entity, With<SelectedMarker>>,
+    gizmo_state: Res<TransformGizmoState>,
     mut state: ResMut<EditorState>,
 ) {
+    // Ignore clicks that land on the gizmo handles or happen mid-drag.
+    if gizmo_state.active || gizmo_state.hovered_axis.is_some() {
+        return;
+    }
+
     let left_clicked = mouse_events
         .read()
         .any(|event| event.button == MouseButton::Left && event.state.is_pressed());
@@ -117,19 +200,16 @@ pub fn place_or_select(
         warn!("Editor click ignored: cursor is outside the window");
         return;
     };
-    info!("Editor click at ({:.0}, {:.0}), tool={:?}", cursor_pos.x, cursor_pos.y, state.tool);
-    let Some((camera, camera_transform)) = cameras.iter().next() else {
+    let Ok((camera, camera_transform)) = cameras.single() else {
         warn!("Editor click ignored: editor camera not found");
         return;
     };
 
+    let bodies = collect_bodies(&prop_q, &terrain_q);
+
     match state.tool {
-        EditorTool::Select => {
-            let candidates: Vec<(Entity, Vec3, Vec3)> = prop_q
-                .iter()
-                .map(|(e, _p, t)| (e, t.translation, t.scale.abs() * 0.5))
-                .collect();
-            if let Some(entity) = pick_prop(camera, camera_transform, cursor_pos, &candidates) {
+        EditorTool::Select | EditorTool::Move | EditorTool::Rotate | EditorTool::Scale => {
+            if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &bodies) {
                 set_selected(&mut commands, &selected_q, entity);
                 state.selected = Some(entity);
             } else {
@@ -154,17 +234,63 @@ pub fn place_or_select(
                 );
                 return;
             }
-            info!("Placing {} at ({:.1}, {:.1}, {:.1})", state.current_kind, snapped.x, snapped.y, snapped.z);
-            place_prop(&mut commands, &mut meshes, &mut materials, &mut state, snapped);
+            info!(
+                "Placing {} at ({:.1}, {:.1}, {:.1})",
+                state.current_kind, snapped.x, snapped.y, snapped.z
+            );
+            place_prop(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                &mut state,
+                snapped,
+            );
+        }
+        EditorTool::Erase => {
+            if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &bodies) {
+                if let Ok((entity, prop, _)) = prop_q.get(entity) {
+                    erase_prop(&mut commands, &mut state, entity, &prop);
+                }
+            }
         }
     }
+}
+
+/// Tracks the hovered body for selection feedback. Cheap enough to run every
+/// frame; only meaningful for tools that operate on existing bodies.
+pub fn update_hover(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    cameras: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
+    prop_q: Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
+    terrain_q: Query<(Entity, &Transform), (With<EditorTerrain>, Without<EditorProp>)>,
+    mut state: ResMut<EditorState>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+    let Ok((camera, camera_transform)) = cameras.single() else {
+        return;
+    };
+
+    if !matches!(
+        state.tool,
+        EditorTool::Select | EditorTool::Move | EditorTool::Rotate | EditorTool::Scale
+    ) {
+        state.hovered = None;
+        return;
+    }
+    let bodies = collect_bodies(&prop_q, &terrain_q);
+    state.hovered = pick_closest(camera, camera_transform, cursor_pos, &bodies);
 }
 
 pub fn delete_selected(
     keys: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
     mut state: ResMut<EditorState>,
-    prop_q: Query<(Entity, &EditorProp)>,
+    prop_q: Query<(Entity, &EditorProp), Without<EditorTerrain>>,
 ) {
     if !keys.just_pressed(KeyCode::Delete) && !keys.just_pressed(KeyCode::Backspace) {
         return;
@@ -173,14 +299,151 @@ pub fn delete_selected(
         return;
     };
     let Ok((entity, prop)) = prop_q.get(entity) else {
+        warn!("Cannot erase the terrain; select a prop instead");
         return;
     };
+    erase_prop(&mut commands, &mut state, entity, &prop);
+}
+
+/// Clears the selection when Escape is pressed.
+pub fn deselect_on_escape(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+    mut state: ResMut<EditorState>,
+    selected_q: Query<Entity, With<SelectedMarker>>,
+) {
+    if !keys.just_pressed(KeyCode::Escape) {
+        return;
+    }
+    clear_selected(&mut commands, &selected_q);
+    state.selected = None;
+    state.hovered = None;
+}
+
+/// Rebuilds every visual (terrain + props) from the manifest after a load.
+/// Despawns the old scene first so stale entities never linger.
+pub fn rebuild_scene(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut state: ResMut<EditorState>,
+    prop_q: Query<Entity, With<EditorProp>>,
+    terrain_q: Query<Entity, With<EditorTerrain>>,
+) {
+    if !state.needs_rebuild {
+        return;
+    }
+    for entity in prop_q.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in terrain_q.iter() {
+        commands.entity(entity).despawn();
+    }
+    state.selected = None;
+    state.hovered = None;
+    state.needs_rebuild = false;
+
+    spawn_terrain_entity(&mut commands, &mut meshes, &mut materials, &mut state);
+    for prop in &state.manifest.props {
+        spawn_prop_entity(&mut commands, &mut meshes, &mut materials, prop);
+    }
+}
+
+/// Removes a prop from both the manifest and the scene.
+fn erase_prop(
+    commands: &mut Commands,
+    state: &mut ResMut<EditorState>,
+    entity: Entity,
+    prop: &EditorProp,
+) {
     state.manifest.props.retain(|p| p.id != prop.prop_id);
     state.dirty = true;
     commands.entity(entity).despawn();
-    state.selected = None;
+    if state.selected == Some(entity) {
+        state.selected = None;
+        state.hovered = None;
+    }
 }
 
+/// Spawns a visual for a manifest prop (2x2x2 cuboid scaled by the authored
+/// scale, matching the client's placeholder rendering).
+pub fn spawn_prop_entity(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    prop: &Prop,
+) -> Entity {
+    let base_color = prop
+        .tint
+        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
+        .unwrap_or_else(|| {
+            tint_for_kind(&prop.kind)
+                .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
+                .unwrap_or(Color::srgb(0.4, 0.5, 0.7))
+        });
+    commands
+        .spawn((
+            Name::new(format!("{} ({})", prop.id, prop.kind)),
+            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color,
+                ..default()
+            })),
+            Transform {
+                translation: Vec3::from_array(prop.transform.translation),
+                rotation: quat_from_rotation_deg(prop.transform.rotation_deg),
+                scale: Vec3::from_array(prop.transform.scale),
+            },
+            EditorProp {
+                prop_id: prop.id.clone(),
+            },
+        ))
+        .id()
+}
+
+/// Updates a prop's material to match its manifest tint. Used by the
+/// inspector's color editor.
+pub fn update_prop_material(
+    commands: &mut Commands,
+    materials: &mut Assets<StandardMaterial>,
+    entity: Entity,
+    kind: &str,
+    tint: Option<[f32; 3]>,
+) {
+    let base_color = tint
+        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
+        .unwrap_or_else(|| {
+            tint_for_kind(kind)
+                .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
+                .unwrap_or(Color::srgb(0.4, 0.5, 0.7))
+        });
+    commands
+        .entity(entity)
+        .insert(MeshMaterial3d(materials.add(StandardMaterial {
+            base_color,
+            ..default()
+        })));
+}
+
+/// Updates the terrain material to match its manifest tint.
+pub fn update_terrain_material(
+    commands: &mut Commands,
+    materials: &mut Assets<StandardMaterial>,
+    entity: Entity,
+    tint: Option<[f32; 3]>,
+) {
+    let base_color = tint
+        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
+        .unwrap_or(crate::ground::default_terrain_color());
+    commands
+        .entity(entity)
+        .insert(MeshMaterial3d(materials.add(StandardMaterial {
+            base_color,
+            ..default()
+        })));
+}
+
+/// Spawns a prop, adds it to the manifest, and selects it.
 fn place_prop(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
@@ -192,53 +455,53 @@ fn place_prop(
     let kind = state.current_kind.clone();
     let tint = tint_for_kind(&kind);
     let visual_scale = visual_scale_for_kind(&kind);
-    let transform_data = TransformData {
-        translation: [position.x, position.y, position.z],
-        rotation_deg: [0.0, 0.0, 0.0],
-        scale: [visual_scale.x, visual_scale.y, visual_scale.z],
-    };
-    let prop = bevymmo_shared::world::Prop {
+    let prop = Prop {
         id: id.clone(),
         kind,
-        transform: transform_data,
+        transform: TransformData {
+            translation: [position.x, position.y, position.z],
+            rotation_deg: [0.0, 0.0, 0.0],
+            scale: [visual_scale.x, visual_scale.y, visual_scale.z],
+        },
         tint,
         collision: None,
         blocks_movement: false,
     };
+    let entity = spawn_prop_entity(commands, meshes, materials, &prop);
     state.manifest.props.push(prop);
     state.dirty = true;
 
-    let base_color = tint
-        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
-        .unwrap_or(Color::srgb(0.4, 0.5, 0.7));
-    let entity = commands
-        .spawn((
-            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color,
-                ..default()
-            })),
-            Transform::from_translation(position).with_scale(visual_scale),
-            EditorProp { prop_id: id },
-            SelectedMarker,
-        ))
-        .id();
+    commands.entity(entity).insert(SelectedMarker);
     state.selected = Some(entity);
 }
 
+/// Default authored scale written to the manifest for a placed prop.
 fn visual_scale_for_kind(kind: &str) -> Vec3 {
     match kind {
         "tree_oak" => Vec3::new(0.8, 2.5, 0.8),
         "rock_01" => Vec3::new(1.4, 0.8, 1.2),
+        "rock_02" => Vec3::new(0.9, 0.6, 0.8),
+        "bush_01" => Vec3::new(0.8, 0.7, 0.8),
+        "fence_01" => Vec3::new(1.6, 0.9, 0.2),
+        "lamp_01" => Vec3::new(0.3, 1.6, 0.3),
+        "crate_01" => Vec3::new(0.6, 0.6, 0.6),
+        "statue_01" => Vec3::new(0.8, 2.0, 0.8),
         "house_simple" => Vec3::new(3.0, 2.0, 3.0),
         _ => Vec3::ONE,
     }
 }
 
-fn tint_for_kind(kind: &str) -> Option<[f32; 3]> {
+/// Default tint for a placed prop. `None` keeps the engine default color.
+pub fn tint_for_kind(kind: &str) -> Option<[f32; 3]> {
     match kind {
         "tree_oak" => Some([0.2, 0.5, 0.2]),
         "rock_01" => Some([0.5, 0.5, 0.5]),
+        "rock_02" => Some([0.45, 0.42, 0.38]),
+        "bush_01" => Some([0.25, 0.45, 0.2]),
+        "fence_01" => Some([0.55, 0.4, 0.25]),
+        "lamp_01" => Some([0.9, 0.85, 0.5]),
+        "crate_01" => Some([0.6, 0.45, 0.3]),
+        "statue_01" => Some([0.75, 0.75, 0.78]),
         "house_simple" => Some([0.7, 0.6, 0.4]),
         _ => None,
     }

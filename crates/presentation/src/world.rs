@@ -4,24 +4,29 @@
 //! primitives. A future asset registry will replace these meshes with GLB
 //! scenes without changing the map manifest contract.
 
+use crate::assets::MapAssets;
 use bevy::prelude::*;
 use bevymmo_shared::game_state::{GameScreen, Screen};
-use bevymmo_shared::world::{load_map, CollisionGrid, MapManifest, Prop};
-use crate::assets::MapAssets;
-
-const MAP_PATH: &str = "assets/maps/test_1.ron";
+use bevymmo_shared::paths;
+use bevymmo_shared::world::{load_map, CollisionGrid, MapManifest, Prop, Terrain};
 
 #[derive(Resource, Default)]
 pub struct ClientWorldMap {
     pub manifest: Option<MapManifest>,
     pub collision: Option<CollisionGrid>,
-    loaded: bool,
+    /// Whether a load attempt has already happened (success or failure).
+    /// Prevents the loader from re-running every frame when the map file is
+    /// missing or invalid, which would otherwise spam the log.
+    load_attempted: bool,
 }
 
 #[derive(Component)]
 pub struct MapPropVisual {
     pub prop_id: String,
 }
+
+#[derive(Component)]
+pub struct MapTerrainVisual;
 
 pub struct WorldMapPlugin;
 
@@ -42,14 +47,16 @@ fn load_map_when_in_game(
     mut materials: ResMut<Assets<StandardMaterial>>,
     map_assets: Option<Res<MapAssets>>,
 ) {
-    if world_map.loaded || !matches!(screen.0, Screen::InGame | Screen::Paused) {
+    if world_map.load_attempted || !matches!(screen.0, Screen::InGame | Screen::Paused) {
         return;
     }
+    world_map.load_attempted = true;
 
-    let manifest = match load_map(MAP_PATH) {
+    let map_path = paths::default_map_file();
+    let manifest = match load_map(&map_path) {
         Ok(manifest) => manifest,
         Err(error) => {
-            error!("Unable to load client map {MAP_PATH}: {error}");
+            error!("Unable to load client map {}: {error}", map_path.display());
             return;
         }
     };
@@ -60,13 +67,24 @@ fn load_map_when_in_game(
         manifest.props.len()
     );
 
+    spawn_terrain_visual(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &manifest.terrain,
+    );
     for prop in &manifest.props {
-        spawn_prop_visual(&mut commands, &mut meshes, &mut materials, prop, &map_assets);
+        spawn_prop_visual(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            prop,
+            &map_assets,
+        );
     }
 
     world_map.collision = Some(CollisionGrid::build(&manifest));
     world_map.manifest = Some(manifest);
-    world_map.loaded = true;
 }
 
 fn cleanup_map_when_not_in_game(
@@ -74,15 +92,49 @@ fn cleanup_map_when_not_in_game(
     screen: Res<GameScreen>,
     mut world_map: ResMut<ClientWorldMap>,
     props: Query<Entity, With<MapPropVisual>>,
+    terrain: Query<Entity, With<MapTerrainVisual>>,
 ) {
-    if world_map.loaded && !matches!(screen.0, Screen::InGame | Screen::Paused) {
-        for entity in &props {
+    if world_map.load_attempted && !matches!(screen.0, Screen::InGame | Screen::Paused) {
+        for entity in props.iter().chain(terrain.iter()) {
             commands.entity(entity).despawn();
         }
         world_map.manifest = None;
         world_map.collision = None;
-        world_map.loaded = false;
+        world_map.load_attempted = false;
     }
+}
+
+/// Renders the authored ground cube (unit mesh, so `scale` is the full size).
+/// Mirrors the editor's terrain visual so maps look the same in-game.
+fn spawn_terrain_visual(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    terrain: &Terrain,
+) {
+    let color = terrain
+        .tint
+        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
+        .unwrap_or(Color::srgb(0.16, 0.2, 0.16));
+    commands.spawn((
+        Name::new("Map Terrain"),
+        Transform {
+            translation: Vec3::from_array(terrain.transform.translation),
+            rotation: Quat::from_euler(
+                EulerRot::YXZ,
+                terrain.transform.rotation_deg[1].to_radians(),
+                terrain.transform.rotation_deg[0].to_radians(),
+                terrain.transform.rotation_deg[2].to_radians(),
+            ),
+            scale: Vec3::from_array(terrain.transform.scale),
+        },
+        Mesh3d(meshes.add(Cuboid::default())),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: color,
+            ..default()
+        })),
+        MapTerrainVisual,
+    ));
 }
 
 fn spawn_prop_visual(

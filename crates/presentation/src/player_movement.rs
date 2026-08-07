@@ -7,20 +7,21 @@
 //! during prediction without rubber-banding.
 
 use bevy::prelude::*;
-use lightyear::prelude::*;
 use lightyear::prelude::input::native::ActionState;
+use lightyear::prelude::*;
 
 use bevymmo_shared::crowd_control::CrowdControlState;
 use bevymmo_shared::entity::components::EntityState;
 use bevymmo_shared::entity::player::components::Player;
-use bevymmo_shared::movement::{move_towards_target, effective_movement_speed};
+use bevymmo_shared::movement::{effective_movement_speed, move_towards_target};
 use bevymmo_shared::network::mode;
 use bevymmo_shared::network::protocol::{Inputs, LookDirection, NetworkEntityId, Position};
+use bevymmo_shared::spells::{ChannelMovementPolicy, SpellId, SpellRegistry};
 use bevymmo_shared::spells_impl::swift::SwiftSpell;
 use bevymmo_shared::stats::components::{MovementStats, VitalStats};
 use bevymmo_shared::stats::modifiers::ActiveStatModifiers;
 
-use crate::spells::cast_bar::ObservedCasts;
+use crate::spells::cast_bar::{ObservedCast, ObservedCasts};
 use crate::world::ClientWorldMap;
 
 pub struct PlayerMovementPredictionPlugin;
@@ -35,6 +36,7 @@ impl Plugin for PlayerMovementPredictionPlugin {
 fn predict_move_to_target(
     synced_client: Query<(), (With<Client>, With<IsSynced<()>>)>,
     observed_casts: Option<Res<ObservedCasts>>,
+    spell_registry: Res<SpellRegistry>,
     world_map: Res<ClientWorldMap>,
     mut players: Query<
         (
@@ -55,8 +57,17 @@ fn predict_move_to_target(
         return;
     }
 
-    for (position, input, stats, vital, network_id, look_direction, mut state, modifiers, cc_state) in
-        &mut players
+    for (
+        position,
+        input,
+        stats,
+        vital,
+        network_id,
+        look_direction,
+        mut state,
+        modifiers,
+        cc_state,
+    ) in &mut players
     {
         if vital.is_dead() || state.is_dead() {
             *state = EntityState::Dead;
@@ -64,6 +75,15 @@ fn predict_move_to_target(
         }
 
         if cc_state.map(|c| c.has_blocking_cc()).unwrap_or(false) {
+            *state = EntityState::Idle;
+            continue;
+        }
+
+        // Mirror the server's cast-blocks-movement rule on the predicted
+        // entity. Without this, the client keeps stepping toward the move
+        // target during a cast and the server snaps it back every tick,
+        // producing a visible rubber-band.
+        if cast_blocks_movement(network_id.0, observed_casts.as_deref(), &spell_registry) {
             *state = EntityState::Idle;
             continue;
         }
@@ -81,11 +101,9 @@ fn predict_move_to_target(
             if distance > 0.001 {
                 let step = effective_speed.min(distance);
                 let candidate = position.0 + offset / distance * step;
-                if world_map
-                    .collision
-                    .as_ref()
-                    .is_some_and(|grid| grid.is_blocked([candidate.x, candidate.y, candidate.z], 0.45))
-                {
+                if world_map.collision.as_ref().is_some_and(|grid| {
+                    grid.is_blocked([candidate.x, candidate.y, candidate.z], 0.45)
+                }) {
                     *state = EntityState::Idle;
                     continue;
                 }
@@ -94,6 +112,39 @@ fn predict_move_to_target(
 
         move_towards_target(position, look_direction, &input.0, effective_speed, state);
     }
+}
+
+/// Client-side mirror of `bevymmo_shared::movement::should_block_movement_for_cast`,
+/// driven by the locally observed cast snapshot instead of the authoritative
+/// `CastProgress` component (which is server-only).
+///
+/// Matches the server rule: CastTime always freezes; Channeling only when the
+/// spell's policy is `InterruptOnMove` (Swift allows simultaneous movement).
+fn cast_blocks_movement(
+    network_id: u64,
+    observed_casts: Option<&ObservedCasts>,
+    registry: &SpellRegistry,
+) -> bool {
+    let Some(observed_casts) = observed_casts else {
+        return false;
+    };
+    let Some(cast) = observed_casts.0.get(&network_id) else {
+        return false;
+    };
+    observed_cast_blocks_movement(cast, registry)
+}
+
+fn observed_cast_blocks_movement(cast: &ObservedCast, registry: &SpellRegistry) -> bool {
+    // kind == 1 -> Channeling; anything else here is CastTime (Instant casts
+    // never produce an `ObservedCast` entry, so we don't need to special-case them).
+    if cast.kind != 1 {
+        return true;
+    }
+    let spell_id = SpellId::new(cast.spell_id.clone());
+    let Some(spell) = registry.get(&spell_id) else {
+        return false;
+    };
+    spell.config().channel_movement == ChannelMovementPolicy::InterruptOnMove
 }
 
 /// Mirrors the server-authoritative Swift speed boost for predicted movement.

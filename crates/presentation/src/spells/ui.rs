@@ -8,14 +8,18 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 
 use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_shared::movement::MoveTarget;
 use bevymmo_shared::network::mode::has_client;
-use bevymmo_shared::network::protocol::{Channel2, NetworkEntityId, SpellCastCommand};
+use bevymmo_shared::network::protocol::{
+    Channel2, LookDirection, NetworkEntityId, Position, SpellCastCommand,
+};
 use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId};
 use bevymmo_shared::targeting::CurrentTarget;
+use lightyear::prelude::{Controlled, MessageSender};
 
 use crate::game_state::{GameScreen, Screen};
+use crate::spells::input::stops_movement_for_cast;
 use crate::ui::theme::UiTheme;
-use lightyear::prelude::MessageSender;
 
 #[derive(Message, Debug, Clone, PartialEq)]
 pub struct SpellHudCooldownStarted {
@@ -180,6 +184,8 @@ fn cast_spell_from_hud_click(
     target_ids: Query<&NetworkEntityId>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    mut controlled_players: Query<(&Position, &mut LookDirection), With<Controlled>>,
+    mut move_target: ResMut<MoveTarget>,
     mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
     registry: Res<bevymmo_shared::spells::SpellRegistry>,
@@ -224,6 +230,27 @@ fn cast_spell_from_hud_click(
         }
 
         if let Some(spell_def) = registry.get(spell_id) {
+            if let Ok((player_position, mut look_direction)) = controlled_players.single_mut() {
+                let face_direction = target_position.and_then(|target| {
+                    let offset = target - player_position.0;
+                    let length = offset.length();
+                    if length > 0.001 {
+                        Some(offset / length)
+                    } else {
+                        None
+                    }
+                });
+                if let Some(direction) = face_direction {
+                    look_direction.0 = direction;
+                }
+                if stops_movement_for_cast(
+                    spell_def.cast_kind(),
+                    spell_def.config().channel_movement,
+                ) {
+                    move_target.0 = None;
+                }
+            }
+
             if spell_def.cast_kind() == bevymmo_shared::spells::CastKind::Instant {
                 hud_cooldowns.write(SpellHudCooldownStarted {
                     spell_id: spell_id.clone(),

@@ -78,12 +78,11 @@ pub fn save_map<P: AsRef<Path>>(path: P, manifest: &MapManifest) -> Result<(), M
     sorted.props.sort_by(|a, b| a.id.cmp(&b.id));
 
     let config = PrettyConfig::new();
-    let serialized = ron::ser::to_string_pretty(&sorted, config).map_err(|source| {
-        MapLoadError::Serialize {
+    let serialized =
+        ron::ser::to_string_pretty(&sorted, config).map_err(|source| MapLoadError::Serialize {
             path: path_display.clone(),
             message: source.to_string(),
-        }
-    })?;
+        })?;
 
     fs::write(path_ref, serialized).map_err(|source| MapLoadError::Io {
         path: path_display,
@@ -119,6 +118,15 @@ pub fn validate(manifest: &MapManifest) -> Vec<ValidationIssue> {
 
     check_bounds(&manifest.bounds, &mut issues);
 
+    for axis in 0..3 {
+        if manifest.terrain.transform.scale[axis] <= 0.0 {
+            issues.push(ValidationIssue::new(format!(
+                "terrain has non-positive scale on axis {axis} ({})",
+                manifest.terrain.transform.scale[axis]
+            )));
+        }
+    }
+
     let mut seen_ids: HashSet<&str> = HashSet::new();
     for prop in &manifest.props {
         if !validate_id(&prop.id) {
@@ -148,7 +156,10 @@ pub fn validate(manifest: &MapManifest) -> Vec<ValidationIssue> {
                 )));
             }
         }
-        if !manifest.bounds.contains(prop.transform.translation[0], prop.transform.translation[2]) {
+        if !manifest
+            .bounds
+            .contains(prop.transform.translation[0], prop.transform.translation[2])
+        {
             issues.push(ValidationIssue::new(format!(
                 "prop {:?} is outside map bounds (x={}, z={})",
                 prop.id, prop.transform.translation[0], prop.transform.translation[2]
@@ -177,7 +188,7 @@ fn check_bounds(bounds: &MapBounds, issues: &mut Vec<ValidationIssue>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::manifest::{Prop, TransformData};
+    use crate::world::manifest::{Prop, Terrain, TransformData};
     use crate::world::shapes::CollisionShape;
 
     fn empty_manifest() -> MapManifest {
@@ -191,6 +202,7 @@ mod tests {
                 min_z: -10.0,
                 max_z: 10.0,
             },
+            terrain: Terrain::default(),
             props: vec![],
         }
     }
@@ -220,7 +232,9 @@ mod tests {
             blocks_movement: true,
         });
         let issues = validate(&m);
-        assert!(issues.iter().any(|i| i.message.contains("duplicate prop id")));
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("duplicate prop id")));
     }
 
     #[test]
@@ -228,7 +242,9 @@ mod tests {
         let mut m = empty_manifest();
         m.version = 99;
         let issues = validate(&m);
-        assert!(issues.iter().any(|i| i.message.contains("unknown manifest version")));
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("unknown manifest version")));
     }
 
     #[test]
@@ -269,7 +285,10 @@ mod tests {
         let body = std::fs::read_to_string(&path).expect("read");
         let pos_000 = body.find("prop_000").expect("prop_000 present");
         let pos_001 = body.find("prop_001").expect("prop_001 present");
-        assert!(pos_000 < pos_001, "props should be sorted by id in the file");
+        assert!(
+            pos_000 < pos_001,
+            "props should be sorted by id in the file"
+        );
 
         let _ = std::fs::remove_file(&path);
     }
@@ -286,6 +305,8 @@ mod tests {
             blocks_movement: true,
         });
         let issues = validate(&m);
-        assert!(issues.iter().any(|i| i.message.contains("outside map bounds")));
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("outside map bounds")));
     }
 }

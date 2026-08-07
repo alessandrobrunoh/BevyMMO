@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use bevymmo_shared::paths;
 use bevymmo_shared::settings::Settings;
 use bevymmo_shared::{game_state, network::mode};
 
@@ -261,8 +262,12 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
                 DefaultPlugins
                     // The runnable package lives in `bins/game`, while the
                     // workspace keeps shared assets at the repository root.
+                    // The assets folder is resolved by walking up from the
+                    // executable / working directory so the same binary works
+                    // whether launched via `cargo run` or by double-clicking
+                    // `target/debug/game.exe`.
                     .set(AssetPlugin {
-                        file_path: "../../assets".to_string(),
+                        file_path: paths::assets_root().to_string_lossy().into_owned(),
                         ..default()
                     })
                     .set(LogPlugin {

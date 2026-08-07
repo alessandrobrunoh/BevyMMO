@@ -1,9 +1,12 @@
 use bevy::prelude::*;
 use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_shared::movement::MoveTarget;
 use bevymmo_shared::network::protocol::{
-    Channel2, NetworkEntityId, SpellCastCommand, SpellCastRelease,
+    Channel2, LookDirection, NetworkEntityId, Position, SpellCastCommand, SpellCastRelease,
 };
-use bevymmo_shared::spells::{CastKind, HotbarSlot, SpellHotbar, SpellRegistry};
+use bevymmo_shared::spells::{
+    CastKind, ChannelMovementPolicy, HotbarSlot, SpellHotbar, SpellId, SpellRegistry,
+};
 use bevymmo_shared::targeting::CurrentTarget;
 use lightyear::prelude::Controlled;
 use lightyear::prelude::MessageSender;
@@ -21,8 +24,17 @@ pub fn cast_spells_on_key(
     target_ids: Query<&NetworkEntityId>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    controlled_players: Query<(&SpellHotbar, &NetworkEntityId), With<Controlled>>,
+    mut controlled_players: Query<
+        (
+            &SpellHotbar,
+            &NetworkEntityId,
+            &Position,
+            &mut LookDirection,
+        ),
+        With<Controlled>,
+    >,
     observed_casts: Res<ObservedCasts>,
+    mut move_target: ResMut<MoveTarget>,
     mut cast_senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
     mut release_senders: Query<&mut MessageSender<SpellCastRelease>, With<ConnectedClient>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
@@ -35,7 +47,9 @@ pub fn cast_spells_on_key(
         return;
     };
 
-    let Ok((hotbar, local_network_id)) = controlled_players.single() else {
+    let Ok((hotbar, local_network_id, player_position, mut look_direction)) =
+        controlled_players.single_mut()
+    else {
         return;
     };
 
@@ -62,6 +76,19 @@ pub fn cast_spells_on_key(
         }
     }
 
+    // Pre-compute the desired facing once per frame: all hotbar keys that fire
+    // a cast in this system share the same cursor ground point, so reusing the
+    // value keeps the code DRY.
+    let cast_face_direction = target_position.and_then(|target| {
+        let offset = target - player_position.0;
+        let length = offset.length();
+        if length > 0.001 {
+            Some(offset / length)
+        } else {
+            None
+        }
+    });
+
     let check_slot = |key: KeyCode, slot: HotbarSlot| {
         if keys.just_pressed(key) {
             hotbar.spell_for_slot(slot).cloned()
@@ -82,6 +109,20 @@ pub fn cast_spells_on_key(
         let Some(spell_def) = registry.get(&spell_id) else {
             continue;
         };
+
+        // Apply immediate client-side feedback the first time this spell is
+        // actually cast this frame: snap the player's facing toward the cursor
+        // and stop movement for any cast that the server will also freeze.
+        // Doing this on the predicted entity avoids the ~100ms replication lag
+        // of SpellCastProgress and the rubber-band that would otherwise occur
+        // because the local LookDirection (a predicted component) keeps being
+        // recomputed by `move_towards_target` toward the old move target.
+        if let Some(direction) = cast_face_direction {
+            look_direction.0 = direction;
+        }
+        if stops_movement_for_cast(spell_def.cast_kind(), spell_def.config().channel_movement) {
+            move_target.0 = None;
+        }
 
         if spell_def.cast_kind() == CastKind::Channeling {
             let is_channeling_this_spell = observed_casts
@@ -132,5 +173,25 @@ pub fn cast_spells_on_key(
                 cooldown_seconds: spell_def.config().cooldown_seconds,
             });
         }
+    }
+}
+
+/// Mirrors `bevymmo_shared::movement::should_block_movement_for_cast` for
+/// the locally predicted entity so feedback is instant instead of waiting for
+/// the next `SpellCastProgress` replication (~100ms + RTT).
+///
+/// Rules:
+/// - Instant: keep moving.
+/// - CastTime: stop.
+/// - Channeling: stop only when the spell's policy is `InterruptOnMove`.
+///   `AllowMovement` (Swift) keeps the player running.
+pub(crate) fn stops_movement_for_cast(
+    cast_kind: CastKind,
+    channel_movement: ChannelMovementPolicy,
+) -> bool {
+    match cast_kind {
+        CastKind::Instant => false,
+        CastKind::CastTime => true,
+        CastKind::Channeling => channel_movement == ChannelMovementPolicy::InterruptOnMove,
     }
 }

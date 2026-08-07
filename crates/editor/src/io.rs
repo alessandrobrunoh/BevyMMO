@@ -1,8 +1,8 @@
 //! Save and load the in-memory manifest to/from a `.ron` file.
 //!
-//! Triggered by Ctrl+S (save) and Ctrl+O (load). For the foundation slice the
-//! file path is taken from `EditorState::file_path`; if empty, save falls back
-//! to `assets/maps/<map_id>.ron` relative to the current working directory.
+//! Triggered by Ctrl+S (save) and Ctrl+O (load). The file path is taken from
+//! `EditorState::file_path`; if empty, both operations fall back to
+//! `assets/maps/<map_id>.ron` relative to the current working directory.
 
 use bevy::input::keyboard::Key;
 use bevy::prelude::*;
@@ -32,14 +32,19 @@ pub fn load_on_ctrl_o(keys: Res<ButtonInput<KeyCode>>, mut state: ResMut<EditorS
     if !ctrl_held(&keys) || !just_pressed(&keys, KeyCode::KeyO) {
         return;
     }
-    let Some(path) = state.file_path.clone() else {
-        warn!("No file path set — cannot load");
-        return;
-    };
+    let path = state
+        .file_path
+        .clone()
+        .unwrap_or_else(|| format!("assets/maps/{}.ron", state.manifest.map_id));
     match load_map(&path) {
         Ok(manifest) => {
             state.manifest = manifest;
             state.dirty = false;
+            // Continue the id sequence past the loaded props so new props do
+            // not collide with existing ids.
+            state.next_prop_seq = state.manifest.props.len() as u32 + 1;
+            // Rebuild the 3D scene from the freshly loaded manifest.
+            state.needs_rebuild = true;
             info!("Loaded map from {path}");
         }
         Err(e) => error!("Load failed: {e}"),

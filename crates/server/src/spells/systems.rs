@@ -47,10 +47,11 @@ pub fn process_cast_requests(
         Option<&SpellHotbar>,
         &mut SpellCooldowns,
         &Position,
+        &mut LookDirection,
         Option<&CastProgress>,
         Option<&bevymmo_shared::crowd_control::CrowdControlState>,
     )>,
-    caster_stats: Query<(&LookDirection, &CombatStats)>,
+    caster_stats: Query<&CombatStats>,
     caster_inputs: Query<&ActionState<Inputs>>,
     caster_network_ids: Query<&NetworkEntityId>,
     boss_spellbooks: Query<&BossSpellbook>,
@@ -74,12 +75,15 @@ pub fn process_cast_requests(
         let spell_config = spell.config();
 
         // Step 2: validate hotbar + cooldowns
-        let Ok((hotbar, cooldowns, caster_position, existing_cast, cc_state)) =
+        let Ok((hotbar, cooldowns, caster_position, mut look_direction, existing_cast, cc_state)) =
             casters.get_mut(request.caster)
         else {
             // A request can refer to an entity that was despawned between
             // emission and processing. Do not emit a warning every fixed tick.
-            bevy::log::debug!("Ignoring spell request from missing caster {}", request.caster);
+            bevy::log::debug!(
+                "Ignoring spell request from missing caster {}",
+                request.caster
+            );
             continue;
         };
 
@@ -88,9 +92,7 @@ pub fn process_cast_requests(
         let in_boss_spellbook = boss_spellbooks
             .get(request.caster)
             .is_ok_and(|spellbook| spellbook.contains(&request.spell_id));
-        if !in_boss_spellbook
-            && !hotbar.is_some_and(|hotbar| hotbar.contains(&request.spell_id))
-        {
+        if !in_boss_spellbook && !hotbar.is_some_and(|hotbar| hotbar.contains(&request.spell_id)) {
             bevy::log::warn!("Caster attempted to cast a spell not assigned to the hotbar");
             continue;
         }
@@ -116,8 +118,27 @@ pub fn process_cast_requests(
         // Drop the borrow before potentially spawning CastProgress / firing.
         let caster_position = caster_position.0;
         let has_active_cast = existing_cast.is_some();
+
+        // Face the cast target so the caster turns toward the cursor the
+        // instant a cast begins, and stays pointed there while movement is
+        // frozen. Self-cast spells (no target_position) keep their facing.
+        //
+        // This is applied AFTER validation passes so a rejected cast (on
+        // cooldown, CC'd, unknown spell) does not silently rotate the player.
+        let mut look_direction_value = look_direction.0;
+        if let Some(target) = request.target_position {
+            let offset = target - caster_position;
+            let length = offset.length();
+            if length > 0.001 {
+                let normalized = offset / length;
+                look_direction.0 = normalized;
+                look_direction_value = normalized;
+            }
+        }
+
         let _ = hotbar;
         let _ = cooldowns;
+        let _ = look_direction;
         let _ = existing_cast;
         let _ = cc_state;
 
@@ -139,11 +160,8 @@ pub fn process_cast_requests(
 
         match cast_kind {
             CastKind::Instant => {
-                let Ok((look_direction, combat)) = caster_stats.get(request.caster) else {
-                    bevy::log::warn!(
-                        "Caster {} missing LookDirection/CombatStats",
-                        request.caster
-                    );
+                let Ok(combat) = caster_stats.get(request.caster) else {
+                    bevy::log::warn!("Caster {} missing CombatStats", request.caster);
                     continue;
                 };
 
@@ -157,7 +175,7 @@ pub fn process_cast_requests(
                     request.caster,
                     caster_position,
                     combat,
-                    look_direction.0,
+                    look_direction_value,
                     request.target_position,
                     request.target_entity,
                     &potential_targets,
@@ -179,7 +197,7 @@ pub fn process_cast_requests(
                 );
 
                 // Cooldown starts immediately for instant spells
-                if let Ok((_, mut cooldowns, _, _, _)) = casters.get_mut(request.caster) {
+                if let Ok((_, mut cooldowns, _, _, _, _)) = casters.get_mut(request.caster) {
                     cooldowns
                         .start_cooldown(request.spell_id.clone(), spell_config.cooldown_seconds);
                 }
@@ -205,7 +223,7 @@ pub fn process_cast_requests(
                     .and_then(move_target_from_input);
 
                 if matches!(cast_kind, CastKind::Channeling) {
-                    if let Ok((_, mut cooldowns, _, _, _)) = casters.get_mut(request.caster) {
+                    if let Ok((_, mut cooldowns, _, _, _, _)) = casters.get_mut(request.caster) {
                         cooldowns.start_cooldown(
                             request.spell_id.clone(),
                             spell_config.cooldown_seconds,

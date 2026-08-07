@@ -5,9 +5,8 @@
 //! on this resource in later slices.
 
 use bevy::prelude::*;
+use bevymmo_shared::paths;
 use bevymmo_shared::world::{load_map, CollisionGrid, MapManifest};
-
-const MAP_PATH: &str = "assets/maps/test_1.ron";
 
 #[derive(Resource, Clone)]
 pub struct ServerWorldMap {
@@ -24,7 +23,8 @@ impl Plugin for WorldPlugin {
 }
 
 fn load_server_map(mut commands: Commands) {
-    match load_map(MAP_PATH) {
+    let map_path = paths::default_map_file();
+    match load_map(&map_path) {
         Ok(manifest) => {
             let collision = CollisionGrid::build(&manifest);
             info!(
@@ -33,10 +33,13 @@ fn load_server_map(mut commands: Commands) {
                 manifest.props.len(),
                 collision.obstacle_count()
             );
-            commands.insert_resource(ServerWorldMap { manifest, collision });
+            commands.insert_resource(ServerWorldMap {
+                manifest,
+                collision,
+            });
         }
         Err(error) => {
-            panic!("Unable to load server map {MAP_PATH}: {error}");
+            panic!("Unable to load server map {}: {error}", map_path.display());
         }
     }
 }

@@ -20,6 +20,11 @@ use crate::network::types::ConnectedClient;
 
 const INDICATOR_DURATION: f32 = 0.55;
 
+/// While the right mouse button is held we re-broadcast the move target so the
+/// player keeps following the cursor. Sending every frame would flood the
+/// server, so we cap the send rate at ~20 Hz.
+const HELD_MOVE_SEND_INTERVAL: f32 = 0.05;
+
 pub struct PlayerMovementPlugin;
 
 #[derive(Component)]
@@ -41,6 +46,8 @@ impl Plugin for PlayerMovementPlugin {
 /// Reads left click on terrain and stores the point to send to the server.
 fn select_move_target(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
+    time: Res<Time>,
+    mut send_cooldown: Local<f32>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut move_target: ResMut<MoveTarget>,
@@ -58,6 +65,7 @@ fn select_move_target(
     let just_pressed = mouse_buttons.just_pressed(MouseButton::Right);
     let held = mouse_buttons.pressed(MouseButton::Right);
     if !held {
+        *send_cooldown = 0.0;
         return;
     }
 
@@ -80,11 +88,22 @@ fn select_move_target(
 
     let target = Vec3::new(target.x, 0.0, target.z);
     move_target.0 = Some(target);
-    if just_pressed {
-        info!("Client movement target set to ({:.2}, {:.2}, {:.2})", target.x, target.y, target.z);
+
+    // Always forward the very first press immediately; while the button stays
+    // held, forward the updated cursor target at a throttled rate so the
+    // player keeps following the pointer without flooding the server.
+    *send_cooldown -= time.delta_secs();
+    if just_pressed || *send_cooldown <= 0.0 {
+        if just_pressed {
+            info!(
+                "Client movement target set to ({:.2}, {:.2}, {:.2})",
+                target.x, target.y, target.z
+            );
+        }
         for mut sender in &mut move_senders {
             sender.send::<Channel2>(MoveCommand { target });
         }
+        *send_cooldown = HELD_MOVE_SEND_INTERVAL;
     }
 
     if !just_pressed {

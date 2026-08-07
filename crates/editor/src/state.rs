@@ -1,16 +1,62 @@
 //! Editor state: tool selection, snap settings, palette, in-memory manifest.
 
+use bevy::gizmos::transform_gizmo::{TransformGizmoMode, TransformGizmoSpace};
 use bevy::prelude::*;
 use bevymmo_shared::world::{MapBounds, MapManifest};
 
 /// Identifier for the active editor tool.
+///
+/// `Move`/`Rotate`/`Scale` drive the built-in transform gizmo; `Select` and
+/// `Place` work directly on the viewport; `Erase` removes a prop on click.
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditorTool {
-    /// Click on a prop to select it.
+    /// Click on a prop or the terrain to select it.
     #[default]
     Select,
+    /// Show the translate gizmo on the selection.
+    Move,
+    /// Show the rotate gizmo on the selection.
+    Rotate,
+    /// Show the scale gizmo on the selection.
+    Scale,
     /// Click on the ground to place the current palette kind.
     Place,
+    /// Click on a prop to delete it.
+    Erase,
+}
+
+impl EditorTool {
+    /// All tools, in toolbar display order.
+    pub const ALL: [EditorTool; 6] = [
+        EditorTool::Select,
+        EditorTool::Move,
+        EditorTool::Rotate,
+        EditorTool::Scale,
+        EditorTool::Place,
+        EditorTool::Erase,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            EditorTool::Select => "Select",
+            EditorTool::Move => "Move",
+            EditorTool::Rotate => "Rotate",
+            EditorTool::Scale => "Scale",
+            EditorTool::Place => "Place",
+            EditorTool::Erase => "Erase",
+        }
+    }
+
+    pub fn hotkey(self) -> &'static str {
+        match self {
+            EditorTool::Select => "V",
+            EditorTool::Move => "W",
+            EditorTool::Rotate => "E",
+            EditorTool::Scale => "R",
+            EditorTool::Place => "B",
+            EditorTool::Erase => "X",
+        }
+    }
 }
 
 /// Editor's in-memory state. Persists across frames, lives in a `Resource`.
@@ -18,8 +64,10 @@ pub enum EditorTool {
 pub struct EditorState {
     /// Active tool.
     pub tool: EditorTool,
-    /// Currently selected entity, if any.
+    /// Currently selected entity (prop or terrain), if any.
     pub selected: Option<Entity>,
+    /// Entity under the cursor (hover feedback), if any.
+    pub hovered: Option<Entity>,
     /// Logical kind to place (e.g. "tree_oak").
     pub current_kind: String,
     /// Current map being edited. Empty -> start a new map.
@@ -33,6 +81,18 @@ pub struct EditorState {
     /// Snap grid size in world units. Editor only — the manifest itself
     /// stores the exact authored transforms.
     pub snap_translation: f32,
+    /// Snap step for gizmo rotation, in degrees.
+    pub snap_rotation_deg: f32,
+    /// Snap step for gizmo scaling.
+    pub snap_scale: f32,
+    /// Whether the gizmo manipulates in world or local space.
+    pub gizmo_space: TransformGizmoSpace,
+    /// Whether the placement/snap grid overlay is visible.
+    pub show_grid: bool,
+    /// Set after a load to force the scene to be rebuilt from the manifest.
+    pub needs_rebuild: bool,
+    /// Entity id of the terrain cube, so picking and rebuilds can find it.
+    pub terrain_entity: Option<Entity>,
     /// Camera focus point (world). Orbit camera orbits around it.
     pub camera_focus: Vec3,
     /// Camera distance from the focus point.
@@ -48,6 +108,7 @@ impl Default for EditorState {
         Self {
             tool: EditorTool::default(),
             selected: None,
+            hovered: None,
             current_kind: "cube".to_string(),
             manifest: MapManifest {
                 version: bevymmo_shared::world::CURRENT_VERSION,
@@ -59,12 +120,19 @@ impl Default for EditorState {
                     min_z: -20.0,
                     max_z: 20.0,
                 },
+                terrain: bevymmo_shared::world::Terrain::default(),
                 props: Vec::new(),
             },
             file_path: None,
             dirty: false,
             next_prop_seq: 1,
             snap_translation: 1.0,
+            snap_rotation_deg: 15.0,
+            snap_scale: 0.1,
+            gizmo_space: TransformGizmoSpace::World,
+            show_grid: true,
+            needs_rebuild: false,
+            terrain_entity: None,
             camera_focus: Vec3::ZERO,
             camera_distance: 25.0,
             camera_yaw: 0.0,
@@ -74,6 +142,16 @@ impl Default for EditorState {
 }
 
 impl EditorState {
+    /// The gizmo manipulation mode for the active tool, if any.
+    pub fn gizmo_mode(&self) -> Option<TransformGizmoMode> {
+        match self.tool {
+            EditorTool::Move => Some(TransformGizmoMode::Translate),
+            EditorTool::Rotate => Some(TransformGizmoMode::Rotate),
+            EditorTool::Scale => Some(TransformGizmoMode::Scale),
+            _ => None,
+        }
+    }
+
     pub fn find_prop_index(&self, id: &str) -> Option<usize> {
         self.manifest.props.iter().position(|p| p.id == id)
     }
@@ -93,6 +171,23 @@ pub struct EditorProp {
     pub prop_id: String,
 }
 
+/// Marker on the terrain cube entity.
+#[derive(Component)]
+pub struct EditorTerrain;
+
 /// Marker on the selected entity's visual cue (e.g. an emissive overlay).
 #[derive(Component)]
 pub struct SelectedMarker;
+
+/// Converts the manifest's YXZ euler degrees into a Bevy quaternion.
+///
+/// The manifest stores rotation as `[pitch, yaw, roll]` degrees applied in
+/// YXZ order (yaw around Y), matching the client's consumption code.
+pub fn quat_from_rotation_deg(rotation_deg: [f32; 3]) -> Quat {
+    Quat::from_euler(
+        EulerRot::YXZ,
+        rotation_deg[1].to_radians(),
+        rotation_deg[0].to_radians(),
+        rotation_deg[2].to_radians(),
+    )
+}

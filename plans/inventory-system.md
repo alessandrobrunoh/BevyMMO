@@ -1,90 +1,101 @@
-# Inventario, Items e UI Card riutilizzabile
+# Inventory, Items and Reusable UI Card
 
 ## Goal Description
 
-Implementare un sistema di **Inventario** apribile con `I`, composto da:
+Implement an **Inventory** system, opened with the `I` key, composed of:
 
-- Una **Card** (pannello modulare standard) con ~10 slot rettangolari generici + 1 **slot speciale per arma**.
-- Un sistema di **Items** modellato come le `Spell` (`SpellId` / `SpellRegistry` / `Spell` trait): `ItemId` / `ItemRegistry` / `Item` trait.
-- Interazione: cliccare un item nello slot apre una **Card di dettaglio** con stats e un pulsante **Equip / Unequip**.
-- Equipaggiare un'arma (es. "Spada 1") applica effetti permanenti (es. `+1000 MaxHealth`) finché resta equipaggiata.
+- A **Card** (modular standard panel) with ~10 generic rectangular slots + 1 **special weapon slot**.
+- An **Items** system modeled after `Spell` (`SpellId` / `SpellRegistry` / `Spell` trait): `ItemId` / `ItemRegistry` / `Item` trait.
+- Interaction: clicking an item in a slot opens a **detail Card** showing stats and an **Equip / Unequip** button.
+- Equipping a weapon (e.g. "Spada 1") applies permanent effects (e.g. `+1000 MaxHealth`) for as long as it stays equipped.
 
-L'obiettivo secondario — ma strategicamente il più importante — è creare un **`Card` component UI riutilizzabile** che diventi lo standard per tutti i pannelli modulari futuri (inventario, spellbook, character sheet, tradeskill, ...).
+The secondary goal — strategically the most important — is to build a **reusable `Card` UI component** that becomes the standard for every future modular panel (inventory, spellbook, character sheet, tradeskill, ...).
 
-## User Review Required
+## Decisions Confirmed
 
-> [!IMPORTANT]
-> Decisioni di design da confermare **prima dell'implementazione**:
->
-> 1. **Stack degli item**: gli slot generici supportano `ItemStack { item_id, count }` (es. pozioni x50) o sono 1 item = 1 slot? Il piano assume **stack supportato** (`Option<ItemStack>`), con `max_stack` per-tipo. Se si vuole 1:1, si semplifica in `Option<ItemId>`.
-> 2. **Griglia fissa vs espandibile**: 10 slot fissi (più semplice, persistenza stabile) o inventario espandibile (zaini, slots sbloccabili)? Il piano assume **10 fissi + 1 weapon**.
-> 3. **Equip slot unico**: per ora solo 1 weapon slot. Voleremo prevedere già `EquipmentSlots { weapon, helmet, chest, ... }` anche se compilato solo `weapon`? Il piano propone **`Equipment` con un enum `EquipSlot`** così è estensibile senza migration future.
-> 4. **Persistenza allo startup o solo su change**: il piano propone load-on-join (come `player_hotbar`) e save su ogni operazione autoritativa.
+> Resolved upfront based on the author's review. These are no longer open questions.
+
+1. **Stacking**: NOT supported for now. **1 item = 1 slot.** `Inventory.slots` becomes `[Option<ItemId>; INVENTORY_CAPACITY]`. No `ItemStack` struct, no `count` field. `max_stack` is dropped from `ItemConfig` (we can reintroduce it later via a migration).
+2. **Multi-slot equipment**: `Equipment { weapon, /* helmet, chest, ... */ }` is the long-term shape even though only `weapon` is populated for now. Reserved fields are commented placeholders.
+3. **Persistence**: MUST persist to the database. Both `Inventory` and `Equipment` get their own tables and SeaORM entities. Same async-save pattern as `player_hotbar`.
+4. **Card exclusivity flag**: each `Card` declares an `exclusivity_policy`:
+   - `Exclusive` → opening it closes every other open Card (and vice-versa, the previously-exclusive card is replaced);
+   - `Coexist` → can be opened alongside other cards (e.g. the item-detail card coexisting with the inventory card).
+   This replaces the old "mutual exclusion" question: instead of hardcoding pairs, every card states its own behavior.
+5. **First PR**: confirmed. PR 1 = **Card UI component only**, standalone, no gameplay. The inventory itself lands in a later PR.
+6. **Drop on the ground**: deferred. `DropItemCommand` is NOT included in this plan. It will be its own follow-up when world-pickup entities exist.
 
 ---
 
 ## Design Patterns
 
-| Pattern | Dove | Perché |
+| Pattern | Where | Why |
 |---|---|---|
-| **Registry + Strategy** | `ItemRegistry` + `Item` trait | Specchia `SpellRegistry`/`Spell`. Aggiungere un item = nuovo tipo che implementa `Item`, nessuna modifica al core. |
-| **Command** | `EquipItemCommand`, `MoveItemCommand`, `DropItemCommand` (network) | Il client non muta MAI stato autoritativo. Invia un command, il server valida + applica + replica. |
-| **Builder** | `CardBuilder` (UI) | Costruire gerarchie `Node` di Bevy UI è verboso; il builder centralizza stile, padding, header/footer e tiene il call site leggibile. |
-| **Observer / Reactive** | `recompute_equipment_bonuses` su `Changed<Equipment>` | Quando l'equip cambia, le stat derivate si ricalcolano da sole. Nessun codice "applica bonus" disperso nei comandi. |
-| **Composition over inheritance** | `ItemEffect` enum composto in `Vec<ItemEffect>` | Un item può combinare `StatBonus` + `ProcOnHit` + `Aura`. Nessuna gerarchia `class WeaponItem : Item`, `class PotionItem : Item`. |
-| **Specification (validator)** | `EquipRequirement` (livello, classe, ... futuro) | Server-side: una lista di regole riusabili. Per ora vuota, ma il hook c'è. |
-| **DTO separation** | `StatsBundleData` già esistente | Base stats (DB) + equipment bonus (transient) → stats effettivi replicati. La composizione è già nel codebase. |
+| **Registry + Strategy** | `ItemRegistry` + `Item` trait | Mirrors `SpellRegistry`/`Spell`. Adding an item = new type implementing `Item`, no core change. |
+| **Command** | `EquipItemCommand`, `UnequipItemCommand`, `MoveItemCommand` (network) | The client NEVER mutates authoritative state. It sends a command; the server validates + applies + replicates. |
+| **Builder** | `CardBuilder` (UI) | Building Bevy UI `Node` hierarchies is verbose; the builder centralizes style, padding, header/footer, exclusivity, and keeps the call site readable. |
+| **Observer / Reactive** | `recompute_equipment_bonuses` on `Changed<Equipment>` | When equipment changes, derived stats recompute themselves. No "apply bonus" code scattered across command handlers. |
+| **Composition over inheritance** | `ItemEffect` enum composed in `Vec<ItemEffect>` | An item can combine `StatBonus` + `ProcOnHit` + `Aura`. No `class WeaponItem : Item`, `class PotionItem : Item`. |
+| **Specification (validator)** | `EquipRequirement` (level, class, ... future) | Server-side: a reusable list of rules. Empty for now, but the hook is in place. |
+| **Policy Object** | `CardExclusivityPolicy` enum on `CardWindow` | Each card declares whether it is `Exclusive` or `Coexist`. The close-others system reads this instead of hardcoded pairs. |
+| **DTO separation** | `StatsBundleData` already exists | Base stats (DB) + equipment bonus (transient) → effective replicated stats. Composition is already in the codebase. |
 
-### Anti-pattern da evitare
+### Anti-patterns to avoid
 
-- ❌ Client che muta `Inventory` / `Equipment` direttamente (anche per "ottimismo locale"): viola il principio server-authoritative del repo. Replicare `SpellHotbar` fa già la conciliazione.
-- ❌ Mettere `Item` trait implementation dentro `bevymmo_shared`: il trait sì, le implementazioni concrete in `bevymmo_server` o `bins/game` (come `spells_impl` già separato da `spells`).
-- ❌ `unwrap()` / `expect` sui lookup di rete. Usare early-return con `let Some(...) else { return };`.
+- ❌ Client mutating `Inventory` / `Equipment` directly (even "optimistic"): violates the repo's server-authoritative principle. Replicating `SpellHotbar` already does reconciliation for free; do the same here.
+- ❌ Putting the `Item` trait implementation inside `bevymmo_shared` proper: the trait lives in `shared`, concrete implementations live in `items_impl/` (mirroring the existing `spells_impl` / `spells` split).
+- ❌ `unwrap()` / `expect` on network lookups. Use early returns with `let Some(...) else { return };`.
+- ❌ Hardcoding "inventory closes spellbook" in two places. Use the `CardExclusivityPolicy` on the card itself.
 
 ---
 
-## Architettura ad alto livello
+## High-Level Architecture
 
 ```mermaid
 flowchart TD
-    Input[Client: tasto I / click slot] --> Cmd[Command message]
-    Cmd -->|Channel2| Server[Server autoritativo]
-    Server --> Validate[Valida: ItemRegistry, EquipRequirement]
-    Validate --> Apply[Muta Inventory / Equipment]
+    Input[Client: press I / click slot] --> Cmd[Command message]
+    Cmd -->|Channel2| Server[Authoritative server]
+    Server --> Validate[Validate: ItemRegistry, EquipRequirement]
+    Validate --> Apply[Mutate Inventory / Equipment]
     Apply --> Recompute[recompute_equipment_bonuses: Changed Equipment]
     Recompute --> DerivedStats[MovementStats / CombatStats / VitalStats]
-    Apply --> Persist[Persistenza asincrona PlayerRepository]
-    Apply -->|Replicate| ClientState[Inventory, Equipment replicati]
-    ClientState --> UI[Card UI reactiva]
+    Apply --> Persist[Async persistence via PlayerRepository]
+    Apply -->|Replicate| ClientState[Inventory, Equipment replicated]
+    ClientState --> UI[Reactive Card UI]
 ```
 
-**Regola d'oro** (gia valida per Spells/Hotbar): il client invia richieste e legge stato replicato. **Mai** mutare `Inventory`/`Equipment` sul client come sorgente di verità.
+**Golden rule** (already true for Spells/Hotbar): the client sends requests and reads replicated state. It NEVER mutates `Inventory`/`Equipment` as the source of truth.
 
 ---
 
-## Struttura file/codice proposta
+## Proposed File / Code Structure
 
 ### Shared (data + contracts) — `crates/shared/src/items/`
 
-Specchia esattamente `crates/shared/src/spells/`.
+Mirrors `crates/shared/src/spells/` exactly.
 
 ```
 crates/shared/src/items/
 ├── mod.rs           # pub mod + re-exports (pub use ...)
-├── registry.rs      # ItemId, ItemRegistry  (copia di SpellRegistry)
+├── registry.rs      # ItemId, ItemRegistry   (copy of SpellRegistry)
 ├── definition.rs    # Item trait + ItemConfig + ItemCategory + ItemRarity
-├── effects.rs       # ItemEffect enum + helper di composizione
-├── components.rs    # ItemStack, Inventory, EquipSlot, Equipment
+├── effects.rs       # ItemEffect enum + composition helpers
+├── components.rs    # EquipSlot, Inventory, Equipment
 └── events.rs        # EquipItemCommand, UnequipItemCommand, MoveItemCommand
 ```
 
 #### [NEW] `items/registry.rs`
 
-Copia puntuale di `spells/registry.rs`:
+Line-for-line copy of `spells/registry.rs`:
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ItemId(pub(crate) Cow<'static, str>);
+
+impl ItemId {
+    pub fn new(id: impl Into<Cow<'static, str>>) -> Self { Self(id.into()) }
+    pub fn as_str(&self) -> &str { &self.0 }
+}
 
 #[derive(Resource, Default)]
 pub struct ItemRegistry {
@@ -95,17 +106,17 @@ impl ItemRegistry {
     pub fn register(&mut self, item: Arc<dyn Item>);
     pub fn get(&self, id: &ItemId) -> Option<Arc<dyn Item>>;
     pub fn contains(&self, id: &ItemId) -> bool;
-    /// Deterministica per la UI (come SpellRegistry::sorted_spells).
+    /// Deterministic order for UI (mirrors SpellRegistry::sorted_spells).
     pub fn sorted_items(&self) -> Vec<(ItemId, Arc<dyn Item>)>;
 }
 ```
 
 #### [NEW] `items/definition.rs`
 
-Specchio di `spells/context.rs::Spell`:
+Mirror of `spells/context.rs::Spell`:
 
 ```rust
-/// Categoria narrativa, usata da UI e regole di equip.
+/// Narrative category, used by UI and equip rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemCategory {
     Weapon,
@@ -115,7 +126,7 @@ pub enum ItemCategory {
     Quest,
 }
 
-/// Rarità, puramente visiva per ora (colorazione del bordo slot).
+/// Rarity, purely cosmetic for now (slot border color).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemRarity {
     Common,
@@ -125,22 +136,23 @@ pub enum ItemRarity {
     Legendary,
 }
 
-/// Metadati statici condivisi da tutti gli item.
+/// Static metadata shared by all items.
+///
+/// `max_stack` is intentionally absent: 1 item = 1 slot (decision #1).
+/// It can be reintroduced later without breaking the schema.
 #[derive(Debug, Clone)]
 pub struct ItemConfig {
     pub display_name: Cow<'static, str>,
     pub description: Cow<'static, str>,
     pub category: ItemCategory,
     pub rarity: ItemRarity,
-    /// 1 = non impilabile; >1 = massimo stack in uno slot.
-    pub max_stack: u32,
-    /// Slot in cui questo item può andare (None = solo inventario).
+    /// Slot this item can be equipped into (None = inventory-only).
     pub equippable_into: Option<EquipSlot>,
-    /// Peso futuro (per encumbrance). 0 per ora.
+    /// Reserved for future encumbrance. 0 for now.
     pub weight: f32,
 }
 
-/// Contratto che ogni item implementa.
+/// Contract every item implements.
 ///
 /// # Example
 /// ```ignore
@@ -152,65 +164,59 @@ pub trait Item: Send + Sync + 'static {
     fn config(&self) -> &ItemConfig;
     fn display_name(&self) -> &str { &self.config().display_name }
     fn effects(&self) -> &[ItemEffect];
-    /// Requirements per equip (livello, classe). Vuoto = sempre equipabile.
+    /// Equip requirements (level, class). Empty = always equippable.
     fn equip_requirements(&self) -> &[EquipRequirement] { &[] }
 }
 ```
 
 #### [NEW] `items/effects.rs`
 
-Riutilizza lo **stesso** `StatField` / `ModifierOp` già esistente in `crates/shared/src/stats/events.rs` (zero duplicazione):
+Reuses the **same** `StatField` / `ModifierOp` already defined in `crates/shared/src/stats/events.rs` (zero duplication):
 
 ```rust
 use crate::stats::events::{ModifierOp, StatField};
 
-/// Effetto permanente applicato finché l'item è equipaggiato,
-/// o effetto istantaneo se l'item è un consumable.
+/// Effect applied while the item is equipped, or instant for consumables.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ItemEffect {
-    /// Bonus stat permanente mentre equipaggiato (es. Spada 1: +1000 MaxHealth).
+    /// Permanent stat bonus while equipped (e.g. "Spada 1": +1000 MaxHealth).
     StatBonus { field: StatField, op: ModifierOp, value: f32 },
-    /// Curativo istantaneo (consumable). Riservato al futuro.
+    /// Instant heal (consumable). Reserved for the future.
     InstantHeal { amount: f32 },
-    // Future estensioni: ProcOnHit, Aura, OnUse ...
+    // Future extensions: ProcOnHit, Aura, OnUse ...
 }
 ```
 
 #### [NEW] `items/components.rs`
 
 ```rust
-/// Slot dedicato (estensibile: oggi solo Weapon, domani Helmet/Chest/...).
+/// Dedicated equipment slot (extensible: today only Weapon, tomorrow Helmet/Chest/...).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum EquipSlot {
     Weapon,
-    // Helmet, Chest, Boots, Ring, ...  (vuoti per ora, già pronti)
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ItemStack {
-    pub item_id: ItemId,
-    pub count: u32,
-}
-
-/// Inventario generico: 10 slot rettangolari, opzionalmente occupati.
-///
-/// La capacità (10) è costante: aggiungere/togliere slot richiede migration.
-#[derive(Component, Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct Inventory {
-    pub slots: [Option<ItemStack>; INVENTORY_CAPACITY],
+    // Helmet, Chest, Boots, Ring, ...  (empty for now, ready to extend)
 }
 
 pub const INVENTORY_CAPACITY: usize = 10;
 
-/// Equipaggiamento corrente. Replicato.
+/// Generic inventory: 10 rectangular slots, optionally occupied.
+/// Decision #1: 1 item = 1 slot. No count, no ItemStack.
+///
+/// The capacity (10) is constant: adding/removing slots requires a migration.
+#[derive(Component, Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Inventory {
+    pub slots: [Option<ItemId>; INVENTORY_CAPACITY],
+}
+
+/// Current equipment. Replicated.
 #[derive(Component, Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Equipment {
     pub weapon: Option<ItemId>,
-    // helmet, chest, ... default None
+    // helmet, chest, ... default None (decision #2: multi-slot-ready shape)
 }
 ```
 
-`Inventory::slots` come array `[Option<_>; 10]` rende il layout deterministico e la UI stabile (slot 7 è sempre slot 7). Per evitare il `Default` su array grandi, 10 è ok; se cresce, passare a `Vec<Option<_>>` con capacità fissa.
+`Inventory::slots` as a `[Option<_>; 10]` array keeps the layout deterministic and the UI stable (slot 7 is always slot 7). If capacity grows past ~16 in the future, switch to `Vec<Option<_>>` with a fixed capacity.
 
 #### [NEW] `items/events.rs` (network commands)
 
@@ -223,28 +229,27 @@ pub struct UnequipItemCommand { pub slot: EquipSlot }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct MoveItemCommand { pub from: u8, pub to: u8 }
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct DropItemCommand { pub slot_index: u8, pub count: u32 }
 ```
+
+`DropItemCommand` is intentionally omitted (decision #6: deferred).
 
 #### [MODIFY] `crates/shared/src/lib.rs` / `paths.rs`
 
-Esportare il nuovo modulo `items` accanto a `spells`.
+Export the new `items` module alongside `spells`.
 
 #### [MODIFY] `crates/shared/src/network/protocol.rs`
 
-- Registrare i 4 nuovi message come `ClientToServer` su `Channel2` (stesso canale di `UpdateHotbarSlotRequest`).
-- Replicare i componenti:
+- Register the 3 new messages as `ClientToServer` on `Channel2` (same channel as `UpdateHotbarSlotRequest`).
+- Replicate the components:
   ```rust
   app.component::<Inventory>().replicate().predict();
   app.component::<Equipment>().replicate().predict();
   ```
-- `EquipSlot` deve derivare `Hash` (già fatto) per poter essere usato in `Changed<Equipment>`.
+- `EquipSlot` already derives `Hash`, so it can be used in `Changed<Equipment>`.
 
-### Implementazioni concrete — `crates/shared/src/items_impl/`
+### Concrete implementations — `crates/shared/src/items_impl/`
 
-Specchio di `crates/shared/src/spells_impl/` (separare contract da impl è già convenzione del repo).
+Mirrors `crates/shared/src/spells_impl/` (separating contracts from implementations is already a repo convention).
 
 ```
 crates/shared/src/items_impl/
@@ -256,8 +261,12 @@ crates/shared/src/items_impl/
 
 ```rust
 use std::borrow::Cow;
-use std::sync::Arc;
-use bevymmo_shared::items::{EquipSlot, Item, ItemConfig, ItemEffect, ItemId};
+use bevymmo_shared::items::{
+    definition::{ItemCategory, ItemConfig, ItemRarity},
+    effects::ItemEffect,
+    components::EquipSlot,
+    registry::{Item, ItemId},
+};
 use bevymmo_shared::stats::events::{ModifierOp, StatField};
 
 pub struct IronSword {
@@ -270,10 +279,9 @@ impl IronSword {
         Self {
             config: ItemConfig {
                 display_name: Cow::Borrowed("Spada 1"),
-                description: Cow::Borrowed("Una spada robusta che rafforza il portatore."),
+                description: Cow::Borrowed("A sturdy sword that strengthens its wielder."),
                 category: ItemCategory::Weapon,
                 rarity: ItemRarity::Uncommon,
-                max_stack: 1,
                 equippable_into: Some(EquipSlot::Weapon),
                 weight: 0.0,
             },
@@ -286,6 +294,10 @@ impl IronSword {
     }
 }
 
+impl Default for IronSword {
+    fn default() -> Self { Self::new() }
+}
+
 impl Item for IronSword {
     fn id(&self) -> ItemId { ItemId::new("iron_sword") }
     fn config(&self) -> &ItemConfig { &self.config }
@@ -293,67 +305,70 @@ impl Item for IronSword {
 }
 ```
 
-> Nota: per il primo item usiamo `bevymmo_shared::items_impl` invece di `server`, così il client può mostrare nome/descrizione/effects nella UI senza round-trip. Solo l'**applicazione** degli effetti è server-side.
+> Note: the first item lives in `bevymmo_shared::items_impl` rather than `server`, so the client can render name/description/effects in the UI without a round-trip. Only the **application** of effects is server-side.
 
-### Server autoritativo — `crates/server/src/items/`
+### Authoritative server — `crates/server/src/items/`
 
 ```
 crates/server/src/items/
-├── mod.rs        # ItemPlugin: registra sistemi has_server
-├── systems.rs    # handle_equip, handle_unequip, handle_move, handle_drop
+├── mod.rs        # ItemPlugin: registers has_server systems
+├── systems.rs    # handle_equip, handle_unequip, handle_move
 └── bonuses.rs    # recompute_equipment_bonuses (Changed<Equipment>)
 ```
 
 #### [NEW] `items/systems.rs`
 
-Pattern da seguire: copia di `server/src/spells/systems.rs` e `network/server.rs::handle_update_hotbar_slot_requests`.
+Pattern to follow: copy of `server/src/spells/systems.rs` and `network/server.rs::handle_update_hotbar_slot_requests`.
 
-Ogni handler:
+Each handler:
 
-1. Legge il command dal `MessageManager` / `MessageSender` connesso al peer.
-2. Risolve il player entity dal `PeerId`.
-3. **Valida** contro `ItemRegistry` + `equip_requirements()`.
-4. Muta `Inventory` / `Equipment` autoritativamente.
-5. Persiste in async via `PersistenceRuntime` + `PlayerRepository` (come fa già `save_hotbar`).
+1. Reads the command from the `MessageManager` / `MessageSender` bound to the peer.
+2. Resolves the player entity from the `PeerId`.
+3. **Validates** against `ItemRegistry` + `equip_requirements()`.
+4. Mutates `Inventory` / `Equipment` authoritatively.
+5. Persists asynchronously via `PersistenceRuntime` + `PlayerRepository` (exactly like `save_hotbar` already does).
 
 #### [NEW] `items/bonuses.rs`
 
-Sistema reattivo, il cuore del "ti da 1000 HP quando equipaggi":
+Reactive system — the heart of "you get +1000 HP while equipped":
 
 ```rust
-/// Quando `Equipment` cambia, ricalcola il delta rispetto al bonus applicato
-/// in precedenza e aggiorna le stat effettive replicate.
+/// When `Equipment` changes, recompute the delta against the previously
+/// applied bonus and update the effective replicated stats.
 pub fn recompute_equipment_bonuses(
     mut players: Query<
-        (&Equipment, &mut CombatStats, &mut VitalStats, &mut MovementStats, &mut AppliedEquipmentBonus),
+        (&Equipment, &mut CombatStats, &mut VitalStats, &mut MovementStats,
+         &mut AppliedEquipmentBonus),
         Changed<Equipment>,
     >,
     registry: Res<ItemRegistry>,
 ) {
     for (equipment, mut combat, mut vital, mut movement, mut applied) in &mut players {
-        // 1. Rimuovi il bonus applicato in precedenza (revert).
+        // 1. Revert the previously applied bonus.
         revert_bonus(&mut combat, &mut vital, &mut movement, &applied);
-        // 2. Ricalcola nuovo bonus sommando gli effects di tutti gli item equipaggiati.
+        // 2. Recompute the new bonus by summing effects of all equipped items.
         let new_bonus = compute_bonus(equipment, &registry);
-        // 3. Applica il nuovo bonus.
+        // 3. Apply the new bonus.
         apply_bonus(&mut combat, &mut vital, &mut movement, &new_bonus);
-        // 4. Ricorda cosa hai applicato per poterlo revertire al prossimo cambio.
+        // 4. Remember what was applied so we can revert it on the next change.
         applied.0 = new_bonus;
-        // 5. clamp_health per gestire shrink di max_health.
+        // 5. clamp_health to handle shrinking max_health.
         vital.clamp_health();
     }
 }
 ```
 
-**Perché revert + apply e non ricomputare da base**: le stat base vivono nel DB e sono la sorgente di verità assoluta. Aggiungere `AppliedEquipmentBonus` come componente transient ci permette di sottrarre solo ciò che avevamo aggiunto senza dover ricaricare da DB. È il pattern più semplice che rimane corretto anche con equip rapidi.
+**Why revert + apply instead of recomputing from base**: base stats live in the DB and are the absolute source of truth. Adding `AppliedEquipmentBonus` as a transient component lets us subtract only what we previously added, without reloading from the DB. It is the simplest pattern that stays correct under rapid equip/unequip.
 
-`AppliedEquipmentBonus` **non è replicato**: il client vede le stat post-bonus replicate normalmente.
+`AppliedEquipmentBonus` is **not replicated**: the client sees the post-bonus stats replicated normally.
 
-### Persistenza — `crates/server/src/persistence/`
+### Persistence — `crates/server/src/persistence/`
+
+Decision #3: full database persistence, two new tables.
 
 #### [NEW] `entity/player_inventory.rs`
 
-SeaORM entity. Pattern identico a `entity/player_hotbar.rs`:
+SeaORM entity. Same pattern as `entity/player_hotbar.rs`:
 
 ```rust
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
@@ -361,19 +376,15 @@ SeaORM entity. Pattern identico a `entity/player_hotbar.rs`:
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub player_id: Uuid,
-    /// JSON array di 10 `{"item_id": "...", "count": N} | null`.
-    /// Scelto JSON per non dover fare una tabella riga-per-slot
-    /// (10 righe per player) e mantenere l'atomicità dell'update.
+    /// JSON array of 10 entries: either null or {"id": "..."}.
+    /// JSON is chosen because the schema is a fixed-size array:
+    /// one row per player, atomic update, no joins.
     pub slots_json: String,
     pub updated_at: DateTime,
 }
 ```
 
-**Scelta JSON vs tabella normalizzata**:
-- JSON = 1 riga per player, update atomico, semplice. Buono per 10 slot.
-- Tabella `player_inventory_items(player_id, slot_index, item_id, count)` = più flessibile per slot espandibili e query (es. "chi ha la spada X?"), ma più complessa.
-
-Per ora **JSON** (corrisponde alla natura "array fisso" di `Inventory`). Se servono query cross-player, si migra dopo.
+**Why JSON, not a normalized table**: with a fixed 10-slot layout, one row per player gives atomic updates and trivial load/save. A normalized `player_inventory_items(player_id, slot_index, item_id)` table would only pay off if slots were expandable or if we needed cross-player queries ("who owns the iron sword?"). Neither is needed now; we can migrate later if it becomes necessary.
 
 #### [NEW] `entity/player_equipment.rs`
 
@@ -384,58 +395,60 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub player_id: Uuid,
     pub weapon: Option<String>,
+    // helmet, chest, ... added by future migrations.
     pub updated_at: DateTime,
 }
 ```
 
 #### [NEW] `migrations/m20260807_000007_create_player_inventory_and_equipment.rs`
 
-Crea le due tabelle con FK `player_id → players.id ON DELETE CASCADE`. Segue lo stile di `m20260806_000006_create_player_hotbar.rs`.
+Creates both tables with FK `player_id -> players.id ON DELETE CASCADE`. Follows the style of `m20260806_000006_create_player_hotbar.rs`.
 
 #### [MODIFY] `migrations/mod.rs`
 
-Registrare la nuova migration dopo `000006`.
+Register the new migration after `000006`.
 
 #### [MODIFY] `repository/player.rs`
 
-- Aggiungere `load_inventory`, `save_inventory`, `load_or_create_default_inventory`.
-- Stesso per `Equipment`.
-- Estendere `PersistedPlayerSnapshot` con `inventory: Inventory` ed `equipment: Equipment`.
-- Aggiornare il flusso di load-on-join e save-on-snapshot esattamente come già fatto per `SpellHotbar`.
+- Add `load_inventory`, `save_inventory`, `load_or_create_default_inventory` (returns 10 empty slots for a new player).
+- Same for `Equipment`.
+- Extend `PersistedPlayerSnapshot` with `inventory: Inventory` and `equipment: Equipment`.
+- Update the load-on-join and save-on-snapshot flows exactly as already done for `SpellHotbar`.
 
-### Client — nessuna logica di gameplay
+### Client — no gameplay logic
 
-Il client deve solo:
-- leggere `Inventory` / `Equipment` replicati;
-- inviare i 4 command su `Channel2`;
-- renderizzare la Card.
+The client only:
+- reads replicated `Inventory` / `Equipment`;
+- sends the 3 commands on `Channel2`;
+- renders the Card.
 
-Nessuna validazione client-side. Il server scarta silenziosamente richieste invalide (con `log::warn!` come fa `handle_update_hotbar_slot_requests`).
+No client-side validation. The server silently drops invalid requests (with `log::warn!`, like `handle_update_hotbar_slot_requests` already does).
 
 ---
 
-## Componente UI Card riutilizzabile (richiesta esplicita)
+## Reusable UI Card Component (explicit request)
 
-Questo è il deliverable architetturale più importante: oggi ogni pannello (`spellbook`, `pause_menu`, `settings`, ...) si costruisce il proprio `Node` tree duplicando header/padding/close button. Creare un **`Card` standard** ora permette di rifattorizzare retroattivamente e di usarlo per inventario, character sheet, trade, etc.
+This is the most important architectural deliverable: today every panel (`spellbook`, `pause_menu`, `settings`, ...) builds its own `Node` tree, duplicating header / padding / close button. Building a **standard `Card`** now lets us refactor the existing panels and use it for inventory, character sheet, trade, etc.
 
 ### [NEW] `crates/presentation/src/ui/card/`
 
 ```
 crates/presentation/src/ui/card/
-├── mod.rs          # CardPlugin (registra sistemi di interazione globali)
-├── components.rs   # CardWindow, CardHeader, CardBody, CardFooter, CloseCardButton
+├── mod.rs          # CardPlugin (registers global interaction systems)
+├── components.rs   # CardWindow, CardHeader, CardBody, CardFooter, CloseCardButton, CardExclusivityPolicy
 ├── builder.rs      # CardBuilder (Builder pattern)
-└── systems.rs      # close_card_on_button, close_card_on_esc
+└── systems.rs      # close_card_on_button, close_card_on_esc, enforce_exclusivity
 ```
 
-#### `components.rs`
+#### `components.rs` — including decision #4 (exclusivity policy)
 
 ```rust
-/// Marker del pannello radice. Una Card = un `CardWindow`.
+/// Marker for the root panel. One Card = one `CardWindow`.
 #[derive(Component)]
 pub struct CardWindow {
-    /// Identifica quale tipo di card è (per debug, ESC mirato, focus mgmt).
     pub kind: CardKind,
+    /// Decision #4: how this card interacts with other open cards.
+    pub exclusivity: CardExclusivityPolicy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -446,6 +459,19 @@ pub enum CardKind {
     CharacterSheet,
     Settings,
     Generic,
+}
+
+/// Policy Object (Design Pattern): every card declares its own behavior,
+/// instead of hardcoding "inventory closes spellbook" in two places.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CardExclusivityPolicy {
+    /// Opening this card closes every other currently open card,
+    /// and any later `Exclusive` card will replace this one.
+    #[default]
+    Exclusive,
+    /// Can be opened alongside other cards (e.g. the item-detail card
+    /// next to the inventory card).
+    Coexist,
 }
 
 #[derive(Component)]
@@ -463,23 +489,25 @@ pub struct CloseCardButton {
 }
 ```
 
-#### `builder.rs` — il cuore del riuso
+#### `builder.rs` — the heart of reuse
 
 ```rust
-/// Builder per una Card standard.
+/// Builder for a standard Card.
 ///
-/// Tutti i pannelli futuri passano per qui invece di costruire
-/// `Node` a mano. Garantisce header/footer/padding/tema uniformi.
+/// All future panels go through here instead of building `Node` trees
+/// by hand. Guarantees uniform header/footer/padding/theme and a single
+/// place to evolve the look-and-feel.
 ///
 /// # Example
 /// ```ignore
-/// CardBuilder::new(CardKind::Inventory, "Inventario")
+/// CardBuilder::new(CardKind::Inventory, "Inventory")
 ///     .width(Val::Px(720.0))
 ///     .height(Val::Px(480.0))
+///     .exclusivity(CardExclusivityPolicy::Exclusive)
 ///     .with_body(|body| {
-///         // spawn figli custom
+///         // custom children
 ///     })
-///     .with_footer(|footer| { /* pulsanti azione */ })
+///     .with_footer(|footer| { /* action buttons */ })
 ///     .spawn(&mut commands, &theme);
 /// ```
 pub struct CardBuilder<'a> {
@@ -487,42 +515,44 @@ pub struct CardBuilder<'a> {
     title: Cow<'a, str>,
     width: Val,
     height: Val,
+    exclusivity: CardExclusivityPolicy,
+    closeable: bool,
     body: Box<dyn FnOnce(&mut ChildSpawnerCommands) + 'a>,
     footer: Option<Box<dyn FnOnce(&mut ChildSpawnerCommands) + 'a>>,
-    closeable: bool,
 }
 
 impl<'a> CardBuilder<'a> {
     pub fn new(kind: CardKind, title: impl Into<Cow<'a, str>>) -> Self { /* ... */ }
     pub fn width(mut self, v: Val) -> Self { self.width = v; self }
     pub fn height(mut self, v: Val) -> Self { self.height = v; self }
+    pub fn exclusivity(mut self, p: CardExclusivityPolicy) -> Self { self.exclusivity = p; self }
+    pub fn closeable(mut self, closeable: bool) -> Self { self.closeable = closeable; self }
     pub fn with_body<F>(mut self, f: F) -> Self
         where F: FnOnce(&mut ChildSpawnerCommands) + 'a { self.body = Box::new(f); self }
     pub fn with_footer<F>(mut self, f: F) -> Self
         where F: FnOnce(&mut ChildSpawnerCommands) + 'a { self.footer = Some(Box::new(f)); self }
-    pub fn closeable(mut self, closeable: bool) -> Self { self.closeable = closeable; self }
     pub fn spawn(self, commands: &mut Commands<'_, '_>, theme: &UiTheme) -> Entity { /* ... */ }
 }
 ```
 
-Il builder:
-- genera il `Node` radice con `CardWindow { kind }`, centrato assoluto, `BackgroundColor(theme.panel_bg)`;
-- aggiunge header con `title` + (opzionale) close button con `CloseCardButton { kind }`;
-- delega al chiamante body e footer;
-- applica padding/font-size dal tema (nessun hardcoding).
+The builder:
+- spawns the root `Node` with `CardWindow { kind, exclusivity }`, absolute-centered, `BackgroundColor(theme.panel_bg)`;
+- adds a header with the `title` + (optional) close button carrying `CloseCardButton { kind }`;
+- delegates body and footer to the caller;
+- applies padding/font-size from the theme (no hardcoding).
 
-#### `systems.rs`
+#### `systems.rs` — global card behavior
 
 ```rust
-/// Click su CloseCardButton → despawn del CardWindow padre.
+/// Click on a CloseCardButton -> despawn the owning CardWindow.
 pub fn close_card_on_button(
-    interactions: Query<(&Interaction, &CloseCardButton, Entity), Changed<Interaction>>,
+    interactions: Query<(&Interaction, &CloseCardButton), Changed<Interaction>>,
     parents: Query<&Parent>,
+    cards: Query<Entity, With<CardWindow>>,
     mut commands: Commands,
-) { /* traversal up fino a CardWindow, despawn */ }
+) { /* walk up to the CardWindow ancestor, despawn */ }
 
-/// ESC chiude l'ultima Card aperta (LIFO su z-order).
-/// Per ora chiude tutte le card di tipo != None. Migliorabile in futuro.
+/// ESC closes every open card (LIFO z-order is a future refinement).
 pub fn close_card_on_esc(
     keys: Res<ButtonInput<KeyCode>>,
     cards: Query<Entity, With<CardWindow>>,
@@ -532,7 +562,35 @@ pub fn close_card_on_esc(
         for entity in cards.iter() { commands.entity(entity).despawn(); }
     }
 }
+
+/// Decision #4: enforce exclusivity.
+/// When a new `Exclusive` CardWindow is spawned, despawn every other card
+/// that is NOT `Coexist`. `Coexist` cards (like ItemDetail) stay open.
+/// Runs every frame; cheap because the card set is tiny.
+pub fn enforce_card_exclusivity(
+    cards: Query<(Entity, &CardWindow), Added<CardWindow>>,
+    all_cards: Query<(Entity, &CardWindow)>,
+    mut commands: Commands,
+) {
+    for (new_entity, new_window) in cards.iter() {
+        if new_window.exclusivity != CardExclusivityPolicy::Exclusive {
+            continue;
+        }
+        for (other_entity, other_window) in all_cards.iter() {
+            if other_entity == new_entity { continue; }
+            if other_window.exclusivity == CardExclusivityPolicy::Coexist { continue; }
+            commands.entity(other_entity).despawn();
+        }
+    }
+}
 ```
+
+**Concrete consequences**:
+- Inventory card = `Exclusive` -> opening it closes the spellbook (if the spellbook is also `Exclusive`).
+- Item-detail card = `Coexist` -> it can float next to the inventory card.
+- Spellbook card = `Exclusive` -> opening it closes the inventory.
+
+This removes the need for any "if inventory.is_open { close spellbook }" logic sprinkled across plugins.
 
 #### [MODIFY] `crates/presentation/src/ui/plugin.rs`
 
@@ -540,20 +598,20 @@ pub fn close_card_on_esc(
 app.add_plugins(card::CardPlugin);
 ```
 
-### Retrofit (consigliato, non obbligatorio nel primo PR)
+### Retrofit (recommended, in a separate follow-up PR)
 
-Dopo aver verificato che l'inventario funziona, rifattorizzare `ui/spellbook` per usare `CardBuilder`. Questo validae il riuso. Lasciarlo come follow-up separato per non gonfiare il PR.
+After the inventory works end-to-end, refactor `ui/spellbook` to use `CardBuilder`. This validates reuse. Kept as a separate follow-up so the first PR stays small.
 
 ---
 
-## UI Inventario — `crates/presentation/src/ui/inventory/`
+## Inventory UI — `crates/presentation/src/ui/inventory/`
 
 ```
 crates/presentation/src/ui/inventory/
 ├── mod.rs          # InventoryUiPlugin
-├── components.rs   # marker UI: InventoryWindow, ItemSlotButton, EquipButton, UnequipButton, WeaponSlotButton, ItemDetailCard
+├── components.rs   # UI markers: InventoryWindow, ItemSlotButton, WeaponSlotButton, EquipButton, UnequipButton, ItemDetailCard
 ├── systems.rs      # toggle, build, handle_clicks, refresh_visuals
-└── detail.rs       # spawn della Card di dettaglio item (costruita con CardBuilder)
+└── detail.rs       # spawns the item-detail Card (built via CardBuilder)
 ```
 
 #### `mod.rs`
@@ -562,7 +620,7 @@ crates/presentation/src/ui/inventory/
 #[derive(Resource, Default)]
 pub struct InventoryUiState {
     pub is_open: bool,
-    /// Slot index (0..10) o EquipSlot attualmente selezionato per il detail.
+    /// Slot index (0..10) or EquipSlot currently selected for the detail card.
     pub selected: Option<InventorySelection>,
 }
 
@@ -574,61 +632,66 @@ impl Plugin for InventoryUiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InventoryUiState>();
         app.add_systems(Update, (
-            systems::toggle_inventory,           // tasto I
-            systems::rebuild_inventory_if_dirty, // spawn/despawn CardWindow principale
-            systems::refresh_slot_visuals,       // update colori/testi senza rebuild
-            systems::handle_slot_clicks,         // apri detail card
-            systems::handle_detail_actions,      // equip/unequip/drop
+            systems::toggle_inventory,           // I key
+            systems::rebuild_inventory_if_dirty, // spawn/despawn main CardWindow
+            systems::refresh_slot_visuals,       // update colors/text without rebuild
+            systems::handle_slot_clicks,         // open detail card
+            systems::handle_detail_actions,      // equip/unequip
         ).chain().run_if(has_client).run_if(in_gameplay_or_paused));
     }
 }
 ```
 
-#### Layout (gestione CardBuilder)
+#### Layout (built on top of CardBuilder)
 
 ```mermaid
 flowchart TD
-    Card["CardWindow (CardKind::Inventory)"] --> Header["Header: 'Inventario' + Close"]
+    Card["CardWindow (CardKind::Inventory, Exclusive)"] --> Header["Header: 'Inventory' + Close"]
     Card --> Body["Body (flex column)"]
-    Body --> Grid["10 slot grid (2 righe x 5)"]
-    Body --> WeaponRow["Weapon slot row (evidenziato)"]
+    Body --> Grid["10 slot grid (2 rows x 5)"]
+    Body --> WeaponRow["Weapon slot row (highlighted)"]
     Grid --> Slot0["ItemSlotButton idx=0"]
     Grid --> Slot9["ItemSlotButton idx=9"]
     WeaponRow --> WeaponSlot["WeaponSlotButton"]
 ```
 
-Quando l'utente clicca `ItemSlotButton { index }`:
+When the user clicks `ItemSlotButton { index }`:
+
 1. `InventoryUiState.selected = Some(InventorySelection::Slot(index))`.
-2. `detail.rs::spawn_item_detail_card` apre una seconda `CardWindow (CardKind::ItemDetail)` con `CardBuilder`:
-   - Header: nome item dal `ItemRegistry`.
-   - Body: descrizione + lista `ItemEffect` formattati (es. "+1000 Max Health").
-   - Footer: pulsanti **Equip** (se `equippable_into.is_some()`) + **Drop** + **Close**.
-3. Se l'item nello slot è già quello equipaggiato nel weapon slot, il pulsante diventa **Unequip**.
+2. `detail.rs::spawn_item_detail_card` opens a second `CardWindow (CardKind::ItemDetail, Coexist)` via `CardBuilder`:
+   - Header: item name from `ItemRegistry`.
+   - Body: description + formatted list of `ItemEffect` (e.g. "+1000 Max Health").
+   - Footer: **Equip** button (if `equippable_into.is_some()`) + **Close** button.
+3. If the item in the slot is already the one equipped in the weapon slot, the button becomes **Unequip**.
 
-#### Refresh senza rebuild
+The `Coexist` policy is what allows this detail card to stay open alongside the inventory card without either closing the other.
 
-Come `update_spellbook_ui` già fa per le label della hotbar, usare una query su `ItemSlotButton` per aggiornare testo/colore in-place quando `Inventory` cambia, invece di despawnare tutto. Il rebuild completo avviene solo su open/close.
+#### Refresh without rebuild
 
-#### Apertura con I
+Just like `update_spellbook_ui` does for hotbar labels, use a query on `ItemSlotButton` to update text/color in place when `Inventory` changes, instead of despawning everything. Full rebuild happens only on open/close.
 
-`toggle_inventory` è il gemello di `toggle_spellbook` (che usa `K`). Stesso pattern:
-- `keys.just_pressed(KeyCode::KeyI)` flip `is_open`;
-- despawn `CardWindow(CardKind::Inventory)` e `CardWindow(CardKind::ItemDetail)` quando si chiude;
-- impedire overlap con `SpellbookUiState` se necessario (mutua esclusione: aprire l'inventario chiude lo spellbook).
+#### Opening with I
+
+`toggle_inventory` is the twin of `toggle_spellbook` (which uses `K`). Same pattern:
+- `keys.just_pressed(KeyCode::KeyI)` flips `is_open`;
+- on close, despawn `CardWindow(CardKind::Inventory)` and any `CardWindow(CardKind::ItemDetail)`;
+- exclusivity with the spellbook is handled automatically by `enforce_card_exclusivity` (decision #4), so no manual cross-plugin wiring is needed.
 
 ---
 
-## Sequenza di implementazione (consigliata)
+## Implementation Sequence (recommended)
 
-Ordine per ridurre risk e validare presto:
+Order chosen to reduce risk and validate early:
 
-1. **Card UI** (`ui/card/`) — senza logica di gameplay. PR standalone. Valida il riuso sullo spellbook retrofit.
-2. **Shared data** (`items/`, `items_impl/iron_sword.rs`) — tipi + registry + 1 item. Test unitari su `ItemRegistry`.
-3. **Network protocol** — registra command + replica componenti. Compila, ma nessun handler.
-4. **Server handlers** (`items/systems.rs`, `items/bonuses.rs`) + **persistenza** (entity + migration + repository). Test con `host-client`.
-5. **UI inventario** (`ui/inventory/`) sopra `CardBuilder`.
-6. **Item detail card** (equip/unequip flow end-to-end).
-7. **Retrofit spellbook** con `CardBuilder` (follow-up separato).
+1. **Card UI** (`ui/card/`) — no gameplay logic. Standalone PR. Validates reuse on a throwaway test card before the inventory exists.
+2. **Shared data** (`items/`, `items_impl/iron_sword.rs`) — types + registry + 1 item. Unit tests on `ItemRegistry`.
+3. **Network protocol** — register commands + replicate components. Compiles, but no handler yet.
+4. **Server handlers** (`items/systems.rs`, `items/bonuses.rs`) + **persistence** (entity + migration + repository). Test with `host-client`.
+5. **Inventory UI** (`ui/inventory/`) on top of `CardBuilder`.
+6. **Item-detail card** (equip/unequip flow end-to-end).
+7. **Spellbook retrofit** with `CardBuilder` (separate follow-up).
+
+Decision #5 confirms: **PR 1 = Card UI component only.**
 
 ---
 
@@ -641,12 +704,13 @@ cargo test
 cargo clippy -- -D warnings
 ```
 
-Test mirati da aggiungere:
-- `ItemRegistry::register` + `get` + `sorted_items` determinismo.
-- `IronSword::effects()` contiene `+1000 MaxHealth`.
-- `recompute_equipment_bonuses`: equip → vital.max_health += 1000; unequip → -= 1000; clamp rispettato.
-- Repository: `load_or_create_default_inventory` ritorna 10 slot vuoti per nuovo player.
-- Migration: su DB pulito le tabelle `player_inventory` e `player_equipment` esistono.
+Targeted tests to add:
+- `ItemRegistry::register` + `get` + `sorted_items` determinism.
+- `IronSword::effects()` contains `+1000 MaxHealth`.
+- `recompute_equipment_bonuses`: equip -> `vital.max_health += 1000`; unequip -> `-= 1000`; clamp respected.
+- Repository: `load_or_create_default_inventory` returns 10 empty slots for a new player.
+- Migration: on a clean DB the `player_inventory` and `player_equipment` tables exist.
+- `enforce_card_exclusivity`: spawning an `Exclusive` card despawns existing non-`Coexist` cards; `Coexist` cards survive.
 
 ### Manual
 
@@ -655,23 +719,23 @@ docker compose up -d
 cargo run -- host-client
 ```
 
-1. Entra in gioco.
-2. Premi `I`: si apre la Card Inventario con 10 slot vuoti + weapon slot vuoto.
-3. (Setup test) spawnare `iron_sword` in `Inventory.slots[0]` via comando/debug.
-4. Clicca lo slot 0: si apre la Card dettaglio con "Spada 1", "+1000 Max Health", pulsante **Equip**.
-5. Clicca Equip: weapon slot si popola, `VitalStats.max_health` sale di 1000, HUD HP bar si aggiorna.
-6. Riapri dettaglio: il pulsante è ora **Unequip**.
-7. Clicca Unequip: max_health torna al valore base.
-8. Premi `I` di nuovo: chiude. Premi `Esc`: chiude tutte le card.
-9. Disconnetti/riconnetti: inventario ed equipment persistono.
+1. Enter the game.
+2. Press `I`: the Inventory Card opens with 10 empty slots + empty weapon slot.
+3. (Test setup) spawn `iron_sword` into `Inventory.slots[0]` via a debug command.
+4. Click slot 0: a detail card opens with "Spada 1", "+1000 Max Health", and an **Equip** button. Verify the inventory card stays open (Coexist).
+5. Click Equip: the weapon slot populates, `VitalStats.max_health` increases by 1000, the HUD HP bar updates.
+6. Reopen the detail: the button is now **Unequip**.
+7. Click Unequip: `max_health` returns to the base value.
+8. Press `I` again: closes. Press `Esc`: closes every card.
+9. Open the spellbook (`K`) while the inventory is open: the spellbook replaces the inventory (both are `Exclusive`).
+10. Disconnect/reconnect: inventory and equipment persist.
 
 ---
 
-## Domande aperte per Alessandro
+## Open Questions for Alessandro
 
-1. **Stack**: confermi `ItemStack { count }` o preferisci 1 item = 1 slot per ora?
-2. **Equip multi-slot**: confermi `Equipment { weapon, /* helmet, chest预留 */ }` anche se ora solo weapon?
-3. **Persistenza JSON**: ok memorizzare i 10 slot come JSON in una riga, o preferisci tabella normalizzata?
-4. **Mutua esclusione UI**: aprire l'inventario deve chiudere spellbook (e viceversa), o possono coesistere?
-5. **Primo PR**: confermi l'ordine "Card UI per primo, standalone" come da sequenza proposta, o vuoi fare tutto in un unico PR grande?
-6. **Drop a terra**: il command `DropItemCommand` è nel piano ma la sua semantica (spawn di un'entità world pickup) non lo è. Lo rimandiamo a un secondo momento?
+All six original questions are resolved. Remaining follow-ups (not blocking):
+
+- World-pickup entities for `DropItemCommand` (deferred per decision #6).
+- Stacking support (`ItemStack { count }`) if consumables ever need it (deferred per decision #1).
+- Cross-player inventory queries (would justify migrating from JSON to a normalized table).

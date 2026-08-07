@@ -4,8 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["client", "server", "netcode", "udp", "interpolation", "prediction", "replication", "input_native"]
-client = ["lightyear/client", "bevy/default"]
+default = [
+    "client",
+    "editor",
+    "server",
+    "netcode",
+    "udp",
+    "interpolation",
+    "prediction",
+    "replication",
+    "input_native",
+]
+client = [
+    "lightyear/client",
+    "bevy/default",
+    "dep:bevymmo_client",
+    "dep:bevymmo_presentation",
+]
+editor = ["client", "dep:bevymmo_editor"]
 server = ["lightyear/server"]
 netcode = ["lightyear/netcode"]
 udp = ["lightyear/udp"]
@@ -26,9 +42,9 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 bevymmo_shared = { path = "../../crates/shared" }
 bevymmo_server = { path = "../../crates/server" }
-bevymmo_client = { path = "../../crates/client" }
-bevymmo_presentation = { path = "../../crates/presentation" }
-bevymmo_editor = { path = "../../crates/editor" }
+bevymmo_client = { path = "../../crates/client", optional = true }
+bevymmo_presentation = { path = "../../crates/presentation", optional = true }
+bevymmo_editor = { path = "../../crates/editor", optional = true }
 
 [[bin]]
 name = "game"

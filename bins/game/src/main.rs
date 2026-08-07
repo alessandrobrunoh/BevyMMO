@@ -8,7 +8,6 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-
 use bevymmo_shared::settings::Settings;
 use bevymmo_shared::{game_state, network::mode};
 
@@ -162,8 +161,16 @@ fn build_app(config: &AppConfig) -> App {
     app.add_plugins(game_state::GameStatePlugin);
 
     if matches!(config.mode, mode::AppMode::Editor) {
-        app.add_plugins(bevymmo_editor::EditorPlugin);
-        return app;
+        #[cfg(feature = "editor")]
+        {
+            app.add_plugins(bevymmo_editor::EditorPlugin);
+            return app;
+        }
+
+        #[cfg(not(feature = "editor"))]
+        {
+            panic!("editor mode requires the 'editor' cargo feature to be enabled");
+        }
     }
 
     let tick_duration = Duration::from_secs_f64(1.0 / config.tick_rate);
@@ -192,7 +199,6 @@ fn build_app(config: &AppConfig) -> App {
             Startup,
             bevymmo_shared::spells_impl::register_default_spells,
         );
-
     }
 
     app.add_plugins(bevymmo_shared::network::protocol::ProtocolPlugin);

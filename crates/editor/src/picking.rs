@@ -32,11 +32,80 @@ pub const PALETTE_KINDS: &[&str] = &[
     "house_simple",
 ];
 
+use std::collections::HashMap;
+
+/// Pre-allocated mesh and material handles shared across props of the same
+/// kind/color, enabling Bevy's automatic GPU instancing.
+#[derive(Resource, Default)]
+pub struct PropMeshRegistry {
+    cuboid_1x1: Option<Handle<Mesh>>,
+    materials: HashMap<[u32; 3], Handle<StandardMaterial>>,
+}
+
+impl PropMeshRegistry {
+    pub fn get_or_create_mesh(&mut self, meshes: &mut Assets<Mesh>) -> Handle<Mesh> {
+        self.cuboid_1x1
+            .get_or_insert_with(|| meshes.add(Cuboid::new(1.0, 1.0, 1.0)))
+            .clone()
+    }
+
+    pub fn get_or_create_material(
+        &mut self,
+        materials: &mut Assets<StandardMaterial>,
+        color: Color,
+    ) -> Handle<StandardMaterial> {
+        let key = color_key(color);
+        self.materials
+            .entry(key)
+            .or_insert_with(|| materials.add(StandardMaterial {
+                base_color: color,
+                ..default()
+            }))
+            .clone()
+    }
+}
+
+fn color_key(color: Color) -> [u32; 3] {
+    let [r, g, b, _] = color.to_srgba().to_f32_array();
+    [r.to_bits(), g.to_bits(), b.to_bits()]
+}
+
+/// Cached list of pickable bodies, rebuilt only when transforms change.
+#[derive(Resource, Default)]
+pub struct PickBodyCache {
+    pub bodies: Vec<PickBody>,
+}
+
+/// Rebuilds the pick cache only when a prop/terrain transform actually changes or count differs.
+pub fn refresh_pick_cache(
+    mut cache: ResMut<PickBodyCache>,
+    changed_props: Query<
+        (),
+        Or<(
+            Changed<Transform>,
+            Added<EditorProp>,
+            Added<EditorTerrain>,
+        )>,
+    >,
+    prop_q: Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
+    terrain_q: Query<(Entity, &Transform), (With<EditorTerrain>, Without<EditorProp>)>,
+) {
+    let prop_count = prop_q.iter().len();
+    let terrain_count = terrain_q.iter().len();
+    let total_count = prop_count + terrain_count;
+
+    if cache.bodies.len() == total_count && changed_props.is_empty() {
+        return;
+    }
+
+    cache.bodies = collect_bodies(&prop_q, &terrain_q);
+}
+
 /// A body that can be clicked in the editor: a prop or the terrain cube.
 /// `half` is the half-extent of the *rendered* mesh (props render a 2x2x2
 /// cuboid, terrain a unit cuboid).
 #[derive(Clone, Copy)]
-struct PickBody {
+pub(crate) struct PickBody {
     entity: Entity,
     center: Vec3,
     rotation: Quat,
@@ -177,8 +246,9 @@ pub fn place_or_select(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut registry: ResMut<PropMeshRegistry>,
+    cache: Res<PickBodyCache>,
     prop_q: Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
-    terrain_q: Query<(Entity, &Transform), (With<EditorTerrain>, Without<EditorProp>)>,
     selected_q: Query<Entity, With<SelectedMarker>>,
     gizmo_state: Res<TransformGizmoState>,
     mut state: ResMut<EditorState>,
@@ -211,11 +281,9 @@ pub fn place_or_select(
         return;
     };
 
-    let bodies = collect_bodies(&prop_q, &terrain_q);
-
     match state.tool {
         EditorTool::Select | EditorTool::Move | EditorTool::Rotate | EditorTool::Scale => {
-            if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &bodies) {
+            if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &cache.bodies) {
                 set_selected(&mut commands, &selected_q, entity);
                 state.selected = Some(entity);
             } else {
@@ -250,12 +318,13 @@ pub fn place_or_select(
                 &mut commands,
                 &mut meshes,
                 &mut materials,
+                &mut registry,
                 &mut state,
                 snapped,
             );
         }
         EditorTool::Erase => {
-            if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &bodies) {
+            if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &cache.bodies) {
                 if let Ok((entity, prop, _)) = prop_q.get(entity) {
                     history.push(&state.manifest);
                     state.validation_dirty = true;
@@ -271,8 +340,7 @@ pub fn place_or_select(
 pub fn update_hover(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<EditorCamera>>,
-    prop_q: Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
-    terrain_q: Query<(Entity, &Transform), (With<EditorTerrain>, Without<EditorProp>)>,
+    cache: Res<PickBodyCache>,
     mut state: ResMut<EditorState>,
 ) {
     let Ok(window) = windows.single() else {
@@ -296,8 +364,7 @@ pub fn update_hover(
         state.hovered = None;
         return;
     }
-    let bodies = collect_bodies(&prop_q, &terrain_q);
-    state.hovered = pick_closest(camera, camera_transform, cursor_pos, &bodies);
+    state.hovered = pick_closest(camera, camera_transform, cursor_pos, &cache.bodies);
 }
 
 pub fn delete_selected(
@@ -343,6 +410,7 @@ pub fn rebuild_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut registry: ResMut<PropMeshRegistry>,
     mut state: ResMut<EditorState>,
     prop_q: Query<Entity, With<EditorProp>>,
     terrain_q: Query<Entity, With<EditorTerrain>>,
@@ -362,7 +430,7 @@ pub fn rebuild_scene(
 
     spawn_terrain_entity(&mut commands, &mut meshes, &mut materials, &mut state);
     for prop in &state.manifest.props {
-        spawn_prop_entity(&mut commands, &mut meshes, &mut materials, prop);
+        spawn_prop_entity(&mut commands, &mut meshes, &mut materials, prop, &mut registry);
     }
 }
 
@@ -389,23 +457,23 @@ pub fn spawn_prop_entity(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     prop: &Prop,
+    registry: &mut PropMeshRegistry,
 ) -> Entity {
     let base_color = prop
         .tint
         .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
         .unwrap_or_else(|| {
-            tint_for_kind(&prop.kind)
+            tint_for_kind(prop.kind.as_str())
                 .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
                 .unwrap_or(Color::srgb(0.4, 0.5, 0.7))
         });
+    let mesh = registry.get_or_create_mesh(meshes);
+    let mat = registry.get_or_create_material(materials, base_color);
     commands
         .spawn((
             Name::new(format!("{} ({})", prop.id, prop.kind)),
-            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color,
-                ..default()
-            })),
+            Mesh3d(mesh),
+            MeshMaterial3d(mat),
             Transform {
                 translation: Vec3::from_array(prop.transform.translation),
                 rotation: quat_from_rotation_deg(prop.transform.rotation_deg),
@@ -423,6 +491,7 @@ fn place_prop(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
+    registry: &mut ResMut<PropMeshRegistry>,
     state: &mut ResMut<EditorState>,
     position: Vec3,
 ) {
@@ -432,7 +501,7 @@ fn place_prop(
     let visual_scale = visual_scale_for_kind(&kind);
     let prop = Prop {
         id: id.clone(),
-        kind,
+        kind: bevymmo_shared::placeables::KindId::new(kind),
         transform: TransformData {
             translation: [position.x, position.y, position.z],
             rotation_deg: [0.0, 0.0, 0.0],
@@ -442,7 +511,7 @@ fn place_prop(
         collision: None,
         blocks_movement: false,
     };
-    let entity = spawn_prop_entity(commands, meshes, materials, &prop);
+    let entity = spawn_prop_entity(commands, meshes, materials, &prop, registry);
     state.manifest.props.push(prop);
     state.dirty = true;
 

@@ -10,9 +10,9 @@ pub mod spells;
 pub mod ui;
 pub mod world;
 
+use assets::{BossDragonAssets, MapAssets, PlayerAssets};
 use bevy::prelude::*;
 use bevy_asset_loader::prelude::*;
-use assets::{PlayerAssets, BossDragonAssets, MapAssets};
 
 #[derive(States, Clone, Copy, Default, Eq, PartialEq, Hash, Debug)]
 pub enum PresentationState {
@@ -25,13 +25,16 @@ pub struct PresentationCorePlugin;
 
 impl Plugin for PresentationCorePlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<PresentationState>().add_loading_state(
-            LoadingState::new(PresentationState::Loading)
-                .continue_to_state(PresentationState::Ready)
-                .load_collection::<PlayerAssets>()
-                .load_collection::<BossDragonAssets>()
-                .load_collection::<MapAssets>(),
-        );
+        app.init_state::<PresentationState>()
+            .init_resource::<bevymmo_shared::placeables::PlaceableRegistry>()
+            .add_loading_state(
+                LoadingState::new(PresentationState::Loading)
+                    .continue_to_state(PresentationState::Ready)
+                    .load_collection::<PlayerAssets>()
+                    .load_collection::<BossDragonAssets>()
+                    .load_collection::<MapAssets>(),
+            )
+            .add_systems(Startup, register_presentation_placeables);
     }
 }
 
@@ -51,15 +54,21 @@ impl Plugin for PresentationPlugin {
     }
 }
 
+fn register_presentation_placeables(
+    mut registry: ResMut<bevymmo_shared::placeables::PlaceableRegistry>,
+) {
+    bevymmo_shared::placeables_impl::register_default_placeables(&mut registry);
+}
+
 pub mod prelude {
     pub use crate::entity::EntityVisualsPlugin;
-    pub use crate::player_movement::PlayerMovementPredictionPlugin;
-    pub use crate::spells::SpellsHudPlugin;
     pub use crate::game_state::{
         validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen,
         GameStatePlugin, PlayerNameError, Screen,
     };
+    pub use crate::player_movement::PlayerMovementPredictionPlugin;
     pub use crate::renderer::RendererPlugin;
     pub use crate::scenes::ScenesPlugin;
+    pub use crate::spells::SpellsHudPlugin;
     pub use crate::{PresentationCorePlugin, PresentationPlugin};
 }

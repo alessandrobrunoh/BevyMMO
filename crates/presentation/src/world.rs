@@ -28,14 +28,52 @@ pub struct MapPropVisual {
 #[derive(Component)]
 pub struct MapTerrainVisual;
 
+use std::collections::HashMap;
+
+#[derive(Resource, Default)]
+pub struct ClientPropMeshRegistry {
+    cuboid_1x1: Option<Handle<Mesh>>,
+    materials: HashMap<[u32; 3], Handle<StandardMaterial>>,
+}
+
+impl ClientPropMeshRegistry {
+    pub fn get_or_create_mesh(&mut self, meshes: &mut Assets<Mesh>) -> Handle<Mesh> {
+        self.cuboid_1x1
+            .get_or_insert_with(|| meshes.add(Cuboid::new(1.0, 1.0, 1.0)))
+            .clone()
+    }
+
+    pub fn get_or_create_material(
+        &mut self,
+        materials: &mut Assets<StandardMaterial>,
+        color: Color,
+    ) -> Handle<StandardMaterial> {
+        let key = color_key(color);
+        self.materials
+            .entry(key)
+            .or_insert_with(|| materials.add(StandardMaterial {
+                base_color: color,
+                ..default()
+            }))
+            .clone()
+    }
+}
+
+fn color_key(color: Color) -> [u32; 3] {
+    let [r, g, b, _] = color.to_srgba().to_f32_array();
+    [r.to_bits(), g.to_bits(), b.to_bits()]
+}
+
 pub struct WorldMapPlugin;
 
 impl Plugin for WorldMapPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ClientWorldMap>().add_systems(
-            Update,
-            (load_map_when_in_game, cleanup_map_when_not_in_game).chain(),
-        );
+        app.init_resource::<ClientWorldMap>()
+            .init_resource::<ClientPropMeshRegistry>()
+            .add_systems(
+                Update,
+                (load_map_when_in_game, cleanup_map_when_not_in_game).chain(),
+            );
     }
 }
 
@@ -45,6 +83,7 @@ fn load_map_when_in_game(
     mut world_map: ResMut<ClientWorldMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut registry: ResMut<ClientPropMeshRegistry>,
     map_assets: Option<Res<MapAssets>>,
 ) {
     if world_map.load_attempted || !matches!(screen.0, Screen::InGame | Screen::Paused) {
@@ -78,6 +117,7 @@ fn load_map_when_in_game(
             &mut commands,
             &mut meshes,
             &mut materials,
+            &mut registry,
             prop,
             &map_assets,
         );
@@ -141,6 +181,7 @@ fn spawn_prop_visual(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    registry: &mut ClientPropMeshRegistry,
     prop: &Prop,
     map_assets: &Option<Res<MapAssets>>,
 ) {
@@ -152,13 +193,13 @@ fn spawn_prop_visual(
             prop.transform.rotation_deg[0].to_radians(),
             prop.transform.rotation_deg[2].to_radians(),
         ),
-        scale: Vec3::from_array(prop.transform.scale) * placeholder_scale(&prop.kind),
+        scale: Vec3::from_array(prop.transform.scale) * placeholder_scale(prop.kind.as_str()),
     };
 
     let color = prop
         .tint
         .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
-        .unwrap_or_else(|| placeholder_color(&prop.kind));
+        .unwrap_or_else(|| placeholder_color(prop.kind.as_str()));
 
     let mut entity = commands.spawn((
         Name::new(format!("Map Prop {} ({})", prop.id, prop.kind)),
@@ -168,19 +209,19 @@ fn spawn_prop_visual(
         },
     ));
 
-    if prop.kind == "tree_oak" {
+    if prop.kind.as_str() == "tree_oak" {
         if let Some(assets) = map_assets.as_ref() {
             entity.insert(WorldAssetRoot(assets.tree_oak.clone()));
             return;
         }
     }
 
+    let mesh = registry.get_or_create_mesh(meshes);
+    let mat = registry.get_or_create_material(materials, color);
+
     entity.insert((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: color,
-            ..default()
-        })),
+        Mesh3d(mesh),
+        MeshMaterial3d(mat),
     ));
 }
 

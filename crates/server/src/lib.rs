@@ -9,6 +9,7 @@
 
 pub mod crowd_control;
 pub mod gameplay;
+pub mod items;
 pub mod migrations;
 pub mod network;
 pub mod persistence;
@@ -30,7 +31,9 @@ pub struct ServerPlugin {
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(persistence::PersistencePlugin::new(self.database_url.clone()));
+        app.add_plugins(persistence::PersistencePlugin::new(
+            self.database_url.clone(),
+        ));
         app.add_plugins(network::server::ServerPlugins {
             server_addr: self.server_addr,
             tick_duration: self.tick_duration,
@@ -41,17 +44,16 @@ impl Plugin for ServerPlugin {
             player_movement::PlayerMovementPlugin,
             crowd_control::CrowdControlPlugin,
             spells::SpellsServerPlugin,
+            items::ItemsServerPlugin,
             world::WorldPlugin,
         ));
     }
 }
 
 pub mod prelude {
-    pub use crate::ServerPlugin;
     pub use crate::crowd_control::{ApplyCrowdControlEvent, CrowdControlPlugin};
     pub use crate::gameplay::entity::EntityServerPlugin;
-    pub use crate::player_movement::PlayerMovementPlugin;
-    pub use crate::spells::SpellsServerPlugin;
+    pub use crate::items::ItemsServerPlugin;
     pub use crate::network::server::{
         DbPlayerId, Joined, PendingJoin, ServerConnectionConfig, ServerPlugins,
     };
@@ -59,5 +61,8 @@ pub mod prelude {
         normalize_name, PersistedPlayerSnapshot, PersistenceError, PersistencePlugin,
         PersistenceRuntime, PlayerStore,
     };
+    pub use crate::player_movement::PlayerMovementPlugin;
+    pub use crate::spells::SpellsServerPlugin;
     pub use crate::stats::StatsPlugin;
+    pub use crate::ServerPlugin;
 }

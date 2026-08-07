@@ -35,12 +35,14 @@ pub enum ModifierKind {
     Debuff,
 }
 
+use bevy::prelude::Event;
+
 /// Request to inflict `amount` damage on `target`.
 ///
 /// Damage is intended as a _raw_ value, before armor reduction.
 /// The [`crate::stats::systems::apply_damage`] system applies the armor
 /// reduction formula and clamps health.
-#[derive(Debug, Clone, PartialEq, Message)]
+#[derive(Debug, Clone, PartialEq, Message, Event)]
 pub struct DamageEvent {
     pub target: Entity,
     pub source: Option<Entity>,
@@ -50,7 +52,7 @@ pub struct DamageEvent {
 /// Request to heal `target` by `amount`.
 ///
 /// Heal is clamped to `VitalStats.max_health`.
-#[derive(Debug, Clone, PartialEq, Message)]
+#[derive(Debug, Clone, PartialEq, Message, Event)]
 pub struct HealEvent {
     pub target: Entity,
     pub source: Option<Entity>,

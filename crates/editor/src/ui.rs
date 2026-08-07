@@ -398,18 +398,22 @@ fn outliner_ui(
         return;
     }
 
+    use std::collections::HashMap;
+
+    let prop_entity_map: HashMap<&str, Entity> = prop_q
+        .iter()
+        .map(|(entity, editor_prop, _)| (editor_prop.prop_id.as_str(), entity))
+        .collect();
+
     let scene_entries: Vec<(String, String, Option<Entity>, bool)> = state
         .manifest
         .props
         .iter()
         .map(|prop| {
-            let prop_entity = prop_q
-                .iter()
-                .find(|(_, editor_prop, _)| editor_prop.prop_id == prop.id)
-                .map(|(entity, _, _)| entity);
+            let prop_entity = prop_entity_map.get(prop.id.as_str()).copied();
             (
                 prop.id.clone(),
-                prop.kind.clone(),
+                prop.kind.to_string(),
                 prop_entity,
                 prop_entity == state.selected,
             )

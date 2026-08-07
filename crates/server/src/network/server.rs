@@ -20,11 +20,14 @@ use bevymmo_shared::entity::player::components::Player;
 use bevymmo_shared::entity::player::spawn::PLAYER_SPAWN_POINT;
 use bevymmo_shared::entity::spawn::{spawn_entity, GameEntityBundle};
 use bevymmo_shared::game_state::validate_player_name;
+use bevymmo_shared::items::components::{Equipment, Inventory};
 use bevymmo_shared::network::protocol::*;
 use bevymmo_shared::spells::{
     SpellCastRequest, SpellCooldowns, SpellHotbar, SpellId, SpellRegistry, SpellReleaseRequest,
 };
-use bevymmo_shared::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
+use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
+
+use crate::items::bonuses::{base_stats_without_equipment, AppliedEquipmentBonus};
 
 use crate::persistence::{
     normalize_name, PersistedPlayerSnapshot, PersistenceError, PersistenceRuntime, PlayerStore,
@@ -271,6 +274,9 @@ fn finish_pending_joins(
                 Player,
                 snapshot.hotbar,
                 SpellCooldowns::default(),
+                snapshot.inventory,
+                snapshot.equipment,
+                AppliedEquipmentBonus::default(),
                 PlayerId(completed_join.peer_id),
                 DbPlayerId(snapshot.player.id),
                 PredictionTarget::to_clients(NetworkTarget::Single(completed_join.peer_id)),
@@ -310,6 +316,9 @@ fn handle_disconnected_client(
             &CombatStats,
             &VitalStats,
             &SpellHotbar,
+            &Inventory,
+            &Equipment,
+            &AppliedEquipmentBonus,
         ),
         With<Player>,
     >,
@@ -321,9 +330,21 @@ fn handle_disconnected_client(
         return;
     };
 
-    let Some((player_entity, _, database_id, position, movement, combat, vital, hotbar)) = players
+    let Some((
+        player_entity,
+        _,
+        database_id,
+        position,
+        movement,
+        combat,
+        vital,
+        hotbar,
+        inventory,
+        equipment,
+        applied_bonus,
+    )) = players
         .iter()
-        .find(|(_, player_id, _, _, _, _, _, _)| player_id.0 == remote_id.0)
+        .find(|(_, player_id, _, _, _, _, _, _, _, _, _)| player_id.0 == remote_id.0)
     else {
         commands
             .entity(trigger.entity)
@@ -335,8 +356,12 @@ fn handle_disconnected_client(
     let repository = store.0.clone();
     let database_id = database_id.0;
     let position = position.0;
-    let stats = StatsBundleData::from_components(movement, combat, vital);
+    // The DB must store base stats (without equipment bonus); otherwise the
+    // bonus would be counted twice on the next join.
+    let stats = base_stats_without_equipment(movement, combat, vital, applied_bonus);
     let hotbar = hotbar.clone();
+    let inventory = inventory.clone();
+    let equipment = equipment.clone();
     runtime.0.spawn(async move {
         if let Err(error) = repository
             .save_snapshot(
@@ -346,6 +371,8 @@ fn handle_disconnected_client(
                 position.z,
                 &stats,
                 &hotbar,
+                &inventory,
+                &equipment,
             )
             .await
         {

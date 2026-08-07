@@ -33,6 +33,7 @@ pub struct EntityBarPlugin;
 
 impl Plugin for EntityBarPlugin {
     fn build(&self, app: &mut App) {
+        app.add_observer(systems::on_vital_stats_added_ui);
         app.add_systems(
             Update,
             (
@@ -82,6 +83,7 @@ pub fn spawn_entity_bar(
             FloatingUi {
                 target,
                 offset: Vec3::new(0.0, 2.0, 0.0),
+                last_viewport: None,
             },
         ))
         .id();

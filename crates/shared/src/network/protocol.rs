@@ -4,6 +4,8 @@ use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::entity::components::{EntityKind, EntityState, GameEntity, SpawnPoint};
+use crate::items::components::{Equipment, Inventory};
+use crate::items::events::{EquipItemCommand, MoveItemCommand, UnequipItemCommand};
 use crate::spells::{HotbarSlot, SpellHotbar};
 use crate::stats::components::{CombatStats, MovementStats, VitalStats};
 
@@ -207,6 +209,15 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<UpdateHotbarSlotRequest>()
             .add_direction(NetworkDirection::ClientToServer);
 
+        app.register_message::<EquipItemCommand>()
+            .add_direction(NetworkDirection::ClientToServer);
+
+        app.register_message::<UnequipItemCommand>()
+            .add_direction(NetworkDirection::ClientToServer);
+
+        app.register_message::<MoveItemCommand>()
+            .add_direction(NetworkDirection::ClientToServer);
+
         // Input commands
         app.add_plugins(input::native::InputPlugin::<Inputs>::default());
 
@@ -235,6 +246,10 @@ impl Plugin for ProtocolPlugin {
         app.component::<EntityState>().replicate().predict();
 
         app.component::<SpellHotbar>().replicate().predict();
+
+        app.component::<Inventory>().replicate().predict();
+
+        app.component::<Equipment>().replicate().predict();
 
         app.component::<GameEntity>().replicate();
 

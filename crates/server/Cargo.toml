@@ -10,4 +10,5 @@ sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true }
+serde_json = "1"
 bevymmo_shared = { path = "../shared" }

@@ -11,9 +11,13 @@
 pub mod crowd_control;
 pub mod entity;
 pub mod game_state;
+pub mod items;
+pub mod items_impl;
 pub mod movement;
 pub mod network;
 pub mod paths;
+pub mod placeables;
+pub mod placeables_impl;
 pub mod settings;
 pub mod spells;
 pub mod spells_impl;
@@ -30,6 +34,11 @@ pub mod prelude {
     pub use crate::entity::definition::EntityDefinition;
     pub use crate::entity::events::{DeathEvent, RespawnedEvent};
     pub use crate::entity::spawn::{spawn_entity, GameEntityBundle};
+    pub use crate::items::events::{EquipItemCommand, MoveItemCommand, UnequipItemCommand};
+    pub use crate::items::{
+        EquipSlot, Equipment, Inventory, Item, ItemCategory, ItemConfig, ItemEffect, ItemId,
+        ItemRarity, ItemRegistry, INVENTORY_CAPACITY,
+    };
     pub use crate::network::mode::{has_client, has_server, AppMode};
     pub use crate::network::protocol::{
         EntityColor, Inputs, LookDirection, NetworkEntityId, PlayerId, Position, ProjectileVisual,

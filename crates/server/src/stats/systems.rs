@@ -32,6 +32,19 @@ pub fn apply_damage(
     }
 }
 
+/// Observer handler for `DamageEvent` triggers.
+pub fn on_damage_triggered(
+    trigger: On<DamageEvent>,
+    mut targets: Query<(&mut VitalStats, &CombatStats)>,
+) {
+    let event = trigger.event();
+    let Ok((mut vital, combat)) = targets.get_mut(event.target) else {
+        return;
+    };
+    let effective = damage_after_armor(event.amount, combat);
+    vital.current_health = (vital.current_health - effective).max(0.0);
+}
+
 /// Applies accumulated `HealEvent`s, clamping to maximum.
 pub fn apply_healing(mut events: MessageReader<HealEvent>, mut targets: Query<&mut VitalStats>) {
     for event in events.read() {
@@ -40,6 +53,18 @@ pub fn apply_healing(mut events: MessageReader<HealEvent>, mut targets: Query<&m
         };
         vital.current_health = (vital.current_health + event.amount).min(vital.max_health);
     }
+}
+
+/// Observer handler for `HealEvent` triggers.
+pub fn on_heal_triggered(
+    trigger: On<HealEvent>,
+    mut targets: Query<&mut VitalStats>,
+) {
+    let event = trigger.event();
+    let Ok(mut vital) = targets.get_mut(event.target) else {
+        return;
+    };
+    vital.current_health = (vital.current_health + event.amount).min(vital.max_health);
 }
 
 /// Converts `ApplyStatModifierEvent` into `StatModifierInstance` attached

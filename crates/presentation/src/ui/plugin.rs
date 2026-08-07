@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 
 use super::{
-    boss_bar, connecting, crowd_control_bar, death_screen, entity_bar, main_menu, pause_menu,
+    boss_bar, card, connecting, crowd_control_bar, death_screen, entity_bar, main_menu, pause_menu,
     player_stats, scoreboard, settings, spellbook, systems, target_frame, target_indicator,
 };
 
@@ -21,6 +21,7 @@ impl Plugin for UiPlugin {
         app.init_resource::<UiTheme>();
         app.add_systems(Startup, setup_ui_camera);
         app.add_plugins((
+            card::CardPlugin,
             entity_bar::EntityBarPlugin,
             scoreboard::ScoreboardPlugin,
             main_menu::MainMenuPlugin,

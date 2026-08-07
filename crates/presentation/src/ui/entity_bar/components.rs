@@ -11,6 +11,8 @@ use bevy::prelude::*;
 pub struct FloatingUi {
     pub target: Entity,
     pub offset: Vec3,
+    /// Last computed viewport position. Used to skip relayout when unchanged.
+    pub last_viewport: Option<Vec2>,
 }
 
 /// Marker: nodo riempimento della barra HP.

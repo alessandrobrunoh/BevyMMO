@@ -77,26 +77,31 @@ pub fn draw_grid(mut gizmos: Gizmos, state: Res<EditorState>) {
         let min = Vec3::new(bounds.min_x, 0.02, bounds.min_z);
         let max = Vec3::new(bounds.max_x, 0.02, bounds.max_z);
 
-        let mut x = bounds.min_x;
-        while x <= bounds.max_x + 0.001 {
-            gizmos.line(
-                Vec3::new(x, 0.02, bounds.min_z),
-                Vec3::new(x, 0.02, bounds.max_z),
-                GRID_COLOR,
-            );
-            x += step;
-        }
-        let mut z = bounds.min_z;
-        while z <= bounds.max_z + 0.001 {
-            gizmos.line(
-                Vec3::new(bounds.min_x, 0.02, z),
-                Vec3::new(bounds.max_x, 0.02, z),
-                GRID_COLOR,
-            );
-            z += step;
+        // Only draw the snap grid if the total line count is reasonable.
+        let x_lines = ((bounds.max_x - bounds.min_x) / step).ceil() as usize + 1;
+        let z_lines = ((bounds.max_z - bounds.min_z) / step).ceil() as usize + 1;
+        if x_lines + z_lines <= 400 {
+            let mut x = bounds.min_x;
+            while x <= bounds.max_x + 0.001 {
+                gizmos.line(
+                    Vec3::new(x, 0.02, bounds.min_z),
+                    Vec3::new(x, 0.02, bounds.max_z),
+                    GRID_COLOR,
+                );
+                x += step;
+            }
+            let mut z = bounds.min_z;
+            while z <= bounds.max_z + 0.001 {
+                gizmos.line(
+                    Vec3::new(bounds.min_x, 0.02, z),
+                    Vec3::new(bounds.max_x, 0.02, z),
+                    GRID_COLOR,
+                );
+                z += step;
+            }
         }
 
-        // Map bounds outline.
+        // Map bounds outline (always drawn).
         gizmos.line(
             Vec3::new(min.x, 0.02, min.z),
             Vec3::new(max.x, 0.02, min.z),

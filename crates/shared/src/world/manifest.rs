@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::shapes::CollisionShape;
+use crate::placeables::KindId;
 
 /// Current manifest format version. The loader rejects unknown versions.
 pub const CURRENT_VERSION: u32 = 1;
@@ -74,8 +75,9 @@ pub struct Prop {
     /// Stable unique id within the map. Used for selection and future
     /// persistence overrides.
     pub id: String,
-    /// Logical content id (e.g. "tree_oak").
-    pub kind: String,
+    /// Logical content id (e.g. `"tree_oak"`). Validated against the
+    /// [`PlaceableRegistry`](crate::placeables::PlaceableRegistry) by the loader.
+    pub kind: KindId,
     /// Full spatial transform.
     pub transform: TransformData,
     /// Optional color tint (linear RGB, 0..1). Absent -> asset default colors.

@@ -142,7 +142,7 @@ pub fn validate(manifest: &MapManifest) -> Vec<ValidationIssue> {
                 prop.id
             )));
         }
-        if prop.kind.trim().is_empty() {
+        if prop.kind.as_str().trim().is_empty() {
             issues.push(ValidationIssue::new(format!(
                 "prop {:?} has empty kind",
                 prop.id

@@ -28,7 +28,7 @@ pub struct FloatingUiRoot;
 
 /// Marker: entità di gioco che possiede già una UI flottante.
 #[derive(Component)]
-pub(crate) struct FloatingUiAttached;
+pub struct FloatingUiAttached;
 
 fn get_or_spawn_root(
     commands: &mut Commands,
@@ -76,6 +76,21 @@ pub fn spawn_ui_for_new_entities(
     }
 }
 
+pub(crate) fn on_vital_stats_added_ui(
+    trigger: On<Add, VitalStats>,
+    mut commands: Commands,
+    root_query: Query<Entity, With<FloatingUiRoot>>,
+    theme: Res<UiTheme>,
+    entities: Query<Entity, (With<Position>, Without<FloatingUiAttached>)>,
+) {
+    let entity = trigger.entity;
+    if let Ok(target) = entities.get(entity) {
+        let root = get_or_spawn_root(&mut commands, &root_query);
+        spawn_entity_bar(&mut commands, root, target, &theme);
+        commands.entity(target).insert(FloatingUiAttached);
+    }
+}
+
 /// Fase 1 — aggiorna posizione e visibilità del nodo container.
 ///
 /// Usa `With<Camera3d>` per selezionare la camera di gioco: il client ha anche
@@ -88,13 +103,13 @@ pub fn spawn_ui_for_new_entities(
 pub fn update_floating_ui_position(
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     target_query: Query<&Position>,
-    mut ui_query: Query<(&FloatingUi, &mut Node)>,
+    mut ui_query: Query<(&mut FloatingUi, &mut Node)>,
 ) {
     let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
 
-    for (floating_ui, mut node) in ui_query.iter_mut() {
+    for (mut floating_ui, mut node) in ui_query.iter_mut() {
         let Ok(pos) = target_query.get(floating_ui.target) else {
             continue;
         };
@@ -105,8 +120,18 @@ pub fn update_floating_ui_position(
             if node.display != Display::None {
                 node.display = Display::None;
             }
+            floating_ui.last_viewport = None;
             continue;
         };
+
+        // Skip scrittura se la posizione viewport non è cambiata (tolleranza 0.5px).
+        if floating_ui
+            .last_viewport
+            .map_or(false, |last| (last - viewport_pos).length_squared() < 0.25)
+        {
+            continue;
+        }
+        floating_ui.last_viewport = Some(viewport_pos);
 
         let new_left = Val::Px(viewport_pos.x - super::plugin::BAR_WIDTH * 0.5);
         let new_top = Val::Px(viewport_pos.y - super::plugin::STACK_HEIGHT);
@@ -127,6 +152,14 @@ pub fn update_floating_ui_position(
 /// Fase 2 — aggiorna contenuto (nome, fill, testo HP, colore fill) tramite riferimenti diretti,
 /// saltando le scritture invariate grazie alla cache in [`EntityBarParts`].
 pub fn update_floating_ui_content(
+    changed_targets: Query<
+        Entity,
+        Or<(
+            Changed<VitalStats>,
+            Changed<PlayerName>,
+            Changed<EntityKind>,
+        )>,
+    >,
     target_query: Query<(&VitalStats, Option<&PlayerName>, Option<&EntityKind>)>,
     theme: Res<UiTheme>,
     mut ui_query: Query<(&FloatingUi, &mut EntityBarParts)>,
@@ -135,6 +168,11 @@ pub fn update_floating_ui_content(
     mut bg_query: Query<&mut BackgroundColor>,
 ) {
     for (floating_ui, mut parts) in ui_query.iter_mut() {
+        // Processa solo se il target ha componenti variati o se la parte è ancora ininizializzata (last_fill_pct < 0.0)
+        if parts.last_fill_pct >= 0.0 && !changed_targets.contains(floating_ui.target) {
+            continue;
+        }
+
         let Ok((vital, name, entity_kind)) = target_query.get(floating_ui.target) else {
             continue;
         };

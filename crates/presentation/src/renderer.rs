@@ -3,9 +3,49 @@ use bevy::prelude::*;
 use bevymmo_shared::network::protocol::*;
 use bevymmo_shared::entity::components::{EntityKind, EntityState};
 use std::time::Duration;
-
+use std::collections::HashMap;
 use crate::game_state::{GameScreen, Screen};
 use crate::assets::{PlayerAssets, BossDragonAssets};
+
+#[derive(Resource)]
+pub struct RendererAssets {
+    projectile_mesh: Handle<Mesh>,
+    projectile_material: Handle<StandardMaterial>,
+    fallback_mesh_small: Handle<Mesh>,
+    color_materials: HashMap<[u32; 3], Handle<StandardMaterial>>,
+}
+
+impl RendererAssets {
+    fn get_or_create_color_material(
+        &mut self,
+        materials: &mut Assets<StandardMaterial>,
+        color: Color,
+    ) -> Handle<StandardMaterial> {
+        let [r, g, b, _] = color.to_srgba().to_f32_array();
+        let key = [r.to_bits(), g.to_bits(), b.to_bits()];
+        self.color_materials
+            .entry(key)
+            .or_insert_with(|| materials.add(StandardMaterial { base_color: color, ..default() }))
+            .clone()
+    }
+}
+
+fn init_renderer_assets(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    commands.insert_resource(RendererAssets {
+        projectile_mesh: meshes.add(Cuboid::new(0.45, 0.45, 0.45)),
+        projectile_material: materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            emissive: LinearRgba::rgb(0.1, 0.7, 1.0),
+            ..default()
+        }),
+        fallback_mesh_small: meshes.add(Cuboid::new(2.0, 2.0, 2.0)),
+        color_materials: HashMap::new(),
+    });
+}
 
 #[derive(Component)]
 pub struct RenderedEntity;
@@ -29,6 +69,8 @@ pub struct RendererPlugin;
 
 impl Plugin for RendererPlugin {
     fn build(&self, app: &mut App) {
+        app.add_systems(Startup, init_renderer_assets);
+        app.add_observer(on_entity_position_added);
         app.add_systems(
             Update,
             (spawn_entity_meshes, sync_transforms, update_colors, setup_animation_players, handle_animations)
@@ -47,24 +89,113 @@ fn not_in_game(screen: Res<GameScreen>) -> bool {
     !matches!(screen.0, Screen::InGame | Screen::Paused)
 }
 
+fn on_entity_position_added(
+    trigger: On<Add, Position>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    player_assets: Option<Res<PlayerAssets>>,
+    dragon_assets: Option<Res<BossDragonAssets>>,
+    renderer_assets: Option<Res<RendererAssets>>,
+    entities: Query<
+        (
+            &Position,
+            &EntityColor,
+            Option<&EntityKind>,
+            Option<&ProjectileVisual>,
+        ),
+        Without<RenderedEntity>,
+    >,
+) {
+    let entity = trigger.entity;
+    let Ok((position, color, kind, projectile_visual)) = entities.get(entity) else {
+        return;
+    };
+
+    let is_projectile = projectile_visual.is_some();
+    if is_projectile {
+        let (mesh, material) = if let Some(ra) = renderer_assets.as_ref() {
+            (ra.projectile_mesh.clone(), ra.projectile_material.clone())
+        } else {
+            (
+                meshes.add(Cuboid::new(0.45, 0.45, 0.45)),
+                materials.add(StandardMaterial {
+                    base_color: color.0,
+                    emissive: LinearRgba::rgb(0.1, 0.7, 1.0),
+                    ..default()
+                })
+            )
+        };
+        commands.entity(entity).insert((
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            Transform::from_translation(position.0),
+            RenderedEntity,
+        ));
+    } else {
+        let is_player = kind.map_or(false, |k| *k == EntityKind::Player);
+        if is_player {
+            if let Some(assets) = player_assets.as_ref() {
+                commands.entity(entity).insert((
+                    WorldAssetRoot(assets.scene.clone()),
+                    Transform::from_translation(position.0)
+                        .with_scale(Vec3::splat(PLAYER_SCENE_SCALE)),
+                    RenderedEntity,
+                ));
+            }
+        } else if kind.map_or(false, |k| *k == EntityKind::Hostile) {
+            if let Some(assets) = dragon_assets.as_ref() {
+                commands.entity(entity).insert((
+                    WorldAssetRoot(assets.scene.clone()),
+                    Transform::from_translation(position.0)
+                        .with_scale(Vec3::splat(BOSS_DRAGON_SCENE_SCALE)),
+                    RenderedEntity,
+                ));
+            }
+        } else {
+            let mesh = if let Some(ra) = renderer_assets.as_ref() {
+                ra.fallback_mesh_small.clone()
+            } else {
+                meshes.add(Cuboid::new(2.0, 2.0, 2.0))
+            };
+            let material = materials.add(StandardMaterial {
+                base_color: color.0,
+                ..default()
+            });
+            commands.entity(entity).insert((
+                Mesh3d(mesh),
+                MeshMaterial3d(material),
+                Transform::from_translation(position.0),
+                RenderedEntity,
+            ));
+        }
+    }
+}
+
 fn spawn_entity_meshes(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     player_assets: Option<Res<PlayerAssets>>,
     dragon_assets: Option<Res<BossDragonAssets>>,
+    mut renderer_assets: Option<ResMut<RendererAssets>>,
     entities: Query<(Entity, &Position, &EntityColor, Option<&EntityKind>, Option<&ProjectileVisual>), Without<RenderedEntity>>,
 ) {
     for (entity, position, color, kind, projectile_visual) in entities.iter() {
-
         let is_projectile = projectile_visual.is_some();
         if is_projectile {
-            let mesh = meshes.add(Cuboid::new(0.45, 0.45, 0.45));
-            let material = materials.add(StandardMaterial {
-                base_color: color.0,
-                emissive: LinearRgba::rgb(0.1, 0.7, 1.0),
-                ..default()
-            });
+            let (mesh, material) = if let Some(ra) = renderer_assets.as_ref() {
+                (ra.projectile_mesh.clone(), ra.projectile_material.clone())
+            } else {
+                (
+                    meshes.add(Cuboid::new(0.45, 0.45, 0.45)),
+                    materials.add(StandardMaterial {
+                        base_color: color.0,
+                        emissive: LinearRgba::rgb(0.1, 0.7, 1.0),
+                        ..default()
+                    })
+                )
+            };
             commands.entity(entity).insert((
                 Mesh3d(mesh),
                 MeshMaterial3d(material),
@@ -92,11 +223,20 @@ fn spawn_entity_meshes(
                     ));
                 }
             } else {
-                let mesh = meshes.add(Cuboid::new(2.0, 2.0, 2.0));
-                let material = materials.add(StandardMaterial {
-                    base_color: color.0,
-                    ..default()
-                });
+                let (mesh, material) = if let Some(ra) = renderer_assets.as_mut() {
+                    (
+                        ra.fallback_mesh_small.clone(),
+                        ra.get_or_create_color_material(&mut materials, color.0)
+                    )
+                } else {
+                    (
+                        meshes.add(Cuboid::new(2.0, 2.0, 2.0)),
+                        materials.add(StandardMaterial {
+                            base_color: color.0,
+                            ..default()
+                        })
+                    )
+                };
                 commands.entity(entity).insert((
                     Mesh3d(mesh),
                     MeshMaterial3d(material),

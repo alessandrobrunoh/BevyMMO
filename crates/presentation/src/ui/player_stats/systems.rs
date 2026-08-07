@@ -56,6 +56,7 @@ pub fn update_player_stats(
     )>,
     mut root_query: Query<&mut Node, With<PlayerStatsUi>>,
     mut text_query: Query<&mut Text, With<PlayerStatsText>>,
+    mut last_text: Local<String>,
 ) {
     let Ok(mut root) = root_query.single_mut() else {
         return;
@@ -85,7 +86,7 @@ pub fn update_player_stats(
         return;
     };
 
-    text.0 = format_stats(
+    let new_text = format_stats(
         movement,
         combat,
         vital,
@@ -93,6 +94,10 @@ pub fn update_player_stats(
         network_id,
         observed_casts.as_deref(),
     );
+    if *last_text != new_text {
+        text.0 = new_text.clone();
+        *last_text = new_text;
+    }
 }
 
 fn format_stats(

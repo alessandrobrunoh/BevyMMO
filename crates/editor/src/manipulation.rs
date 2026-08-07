@@ -72,9 +72,9 @@ pub fn writeback_manifest(
     mut state: ResMut<EditorState>,
     selected_prop_q: Query<
         (&EditorProp, &Transform),
-        (Without<EditorTerrain>, With<SelectedMarker>),
+        (Without<EditorTerrain>, With<SelectedMarker>, Changed<Transform>),
     >,
-    terrain_q: Query<&Transform, (With<EditorTerrain>, With<SelectedMarker>)>,
+    terrain_q: Query<&Transform, (With<EditorTerrain>, With<SelectedMarker>, Changed<Transform>)>,
 ) {
     let Some(selected) = state.selected else {
         return;
@@ -110,33 +110,43 @@ pub fn writeback_manifest(
 pub fn draw_overlays(
     mut gizmos: Gizmos,
     state: Res<EditorState>,
-    entities: Query<
-        (Entity, &Transform, Has<SelectedMarker>),
-        Or<(With<EditorProp>, With<EditorTerrain>)>,
-    >,
+    transforms: Query<&Transform, Or<(With<EditorProp>, With<EditorTerrain>)>>,
 ) {
-    for (entity, transform, is_selected) in entities.iter() {
-        let is_hovered = state.hovered == Some(entity);
-        if !is_selected && !is_hovered {
-            continue;
+    // Draw overlay for selected entity (O(1) lookup).
+    if let Some(entity) = state.selected {
+        if let Ok(transform) = transforms.get(entity) {
+            let half = if state.terrain_entity == Some(entity) {
+                transform.scale.abs() * 0.5
+            } else {
+                transform.scale.abs()
+            };
+            draw_box_edges(
+                &mut gizmos,
+                transform.translation,
+                transform.rotation,
+                half,
+                SELECTED_COLOR,
+            );
         }
-        let half = if state.terrain_entity == Some(entity) {
-            transform.scale.abs() * 0.5
-        } else {
-            transform.scale.abs()
-        };
-        let color = if is_selected {
-            SELECTED_COLOR
-        } else {
-            HOVERED_COLOR
-        };
-        draw_box_edges(
-            &mut gizmos,
-            transform.translation,
-            transform.rotation,
-            half,
-            color,
-        );
+    }
+    // Draw overlay for hovered entity if different from selected (O(1) lookup).
+    if let Some(entity) = state.hovered {
+        if state.selected != Some(entity) {
+            if let Ok(transform) = transforms.get(entity) {
+                let half = if state.terrain_entity == Some(entity) {
+                    transform.scale.abs() * 0.5
+                } else {
+                    transform.scale.abs()
+                };
+                draw_box_edges(
+                    &mut gizmos,
+                    transform.translation,
+                    transform.rotation,
+                    half,
+                    HOVERED_COLOR,
+                );
+            }
+        }
     }
 }
 

@@ -48,6 +48,8 @@ impl Plugin for EditorPlugin {
         );
         app.insert_resource(EditorState::default());
         app.insert_resource(EditorHistory::default());
+        app.insert_resource(picking::PickBodyCache::default());
+        app.insert_resource(picking::PropMeshRegistry::default());
         app.add_systems(
             Startup,
             (
@@ -61,6 +63,7 @@ impl Plugin for EditorPlugin {
         app.add_systems(
             Update,
             (
+                picking::refresh_pick_cache,
                 picking::place_or_select,
                 picking::update_hover,
                 picking::rebuild_scene.after(io::load_on_ctrl_o),
@@ -73,6 +76,7 @@ impl Plugin for EditorPlugin {
                 manipulation::draw_overlays,
                 io::recompute_validation,
             )
+                .chain()
                 .run_if(not(egui_wants_any_pointer_input)),
         );
 

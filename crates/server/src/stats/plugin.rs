@@ -19,6 +19,9 @@ impl Plugin for StatsPlugin {
         app.add_message::<HealEvent>();
         app.add_message::<ApplyStatModifierEvent>();
 
+        app.add_observer(crate::stats::systems::on_damage_triggered);
+        app.add_observer(crate::stats::systems::on_heal_triggered);
+
         app.add_systems(
             FixedUpdate,
             (

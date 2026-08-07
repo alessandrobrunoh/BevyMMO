@@ -191,6 +191,7 @@ pub fn duplicate_on_ctrl_d(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut registry: ResMut<crate::picking::PropMeshRegistry>,
     mut state: ResMut<EditorState>,
     mut history: ResMut<EditorHistory>,
     prop_q: Query<(&EditorProp, &Transform), Without<crate::state::EditorTerrain>>,
@@ -206,6 +207,7 @@ pub fn duplicate_on_ctrl_d(
         &mut commands,
         &mut meshes,
         &mut materials,
+        &mut registry,
         &mut state,
         &mut history,
         &prop_q,
@@ -220,6 +222,7 @@ pub fn run_duplicate(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    registry: &mut crate::picking::PropMeshRegistry,
     state: &mut EditorState,
     history: &mut EditorHistory,
     prop_q: &Query<(&EditorProp, &Transform), Without<crate::state::EditorTerrain>>,
@@ -258,7 +261,7 @@ pub fn run_duplicate(
         blocks_movement: source.blocks_movement,
     };
 
-    let entity = spawn_prop_entity(commands, meshes, materials, &new_prop);
+    let entity = spawn_prop_entity(commands, meshes, materials, &new_prop, registry);
     state.manifest.props.push(new_prop);
     state.dirty = true;
     state.validation_dirty = true;

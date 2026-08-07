@@ -1,110 +1,250 @@
-# Plan: Placeable Catalog — un centro per "cosa posso piazzare nel mondo"
+# Plan: Placeable Catalog — a single source of truth for "what can go in the world"
 
-> **Status:** proposta in attesa di conferma
-> **Scope:** strutturare un unico catalogo dati+comportamento per ogni oggetto piazzabile (props, NPC, trigger, risorse, interactable) che l'editor e il server consumano allo stesso modo.
-> **Pattern di riferimento:** `spells/` + `spells_impl/` + `SpellRegistry` (già in repo)
+> **Status:** proposal awaiting confirmation
+> **Scope:** build a single data + behavior catalog for every placeable object (props, NPCs, triggers, resources, interactables, creatures) consumed identically by the editor, server, and client.
+> **Reference pattern:** `spells/` + `spells_impl/` + `SpellRegistry` (already in repo)
+> **Composes with (verified):** `EntityDefinition` trait, `spawn_entity::<T>()`, `Player`/`Enemy`/`Boss`/`Dummy` markers, `stats::defaults`
 
-## 1. Perché questo piano esiste
+## 1. Why this plan exists
 
-Oggi il sistema è **solo data + stringhe magiche**:
+Today the system is **only data + magic strings**:
 
 ```text
 editor/src/picking.rs:        PALETTE_KINDS = ["cube", "tree_oak", "rock_01", ...]
-editor/src/picking.rs:        tint_for_kind(kind)        // match su stringa
-editor/src/picking.rs:        visual_scale_for_kind(kind)// match su stringa
-presentation/src/world.rs:    placeholder_scale(kind)    // match DUPLICATO
-presentation/src/world.rs:    placeholder_color(kind)    // match DUPLICATO
-shared/src/world/manifest.rs: Prop { kind: String }      // stringa non validata
+editor/src/picking.rs:        tint_for_kind(kind)         // match on a string
+editor/src/picking.rs:        visual_scale_for_kind(kind) // match on a string
+presentation/src/world.rs:    placeholder_scale(kind)     // DUPLICATED match
+presentation/src/world.rs:    placeholder_color(kind)     // DUPLICATED match
+shared/src/world/manifest.rs: Prop { kind: String }       // unvalidated string
+shared/src/entity/components.rs: SpawnPoint(Vec3)         // disconnected from placement
 ```
 
-Problemi concreti:
-- Aggiungere un oggetto nuovo richiede di modificare 3 file diversi in 3 crate diverse.
-- Niente validazione: posso scrivere `kind = "albero_fake"` e il client lo renderizza come cubo grigio silenziosamente.
-- I `kind` sono solo visuali — non c'è modo di collegarli a comportamento (NPC che parla, trigger che si attiva, risorsa che si raccoglie).
-- L'editor non sa nulla del "significato" di un oggetto, quindi non può raggruppare correttamente o validare il manifest.
+Concrete problems:
 
-## 2. Decisioni di design (D1–D8)
+- Adding a new object requires editing 3 different files in 3 different crates.
+- No validation: writing `kind = "fake_tree"` silently renders a gray cube.
+- `kind`s are purely visual — there is no way to attach behavior (an NPC that talks, a trigger that fires, a resource that gets harvested).
+- The editor knows nothing about the *meaning* of an object, so it cannot group them correctly or validate the manifest.
+- Spawn points for `Player`/`Enemy`/`Boss` entities are not expressible from the editor — `SpawnPoint(Vec3)` exists in code but has no `kind`, so the server has no way to know which marker spawns which entity type.
+- Today there is exactly ONE `Enemy` type and ONE `Boss` (hardcoded to the dragon). Adding "goblin" vs "orc" requires forking the whole `Enemy` machinery.
 
-### D1. Il catalogo è **codice compilato**, non un asset `.ron`
+## 2. Design decisions (D1–D9)
 
-Un oggetto come `tree_oak` è solo visual, ma `merchant_npc` ha un sistema di dialogue. Un `.ron` non può esprimere "chiama questo sistema quando il player interacta". Quindi:
+### D1. The catalog is **compiled code**, not a `.ron` asset
 
-- **Catalogo = `trait PlaceableDefinition` + `PlaceableRegistry` in `bevymmo_shared`**
-- Implementazioni in `crates/shared/src/placeables_impl/<category>/<kind>.rs`
-- Una funzione `register_default_placeables()` registra tutto all'avvio (come `register_default_spells`)
+A `tree_oak` is purely visual, but `merchant_npc` has an interaction system. A `.ron` file cannot express "call this system when the player interacts". Therefore:
 
-Il **manifest della mappa** resta data-only: contiene solo *dove* e *come* (transform, override tint, override collision), referenziando un `kind_id` del catalogo.
+- **Catalog = `trait PlaceableDefinition` + `PlaceableRegistry` in `bevymmo_shared`**
+- Implementations live in `crates/shared/src/placeables_impl/<category>/<kind>.rs`
+- A `register_default_placeables()` function registers everything at startup (mirrors `register_default_spells`)
 
-### D2. Una sola gerarchia, cinque categorie
+The **map manifest** stays data-only: it stores only *where* and *how* (transform, tint override, collision override), referencing a `kind_id` from the catalog.
 
-Non cinque trait separati — un `trait PlaceableDefinition` con un `category()` che ritorna una `PlaceableCategory`. Le differenze di comportamento sono metodi opzionali con default no-op.
+### D2. Category **subtraits** instead of an enum dispatch (the scalable design)
+
+This is the key decision, and it follows your instinct: *"what if I accept everything that impls the Enemy trait?"* — yes, that is the right approach.
+
+Do **not** use a `CreatureFamily` enum for dispatch. Use **category subtraits** that extend `PlaceableDefinition`. Implementing a subtrait IS the categorization. The compiler enforces it.
 
 ```rust
-pub enum PlaceableCategory {
-    Prop,         // alberi, rocce, case: solo visual + collision
-    Npc,          // merchant, quest giver: visual + interaction + AI
-    Trigger,      // zone PvP, teletrasporto: server logic, niente visual
-    ResourceNode, // minerali, erbe: gathering
-    Interactable, // porte, levette, forzieri: interaction one-shot
+// Base trait — data only, no behavior, object-safe.
+pub trait PlaceableDefinition: Send + Sync + 'static {
+    fn id(&self) -> KindId;
+    fn display_name(&self) -> &'static str;
+    fn defaults(&self) -> PlaceableDefaults;
+    // ... (no category() method — categories are the subtraits you impl)
+}
+
+// Category subtraits. Implementing one of these IS the categorization.
+// Adding a new "mob_orc" means: impl PlaceableDefinition + impl EnemyPlaceable.
+// No enum variant, no match arm, no central registry edit.
+pub trait PropPlaceable: PlaceableDefinition {}
+pub trait EnemyPlaceable: PlaceableDefinition {
+    fn enemy_config(&self) -> EnemyConfig;   // stats, spells, aggro
+}
+pub trait BossPlaceable: PlaceableDefinition {
+    fn boss_config(&self) -> BossConfig;     // spell rotation, phases, arena
+}
+pub trait NpcPlaceable: PlaceableDefinition {
+    fn interaction(&self) -> InteractionKind;
+}
+pub trait PlayerSpawnPlaceable: PlaceableDefinition {}
+pub trait TriggerPlaceable: PlaceableDefinition {
+    fn trigger_config(&self) -> TriggerConfig;
+}
+pub trait ResourceNodePlaceable: PlaceableDefinition {
+    fn resource_config(&self) -> ResourceConfig;
+}
+pub trait InteractablePlaceable: PlaceableDefinition {
+    fn interaction(&self) -> InteractionKind;
 }
 ```
 
-Perché una gerarchia sola: la maggior parte del codice (editor palette, validazione, spawn visuale) non distingue — guardare `category()` basta. Il server fa dispatch sul category solo dove serve comportamento specifico.
+Why this is better than enum dispatch:
 
-### D3. Il **manifest resta serializzato in RON**, ma referenzia `kind_id` validati
+| | Enum dispatch | Subtrait dispatch (this plan) |
+|---|---|---|
+| Adding `mob_orc` | Edit the enum + add a match arm | Just `impl EnemyPlaceable for OrcDefinition` |
+| Compile-time safety | None — runtime match | The compiler verifies every registered enemy has `enemy_config()` |
+| Reading the code | "where's the match?" | "show me impls of `EnemyPlaceable`" |
+| Hybrid entities | Awkward | Just impl multiple traits |
+| Object safety | N/A | Need to be careful (see D8) |
 
-Il manifest non contiene più stringhe qualsiasi — contiene `KindId` (newtype come `SpellId`). La validazione `validate()` del manifest verifica che ogni `kind_id` sia registrato nel catalogo.
+### D3. The **manifest stays RON-serialized**, but references validated `kind_id`s
 
-### D4. Separazione netta `definition` (shared) vs `binding` (server/client)
+The manifest holds `KindId` (a newtype like `SpellId`). The `validate()` function checks every `kind_id` is registered in the catalog. `KindId` serializes transparently as a string, so existing `.ron` files with `kind: "tree_oak"` keep loading unchanged.
 
-Per ogni placeable ci sono **tre strati** disgiunti:
+### D4. Clean separation: `definition` (shared) vs `binding` (server/client)
 
-| Strato | Crate | Responsabilità | Pattern |
+For each placeable there are **three disjoint layers**:
+
+| Layer | Crate | Responsibility | Pattern |
 |---|---|---|---|
-| **Definition** | `bevymmo_shared::placeables` | id, nome, categoria, defaults (tint, scale, collision), asset hint | `trait PlaceableDefinition` |
-| **Server binding** | `bevymmo_server::placeables` | come si traduce in entità gameplay (spawn di `GameEntityBundle`, AI, interaction handler) | `trait ServerPlaceableBinding` |
-| **Client binding** | `bevymmo_presentation::placeables` | come si renderizza (GLB/mesh/materiali, animazioni) | `trait ClientPlaceableBinding` |
+| **Definition** | `bevymmo_shared::placeables` | id, name, defaults (tint, scale, collision), asset hint, category subtraits | `trait PlaceableDefinition` + category subtraits |
+| **Server binding** | `bevymmo_server::placeables` | how to translate into a gameplay entity (`GameEntityBundle` spawn, AI, interaction handler) | Typed registries (see D7) |
+| **Client binding** | `bevymmo_presentation::placeables` | how to render (GLB / mesh / materials / animations) | `trait ClientPlaceableBinding` |
 
-Il `kind` è la **chiave** che li collega. Ogni crate registra solo i binding dei placeable che le competono.
+The `kind_id` is the **key** linking them. Each crate registers only the bindings of the placeables it owns.
 
-### D5. `EntityDefinition` resta per entità **gameplay runtime**
+### D5. `EntityDefinition` stays for **runtime gameplay entities**
 
-Non fondiamo tutto in `EntityDefinition`. Quello è per entità "vive" replicate (player, enemy, boss). Un `tree_oak` non è un'entità gameplay — è un prop statico. Il catalogo placeable **genera** entity quando serve (un NPC piazza un `GameEntityBundle` col marker `Npc`), ma il catalogo stesso è separato.
+Do not merge everything into `EntityDefinition`. That trait is for "live" replicated entities (`Player`, `Enemy`, `Boss`, `Dummy` — all verified in your codebase). A `tree_oak` is not a gameplay entity — it is a static prop. The placeable catalog *generates* entities when needed, but the catalog itself is separate.
 
-Relazione: `trait NpcPlaceable: PlaceableDefinition` dichiara "anche questo placeable sa come istanziare un'entità gameplay" — il server binding chiama `spawn_entity::<T>()` usando il pattern che già avete.
+**Verified facts (I checked the codebase):**
 
-### D6. L'editor non ha dipendenze da `bevymmo_server` o `bevymmo_presentation`
+- The marker structs are named `Player`, `Enemy`, `Boss`, `Dummy` (NO `Marker` suffix). They live in `shared/src/entity/{player,enemy,boss,dummy}/components.rs`.
+- Each implements `EntityDefinition` directly: `impl EntityDefinition for Player`, etc.
+- The spawn helper is `spawn_entity::<T>()` in `shared/src/entity/spawn.rs`.
+- Per-type stat profiles live in `shared/src/stats/defaults.rs`: `player_defaults()`, `enemy_defaults()`, `boss_defaults()`, `dummy_defaults()`.
+- Currently there is exactly ONE `Enemy` type and ONE `Boss` (hardcoded to the dragon via `Boss::SPELLS`). There is no archetype dispatch yet.
 
-L'editor legge solo il catalogo shared (definition). Per il rendering nel viewport usa il placeholder `mesh_for(category)` + tint di default del definition. Quando il gioco gira (mode `client`), la presentation rimpiazza i placeholder con i GLB veri.
+**The creature catalog is what introduces the archetype layer.** Today `Enemy` is monolithic; after this plan, `Enemy` becomes the machinery for all `EnemyPlaceable` kinds, and each `KindId` configures it differently (stats override, spell list, AI parameters). This is the same evolution `Spell` already went through: one trait, many impls, one registry.
 
-### D7. Un oggetto = una cartella, come gli spells
+### D6. The editor has no dependency on `bevymmo_server` or `bevymmo_presentation`
 
-Ogni `kind` concreto ha una cartella con `definition.rs` (wired al trait) e opzionalmente `server.rs` (binding server) e `client.rs` (binding presentation). Registro centrale include tutto.
+The editor reads only the shared catalog (definitions). For viewport rendering it uses the placeholder mesh + the definition's default tint. When the actual game runs (mode `client`), the presentation crate replaces placeholders with real GLBs.
 
-### D8. Niente reflection / dinamica eccessiva
+### D7. Typed registries — the Strategy pattern, compiled
 
-Il `PlaceableRegistry` usa `Arc<dyn PlaceableDefinition>` (come `SpellRegistry`). I binding server/client sono registrati come sistemi Bevy separati per category, non tramite trait object — perché ogni binding ha firme di sistema diverse (parametri world diversi).
+Instead of one big enum-switch, the server has **typed registries** per category. Each registry is a `HashMap<KindId, Arc<dyn XxxPlaceable>>`. This is the Strategy pattern: the lookup picks the right strategy object, and calling its method runs the right logic.
 
-## 3. Architettura
+```rust
+// In bevymmo_shared::placeables (the contract):
+#[derive(Resource, Default)]
+pub struct PlaceableRegistry {
+    props:       HashMap<KindId, Arc<dyn PropPlaceable>>,
+    enemies:     HashMap<KindId, Arc<dyn EnemyPlaceable>>,
+    bosses:      HashMap<KindId, Arc<dyn BossPlaceable>>,
+    npcs:        HashMap<KindId, Arc<dyn NpcPlaceable>>,
+    player_spawns: HashMap<KindId, Arc<dyn PlayerSpawnPlaceable>>,
+    triggers:    HashMap<KindId, Arc<dyn TriggerPlaceable>>,
+    resources:   HashMap<KindId, Arc<dyn ResourceNodePlaceable>>,
+    interactables: HashMap<KindId, Arc<dyn InteractablePlaceable>>,
+}
+```
+
+The server binding queries the right submap:
+
+```rust
+// In bevymmo_server::placeables (the dispatch):
+pub fn spawn_creature(
+    commands: &mut Commands,
+    registry: &PlaceableRegistry,
+    kind_id: &KindId,
+    position: Vec3,
+) {
+    if let Some(def) = registry.enemies.get(kind_id) {
+        let config = def.enemy_config();  // GUARANTEED by the type system
+        spawn_enemy(commands, kind_id, position, config);
+        return;
+    }
+    if let Some(def) = registry.bosses.get(kind_id) {
+        let config = def.boss_config();
+        spawn_boss(commands, kind_id, position, config);
+        return;
+    }
+    if registry.player_spawns.contains_key(kind_id) {
+        spawn_player(commands, position);
+        return;
+    }
+    warn!("No creature binding for kind_id {:?}", kind_id);
+}
+```
+
+Adding a new `mob_orc` means: write `OrcDefinition`, `impl PlaceableDefinition for OrcDefinition`, `impl EnemyPlaceable for OrcDefinition`, call `registry.register_enemy(Arc::new(OrcDefinition))`. No enum edit. No match arm.
+
+### D8. Object safety — keep subtraits dyn-compatible
+
+`dyn EnemyPlaceable` requires the trait to be object-safe. Rules:
+
+- ❌ No `fn foo(&self) -> impl Bundle` (return position can't be dyn)
+- ✅ `fn foo(&self) -> EnemyConfig` (concrete type — fine)
+- ❌ No generic methods on the trait
+- ✅ `&self`, `&mut self` methods are fine
+
+So traits return *data* (`EnemyConfig`, `BossConfig`), and the spawn machinery (`spawn_enemy()`, `spawn_boss()`) is a free function that takes the config and builds the bundle. That's exactly what your existing `spawn_entity::<T>()` already does — it takes the static config from `EntityDefinition::stats()` and builds the bundle inside the function.
+
+### D9. The creature → entity bridge reuses `EntityDefinition` + `spawn_entity::<T>()`
+
+The server binding does **not** reimplement spawning. It calls your existing helper, then layers catalog configuration on top:
+
+```rust
+// crates/server/src/placeables/creatures.rs
+use bevymmo_shared::entity::spawn::spawn_entity;
+use bevymmo_shared::entity::enemy::components::Enemy;
+use bevymmo_shared::entity::boss::components::Boss;
+use bevymmo_shared::entity::player::components::Player;
+
+/// Tag component: which catalog archetype this runtime entity was built from.
+/// AI/stats systems read this to look up per-archetype configuration.
+#[derive(Component, Clone, Debug)]
+pub struct CreatureArchetype {
+    pub kind_id: KindId,
+}
+
+fn spawn_enemy(
+    commands: &mut Commands,
+    kind_id: &KindId,
+    position: Vec3,
+    config: EnemyConfig,
+) {
+    // Reuse YOUR EXISTING spawn_entity::<Enemy>() — applies GameEntity,
+    // stats, Position, EntityColor, replication, everything.
+    let entity = spawn_entity::<Enemy>(commands);
+    commands.entity(entity)
+        .insert(Position(position))
+        .insert(CreatureArchetype { kind_id: kind_id.clone() })
+        .insert(config.stats)           // override the default Enemy stats
+        .insert(config.spell_hotbar);   // override the default hotbar
+}
+```
+
+**Evolution path** — how this scales:
+
+1. **Today:** `Enemy` is monolithic. `Boss::SPELLS` is hardcoded to dragon abilities.
+2. **After Slice 4:** Every spawned creature carries a `CreatureArchetype { kind_id }` component. Stats/AI systems read this to look up per-archetype configuration.
+3. **Adding `mob_goblin` vs `mob_orc`:** two new `KindId`s in `placeables_impl/creatures/`, each with different `EnemyConfig`. Same machinery (`spawn_entity::<Enemy>()`), different configuration. No enum variant added anywhere.
+4. **Adding a new boss:** new `KindId` with `impl BossPlaceable`. The boss plugin reads `CreatureArchetype` to pick the right spell rotation.
+
+## 3. Architecture
 
 ```mermaid
 flowchart TB
     subgraph shared[bevymmo_shared]
-        DEF[trait PlaceableDefinition]
-        REG[PlaceableRegistry]
-        CAT[PlaceableCategory enum]
-        IMPL[placeables_impl/<br/>tree_oak, rock_01, merchant_npc, ...]
+        DEF[trait PlaceableDefinition<br/>+ subtraits EnemyPlaceable, BossPlaceable, ...]
+        REG[PlaceableRegistry<br/>typed submaps per category]
+        IMPL[placeables_impl/<br/>tree_oak, mob_goblin, player_spawn, ...]
     end
     subgraph server[bevymmo_server]
-        SBP[trait ServerPlaceableBinding]
-        SBIMPL[server bindings per kind<br/>spawn di GameEntityBundle, AI]
+        DISP[dispatch: lookup in typed submap<br/>→ spawn_entity::<Player|Enemy|Boss>()]
+        SBIMPL[server bindings: spawn_enemy, spawn_boss, ...]
     end
     subgraph pres[bevymmo_presentation]
         CBP[trait ClientPlaceableBinding]
-        CBIMPL[client bindings per kind<br/>GLB, materiali, animazioni]
+        CBIMPL[client bindings per kind<br/>GLB, materials, animations]
     end
     subgraph editor[bevymmo_editor]
-        PAL[Palette legge il registry]
+        PAL[Palette reads the registry]
     end
     subgraph manifest[MapManifest RON]
         PROPS["Prop { kind_id: KindId, transform, ... }"]
@@ -113,14 +253,14 @@ flowchart TB
     IMPL --> DEF
     DEF --> REG
     REG --> PAL
-    REG --> SBP
+    REG --> DISP
     REG --> CBP
-    PROPS -- "valida kind_id" --> REG
-    SBIMPL --> SBP
+    PROPS -- "validate kind_id" --> REG
+    SBIMPL --> DISP
     CBIMPL --> CBP
 ```
 
-## 4. Contratti dati
+## 4. Data contracts
 
 ### 4.1 `crates/shared/src/placeables/mod.rs`
 
@@ -130,53 +270,49 @@ flowchart TB
 //! server binding (gameplay behavior) and a client binding (rendering).
 //!
 //! Mirrors the spell framework: `trait` + `Registry` + concrete impls in
-//! `placeables_impl/`.
+//! `placeables_impl/`. Categories are expressed via subtraits, not an enum,
+//! so adding a new kind never touches a central dispatch table.
 
-pub mod binding_server;
-pub mod binding_client;
 pub mod category;
+pub mod config;
 pub mod definition;
 pub mod registry;
 
-pub use category::PlaceableCategory;
-pub use definition::{PlaceableDefaults, PlaceableDefinition, AssetHint};
+pub use category::PlaceableCategory;       // UI hint only (see 4.2)
+pub use config::{
+    BossConfig, EnemyConfig, InteractionKind, ResourceConfig, TriggerConfig,
+};
+pub use definition::{
+    AssetHint, PlaceableDefaults, PlaceableDefinition, BossPlaceable, EnemyPlaceable,
+    InteractablePlaceable, NpcPlaceable, PlayerSpawnPlaceable, PropPlaceable,
+    ResourceNodePlaceable, TriggerPlaceable,
+};
 pub use registry::{KindId, PlaceableRegistry};
 ```
 
-### 4.2 `category.rs`
+### 4.2 `category.rs` — UI hint only, NOT for dispatch
 
 ```rust
-use serde::{Deserialize, Serialize};
-
-/// Top-level classification of a placeable. Drives editor palette grouping
-/// and server-side dispatch (NPC AI vs trigger evaluation vs ...).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Top-level classification used **only for editor palette grouping**.
+/// Dispatch is done via typed subtraits (`EnemyPlaceable`, etc.), not this enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PlaceableCategory {
-    /// Static visual prop (tree, rock, house). No behavior.
     Prop,
-    /// Non-player character with interaction and optional AI.
-    Npc,
-    /// Invisible gameplay zone (PvP, teleport, area trigger).
+    Creature,       // player spawn + mob + boss + npc
     Trigger,
-    /// Harvestable node (ore vein, herb).
     ResourceNode,
-    /// One-shot interaction (door, lever, chest).
     Interactable,
 }
 
 impl PlaceableCategory {
     pub const ALL: [Self; 5] = [
-        Self::Prop,
-        Self::Npc,
-        Self::Trigger,
-        Self::ResourceNode,
-        Self::Interactable,
+        Self::Prop, Self::Creature, Self::Trigger, Self::ResourceNode, Self::Interactable,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Prop => "Props",
-            Self::Npc => "NPCs",
+            Self::Creature => "Creatures",
             Self::Trigger => "Triggers",
             Self::ResourceNode => "Resources",
             Self::Interactable => "Interactables",
@@ -185,28 +321,29 @@ impl PlaceableCategory {
 }
 ```
 
-### 4.3 `definition.rs`
+> The editor palette can either call `registry.category_of(kind_id)` (which checks which typed submap the id lives in) or simply iterate each typed submap directly. The enum exists for display convenience only.
+
+### 4.3 `definition.rs` — base trait + category subtraits
 
 ```rust
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::world::{CollisionShape, TransformData};
-use super::category::PlaceableCategory;
+use super::config::{
+    BossConfig, EnemyConfig, InteractionKind, ResourceConfig, TriggerConfig,
+};
 use super::registry::KindId;
 
-/// Hint for the client binding about which asset to load. The catalog stays
-/// in `shared` (no AssetServer here), so we only name the asset; the client
-/// resolves the path.
+/// Hint for the client binding about which asset to load.
 #[derive(Debug, Clone)]
 pub enum AssetHint {
-    /// Render as a placeholder colored cuboid (editor + dev mode).
     Placeholder,
-    /// Load a GLB scene at the given relative path (e.g. "models/props/tree_oak.glb").
     Scene(&'static str),
+    Invisible,
 }
 
 /// Default values written into the manifest when the user places the kind.
-/// All fields can be overridden per-placement in the editor.
 #[derive(Debug, Clone)]
 pub struct PlaceableDefaults {
     pub transform: TransformData,
@@ -215,45 +352,151 @@ pub struct PlaceableDefaults {
     pub blocks_movement: bool,
 }
 
-/// Single source of truth for a placeable kind. Mirrors the `Spell` trait.
-pub trait PlaceableDefinition: Send + Sync + 'static {
-    /// Stable identifier stored in the manifest (e.g. "tree_oak").
-    fn id(&self) -> KindId;
-
-    /// Human-readable name for the editor palette and tooltips.
-    fn display_name(&self) -> &'static str;
-
-    /// Top-level category — drives palette grouping and server dispatch.
-    fn category(&self) -> PlaceableCategory;
-
-    /// Asset hint used by the client binding to build the visual.
-    fn asset_hint(&self) -> AssetHint {
-        AssetHint::Placeholder
-    }
-
-    /// Default transform, tint and collision applied on placement.
-    fn defaults(&self) -> PlaceableDefaults {
-        PlaceableDefaults {
+impl Default for PlaceableDefaults {
+    fn default() -> Self {
+        Self {
             transform: TransformData::at(0.0, 0.0, 0.0),
             tint: None,
             collision: None,
             blocks_movement: false,
         }
     }
+}
 
-    /// Short description shown in the editor palette tooltip.
+// -------------------------------------------------------------------------
+// Base trait — data only, object-safe.
+// -------------------------------------------------------------------------
+
+/// Single source of truth for a placeable kind's data. Mirrors `Spell`.
+pub trait PlaceableDefinition: Send + Sync + 'static {
+    fn id(&self) -> KindId;
+    fn display_name(&self) -> &'static str;
+    fn defaults(&self) -> PlaceableDefaults {
+        PlaceableDefaults::default()
+    }
+    fn asset_hint(&self) -> AssetHint {
+        AssetHint::Placeholder
+    }
     fn description(&self) -> &'static str {
         ""
     }
-
-    /// Optional emoji / glyph used by the editor palette for compact display.
     fn icon(&self) -> &'static str {
         "▢"
     }
 }
+
+// -------------------------------------------------------------------------
+// Category subtraits. Implementing one of these IS the categorization.
+// Each subtrait is object-safe (returns concrete config types, not impl Bundle).
+// -------------------------------------------------------------------------
+
+/// Static visual prop (tree, rock, house). No behavior beyond defaults.
+pub trait PropPlaceable: PlaceableDefinition {}
+
+/// Player spawn marker. The server picks one per connected client.
+pub trait PlayerSpawnPlaceable: PlaceableDefinition {}
+
+/// Hostile or neutral AI creature (goblin, wolf, skeleton, ...).
+pub trait EnemyPlaceable: PlaceableDefinition {
+    fn enemy_config(&self) -> EnemyConfig;
+}
+
+/// Boss entity (dragon, lich king, ...).
+pub trait BossPlaceable: PlaceableDefinition {
+    fn boss_config(&self) -> BossConfig;
+}
+
+/// Friendly or neutral interactable (merchant, quest giver).
+pub trait NpcPlaceable: PlaceableDefinition {
+    fn interaction(&self) -> InteractionKind;
+}
+
+/// Invisible gameplay zone (PvP, teleport, area trigger).
+pub trait TriggerPlaceable: PlaceableDefinition {
+    fn trigger_config(&self) -> TriggerConfig;
+}
+
+/// Harvestable node (ore vein, herb).
+pub trait ResourceNodePlaceable: PlaceableDefinition {
+    fn resource_config(&self) -> ResourceConfig;
+}
+
+/// One-shot interaction (door, lever, chest).
+pub trait InteractablePlaceable: PlaceableDefinition {
+    fn interaction(&self) -> InteractionKind;
+}
 ```
 
-### 4.4 `registry.rs`
+### 4.4 `config.rs` — concrete config DTOs returned by subtraits
+
+```rust
+//! Concrete configuration DTOs returned by the category subtraits.
+//! These are NOT ECS components — they are data passed to the spawn machinery,
+//! which then inserts the appropriate components. Keeping them as plain structs
+//! (not components) preserves object safety of the traits.
+
+use bevymmo_shared::spells::{SpellHotbar, SpellId};
+use bevymmo_shared::stats::components::StatsBundleData;
+
+/// Configuration for an `EnemyPlaceable`. Returned by `enemy_config()`.
+#[derive(Debug, Clone)]
+pub struct EnemyConfig {
+    pub stats: StatsBundleData,
+    pub spell_hotbar: SpellHotbar,
+    pub aggro_range: f32,
+}
+
+/// Configuration for a `BossPlaceable`. Returned by `boss_config()`.
+#[derive(Debug, Clone)]
+pub struct BossConfig {
+    pub stats: StatsBundleData,
+    /// Spell ids in the boss rotation. Today this is hardcoded as
+    /// `Boss::SPELLS`; after this plan it comes from the catalog.
+    pub rotation: Vec<SpellId>,
+    pub arena_radius: f32,
+}
+
+/// Configuration for a `TriggerPlaceable`.
+#[derive(Debug, Clone)]
+pub struct TriggerConfig {
+    pub shape: TriggerShape,
+    pub event: TriggerEvent,
+    pub once_per_entity: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum TriggerShape {
+    Circle { radius: f32 },
+    Box { half_extents: [f32; 2] },
+}
+
+#[derive(Debug, Clone)]
+pub enum TriggerEvent {
+    EnterPvpZone,
+    EnterSafeZone,
+    Teleport { target_map: String, target_position: [f32; 3] },
+}
+
+/// Configuration for a `ResourceNodePlaceable`.
+#[derive(Debug, Clone)]
+pub struct ResourceConfig {
+    pub max_health: f32,
+    pub respawn_seconds: f32,
+    pub yield_item: String,
+    pub yield_amount: u32,
+}
+
+/// Interaction kind for `NpcPlaceable` and `InteractablePlaceable`.
+#[derive(Debug, Clone)]
+pub enum InteractionKind {
+    Shop { inventory_id: String },
+    Dialogue { dialogue_tree_id: String },
+    OpenChest { loot_table_id: String },
+    OpenDoor,
+}
+```
+
+### 4.5 `registry.rs` — typed submaps
 
 ```rust
 use serde::{Deserialize, Serialize};
@@ -263,12 +506,15 @@ use std::sync::Arc;
 use bevy::prelude::*;
 
 use super::category::PlaceableCategory;
-use super::definition::PlaceableDefinition;
+use super::definition::{
+    BossPlaceable, EnemyPlaceable, InteractablePlaceable, NpcPlaceable,
+    PlayerSpawnPlaceable, PropPlaceable, ResourceNodePlaceable, TriggerPlaceable,
+};
 
-/// Stable unique identifier for a placeable kind. Newtype around a string,
-/// like `SpellId`. Stored in the manifest; the loader validates it against
-/// the registry.
+/// Stable unique identifier for a placeable kind. Serializes transparently
+/// as a string so existing `.ron` files keep working.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct KindId(pub(crate) Cow<'static, str>);
 
 impl KindId {
@@ -280,63 +526,72 @@ impl From<&'static str> for KindId {
     fn from(value: &'static str) -> Self { Self::new(value) }
 }
 
-/// Central registry of all placeable kinds. Populated at startup by
-/// `register_default_placeables()`.
+/// Central registry. Each category has its own typed submap so dispatch is
+/// a HashMap lookup, not a match on an enum. Adding a new kind means
+/// `register_enemy(Arc::new(OrcDefinition))` — no central edit.
 #[derive(Resource, Default)]
 pub struct PlaceableRegistry {
-    kinds: HashMap<KindId, Arc<dyn PlaceableDefinition>>,
+    pub props:           HashMap<KindId, Arc<dyn PropPlaceable>>,
+    pub enemies:         HashMap<KindId, Arc<dyn EnemyPlaceable>>,
+    pub bosses:          HashMap<KindId, Arc<dyn BossPlaceable>>,
+    pub npcs:            HashMap<KindId, Arc<dyn NpcPlaceable>>,
+    pub player_spawns:   HashMap<KindId, Arc<dyn PlayerSpawnPlaceable>>,
+    pub triggers:        HashMap<KindId, Arc<dyn TriggerPlaceable>>,
+    pub resources:       HashMap<KindId, Arc<dyn ResourceNodePlaceable>>,
+    pub interactables:   HashMap<KindId, Arc<dyn InteractablePlaceable>>,
 }
 
 impl PlaceableRegistry {
-    pub fn register(&mut self, definition: Arc<dyn PlaceableDefinition>) {
-        let id = definition.id();
-        self.kinds.insert(id, definition);
+    // Typed register methods.
+    pub fn register_prop(&mut self, def: Arc<dyn PropPlaceable>)                { self.props.insert(def.id(), def); }
+    pub fn register_enemy(&mut self, def: Arc<dyn EnemyPlaceable>)              { self.enemies.insert(def.id(), def); }
+    pub fn register_boss(&mut self, def: Arc<dyn BossPlaceable>)                { self.bosses.insert(def.id(), def); }
+    pub fn register_npc(&mut self, def: Arc<dyn NpcPlaceable>)                  { self.npcs.insert(def.id(), def); }
+    pub fn register_player_spawn(&mut self, def: Arc<dyn PlayerSpawnPlaceable>) { self.player_spawns.insert(def.id(), def); }
+    pub fn register_trigger(&mut self, def: Arc<dyn TriggerPlaceable>)          { self.triggers.insert(def.id(), def); }
+    pub fn register_resource(&mut self, def: Arc<dyn ResourceNodePlaceable>)    { self.resources.insert(def.id(), def); }
+    pub fn register_interactable(&mut self, def: Arc<dyn InteractablePlaceable>) { self.interactables.insert(def.id(), def); }
+
+    pub fn contains(&self, id: &KindId) -> bool {
+        self.props.contains_key(id)
+            || self.enemies.contains_key(id)
+            || self.bosses.contains_key(id)
+            || self.npcs.contains_key(id)
+            || self.player_spawns.contains_key(id)
+            || self.triggers.contains_key(id)
+            || self.resources.contains_key(id)
+            || self.interactables.contains_key(id)
     }
 
-    pub fn get(&self, id: &KindId) -> Option<Arc<dyn PlaceableDefinition>> {
-        self.kinds.get(id).cloned()
+    /// UI hint: which palette group does this kind belong to?
+    /// Dispatch itself never uses this — it uses the typed submaps.
+    pub fn category_of(&self, id: &KindId) -> Option<PlaceableCategory> {
+        if self.props.contains_key(id)         { Some(PlaceableCategory::Prop) }
+        else if self.enemies.contains_key(id)
+            || self.bosses.contains_key(id)
+            || self.npcs.contains_key(id)
+            || self.player_spawns.contains_key(id) { Some(PlaceableCategory::Creature) }
+        else if self.triggers.contains_key(id)    { Some(PlaceableCategory::Trigger) }
+        else if self.resources.contains_key(id)   { Some(PlaceableCategory::ResourceNode) }
+        else if self.interactables.contains_key(id) { Some(PlaceableCategory::Interactable) }
+        else { None }
     }
 
-    pub fn contains(&self, id: &KindId) -> bool { self.kinds.contains_key(id) }
-    pub fn len(&self) -> usize { self.kinds.len() }
-    pub fn is_empty(&self) -> bool { self.kinds.is_empty() }
-
-    /// All definitions grouped by category, sorted by display name.
-    /// The editor palette is built directly from this.
-    pub fn grouped_by_category(&self) -> [(PlaceableCategory, Vec<Arc<dyn PlaceableDefinition>>); 5] {
-        let mut buckets: [Vec<_>; 5] = Default::default();
-        for def in self.kinds.values() {
-            let idx = match def.category() {
-                PlaceableCategory::Prop => 0,
-                PlaceableCategory::Npc => 1,
-                PlaceableCategory::Trigger => 2,
-                PlaceableCategory::ResourceNode => 3,
-                PlaceableCategory::Interactable => 4,
-            };
-            buckets[idx].push(def.clone());
-        }
-        for bucket in buckets.iter_mut() {
-            bucket.sort_by(|a, b| a.display_name().cmp(b.display_name()));
-        }
-        [
-            (PlaceableCategory::Prop, buckets[0].take()),
-            (PlaceableCategory::Npc, buckets[1].take()),
-            (PlaceableCategory::Trigger, buckets[2].take()),
-            (PlaceableCategory::ResourceNode, buckets[3].take()),
-            (PlaceableCategory::Interactable, buckets[4].take()),
-        ]
+    pub fn len(&self) -> usize {
+        self.props.len() + self.enemies.len() + self.bosses.len()
+            + self.npcs.len() + self.player_spawns.len() + self.triggers.len()
+            + self.resources.len() + self.interactables.len()
     }
+    pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
 ```
 
-### 4.5 Esempio impl: `placeables_impl/props/tree_oak.rs`
+### 4.6 Example: Prop definition (`placeables_impl/props/tree_oak.rs`)
 
 ```rust
-//! Tree oak: static prop. No server or client binding beyond defaults.
-
 use std::sync::Arc;
 use bevymmo_shared::placeables::{
-    AssetHint, PlaceableCategory, PlaceableDefaults, PlaceableDefinition, PlaceableRegistry,
+    AssetHint, KindId, PlaceableDefaults, PlaceableDefinition, PlaceableRegistry, PropPlaceable,
 };
 use bevymmo_shared::world::{CollisionShape, TransformData};
 
@@ -345,10 +600,8 @@ pub struct TreeOakDefinition;
 impl PlaceableDefinition for TreeOakDefinition {
     fn id(&self) -> KindId { KindId::new("tree_oak") }
     fn display_name(&self) -> &'static str { "Oak Tree" }
-    fn category(&self) -> PlaceableCategory { PlaceableCategory::Prop }
     fn icon(&self) -> &'static str { "🌳" }
     fn asset_hint(&self) -> AssetHint { AssetHint::Scene("models/props/tree_oak.glb") }
-    fn description(&self) -> &'static str { "Decorative broadleaf tree." }
     fn defaults(&self) -> PlaceableDefaults {
         PlaceableDefaults {
             transform: TransformData {
@@ -363,57 +616,180 @@ impl PlaceableDefinition for TreeOakDefinition {
     }
 }
 
+impl PropPlaceable for TreeOakDefinition {}
+
 pub fn register(registry: &mut PlaceableRegistry) {
-    registry.register(Arc::new(TreeOakDefinition));
+    registry.register_prop(Arc::new(TreeOakDefinition));
 }
 ```
 
-### 4.6 Esempio impl con NPC: `placeables_impl/npcs/merchant.rs`
+### 4.7 Example: Enemy definition (`placeables_impl/creatures/goblin.rs`)
 
 ```rust
-//! Merchant NPC: visual + interaction + server AI bundle.
-
 use std::sync::Arc;
-use bevymmo_shared::placeables::*;
-use bevymmo_shared::world::TransformData;
+use bevymmo_shared::placeables::{
+    AssetHint, EnemyConfig, EnemyPlaceable, KindId, PlaceableDefaults,
+    PlaceableDefinition, PlaceableRegistry,
+};
+use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId};
+use bevymmo_shared::stats::components::StatsBundleData;
+use bevymmo_shared::world::{CollisionShape, TransformData};
 
-pub struct MerchantDefinition;
+pub struct GoblinDefinition;
 
-impl PlaceableDefinition for MerchantDefinition {
-    fn id(&self) -> KindId { KindId::new("merchant_general") }
-    fn display_name(&self) -> &'static str { "General Goods Merchant" }
-    fn category(&self) -> PlaceableCategory { PlaceableCategory::Npc }
-    fn icon(&self) -> &'static str { "🧑‍🌾" }
-    fn asset_hint(&self) -> AssetHint { AssetHint::Scene("models/npcs/merchant.glb") }
-    fn description(&self) -> &'static str { "Sells basic supplies. Opens a shop UI on interact." }
+impl PlaceableDefinition for GoblinDefinition {
+    fn id(&self) -> KindId { KindId::new("mob_goblin") }
+    fn display_name(&self) -> &'static str { "Goblin" }
+    fn icon(&self) -> &'static str { "👺" }
+    fn asset_hint(&self) -> AssetHint { AssetHint::Scene("models/creatures/goblin.glb") }
     fn defaults(&self) -> PlaceableDefaults {
         PlaceableDefaults {
             transform: TransformData::at(0.0, 0.0, 0.0),
-            tint: None,
-            collision: Some(CollisionShape::Cylinder { radius: 0.5, height: 1.8 }),
+            tint: Some([0.4, 0.6, 0.3]),
+            collision: Some(CollisionShape::Cylinder { radius: 0.4, height: 1.2 }),
             blocks_movement: true,
         }
     }
 }
 
-// Il server binding corrispondente, in crates/server/src/placeables/npcs/merchant.rs:
-//
-//     pub struct MerchantServerBinding;
-//     impl ServerPlaceableBinding for MerchantServerBinding {
-//         fn kind(&self) -> KindId { KindId::new("merchant_general") }
-//         fn spawn(&self, commands: &mut Commands, placement: &Placement) {
-//             spawn_entity::<MerchantMarker>(commands); // usa il pattern EntityDefinition
-//         }
-//         fn interaction(&self) -> Option<InteractionKind> { Some(InteractionKind::Shop) }
-//     }
+impl EnemyPlaceable for GoblinDefinition {
+    fn enemy_config(&self) -> EnemyConfig {
+        let mut hotbar = SpellHotbar::default();
+        hotbar.assign(HotbarSlot::Q, Some(SpellId::new("attack")));
+        EnemyConfig {
+            stats: StatsBundleData {
+                // reuse and tweak the existing enemy_defaults()
+                movement: bevymmo_shared::stats::defaults::enemy_defaults().movement,
+                combat: bevymmo_shared::stats::components::CombatStats {
+                    attack_power: 8.0,
+                    armor: 2.0,
+                },
+                vital: bevymmo_shared::stats::components::VitalStats {
+                    current_health: 35.0,
+                    max_health: 35.0,
+                    max_mana: 0.0,
+                    mana_regeneration: 0.0,
+                },
+            },
+            spell_hotbar: hotbar,
+            aggro_range: 7.0,
+        }
+    }
+}
+
+pub fn register(registry: &mut PlaceableRegistry) {
+    registry.register_enemy(Arc::new(GoblinDefinition));
+}
 ```
 
-### 4.7 Estensione del `MapManifest`
+### 4.8 Example: Player spawn (`placeables_impl/creatures/player_spawn.rs`)
+
+```rust
+use std::sync::Arc;
+use bevymmo_shared::placeables::{
+    AssetHint, KindId, PlaceableDefaults, PlaceableDefinition,
+    PlaceableRegistry, PlayerSpawnPlaceable,
+};
+use bevymmo_shared::world::TransformData;
+
+pub struct PlayerSpawnDefinition;
+
+impl PlaceableDefinition for PlayerSpawnDefinition {
+    fn id(&self) -> KindId { KindId::new("spawn_player") }
+    fn display_name(&self) -> &'static str { "Player Spawn" }
+    fn icon(&self) -> &'static str { "🟢" }
+    fn asset_hint(&self) -> AssetHint { AssetHint::Invisible }
+    fn defaults(&self) -> PlaceableDefaults { PlaceableDefaults::default() }
+}
+
+impl PlayerSpawnPlaceable for PlayerSpawnDefinition {}
+
+pub fn register(registry: &mut PlaceableRegistry) {
+    registry.register_player_spawn(Arc::new(PlayerSpawnDefinition));
+}
+```
+
+### 4.9 Server binding: the bridge to your existing entity system
+
+```rust
+// crates/server/src/placeables/creatures.rs
+use bevy::prelude::*;
+use bevymmo_shared::entity::spawn::spawn_entity;
+use bevymmo_shared::entity::enemy::components::Enemy;
+use bevymmo_shared::entity::boss::components::Boss;
+use bevymmo_shared::entity::player::components::Player;
+use bevymmo_shared::network::protocol::Position;
+use bevymmo_shared::placeables::{BossConfig, EnemyConfig, KindId, PlaceableRegistry};
+
+/// Tag component storing which catalog archetype a spawned creature uses.
+/// AI/stats systems read this to apply per-archetype configuration.
+#[derive(Component, Clone, Debug)]
+pub struct CreatureArchetype {
+    pub kind_id: KindId,
+}
+
+/// Dispatches a creature placement to the right spawn machinery.
+/// Uses typed registry lookups — no enum match, no central edit when
+/// adding new kinds.
+pub fn spawn_creature(
+    commands: &mut Commands,
+    registry: &PlaceableRegistry,
+    kind_id: &KindId,
+    position: Vec3,
+) {
+    if let Some(def) = registry.enemies.get(kind_id) {
+        spawn_enemy(commands, kind_id, position, def.enemy_config());
+        return;
+    }
+    if let Some(def) = registry.bosses.get(kind_id) {
+        spawn_boss(commands, kind_id, position, def.boss_config());
+        return;
+    }
+    if registry.player_spawns.contains_key(kind_id) {
+        spawn_player(commands, position);
+        return;
+    }
+    warn!("No creature binding for kind_id {:?}", kind_id);
+}
+
+fn spawn_player(commands: &mut Commands, position: Vec3) {
+    // Reuses YOUR EXISTING spawn_entity::<Player>() helper.
+    let entity = spawn_entity::<Player>(commands);
+    commands.entity(entity)
+        .insert(Position(position));
+}
+
+fn spawn_enemy(commands: &mut Commands, kind_id: &KindId, position: Vec3, config: EnemyConfig) {
+    // Reuses YOUR EXISTING spawn_entity::<Enemy>() helper, then overrides
+    // stats/hotbar with the catalog-provided configuration.
+    let entity = spawn_entity::<Enemy>(commands);
+    commands.entity(entity)
+        .insert(Position(position))
+        .insert(CreatureArchetype { kind_id: kind_id.clone() })
+        .insert(config.stats.movement)
+        .insert(config.stats.combat)
+        .insert(config.stats.vital)
+        .insert(config.spell_hotbar);
+}
+
+fn spawn_boss(commands: &mut Commands, kind_id: &KindId, position: Vec3, config: BossConfig) {
+    let entity = spawn_entity::<Boss>(commands);
+    commands.entity(entity)
+        .insert(Position(position))
+        .insert(CreatureArchetype { kind_id: kind_id.clone() })
+        .insert(config.stats.movement)
+        .insert(config.stats.combat)
+        .insert(config.stats.vital);
+    // The boss plugin reads CreatureArchetype to pick the rotation.
+}
+```
+
+### 4.10 Manifest extension
 
 ```diff
  pub struct Prop {
 -    pub kind: String,
-+    pub kind: KindId,           // validato contro il registry
++    pub kind: KindId,           // validated against the registry
      pub transform: TransformData,
      pub tint: Option<[f32; 3]>,
      pub collision: Option<CollisionShape>,
@@ -421,9 +797,9 @@ impl PlaceableDefinition for MerchantDefinition {
  }
 ```
 
-La validazione in `loader.rs` riceve un `&PlaceableRegistry` (o un owned `HashSet<KindId>` estratto da esso) e segnala `ValidationIssue` per ogni `kind` sconosciuto.
+`KindId` serializes transparently as a string, so existing `.ron` files keep loading unchanged.
 
-## 5. Flusso end-to-end
+## 5. End-to-end flow
 
 ```mermaid
 sequenceDiagram
@@ -433,151 +809,277 @@ sequenceDiagram
     participant Srv as Server
     participant Cli as Client/Presentation
 
-    Ed->>Reg: raggruppa per category()
-    Reg-->>Ed: palette con tutti i kind
-    Ed->>Man: piazza Prop{ kind_id: "tree_oak", transform, ... }
-    Note over Man: RON su disco
+    Ed->>Reg: iterate typed submaps
+    Reg-->>Ed: palette grouped by category
+    Ed->>Man: place Prop{ kind_id: "mob_goblin", transform, ... }
+    Note over Man: RON on disk
 
     Cli->>Man: load_map()
-    Cli->>Reg: get("tree_oak")
-    Reg-->>Cli: TreeOakDefinition (asset_hint = Scene)
-    Cli->>Cli: carica models/props/tree_oak.glb
+    Cli->>Reg: get from any submap
+    Reg-->>Cli: definition (asset_hint = Scene)
+    Cli->>Cli: load models/creatures/goblin.glb
 
     Srv->>Man: load_map()
-    Srv->>Reg: get("tree_oak")
-    Reg-->>Srv: TreeOakDefinition
-    Note over Srv: Prop → solo collision, niente entity spawn
-    Srv->>Srv: collision_grid.insert(...)
+    loop for each placement
+        Srv->>Reg: lookup in enemies submap
+        Reg-->>Srv: EnemyPlaceable (GoblinDefinition)
+        Srv->>Srv: def.enemy_config() → EnemyConfig
+        Srv->>Srv: spawn_entity::<Enemy>() + override stats
+        Note over Srv: reuses your existing spawn machinery
+    end
 ```
 
-## 6. Mappatura con il sistema entity esistente
+## 6. Mapping to the existing entity system
 
-| Situazione | Dove va |
+| Situation | Where it goes |
 |---|---|
-| Prop statico (albero, roccia) | Solo catalogo + collision grid. **Nessuna entità gameplay**. |
-| NPC interattivo | Catalogo + `ServerPlaceableBinding::spawn` → `spawn_entity::<MerchantMarker>()` (riusa `EntityDefinition`) |
-| Trigger PvP | Catalogo + server binding speciale `evaluate_triggers` system. Nessuna entità replicata. |
-| Boss piazatto nel mondo | Catalogo `category = Npc` + binding che fa `spawn_entity::<BossMarker>()`. Combina con il sistema boss esistente. |
-| Resource node (minerali) | Catalogo `category = ResourceNode` + entity con `Harvestable` marker (da creare). |
+| Static prop (tree, rock) | Catalog only + collision grid. **No gameplay entity.** |
+| Player spawn | `PlayerSpawnPlaceable` → binding calls `spawn_entity::<Player>()`. |
+| Goblin (mob) | `EnemyPlaceable` → binding calls `spawn_entity::<Enemy>()` + `CreatureArchetype` + config overrides. |
+| Dragon (boss) | `BossPlaceable` → binding calls `spawn_entity::<Boss>()` + `CreatureArchetype`. Boss plugin reads `CreatureArchetype` for rotation. |
+| Merchant (NPC) | `NpcPlaceable` → binding spawns friendly entity (NPC marker to be added in Slice 5). |
+| PvP trigger | `TriggerPlaceable` → server binding special-cased `evaluate_triggers` system. No replicated entity. |
+| Resource node (mineral vein) | `ResourceNodePlaceable` → entity with `Harvestable` marker (to be created). |
 
-Il trait `EntityDefinition` non viene toccato: continua a definire i marker `Player/Enemy/Boss/Dummy`. Il catalogo placeable lo *usa* quando serve, attraverso il server binding.
+The `EntityDefinition` trait is untouched: it keeps defining `Player`/`Enemy`/`Boss`/`Dummy`. The placeable catalog *uses* it when needed, through the server binding.
 
-## 7. Fasi di implementazione (slice)
+## 7. Design patterns used
 
-Ogni slice è indipendente e committabile.
+| Pattern | Where | Why |
+|---|---|---|
+| **Registry** | `PlaceableRegistry` | Central lookup by id; mirrors `SpellRegistry` already in the codebase. Familiar to anyone reading the code. |
+| **Strategy** | Category subtraits (`EnemyPlaceable`, `BossPlaceable`, ...) | Each kind provides its own config strategy; the spawn machinery is unchanged. New kinds = new strategies, no central edit. |
+| **Template Method** | `spawn_entity::<T>()` + per-kind config overrides | The "skeleton" (GameEntityBundle, replication) is fixed; the "steps" (stats, spells) are overridden per kind. Reuses your existing code. |
+| **Tag Component** | `CreatureArchetype { kind_id }` | Lets AI/stats systems read the archetype at runtime without a parallel data structure. ECS-idiomatic. |
+| **Data Transfer Object** | `EnemyConfig`, `BossConfig`, `PlaceableDefaults` | Plain data passed from trait → spawn machinery. Keeps traits object-safe (no `impl Bundle` return). |
+| **Subtrait / Interface Segregation** | `PropPlaceable`, `EnemyPlaceable`, ... | A tree doesn't need to implement `enemy_config()`. Clients depend only on the trait they use. |
+| **Layered Architecture** | Definition (shared) → Binding (server/client) | The manifest, catalog, and runtime are decoupled layers. The catalog doesn't know how spawning works; the spawn machinery doesn't know about the manifest. |
 
-### Slice 0 — Fondamenta (shared)
-- [ ] `crates/shared/src/placeables/{mod,category,definition,registry}.rs`
-- [ ] `KindId` newtype + `From<&str>` + `Serialize/Deserialize`
-- [ ] `PlaceableRegistry` resource
-- [ ] Tests: registry register/get/grouped_by_category
+## 8. Implementation slices
 
-### Slice 1 — Migrare i `kind` esistenti come definitions
+Each slice is independent and committable.
+
+### Slice 0 — Foundations (shared)
+- [ ] `crates/shared/src/placeables/{mod,category,config,definition,registry}.rs`
+- [ ] `KindId` newtype + transparent serde
+- [ ] `PlaceableRegistry` with typed submaps
+- [ ] Tests: register/get/contains/category_of
+
+### Slice 1 — Migrate existing `kind`s as PropPlaceable definitions
 - [ ] `crates/shared/src/placeables_impl/props/{tree_oak,rock_01,rock_02,bush_01,house_simple,fence_01,lamp_01,crate_01,statue_01,cube}.rs`
 - [ ] `register_default_placeables()` in `placeables_impl/mod.rs`
-- [ ] Sostituire `PALETTE_KINDS`, `tint_for_kind`, `visual_scale_for_kind` con lookup al registry
-- [ ] Sostituire `placeholder_scale`, `placeholder_color` in `presentation/world.rs` con `definition.defaults()`
-- [ ] Changement: `Prop.kind: String` → `KindId` + adattare `loader::validate` per accettare un set di kind validi
+- [ ] Replace `PALETTE_KINDS`, `tint_for_kind`, `visual_scale_for_kind` with registry lookup
+- [ ] Replace `placeholder_scale`, `placeholder_color` in `presentation/world.rs` with `definition.defaults()`
+- [ ] Change: `Prop.kind: String` → `KindId` + adapt `loader::validate`
 
-### Slice 2 — Validazione nel loader
-- [ ] `validate(manifest, &PlaceableRegistry)` → `Vec<ValidationIssue>` include `unknown kind "xxx"`
-- [ ] L'editor passa il registry al loader
-- [ ] La status bar dell'editor (già esistente) ora mostra kind mancanti
+### Slice 2 — Validation in the loader
+- [ ] `validate(manifest, &PlaceableRegistry)` → `Vec<ValidationIssue>` includes `unknown kind "xxx"`
+- [ ] Editor passes the registry to the loader
+- [ ] Editor status bar surfaces unknown kinds
 
 ### Slice 3 — AssetHint + client binding
 - [ ] `trait ClientPlaceableBinding { fn kind(&self) -> KindId; fn build(...) -> SceneRoot; }`
-- [ ] `crates/presentation/src/placeables/{mod,props,npcs}/...`
-- [ ] `spawn_prop_visual` diventa dispatcher: cerca il binding, fallback a placeholder
-- [ ] Carica effettivamente `tree_oak.glb` (già parzialmente cablato)
+- [ ] `crates/presentation/src/placeables/{mod,props,creatures}/...`
+- [ ] `spawn_prop_visual` becomes a dispatcher: looks up the binding, falls back to placeholder
+- [ ] Actually loads `tree_oak.glb`
 
-### Slice 4 — ServerPlaceableBinding + NPC spawn
-- [ ] `trait ServerPlaceableBinding { fn kind(); fn spawn(); fn interaction(); }`
-- [ ] `crates/server/src/placeables/npcs/merchant.rs` come primo esempio concreto
-- [ ] Sistema server `spawn_placeables_on_map_load`: legge manifest, per ogni Prop con category=Npc chiama il binding
-- [ ] Marker `MerchantMarker` + `EntityDefinition` impl (riusa il pattern esistente)
-- [ ] Test: caricamento manifest con merchant → entitàMerchant con stats e Position
+### Slice 4 — Creatures (Player spawn / Enemy / Boss)
+- [ ] `EnemyPlaceable`, `BossPlaceable`, `PlayerSpawnPlaceable` subtraits
+- [ ] `EnemyConfig`, `BossConfig` DTOs
+- [ ] `placeables_impl/creatures/{player_spawn,goblin,boss_dragon}.rs`
+- [ ] `crates/server/src/placeables/creatures.rs` with `spawn_creature` dispatch
+- [ ] `CreatureArchetype` tag component
+- [ ] Server system `spawn_placeables_on_map_load` walks the manifest
+- [ ] Tests: loading a manifest with `spawn_player` places a `Player` entity; loading `mob_goblin` places an `Enemy` with the goblin's stats
 
-### Slice 5 — Triggers (category specifica)
-- [ ] Aggiungi `Trigger { id, kind_id, shape, event }` al manifest
+### Slice 5 — Archetype configuration wired into AI/stats
+- [ ] Today `Enemy` is monolithic; this slice makes the enemy AI/stats systems read `CreatureArchetype` to look up per-kind configuration
+- [ ] `Boss::SPELLS` (hardcoded) becomes a lookup on `CreatureArchetype` via the registry
+- [ ] Tests: spawning `mob_goblin` vs `mob_orc` produces entities with different HP / aggro range
+
+### Slice 6 — NPC interaction (NpcPlaceable)
+- [ ] `NpcPlaceable` subtrait + `InteractionKind`
+- [ ] First concrete: `npc_merchant` with `InteractionKind::Shop`
+- [ ] Server handles `InteractionRequest`/`InteractionResponse`
+- [ ] Client opens shop UI
+
+### Slice 7 — Triggers
+- [ ] `TriggerPlaceable` subtrait + `TriggerConfig`
 - [ ] `placeables_impl/triggers/{pvp_zone,teleport,safe_zone}.rs`
-- [ ] Server `evaluate_triggers` system (gia pianificato in `plans/map-editor.md`)
-- [ ] Editor: tab "Triggers" dedicato con disegno area
+- [ ] Server `evaluate_triggers` system
+- [ ] Editor: dedicated "Triggers" tab with area drawing
 
-### Slice 6 — Interactable + InteractionPayload
-- [ ] `Interactable` nel manifest (gia nel piano originale)
-- [ ] Binding lato server gestisce `InteractionRequest`/`InteractionResponse`
-- [ ] Prima concretizzazione: porta che apre, forziere che dà loot
+### Slice 8 — Resource nodes
+- [ ] `ResourceNodePlaceable` subtrait + `ResourceConfig`
+- [ ] `Harvestable` marker + gathering system (stub acceptable)
 
-### Slice 7 — Resource nodes
-- [ ] `ResourceNode { id, kind_id, position, health, respawn_seconds }`
-- [ ] Marker `Harvestable` + sistema di gathering (slice separabile, anche solo stub)
+### Slice 9 — Interactables
+- [ ] `InteractablePlaceable` subtrait
+- [ ] First concrete: door that opens, chest that yields loot
 
-### Slice 8 — Editor polish per il catalogo
-- [ ] Palette con anteprima visuale (miniatura GLB o icona)
-- [ ] Search box "filtra kind"
-- [ ] Tooltip con description + defaults
-- [ ] Quando si seleziona un kind, mostra i default nella status bar
+### Slice 10 — Runtime persistence
+Today the map is read-only `.ron`: any runtime change (GM moves a prop, a player harvests a node, a chest is looted) vanishes on server restart. Persistence options:
 
-## 8. Anticipazione: dove vive ogni cosa
+- **10a (recommended starter): prop override DB rows.** Schema: `(map_id, prop_id, transform, tint, removed_at)`. Server merges manifest + overrides at load. Covers GM edits + "tree chopped" + "chest opened".
+- **10b: resource node state table.** `(node_id, current_health, depleted_until)` polled by the gathering system.
+- **10c (defer): operational transform log.** Event-sourced, only if auditing is needed.
+
+### Slice 11 — Hot-reload
+- **(a) Catalog as `.ron` asset** — loses trait methods, not recommended.
+- **(b) Recommended: compiled traits + live placement editing via Slice 10a.** New kinds need a recompile; placements are live.
+- **(c) `bevy_common_assets`** — useful only if you go with (a).
+- **(d) `bevy_api_editor`** — for live numeric tweaking.
+
+> **Open question:** you mentioned `bevy_commonset`. I am not certain which crate that refers to — please confirm.
+
+### Slice 12 — Editor polish for the catalog
+- [ ] Palette with visual preview (GLB thumbnail or icon)
+- [ ] Search box "filter kind"
+- [ ] Tooltip with description + defaults
+
+## 9. Where everything lives
 
 ```text
 crates/shared/src/
-├── placeables/                       # contratto + catalogo dati
+├── placeables/                       # contract + data catalog
 │   ├── mod.rs
-│   ├── category.rs                   # enum PlaceableCategory
-│   ├── definition.rs                 # trait PlaceableDefinition
-│   ├── registry.rs                   # KindId + PlaceableRegistry
-│   ├── binding_server.rs             # trait ServerPlaceableBinding
-│   └── binding_client.rs             # trait ClientPlaceableBinding
-├── placeables_impl/                  # definitions concrete
+│   ├── category.rs                   # enum (UI hint only)
+│   ├── config.rs                     # EnemyConfig, BossConfig, ... DTOs
+│   ├── definition.rs                 # base trait + category subtraits
+│   └── registry.rs                   # KindId + typed submaps
+├── placeables_impl/                  # concrete definitions
 │   ├── mod.rs                        # register_default_placeables()
 │   ├── props/
 │   │   ├── mod.rs
 │   │   ├── tree_oak.rs
 │   │   ├── rock_01.rs
 │   │   └── ...
-│   ├── npcs/
+│   ├── creatures/
 │   │   ├── mod.rs
-│   │   └── merchant.rs
+│   │   ├── player_spawn.rs           # impl PlayerSpawnPlaceable
+│   │   ├── goblin.rs                 # impl EnemyPlaceable
+│   │   └── boss_dragon.rs            # impl BossPlaceable
+│   ├── npcs/
+│   │   └── merchant.rs               # impl NpcPlaceable
 │   ├── triggers/
 │   ├── resources/
 │   └── interactables/
 
 crates/server/src/
-└── placeables/                       # binding server (gameplay)
+└── placeables/                       # server bindings (gameplay)
     ├── mod.rs
-    ├── npcs/
-    │   └── merchant.rs               # chiama spawn_entity::<MerchantMarker>()
-    └── triggers/
+    ├── creatures.rs                  # spawn_creature → spawn_entity::<T>()
+    ├── npc.rs                        # NPC interaction logic
+    └── triggers.rs
 
 crates/presentation/src/
-└── placeables/                       # binding client (rendering)
+└── placeables/                       # client bindings (rendering)
     ├── mod.rs
     └── props/
-        └── tree_oak.rs               # carica tree_oak.glb
+        └── tree_oak.rs               # load tree_oak.glb
 
 crates/editor/src/
-└── ... (legge solo PlaceableRegistry)
+└── ... (reads PlaceableRegistry only)
 ```
 
-## 9. Rischi e mitigazioni
+## 10. Risks and mitigations
 
-| Rischio | Mitigazione |
+| Risk | Mitigation |
 |---|---|
-| `KindId` nel manifest rompe i file `.ron` esistenti | `KindId` serializza come stringa trasparente — vecchi `.ron` con `kind: "tree_oak"` continuano a funzionare. |
-| Binding server/client dimenticati per un kind | Test nel registry che verifica, per ogni kind di category=Npc/Trigger/..., che il binding sia registrato (Slice 4+). |
-| Performance: lookup al registry per ogni prop | HashMap O(1); inoltre il client cache già i `MapPropVisual` per id. |
-| Eccessivo boilerplate per prop banali | Slice 1 mostra che un prop statico è ~30 righe in un file. Accettabile per avere un'unica fonte di verità. |
-| Conflict con `EntityDefinition` | Documentazione chiara (D5): `EntityDefinition` = entità "viva", `PlaceableDefinition` = "cosa si piazza". Possono coesistere; il binding NPC fa da ponte. |
+| `KindId` in the manifest breaks existing `.ron` files | `KindId` serializes transparently — old files keep loading. |
+| Server binding forgotten for a kind | The `register_*` methods are the only way to populate the registry; a kind that is not registered simply fails validation in the editor. Add a registry self-test that checks every `EnemyPlaceable`/`BossPlaceable` kind has a spawn path. |
+| Performance: registry lookup per prop | HashMap O(1); the client already caches `MapPropVisual` per id. |
+| Boilerplate for trivial props | A static prop is ~25 lines (one struct + two trivial impls). Acceptable for a single source of truth. A `macro_rules!` helper could reduce it further if it becomes a pain. |
+| Conflict with `EntityDefinition` | Documented separation (D5): `EntityDefinition` = runtime entity type; `PlaceableDefinition` = "what gets placed". The server binding bridges them by calling `spawn_entity::<T>()`. |
+| `CreatureArchetype` grows into a parallel entity system | Resist adding gameplay fields to it. It stores only the `kind_id` tag; stats/AI systems *look up* configuration from the catalog. |
+| Object safety breakage | Subtraits return concrete DTOs (`EnemyConfig`), never `impl Bundle`. The spawn machinery is a free function, not a trait method. |
 
-## 10. Cose **non** incluse in questo piano
+## 11. Explicitly out of scope
 
-- AI dei NPC (è uno slice futuro del server)
-- Loot tables per i forzieri (richiede un sistema item separato)
-- Editor visuale per disegnare regioni/trigger (slice 5 include solo UI)
-- Persistenza DB delle modifiche runtime (oggi è solo file `.ron`)
-- Hot-reload del catalogo (richiede `bevy_commonset` o simile; fuori scope)
+- NPC AI logic itself (a future server slice — the binding just spawns the entity)
+- Loot tables for chests (requires a separate item system)
+- Visual editor for drawing trigger regions (Slice 7 includes only basic UI)
+- Operational transform / full event sourcing (defer to Slice 10c if ever needed)
+- Hot-reload of compiled trait impls (not technically possible without `cargo` — see Slice 11)
 
-## 11. Prossimo passo proposto
+## 12. Future features you may not have considered
 
-Confermare le decisioni D1–D8. Se OK, parto dal **Slice 0 + Slice 1** (fondamenta + migrazione degli oggetti esistenti al catalogo). È il refactor che sblocca tutto il resto senza modificare la UX dell'editor.
+These are not part of the core catalog plan, but are natural extensions the catalog architecture unlocks. Grouped by value/effort.
+
+### High-value, moderate effort
+
+**Scatter brushes / procedural placement.**
+A brush (e.g. "dense forest") places `tree_oak` + `bush_01` + `rock_01` with noise-based density and random rotation/scale. The catalog makes this trivial: a brush is just a weighted list of `KindId`s.
+
+**Prefabs / group placements.**
+Save a selection as a reusable prefab (e.g. "campfire scene" = fire + logs + 3 stools). Stored as a mini-manifest fragment referencing `KindId`s. Place the whole group with one click.
+
+**Collision preview overlay.**
+Render every collision shape in the map as a wireframe, toggle on/off. The catalog already has `defaults().collision` per kind.
+
+**Navigation mesh baking & visualization.**
+Generate a navmesh from the collision grid + terrain, display it as an overlay, mark walkable/non-walkable areas. Critical for mob AI pathfinding. The catalog's collision data is the input.
+
+**Map validation rules beyond syntax.**
+- "Every map must have at least one `spawn_player` placement."
+- "No prop may overlap a `spawn_player` within 2 units."
+- "Every boss placement must have a matching trigger arena."
+
+The catalog makes these checkable because every placement has a typed category subtrait.
+
+### Medium-value, moderate effort
+
+**Biome / terrain layers.**
+Define regions with a terrain type (grass, sand, snow) and auto-populate props based on biome rules. Biomes become a higher-level placeable that *generates` placements.
+
+**Patrol path editor.**
+Draw waypoint paths for mobs. Stored as a `PatrolPath(Vec<Vec3>)` component on the creature entity. Natural extension of `EnemyPlaceable`.
+
+**Ambient sound zones.**
+A new `Audio` asset hint on the definition (parallel to `Scene`). Editor shows a speaker icon; client loads the audio.
+
+**Particle effect placement.**
+A new `Particles` asset hint. The editor shows a preview; the client spawns the particle system.
+
+**Time-of-day lighting presets.**
+Save named lighting states ("dawn", "dusk", "storm") and preview the map under each. A map-level setting.
+
+### Lower-priority but interesting
+
+**Trigger testing mode.**
+A "walk" mode in the editor that simulates a player entity moving through the map, firing triggers and showing which ones activate.
+
+**Map thumbnail / minimap generator.**
+Auto-render a top-down 2D image for the minimap UI and map-selection screen.
+
+**Asset dependency checker.**
+Before save, verify every `AssetHint::Scene("models/...")` points to a file that exists.
+
+**Performance budget tracker.**
+Track total entity count, estimated poly count, collision shape count. Warn when over budget.
+
+**Map diff / versioning.**
+Git-like diff between two map versions. Stable `KindId`s make diffs meaningful.
+
+**Instance / dungeon configuration.**
+Map-level metadata: instanced vs open-world, player cap, party size requirement.
+
+**Quest / narrative annotations.**
+Non-gameplay markers for designers: "here the NPC gives quest X." Stored in the manifest but ignored by the server.
+
+### Experimental
+
+**Collaborative editing.**
+Multiple designers editing the same map simultaneously (operational transform or CRDT). Stable ids are a prerequisite.
+
+**Heightmap terrain import.**
+Generate the terrain cube's transform from a grayscale image. One-click creation of hilly maps.
+
+**Live GM editing.**
+Using Slice 10a's persistence layer, allow authenticated GMs to move/delete/spawn props on the live server, with changes persisting to DB and propagating to connected clients.
+
+## 13. Proposed next step
+
+Confirm decisions D1–D9. If approved, I would start with **Slice 0 + Slice 1** (foundations + migrate the 10 existing objects into the catalog). That is a pure refactor that unblocks everything else without changing editor UX.
+
+After that, the highest-leverage follow-up is **Slice 4 (creatures)** because it closes the loop with your existing `Player`/`Enemy`/`Boss` entity system — placing a goblin in the editor will actually spawn an `Enemy` at runtime with the goblin's stats, end-to-end.

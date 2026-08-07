@@ -44,7 +44,7 @@ pub fn process_cast_requests(
     mut requests: MessageReader<SpellCastRequest>,
     registry: Res<SpellRegistry>,
     mut casters: Query<(
-        &SpellHotbar,
+        Option<&SpellHotbar>,
         &mut SpellCooldowns,
         &Position,
         Option<&CastProgress>,
@@ -77,7 +77,9 @@ pub fn process_cast_requests(
         let Ok((hotbar, cooldowns, caster_position, existing_cast, cc_state)) =
             casters.get_mut(request.caster)
         else {
-            bevy::log::warn!("Caster {} missing spell state", request.caster);
+            // A request can refer to an entity that was despawned between
+            // emission and processing. Do not emit a warning every fixed tick.
+            bevy::log::debug!("Ignoring spell request from missing caster {}", request.caster);
             continue;
         };
 
@@ -86,7 +88,9 @@ pub fn process_cast_requests(
         let in_boss_spellbook = boss_spellbooks
             .get(request.caster)
             .is_ok_and(|spellbook| spellbook.contains(&request.spell_id));
-        if !hotbar.contains(&request.spell_id) && !in_boss_spellbook {
+        if !in_boss_spellbook
+            && !hotbar.is_some_and(|hotbar| hotbar.contains(&request.spell_id))
+        {
             bevy::log::warn!("Caster attempted to cast a spell not assigned to the hotbar");
             continue;
         }

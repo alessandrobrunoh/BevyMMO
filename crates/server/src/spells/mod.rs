@@ -35,7 +35,7 @@ impl Plugin for SpellsServerPlugin {
             .add_message::<SpellVisualEffect>()
             .add_message::<SpellCastProgress>()
             .add_message::<SpellCastEnded>()
-            .add_systems(Startup, register_builtin_spells)
+            .add_systems(Startup, bevymmo_shared::spells_impl::register_default_spells)
             .add_systems(
                 FixedUpdate,
                 (
@@ -53,4 +53,5 @@ impl Plugin for SpellsServerPlugin {
     }
 }
 
-pub fn register_builtin_spells(_registry: ResMut<SpellRegistry>) {}
+// Built-in player spells are registered by the shared world of spell
+// definitions so client and server use the same registry.

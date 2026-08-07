@@ -508,8 +508,9 @@ fn handle_respawn_requests(
             if player_id.0 != remote_id.0 {
                 continue;
             }
-            if *state != EntityState::Dead {
-                // Player still alive: ignore.
+            if *state != EntityState::Dead && !vital.is_dead() {
+                // Player still alive: ignore. Health zero is also considered
+                // dead while the replicated EntityState catches up.
                 continue;
             }
 

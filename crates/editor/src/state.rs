@@ -101,6 +101,42 @@ pub struct EditorState {
     pub camera_yaw: f32,
     /// Camera pitch in radians (clamped to iso-friendly range).
     pub camera_pitch: f32,
+    /// Whether destructive actions (delete) should show a confirmation prompt.
+    pub confirm_delete: bool,
+    /// Tracks the previous-frame gizmo activation so a single undo snapshot
+    /// is taken when a drag *starts* (not on every pixel of the drag).
+    pub gizmo_was_active: bool,
+    /// Cached validation issues for the current manifest. Refreshed on demand
+    /// by the `recompute_validation` system so the UI never blocks the frame.
+    pub validation_issues: Vec<bevymmo_shared::world::ValidationIssue>,
+    /// Whether the validation cache needs to be recomputed this frame.
+    pub validation_dirty: bool,
+    /// Currently selected left-panel tab. Pure UI state.
+    pub left_tab: LeftPanelTab,
+    /// Set by the menu bar to request a duplicate of the selection. Consumed
+    /// by `io::duplicate_on_ctrl_d` so the hotkey and the menu stay in sync.
+    pub pending_duplicate: bool,
+    /// Set by the menu bar to request a focus-on-selection. Consumed by the
+    /// camera system so the action survives between frames.
+    pub pending_focus_selection: bool,
+    /// Set to true by the Delete button when `confirm_delete` is on. The
+    /// inspector renders the modal in a separate pass so the user can confirm
+    /// or cancel without the action happening in the same frame as the click.
+    pub pending_delete_dialog: bool,
+}
+
+/// Left-panel tab identifier.
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LeftPanelTab {
+    /// Hierarchy of placed props + terrain.
+    #[default]
+    Outliner,
+    /// Palette of placeable kinds, grouped by category.
+    Palette,
+    /// Snap settings (translation / rotation / scale steps, gizmo space).
+    Snap,
+    /// Map metadata (id, name, bounds).
+    MapSettings,
 }
 
 impl Default for EditorState {
@@ -137,6 +173,14 @@ impl Default for EditorState {
             camera_distance: 25.0,
             camera_yaw: 0.0,
             camera_pitch: std::f32::consts::FRAC_PI_4,
+            confirm_delete: true,
+            gizmo_was_active: false,
+            validation_issues: Vec::new(),
+            validation_dirty: true,
+            left_tab: LeftPanelTab::Outliner,
+            pending_duplicate: false,
+            pending_focus_selection: false,
+            pending_delete_dialog: false,
         }
     }
 }

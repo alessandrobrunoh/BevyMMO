@@ -124,8 +124,3 @@ pub fn draw_grid(mut gizmos: Gizmos, state: Res<EditorState>) {
 fn tint_color(tint: Option<[f32; 3]>) -> Option<Color> {
     tint.map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
 }
-
-/// Placeholder used by the inspector when the terrain has no explicit tint.
-pub fn default_terrain_color() -> Color {
-    TERRAIN_COLOR
-}

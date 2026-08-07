@@ -7,8 +7,11 @@
 use bevy::gizmos::transform_gizmo::TransformGizmoCamera;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
+use bevy_egui::PrimaryEguiContext;
 
 use crate::state::EditorState;
+use crate::ui::cursor_over_editor_chrome;
 
 const MIN_PITCH: f32 = 0.2;
 const MAX_PITCH: f32 = 1.3;
@@ -27,24 +30,31 @@ pub fn spawn_camera(mut commands: Commands) {
         Transform::from_xyz(0.0, 20.0, 25.0).looking_at(Vec3::ZERO, Vec3::Y),
         EditorCamera,
         TransformGizmoCamera,
+        PrimaryEguiContext,
     ));
 }
 
-/// Keyboard navigation: WASD pans the camera focus on the ground plane
-/// (camera-relative), `F` focuses the selection. Runs even while the pointer
-/// hovers an egui panel, but not while egui is typing.
+/// Keyboard navigation: `Space + WASD` pans the camera focus on the ground
+/// plane (camera-relative), `F` focuses the selection. Requiring `Space`
+/// avoids stealing the same keys from future editor shortcuts.
 pub fn keyboard_pan(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     transforms: Query<&Transform>,
     mut state: ResMut<EditorState>,
 ) {
-    if keyboard.just_pressed(KeyCode::KeyF) {
+    if keyboard.just_pressed(KeyCode::KeyF) || state.pending_focus_selection {
+        state.pending_focus_selection = false;
         if let Some(entity) = state.selected {
             if let Ok(transform) = transforms.get(entity) {
                 state.camera_focus = transform.translation;
             }
         }
+    }
+
+    let is_pan_modifier_held = keyboard.pressed(KeyCode::Space);
+    if !is_pan_modifier_held {
+        return;
     }
 
     let mut pan = Vec3::ZERO;
@@ -78,15 +88,26 @@ pub fn orbit_camera(
     mut wheel: MessageReader<MouseWheel>,
     mouse: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
     mut q: Query<&mut Transform, With<EditorCamera>>,
     mut state: ResMut<EditorState>,
 ) {
     let Ok(mut transform) = q.single_mut() else {
         return;
     };
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let is_cursor_over_chrome = window
+        .cursor_position()
+        .map(|cursor_pos| cursor_over_editor_chrome(window, cursor_pos))
+        .unwrap_or(false);
 
     // Pan with middle mouse drag.
     if mouse.pressed(MouseButton::Middle) {
+        if is_cursor_over_chrome {
+            return;
+        }
         for ev in motion.read() {
             let right = transform.rotation * Vec3::X;
             let forward = transform.rotation * Vec3::Z;
@@ -98,6 +119,9 @@ pub fn orbit_camera(
 
     // Orbit with right mouse drag.
     if mouse.pressed(MouseButton::Right) {
+        if is_cursor_over_chrome {
+            return;
+        }
         for ev in motion.read() {
             state.camera_yaw -= ev.delta.x * 0.005;
             state.camera_pitch =
@@ -106,14 +130,17 @@ pub fn orbit_camera(
     }
 
     // Dolly with scroll.
-    for ev in wheel.read() {
-        let zoom = if keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight)
-        {
-            ev.y * 5.0
-        } else {
-            ev.y * 2.0
-        };
-        state.camera_distance = (state.camera_distance - zoom).clamp(MIN_DISTANCE, MAX_DISTANCE);
+    if !is_cursor_over_chrome {
+        for ev in wheel.read() {
+            let zoom =
+                if keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight) {
+                    ev.y * 5.0
+                } else {
+                    ev.y * 2.0
+                };
+            state.camera_distance =
+                (state.camera_distance - zoom).clamp(MIN_DISTANCE, MAX_DISTANCE);
+        }
     }
 
     // Apply orbit transform.

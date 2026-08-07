@@ -1,10 +1,13 @@
 //! Transform gizmo integration: settings, focus management, manifest
 //! writeback and selection/hover overlays.
 
-use bevy::gizmos::transform_gizmo::{TransformGizmoFocus, TransformGizmoSettings};
+use bevy::gizmos::transform_gizmo::{
+    TransformGizmoFocus, TransformGizmoSettings, TransformGizmoState,
+};
 use bevy::prelude::*;
 use bevymmo_shared::world::TransformData;
 
+use crate::history::EditorHistory;
 use crate::state::{EditorProp, EditorState, EditorTerrain, SelectedMarker};
 
 const SELECTED_COLOR: Color = Color::srgb(1.0, 0.72, 0.2);
@@ -44,6 +47,22 @@ pub fn sync_gizmo_focus(
     for entity in stale_focus_q.iter() {
         commands.entity(entity).remove::<TransformGizmoFocus>();
     }
+}
+
+/// Pushes an undo snapshot when a gizmo drag *starts* (false → true
+/// transition on `TransformGizmoState::active`). Running this only on the
+/// transition edge keeps a single drag from flooding the history stack.
+pub fn record_gizmo_drag_start(
+    gizmo_state: Res<TransformGizmoState>,
+    mut state: ResMut<EditorState>,
+    mut history: ResMut<EditorHistory>,
+) {
+    let active_now = gizmo_state.active;
+    if active_now && !state.gizmo_was_active {
+        history.push(&state.manifest);
+        state.validation_dirty = true;
+    }
+    state.gizmo_was_active = active_now;
 }
 
 /// Copies the selected entity's transform back into the manifest, so gizmo

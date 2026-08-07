@@ -12,9 +12,11 @@ use bevymmo_shared::world::{Prop, TransformData};
 
 use crate::camera::EditorCamera;
 use crate::ground::spawn_terrain_entity;
+use crate::history::EditorHistory;
 use crate::state::{
     quat_from_rotation_deg, EditorProp, EditorState, EditorTerrain, EditorTool, SelectedMarker,
 };
+use crate::ui::cursor_over_editor_chrome;
 
 /// Palette kinds shown in the left panel.
 pub const PALETTE_KINDS: &[&str] = &[
@@ -180,6 +182,7 @@ pub fn place_or_select(
     selected_q: Query<Entity, With<SelectedMarker>>,
     gizmo_state: Res<TransformGizmoState>,
     mut state: ResMut<EditorState>,
+    mut history: ResMut<EditorHistory>,
 ) {
     // Ignore clicks that land on the gizmo handles or happen mid-drag.
     if gizmo_state.active || gizmo_state.hovered_axis.is_some() {
@@ -198,6 +201,9 @@ pub fn place_or_select(
     };
     let Some(cursor_pos) = window.cursor_position() else {
         warn!("Editor click ignored: cursor is outside the window");
+        return;
+    };
+    if cursor_over_editor_chrome(window, cursor_pos) {
         return;
     };
     let Ok((camera, camera_transform)) = cameras.single() else {
@@ -238,6 +244,8 @@ pub fn place_or_select(
                 "Placing {} at ({:.1}, {:.1}, {:.1})",
                 state.current_kind, snapped.x, snapped.y, snapped.z
             );
+            history.push(&state.manifest);
+            state.validation_dirty = true;
             place_prop(
                 &mut commands,
                 &mut meshes,
@@ -249,6 +257,8 @@ pub fn place_or_select(
         EditorTool::Erase => {
             if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &bodies) {
                 if let Ok((entity, prop, _)) = prop_q.get(entity) {
+                    history.push(&state.manifest);
+                    state.validation_dirty = true;
                     erase_prop(&mut commands, &mut state, entity, &prop);
                 }
             }
@@ -271,6 +281,10 @@ pub fn update_hover(
     let Some(cursor_pos) = window.cursor_position() else {
         return;
     };
+    if cursor_over_editor_chrome(window, cursor_pos) {
+        state.hovered = None;
+        return;
+    };
     let Ok((camera, camera_transform)) = cameras.single() else {
         return;
     };
@@ -290,6 +304,7 @@ pub fn delete_selected(
     keys: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
     mut state: ResMut<EditorState>,
+    mut history: ResMut<EditorHistory>,
     prop_q: Query<(Entity, &EditorProp), Without<EditorTerrain>>,
 ) {
     if !keys.just_pressed(KeyCode::Delete) && !keys.just_pressed(KeyCode::Backspace) {
@@ -302,6 +317,8 @@ pub fn delete_selected(
         warn!("Cannot erase the terrain; select a prop instead");
         return;
     };
+    history.push(&state.manifest);
+    state.validation_dirty = true;
     erase_prop(&mut commands, &mut state, entity, &prop);
 }
 
@@ -401,48 +418,6 @@ pub fn spawn_prop_entity(
         .id()
 }
 
-/// Updates a prop's material to match its manifest tint. Used by the
-/// inspector's color editor.
-pub fn update_prop_material(
-    commands: &mut Commands,
-    materials: &mut Assets<StandardMaterial>,
-    entity: Entity,
-    kind: &str,
-    tint: Option<[f32; 3]>,
-) {
-    let base_color = tint
-        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
-        .unwrap_or_else(|| {
-            tint_for_kind(kind)
-                .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
-                .unwrap_or(Color::srgb(0.4, 0.5, 0.7))
-        });
-    commands
-        .entity(entity)
-        .insert(MeshMaterial3d(materials.add(StandardMaterial {
-            base_color,
-            ..default()
-        })));
-}
-
-/// Updates the terrain material to match its manifest tint.
-pub fn update_terrain_material(
-    commands: &mut Commands,
-    materials: &mut Assets<StandardMaterial>,
-    entity: Entity,
-    tint: Option<[f32; 3]>,
-) {
-    let base_color = tint
-        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
-        .unwrap_or(crate::ground::default_terrain_color());
-    commands
-        .entity(entity)
-        .insert(MeshMaterial3d(materials.add(StandardMaterial {
-            base_color,
-            ..default()
-        })));
-}
-
 /// Spawns a prop, adds it to the manifest, and selects it.
 fn place_prop(
     commands: &mut Commands,
@@ -522,4 +497,10 @@ fn clear_selected(commands: &mut Commands, selected_q: &Query<Entity, With<Selec
     for entity in selected_q.iter() {
         commands.entity(entity).remove::<SelectedMarker>();
     }
+}
+
+/// Public alias used by other editor modules (e.g. `io::duplicate_on_ctrl_d`).
+/// Forwards to [`clear_selected`] without exposing the query parameter order.
+pub fn clear_selection(commands: &mut Commands, selected_q: &Query<Entity, With<SelectedMarker>>) {
+    clear_selected(commands, selected_q);
 }

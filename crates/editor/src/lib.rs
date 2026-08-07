@@ -11,22 +11,34 @@ use bevy::prelude::*;
 
 mod camera;
 mod ground;
+mod history;
 mod io;
 mod manipulation;
 mod picking;
 mod state;
+mod theme;
 mod ui;
 
 pub use state::EditorState;
 
 use bevy_egui::input::{egui_wants_any_keyboard_input, egui_wants_any_pointer_input};
-use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass};
+
+use history::EditorHistory;
 
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(EguiPlugin::default());
+        app.add_plugins(EguiPlugin {
+            #[allow(deprecated)]
+            enable_multipass_for_primary_context: false,
+            ..default()
+        });
+        app.insert_resource(EguiGlobalSettings {
+            auto_create_primary_context: false,
+            ..default()
+        });
         app.add_plugins(TransformGizmoPlugin);
         // The gizmo reads raw mouse input, so it must not react while the
         // pointer is over an egui panel.
@@ -35,6 +47,7 @@ impl Plugin for EditorPlugin {
             TransformGizmoSystems.run_if(not(egui_wants_any_pointer_input)),
         );
         app.insert_resource(EditorState::default());
+        app.insert_resource(EditorHistory::default());
         app.add_systems(
             Startup,
             (
@@ -55,9 +68,10 @@ impl Plugin for EditorPlugin {
                 ground::draw_grid,
                 manipulation::sync_gizmo_settings,
                 manipulation::sync_gizmo_focus,
+                manipulation::record_gizmo_drag_start,
                 manipulation::writeback_manifest,
                 manipulation::draw_overlays,
-                ui::update_native_hud,
+                io::recompute_validation,
             )
                 .run_if(not(egui_wants_any_pointer_input)),
         );
@@ -72,6 +86,9 @@ impl Plugin for EditorPlugin {
                 picking::deselect_on_escape,
                 io::save_on_ctrl_s,
                 io::load_on_ctrl_o,
+                io::new_map_on_ctrl_n,
+                io::undo_redo,
+                io::duplicate_on_ctrl_d,
                 ui::keyboard_tools,
             )
                 .run_if(not(egui_wants_any_keyboard_input)),

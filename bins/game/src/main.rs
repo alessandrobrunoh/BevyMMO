@@ -8,18 +8,9 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-mod game_state;
-mod network;
-mod plugins;
-#[cfg(feature = "client")]
-mod scenes;
-mod settings;
-mod spells;
-mod stats;
-#[cfg(feature = "client")]
-mod ui;
 
-use settings::Settings;
+use bevymmo_shared::settings::Settings;
+use bevymmo_shared::{game_state, network::mode};
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -62,7 +53,7 @@ enum Mode {
 }
 
 struct AppConfig {
-    mode: network::mode::AppMode,
+    mode: mode::AppMode,
     client_id: Option<u64>,
     server_addr: SocketAddr,
     client_addr: SocketAddr,
@@ -89,7 +80,7 @@ impl AppConfig {
                 client_id,
                 server_addr,
             } => Self {
-                mode: network::mode::AppMode::Client,
+                mode: mode::AppMode::Client,
                 client_id: Some(resolve_client_id(client_id)),
                 server_addr: server_addr.unwrap_or(client_server_addr),
                 client_addr,
@@ -98,7 +89,7 @@ impl AppConfig {
                 database_url,
             },
             Mode::Server { bind_addr } => Self {
-                mode: network::mode::AppMode::Server,
+                mode: mode::AppMode::Server,
                 client_id: None,
                 server_addr: bind_addr.unwrap_or(server_bind_addr),
                 client_addr,
@@ -110,7 +101,7 @@ impl AppConfig {
                 client_id,
                 server_addr,
             } => Self {
-                mode: network::mode::AppMode::HostClient,
+                mode: mode::AppMode::HostClient,
                 client_id: Some(resolve_client_id(client_id)),
                 server_addr: server_addr.unwrap_or(client_server_addr),
                 client_addr,
@@ -119,7 +110,7 @@ impl AppConfig {
                 database_url,
             },
             Mode::Editor => Self {
-                mode: network::mode::AppMode::Editor,
+                mode: mode::AppMode::Editor,
                 client_id: None,
                 server_addr: client_server_addr,
                 client_addr,
@@ -170,7 +161,7 @@ fn build_app(config: &AppConfig) -> App {
     app.insert_resource(config.mode);
     app.add_plugins(game_state::GameStatePlugin);
 
-    if matches!(config.mode, network::mode::AppMode::Editor) {
+    if matches!(config.mode, mode::AppMode::Editor) {
         app.add_plugins(bevymmo_editor::EditorPlugin);
         return app;
     }
@@ -182,8 +173,8 @@ fn build_app(config: &AppConfig) -> App {
             .database_url
             .clone()
             .expect("DATABASE_URL is required when starting a server; set it in config/<env>.toml, config/local.toml, or as the DATABASE_URL env var");
-        app.add_plugins(plugins::persistence::PersistencePlugin::new(database_url));
-        app.add_plugins(network::server::ServerPlugins {
+        app.add_plugins(bevymmo_server::ServerPlugin {
+            database_url,
             server_addr: config.server_addr,
             tick_duration,
         });
@@ -191,28 +182,27 @@ fn build_app(config: &AppConfig) -> App {
 
     #[cfg(feature = "client")]
     if config.mode.has_client() {
-        app.add_plugins(network::client::ClientPlugins {
+        app.add_plugins(bevymmo_client::network::client::ClientTransportPlugins {
             client_id: config.client_id(),
             server_addr: config.server_addr,
             client_addr: config.client_addr,
             tick_duration,
         });
+        app.add_systems(
+            Update,
+            bevymmo_presentation::spells::input::cast_spells_on_key
+                .run_if(bevymmo_shared::network::mode::has_client),
+        );
     }
 
-    app.add_plugins(network::protocol::ProtocolPlugin);
-    app.add_plugins(stats::StatsPlugin);
-    app.add_plugins(plugins::entity::EntityPlugin);
-    app.add_plugins(plugins::player_movement::PlayerMovementPlugin);
-    app.add_plugins(plugins::crowd_control::CrowdControlPlugin);
-    #[cfg(feature = "client")]
-    app.add_plugins(plugins::targeting::TargetingPlugin);
-    app.add_plugins(plugins::spells::SpellsPlugin);
+    app.add_plugins(bevymmo_shared::network::protocol::ProtocolPlugin);
 
     #[cfg(feature = "client")]
     if config.mode.has_client() {
-        app.add_plugins(plugins::key_mapping::KeyMappingPlugin);
-        app.add_plugins(ui::UiPlugin);
-        app.add_plugins((scenes::ScenesPlugin, plugins::renderer::RendererPlugin));
+        app.add_plugins(bevymmo_client::input::key_mapping::KeyMappingPlugin);
+        app.add_plugins(bevymmo_client::player_movement::PlayerMovementPlugin);
+        app.add_plugins(bevymmo_client::targeting::TargetingPlugin);
+        app.add_plugins(bevymmo_presentation::PresentationPlugin);
     }
 
     app

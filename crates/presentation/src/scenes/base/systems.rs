@@ -130,8 +130,8 @@ fn spawn_game_scene(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::protocol::{EntityColor, Position};
-    use crate::plugins::renderer::RendererPlugin;
+    use bevymmo_shared::network::protocol::{EntityColor, Position};
+    use crate::renderer::RendererPlugin;
     use crate::scenes::base::BaseScenePlugin;
 
     fn test_app() -> App {

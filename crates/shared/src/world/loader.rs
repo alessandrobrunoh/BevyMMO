@@ -213,6 +213,21 @@ mod tests {
     }
 
     #[test]
+    fn legacy_manifest_without_terrain_loads_with_default_terrain() {
+        // Maps written before the `terrain` field existed must still load.
+        let source = r#"(
+            version: 1,
+            map_id: "legacy_map",
+            display_name: "Legacy",
+            bounds: (min_x: -20.0, max_x: 20.0, min_z: -20.0, max_z: 20.0),
+            props: [],
+        )"#;
+        let manifest: MapManifest = ron::from_str(source).expect("parse legacy manifest");
+        assert_eq!(manifest.terrain, Terrain::default());
+        assert!(validate(&manifest).is_empty());
+    }
+
+    #[test]
     fn duplicate_prop_ids_are_rejected() {
         let mut m = empty_manifest();
         m.props.push(Prop {

@@ -62,6 +62,9 @@ COPY crates ./crates
 # (`include_str!("../config/default.toml")` in `settings.rs`) and at runtime
 # (`Settings::load` reads `config/<env>.toml` and `config/local.toml`).
 COPY config ./config
+# Server-side authored world manifests. The server reads these as data only;
+# no meshes or client presentation assets are included.
+COPY assets/maps ./assets/maps
 
 # Invalidate timestamp of stub binary to force bin recompilation
 RUN touch bins/game/src/main.rs
@@ -105,6 +108,8 @@ COPY --from=builder /build/target/release/game ./game
 
 # Copy configuration files read at runtime by `Settings::load`.
 COPY --from=builder /build/config ./config
+# Copy authored map manifests used by the headless world loader.
+COPY --from=builder /build/assets/maps ./assets/maps
 
 # UDP port used by Lightyear/Netcode for clients
 EXPOSE 5051/udp

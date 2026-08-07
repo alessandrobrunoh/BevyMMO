@@ -1,0 +1,61 @@
+(
+    version: 1,
+    map_id: "test_1",
+    display_name: "Test 1 - World Pipeline",
+    bounds: (
+        min_x: -20.0,
+        max_x: 20.0,
+        min_z: -20.0,
+        max_z: 20.0,
+    ),
+    props: [
+        (
+            id: "prop_0001",
+            kind: "cube",
+            transform: (
+                translation: (-6.0, 0.5, -2.0),
+                rotation_deg: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            tint: Some((0.25, 0.45, 0.85)),
+            collision: None,
+            blocks_movement: false,
+        ),
+        (
+            id: "prop_0002",
+            kind: "tree_oak",
+            transform: (
+                translation: (0.0, 1.25, -2.0),
+                rotation_deg: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            tint: Some((0.2, 0.6, 0.2)),
+            collision: None,
+            blocks_movement: false,
+        ),
+        (
+            id: "prop_0003",
+            kind: "rock_01",
+            transform: (
+                translation: (5.0, 0.4, -1.0),
+                rotation_deg: (0.0, 25.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            tint: Some((0.45, 0.45, 0.5)),
+            collision: None,
+            blocks_movement: false,
+        ),
+        (
+            id: "prop_0004",
+            kind: "house_simple",
+            transform: (
+                translation: (0.0, 1.0, 6.0),
+                rotation_deg: (0.0, -15.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            tint: Some((0.7, 0.45, 0.2)),
+            collision: None,
+            blocks_movement: false,
+        ),
+    ],
+)

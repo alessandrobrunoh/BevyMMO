@@ -15,6 +15,7 @@ pub mod persistence;
 pub mod player_movement;
 pub mod spells;
 pub mod stats;
+pub mod world;
 
 use bevy::prelude::*;
 use core::time::Duration;
@@ -40,6 +41,7 @@ impl Plugin for ServerPlugin {
             player_movement::PlayerMovementPlugin,
             crowd_control::CrowdControlPlugin,
             spells::SpellsServerPlugin,
+            world::WorldPlugin,
         ));
     }
 }

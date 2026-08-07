@@ -66,8 +66,13 @@ COPY config ./config
 # no meshes or client presentation assets are included.
 COPY assets/maps ./assets/maps
 
-# Invalidate timestamp of stub binary to force bin recompilation
-RUN touch bins/game/src/main.rs
+# Invalidate timestamps of all real Rust sources copied over the stub workspace.
+#
+# The cache stage compiles dependency artifacts against empty placeholder
+# `lib.rs` files for workspace crates. After copying the real sources, we must
+# force Cargo to re-fingerprint every workspace crate; otherwise it may reuse
+# stale metadata from the stub build and the binary sees missing modules.
+RUN find bins/game/src crates -type f -name '*.rs' -exec touch {} +
 
 # Final release build — server mode only
 RUN cargo build --release \

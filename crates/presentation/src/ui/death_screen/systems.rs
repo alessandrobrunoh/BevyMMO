@@ -177,7 +177,7 @@ fn local_player_state<'a>(
 mod tests {
     use super::*;
     use crate::game_state::{GameScreen, Screen};
-    use crate::plugins::entity::components::EntityState;
+    use bevymmo_shared::entity::components::EntityState;
     use crate::ui::theme::UiTheme;
     use lightyear::prelude::Controlled;
 

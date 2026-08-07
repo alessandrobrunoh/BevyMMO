@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 bevy = { version = "0.19", default-features = true }
+bevy_egui = "0.40"
+bevymmo_shared = { path = "../shared" }

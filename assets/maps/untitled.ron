@@ -1,0 +1,12 @@
+(
+    version: 1,
+    map_id: "untitled",
+    display_name: "Untitled Map",
+    bounds: (
+        min_x: -20.0,
+        max_x: 20.0,
+        min_z: -20.0,
+        max_z: 20.0,
+    ),
+    props: [],
+)

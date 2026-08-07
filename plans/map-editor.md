@@ -1,7 +1,7 @@
 # Plan: Map Editor & World System (data-driven levels for an isometric MMO)
 
 **Status**: Draft — design only, no code yet.
-**Scope**: A Bevy-based in-game map editor (`cargo run -- editor`) that produces data-driven `.ron` maps consumed by the headless server (gameplay only) and the client (rendering + interactions). Includes the full world data model, the editor UX, and the server/client consumption paths. Depends on `plans/workspace-crate-split.md` (crates: `bevymmo_shared`, `bevymmo_server`, `bevymmo_client`, `bevymmo_presentation`, `bevymmo_editor`).
+**Scope**: A simple but usable Bevy-based in-game map editor (`cargo run -- editor`) that produces data-driven `.ron` maps consumed by the headless server and the client. The first milestone is intentionally small: place visual props, edit their transforms and collision, save/load a map, render it in-game, and validate a basic local hover label (`CIAO!`). Spawn points, regions, triggers and generic interactables are reserved for later slices; shops and resource nodes are explicitly out of scope for the base system. Depends on `plans/workspace-crate-split.md` (crates: `bevymmo_shared`, `bevymmo_server`, `bevymmo_client`, `bevymmo_presentation`, `bevymmo_editor`).
 
 ---
 
@@ -9,15 +9,17 @@
 
 Build a minimal but complete map editor and world pipeline for a large isometric 3D MMO (Albion-like):
 
-1. **Editor** (Bevy + `bevymmo_editor`, UI via `bevy_egui`): place/select/manipulate props, spawn points, regions, triggers, interactables; save to `.ron`.
-2. **World data model** (`bevymmo_shared::world`): engine-agnostic `MapManifest` — no Bevy components, no asset paths, only ids + data. This is the contract between editor, server, and client.
-3. **Server consumption** (`bevymmo_server::world`): reads the manifest at startup, spawns entities from `spawn_points`, keeps a spatial collision grid, and evaluates `regions`/`triggers`. The server **never loads meshes**.
-4. **Client consumption** (`bevymmo_client::world::asset_registry` + `bevymmo_presentation`): maps `kind` strings to asset paths, spawns `SceneRoot` visuals, handles hover/click interactions.
+1. **Editor** (Bevy + `bevymmo_editor`, UI via `bevy_egui`): create a map, place/select/delete props, edit transforms/collision/tint, and save/load `.ron`.
+2. **World data model** (`bevymmo_shared::world`): engine-agnostic `MapManifest` — no Bevy components and no asset paths. This is the contract between editor, server and client.
+3. **Client consumption** (`bevymmo_client::world` + `bevymmo_presentation`): resolve logical `kind`s through one catalog, render props, and run client-only presentation such as hover labels and local occlusion.
+4. **Server consumption** (`bevymmo_server::world`): later reads the same manifest, builds collision and authoritative gameplay data. The server **never loads meshes**.
 
 **Non-goals**:
 - No tile-based movement grid (movement stays free/continuous as today, `Position(Vec3)`).
 - No terrain heightmap sculpting in v1. **Terrain is flat (y = 0) by decision**: elevated/raised structures (platforms, buildings on stilts, stairs) are authored as props with `translation.y > 0` and blocking collision. "Walking on top of platforms" (walkable heights / multiple flat levels / heightmap) is explicitly deferred to a future plan.
-- No undo/redo system, no multi-select, no undo stack in v1 (listed as future work).
+- No undo/redo, multi-select, prefab system, brush tools, layers or chunk streaming in the foundation. They are future editor improvements and must not complicate the first working pipeline.
+- Resource nodes and shop/database content are out of scope for the base system.
+- No multi-level walkable terrain in v1. Raised structures are visual/blocking props; walking on their roofs or platforms requires a future height/level system.
 - The game UI (`ui/`) is **not** rewritten: it stays Bevy UI native. `bevy_egui` is used **only** inside the editor.
 
 ---
@@ -83,6 +85,21 @@ bevymmo_shared::world
 ```
 
 No systems, no plugins, no `AssetServer` — only data + pure functions. This guarantees the module compiles on the server.
+
+### D8. Coordinate and content conventions
+
+- Y is up, the ground is the plane `y = 0`, and one world unit represents one metre.
+- The map origin is the centre of the map; `MapBounds` describes the playable X/Z rectangle.
+- `kind` is a stable logical content id, never an asset path. The shared catalog maps it to a scene for the editor/client.
+- The first editor milestone uses one single `.ron` file per map. Chunking and streaming are explicitly deferred.
+
+### D9. Keep the first vertical slice small
+
+The first complete loop is: create/open map -> choose catalog entry -> place prop -> select/edit -> save -> load in client -> walk around with collision. Empty future sections are allowed in the manifest, but their editor and gameplay systems are not required until later.
+
+### D10. Local presentation is client-owned
+
+A hover label or an occlusion effect is not authoritative gameplay. Each client may show it independently for the local player. Server-authoritative interaction requests are a later feature.
 
 ---
 
@@ -495,26 +512,30 @@ assets/maps/starting_city.ron
    -> spawn Interactable markers + prompts (ui)
 ```
 
-### Interaction flow (client+server)
+### Basic hover feedback (foundation)
 
-```mermaid
-sequenceDiagram
-    participant P as Player
-    participant C as Client
-    participant S as Server
-    participant DB as PostgreSQL
+The first interaction-like feature is deliberately local and simple: an entity marked `Hoverable` reacts when the mouse is over its visual and shows a label such as `CIAO!` above it. This validates picking, entity-to-visual ownership and screen-space UI without introducing Shop, Dialogue or network messages.
 
-    P->>C: click NPC (or press E near)
-    C->>C: proximity check vs interaction_range (client feedback)
-    C->>S: InteractionRequest { interactable_id }
-    S->>S: validate: distance from authoritative Position, region rules
-    S->>DB: fetch shop/dialogue payload
-    DB-->>S: payload
-    S-->>C: InteractionResponse { interactable_id, payload }
-    C->>P: render widget (existing Bevy UI pattern)
+```rust
+#[derive(Component)]
+pub struct Hoverable {
+    pub label: String,
+    pub world_offset: Vec3,
+}
 ```
 
-**Lightyear messages** (registered in `bevymmo_shared::network::protocol`):
+The client tracks `HoveredEntity`, receives pointer over/out events, and projects the label position with the active camera. The label disappears on pointer-out. The same presentation path can later become an interaction prompt, but `Hoverable` is not server authority.
+
+### Future interaction flow (not foundation)
+
+The eventual client/server interaction flow is:
+
+1. client shows a proximity/prompt feedback;
+2. client sends `InteractionRequest { interactable_id }`;
+3. server validates authoritative distance and rules;
+4. client renders the response.
+
+Shop and database-backed dialogue are explicitly deferred. The message types below are reserved for that later slice:
 
 ```rust
 #[derive(Message, Serialize, Deserialize, Clone, Debug)]
@@ -548,11 +569,8 @@ The server keeps a `WorldInteractions` resource built from the manifest (`intera
 assets/maps/starting_city.ron
    -> bevymmo_shared::world::loader::load_map (validate)
    -> WorldData resource (MapManifest)
-   -> WorldRegions resource   (regions indexed by id)
-   -> WorldTriggers resource  (triggers indexed by id)
-   -> WorldInteractions resource (interactables indexed by id)
    -> CollisionGrid resource  (props with collision, spatial hash)
-   -> spawn spawn_points -> spawn_entity::<T>() for enemy/npc kinds
+   -> future: regions/triggers/interactables systems when those sections are enabled
 ```
 
 ### Spatial collision grid (`bevymmo_shared::world::collision`)
@@ -757,24 +775,24 @@ The boss arena (existing `boss-dragon.md` plan) becomes one `Trigger` + one `Reg
 
 ---
 
-### Slice 4 — Full manifest assembly + save/load
+### Slice 4 — Manifest assembly + deterministic save/load
 
 **Value**: the editor produces the actual map file the server and client will read.
 
 **Path**:
 
-- `io.rs`: assemble `MapManifest` from all `PropData` entities + resource collections (spawn points, regions, triggers, interactables, resources, effects — spawned by their tools with their own data components).
-- Tools for each section (`PlaceSpawn`, `DrawRegion`, `DrawTrigger`, `PlaceInteractable`, `PlaceResource`, `PlaceEffect`): each spawns an entity carrying the section-specific manifest struct + `EditorMarker`; inspector edits them; region/trigger shapes drawn with `Gizmos`.
-- **Text Gizmos** (`gizmos.text_2d` / `gizmos.text_3d`, built-in Bevy 0.19): label each entity with its `id` directly in the 3D viewport (prop ids, spawn point names, region names). ASCII only — strictly dev/editor use.
-- `loader::validate` runs on save; errors surface in the status bar, save is blocked until valid.
+- `io.rs`: assemble `MapManifest` from the editor's `PropData` entities and currently supported map metadata. Future sections remain empty until their tools are implemented.
+- Save/load only needs props, map metadata and empty reserved collections in the foundation. `loader::validate` runs on save; errors surface in the status bar and save is blocked until valid.
+- Sort props by stable `id` before serialization so RON diffs are deterministic.
 - `New map` dialog (map_id, display_name, bounds).
+- Keep a hand-authored `test_village.ron` fixture for round-trip tests.
 
 **Acceptance criteria**:
 
-- [ ] Author a map: props, one spawn point, one region, one trigger, one interactable, save → valid `.ron`.
-- [ ] Load the same file → identical manifest (roundtrip through the editor).
-- [ ] Invalid maps (duplicate id, missing kind) fail to save with a clear message.
-- [ ] Wireframe overlays show region/trigger volumes.
+- [ ] Author a map with props, save it, load it again and preserve the same manifest.
+- [ ] Invalid maps (duplicate id, missing kind, invalid bounds/scale) fail to save with a clear message.
+- [ ] Empty future sections round-trip without data loss.
+- [ ] The editor can create a small playable test village without hand-editing the output file.
 
 **Verification**: roundtrip test through `io.rs`; visual smoke; validate errors surfaced in status bar.
 
@@ -790,73 +808,79 @@ The boss arena (existing `boss-dragon.md` plan) becomes one `Trigger` + one `Reg
 - `bevymmo_presentation::world::spawn_prop_visuals` + tint system + `PropVisual` marker.
 - Map load on `GameScreen::InGame`: `load_map("assets/maps/<selected>.ron")` → `MapManifest` resource → spawn props; cleanup on leaving game (mirror `renderer::cleanup_entity_render` behavior).
 - Replace the static `Plane3d` ground in `scenes/base` with a ground sized from `MapBounds` (still a single plane; chunked terrain is a later slice).
+- Add the minimal `Hoverable`/`HoveredEntity` presentation path. A test prop or dedicated test entity displays `CIAO!` while hovered.
+- Establish visual occluder metadata for future assets: scene children may be named/tagged `roof`, `canopy`, `wall` or `base`. No fade system is required to complete the base map pipeline.
 
 **Acceptance criteria**:
 
 - [ ] Client loads `starting_city.ron`; every prop appears at the right transform with the right model/tint.
 - [ ] Unknown kind renders the placeholder + warning log (visible once).
 - [ ] Leaving to menu despawns prop visuals; re-entering respawns them.
+- [ ] Hovering the test entity displays `CIAO!` and pointer-out removes it.
 - [ ] Server unchanged in this slice (still spawns its demo entities as today).
 
 **Verification**: visual smoke with host-client; `cargo test`.
 
 ---
 
-### Slice 6 — Server consumption (spawn points, regions, collision grid, triggers)
+### Slice 6 — Server consumption (props and collision foundation)
 
 **Value**: the authored map is authoritative gameplay, replacing hard-coded demo spawns.
 
 **Path** (`bevymmo_shared::world` for the grid; `bevymmo_server::world` for the systems):
 
-- `WorldData`, `WorldRegions`, `WorldTriggers`, `WorldInteractions` resources built at startup from the manifest.
-- `CollisionGrid` (in `shared`) built once at startup; movement system validates blocked destinations against it. Client prediction uses an identical grid (decision D6b).
-- `spawn_from_manifest`: for each `SpawnPoint` with a registered `EntityDefinition` kind, `spawn_entity::<T>()`; `player_start` reserved for connect-time player spawns.
-- `evaluate_triggers` (FixedUpdate): containment → emit `TriggerEvent`; `once_per_entity` honored via `TriggerOccupancy`.
-- Migrate the boss arena from hard-coded coordinates to a manifest `Trigger` + `Region(Arena)` (entry points exist; the boss plan itself is separate).
-- Elevated structures (props with `y > 0`) get blocking shapes; since the ground is flat, they simply act as walls/pillars for movement in v1 (walking on top is future work, decision D6c).
+- Load `MapManifest` at startup and build `CollisionGrid` (in `shared`) from blocking props.
+- Movement validates blocked destinations against the grid; client prediction uses an identical grid (decision D6b).
+- Keep spawn points, regions, triggers and interactions as reserved manifest sections, but do not require their systems in the foundation slice.
+- Elevated structures (props with `y > 0`) get blocking shapes; since the ground is flat, they act as walls/pillars in v1. Walking on top is future work (decision D6c).
 
 **Acceptance criteria**:
 
-- [ ] Server loads the map at startup; enemies/NPCs spawn from manifest positions.
+- [ ] Server loads the authored map at startup.
 - [ ] Player movement stops at blocking props (grid query).
-- [ ] Entering the arena trigger emits the trigger event; region rules resolvable by position.
 - [ ] Server process never touches `AssetServer`/meshes (assert via no `bevy/render` dependency in `bevymmo_server`).
+- [ ] Empty future sections do not require server systems yet.
 
 **Verification**: server smoke with two clients; unit tests for `CollisionGrid::is_blocked` and trigger containment.
 
 ---
 
-### Slice 7 — Interactions (client prompt + server validation + UI)
+### Slice 7 — Future interactions (optional, after the base loop)
 
-**Value**: clickable NPCs/chests with the client→server→client round trip.
+**Value**: evolve the local hover test into authoritative interactions only when gameplay content needs it.
 
 **Path**:
 
-- Register `InteractionRequest`/`InteractionResponse` messages + channels in `bevymmo_shared::network::protocol`.
-- Server: `handle_interaction_request` validates distance/region, returns payload (shop items from DB via existing persistence, or dialogue placeholder).
-- Client: proximity prompt ("Press E"), send request, render response in a Bevy UI widget (follows the existing `ui/` pattern — new `ui/interaction/` folder in `bevymmo_presentation`).
+- Add `Interactable` authoring only when a concrete gameplay use case exists.
+- Register request/response messages in `bevymmo_shared::network::protocol`.
+- Server validates authoritative distance and region rules; client renders the response using existing Bevy UI.
+- Shop/database payloads and resource nodes remain separate future features.
 
 **Acceptance criteria**:
 
-- [ ] Walking near an interactable shows the prompt; pressing E opens the widget; far away → nothing.
-- [ ] Server rejects out-of-range requests (client spoof test: crafted request without proximity → rejected).
-- [ ] Shop payload round-trips from DB to UI.
+- [ ] A concrete non-shop interaction works end-to-end.
+- [ ] Server rejects out-of-range requests (client spoof test).
+- [ ] Shop/resource content is not required for this slice.
 
 **Verification**: two-client smoke; spoof test; `cargo test`.
 
 ---
 
-### Slice 8 — Polish + chunking groundwork (optional scope gate)
+### Slice 8 — Local occlusion and editor polish (optional scope gate)
 
-**Value**: maps get large without collapsing.
+**Value**: make authored buildings readable without expanding the world data model prematurely.
 
-- Per-zone files: `maps/<map_id>/zone_<x>_<z>.ron` referenced by `maps/<map_id>/world.ron` (one `MapManifest` per zone; a `WorldIndex` lists zones). All previous slices operate on single-file maps; this slice only introduces the index + loader changes.
-- Save-as-chunked in the editor; streaming (load/unload on player position) is a separate future plan.
+- Define asset child naming/tagging for `roof`, `canopy`, `wall` and `base`.
+- When the local player enters a house interior volume, hide or fade only roof/occluding children for that client.
+- Later, cast a camera-to-player ray and fade nearby props such as a large tree when they obstruct the player. Start with bounds/occluder tests; do not require per-triangle raycasts.
+- Add optional one-level undo, multi-select, prefab/group placement, brush tools and layers only after the basic editor is stable.
+- Chunking/streaming remains a separate future plan.
 
 **Acceptance criteria**:
 
-- [ ] Single-file maps still load (backward compatible).
-- [ ] A 3-zone test map loads, renders, and runs server gameplay across zones.
+- [ ] Entering a test house hides/fades its roof only for the local client.
+- [ ] Leaving the house restores the roof.
+- [ ] A large tagged tree can fade when it blocks the camera-to-player line of sight.
 
 ---
 
@@ -894,14 +918,16 @@ The boss arena (existing `boss-dragon.md` plan) becomes one `Trigger` + one `Reg
 |---|---|---|
 | 1 | Heightmap vs flat | **Flat ground (y = 0) for v1.** Elevated/raised structures are authored as props with `y > 0` + blocking collision (decision D6c). Walkable heights (levels or heightmap) is a separate future plan. |
 | 2 | Collision approach | **Custom `CollisionGrid` in `shared`**, identical copy on server (validation) and client (prediction). No `avian3d`/physics in v1 (decision D6b). |
-| 3 | Map size | Single-file `.ron` per map for now; per-zone files in Slice 8 keep backward compatibility (10k props/zone budget). |
+| 3 | Map size | Single-file `.ron` per map for the foundation. Chunk files and streaming are deferred to a separate future plan. |
 | 4 | Editor binary | **`cargo run -- editor`** — mode in the fat game binary, feature-gated; matches `plans/workspace-crate-split.md` decision. |
-| 5 | Interaction scope | Shop + dialogue implemented; `InteractionKind::Custom` stubbed (registered but no payload handler yet). |
-| 6 | Catalog | **One shared `catalog.ron`** for both editor palette and runtime registry; client ignores editor-only fields. |
+| 5 | Base interaction scope | **Local hover feedback only** in the foundation: a `Hoverable` entity displays a label such as `CIAO!`. Network interactions, shops and dialogue are later slices. |
+| 6 | Content deferred | **ResourceNode and Shop/database content are deferred** until the base map/edit/render/collision loop is stable. |
+| 7 | Catalog | **One shared `catalog.ron`** for both editor palette and runtime registry; client ignores editor-only fields. |
+| 8 | Visual occlusion | Asset scenes use child names/tags such as `roof`, `canopy`, `wall` and `base`; local roof hiding and camera obstruction fade are client-side presentation features. |
 
 ## Open questions (still pending)
 
-None blocking: Slice 1 (editor shell) may start immediately after the crate-split reaches its Slice 6 (editor stub).
+None blocking. Before implementing occlusion, choose whether tagged parts use `Name` values from the GLB hierarchy or a dedicated asset metadata component. Before implementing the editor shell, verify Bevy 0.19 compatibility for `bevy_egui` and `bevy_mod_picking`.
 
 ---
 

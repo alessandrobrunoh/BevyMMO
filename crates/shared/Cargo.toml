@@ -13,3 +13,5 @@ lightyear = { workspace = true, features = [
 ] }
 serde = { workspace = true }
 config = { workspace = true }
+ron = "0.10"
+thiserror = "2"

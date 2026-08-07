@@ -12,7 +12,7 @@ pub mod world;
 
 use bevy::prelude::*;
 use bevy_asset_loader::prelude::*;
-use assets::PlayerAssets;
+use assets::{PlayerAssets, BossDragonAssets, MapAssets};
 
 #[derive(States, Clone, Copy, Default, Eq, PartialEq, Hash, Debug)]
 pub enum PresentationState {
@@ -28,7 +28,9 @@ impl Plugin for PresentationCorePlugin {
         app.init_state::<PresentationState>().add_loading_state(
             LoadingState::new(PresentationState::Loading)
                 .continue_to_state(PresentationState::Ready)
-                .load_collection::<PlayerAssets>(),
+                .load_collection::<PlayerAssets>()
+                .load_collection::<BossDragonAssets>()
+                .load_collection::<MapAssets>(),
         );
     }
 }

@@ -13,6 +13,10 @@ use bevy::window::PrimaryWindow;
 
 use bevymmo_shared::movement::MoveTarget;
 use bevymmo_shared::network::mode;
+use bevymmo_shared::network::protocol::{Channel2, MoveCommand};
+use lightyear::prelude::MessageSender;
+
+use crate::network::types::ConnectedClient;
 
 const INDICATOR_DURATION: f32 = 0.55;
 
@@ -40,6 +44,7 @@ fn select_move_target(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut move_target: ResMut<MoveTarget>,
+    mut move_senders: Query<&mut MessageSender<MoveCommand>, With<ConnectedClient>>,
     mut commands: Commands,
     meshes: Option<ResMut<Assets<Mesh>>>,
     materials: Option<ResMut<Assets<StandardMaterial>>>,
@@ -75,6 +80,12 @@ fn select_move_target(
 
     let target = Vec3::new(target.x, 0.0, target.z);
     move_target.0 = Some(target);
+    if just_pressed {
+        info!("Client movement target set to ({:.2}, {:.2}, {:.2})", target.x, target.y, target.z);
+        for mut sender in &mut move_senders {
+            sender.send::<Channel2>(MoveCommand { target });
+        }
+    }
 
     if !just_pressed {
         return;

@@ -189,19 +189,29 @@ fn build_app(config: &AppConfig) -> App {
             tick_duration,
         });
         app.add_systems(
-            Update,
-            bevymmo_presentation::spells::input::cast_spells_on_key
-                .run_if(bevymmo_shared::network::mode::has_client),
+            Startup,
+            bevymmo_shared::spells_impl::register_default_spells,
         );
+
     }
 
     app.add_plugins(bevymmo_shared::network::protocol::ProtocolPlugin);
+    // Local Bevy messages/resources used by client presentation systems. The
+    // Lightyear protocol registration alone does not initialize the local
+    // message queue or the shared spell registry.
+    app.add_message::<bevymmo_shared::network::protocol::SpellVisualEffect>();
+    app.add_message::<bevymmo_shared::network::protocol::SpellCastProgress>();
+    app.add_message::<bevymmo_shared::network::protocol::SpellCastEnded>();
+    app.init_resource::<bevymmo_shared::spells::SpellRegistry>();
 
     #[cfg(feature = "client")]
     if config.mode.has_client() {
         app.add_plugins(bevymmo_client::input::key_mapping::KeyMappingPlugin);
         app.add_plugins(bevymmo_client::player_movement::PlayerMovementPlugin);
         app.add_plugins(bevymmo_client::targeting::TargetingPlugin);
+        // Load client-side model/animation asset collections before renderer
+        // systems try to spawn player and enemy scenes.
+        app.add_plugins(bevymmo_presentation::PresentationCorePlugin);
         app.add_plugins(bevymmo_presentation::PresentationPlugin);
     }
 
@@ -243,6 +253,12 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
             };
             app.add_plugins(
                 DefaultPlugins
+                    // The runnable package lives in `bins/game`, while the
+                    // workspace keeps shared assets at the repository root.
+                    .set(AssetPlugin {
+                        file_path: "../../assets".to_string(),
+                        ..default()
+                    })
                     .set(LogPlugin {
                         filter: config.log_filter.clone(),
                         ..default()

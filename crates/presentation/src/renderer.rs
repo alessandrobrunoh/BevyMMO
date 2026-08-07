@@ -5,10 +5,16 @@ use bevymmo_shared::entity::components::{EntityKind, EntityState};
 use std::time::Duration;
 
 use crate::game_state::{GameScreen, Screen};
-use crate::assets::PlayerAssets;
+use crate::assets::{PlayerAssets, BossDragonAssets};
 
 #[derive(Component)]
 pub struct RenderedEntity;
+
+// Imported GLB scenes use a much larger native unit scale than the gameplay
+// world. Keep these values explicit so model proportions can be tuned without
+// touching entity positions or gameplay stats.
+const PLAYER_SCENE_SCALE: f32 = 0.035;
+const BOSS_DRAGON_SCENE_SCALE: f32 = 0.12;
 
 #[derive(Component)]
 pub struct AnimationIndices {
@@ -46,6 +52,7 @@ fn spawn_entity_meshes(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     player_assets: Option<Res<PlayerAssets>>,
+    dragon_assets: Option<Res<BossDragonAssets>>,
     entities: Query<(Entity, &Position, &EntityColor, Option<&EntityKind>, Option<&ProjectileVisual>), Without<RenderedEntity>>,
 ) {
     for (entity, position, color, kind, projectile_visual) in entities.iter() {
@@ -67,13 +74,23 @@ fn spawn_entity_meshes(
         } else {
             let is_player = kind.map_or(false, |k| *k == EntityKind::Player);
             if is_player {
-                if player_assets.is_some() {
+                if let Some(assets) = player_assets.as_ref() {
                     commands.entity(entity).insert((
-                        Transform::from_translation(position.0),
+                        WorldAssetRoot(assets.scene.clone()),
+                        Transform::from_translation(position.0)
+                            .with_scale(Vec3::splat(PLAYER_SCENE_SCALE)),
                         RenderedEntity,
                     ));
                 }
-                // Skip if not loaded yet
+            } else if kind.map_or(false, |k| *k == EntityKind::Hostile) {
+                if let Some(assets) = dragon_assets.as_ref() {
+                    commands.entity(entity).insert((
+                        WorldAssetRoot(assets.scene.clone()),
+                        Transform::from_translation(position.0)
+                            .with_scale(Vec3::splat(BOSS_DRAGON_SCENE_SCALE)),
+                        RenderedEntity,
+                    ));
+                }
             } else {
                 let mesh = meshes.add(Cuboid::new(2.0, 2.0, 2.0));
                 let material = materials.add(StandardMaterial {
@@ -125,39 +142,52 @@ fn setup_animation_players(
     mut commands: Commands,
     mut players: Query<(Entity, &mut AnimationPlayer), Added<AnimationPlayer>>,
     parent_query: Query<&ChildOf>,
-    entity_state_query: Query<Entity, With<EntityState>>,
+    entity_state_query: Query<(Entity, Option<&EntityKind>), With<EntityState>>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     player_assets: Option<Res<PlayerAssets>>,
+    _dragon_assets: Option<Res<BossDragonAssets>>,
 ) {
-    let Some(player_assets) = player_assets else { return; };
-
     for (entity, mut player) in players.iter_mut() {
         let mut current = entity;
         let mut root = None;
+        let mut kind = None;
         while let Ok(parent) = parent_query.get(current) {
             current = parent.0;
-            if entity_state_query.contains(current) {
-                root = Some(current);
+            if let Ok((e, k)) = entity_state_query.get(current) {
+                root = Some(e);
+                kind = k;
                 break;
             }
         }
 
         if let Some(root_entity) = root {
             let mut graph = AnimationGraph::new();
-            let idle_idx = graph.add_clip(player_assets.idle.clone(), 1.0, graph.root);
-            let walk_idx = graph.add_clip(player_assets.walk.clone(), 1.0, graph.root);
-            let graph_handle = graphs.add(graph);
+            let mut idle_idx = None;
+            let mut walk_idx = None;
 
-            let mut transitions = AnimationTransitions::new();
-            transitions.play(&mut player, idle_idx, Duration::ZERO).repeat();
+            if kind.map_or(false, |k| *k == EntityKind::Hostile) {
+                // No animations for Hostile currently
+            } else {
+                if let Some(assets) = player_assets.as_ref() {
+                    idle_idx = Some(graph.add_clip(assets.idle.clone(), 1.0, graph.root));
+                    walk_idx = Some(graph.add_clip(assets.walk.clone(), 1.0, graph.root));
+                }
+            }
 
-            commands.entity(entity).insert((
-                AnimationGraphHandle(graph_handle),
-                transitions,
-                AnimationIndices { idle: idle_idx, walk: walk_idx }
-            ));
+            if let (Some(idle), Some(walk)) = (idle_idx, walk_idx) {
+                let graph_handle = graphs.add(graph);
 
-            commands.entity(root_entity).insert(PlayerAnimation(entity));
+                let mut transitions = AnimationTransitions::new();
+                transitions.play(&mut player, idle, Duration::ZERO).repeat();
+
+                commands.entity(entity).insert((
+                    AnimationGraphHandle(graph_handle),
+                    transitions,
+                    AnimationIndices { idle, walk }
+                ));
+
+                commands.entity(root_entity).insert(PlayerAnimation(entity));
+            }
         }
     }
 }

@@ -6,13 +6,15 @@
 
 use bevy::prelude::*;
 use bevymmo_shared::game_state::{GameScreen, Screen};
-use bevymmo_shared::world::{load_map, MapManifest, Prop};
+use bevymmo_shared::world::{load_map, CollisionGrid, MapManifest, Prop};
+use crate::assets::MapAssets;
 
 const MAP_PATH: &str = "assets/maps/test_1.ron";
 
 #[derive(Resource, Default)]
 pub struct ClientWorldMap {
     pub manifest: Option<MapManifest>,
+    pub collision: Option<CollisionGrid>,
     loaded: bool,
 }
 
@@ -38,6 +40,7 @@ fn load_map_when_in_game(
     mut world_map: ResMut<ClientWorldMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    map_assets: Option<Res<MapAssets>>,
 ) {
     if world_map.loaded || !matches!(screen.0, Screen::InGame | Screen::Paused) {
         return;
@@ -58,9 +61,10 @@ fn load_map_when_in_game(
     );
 
     for prop in &manifest.props {
-        spawn_prop_visual(&mut commands, &mut meshes, &mut materials, prop);
+        spawn_prop_visual(&mut commands, &mut meshes, &mut materials, prop, &map_assets);
     }
 
+    world_map.collision = Some(CollisionGrid::build(&manifest));
     world_map.manifest = Some(manifest);
     world_map.loaded = true;
 }
@@ -76,6 +80,7 @@ fn cleanup_map_when_not_in_game(
             commands.entity(entity).despawn();
         }
         world_map.manifest = None;
+        world_map.collision = None;
         world_map.loaded = false;
     }
 }
@@ -85,6 +90,7 @@ fn spawn_prop_visual(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     prop: &Prop,
+    map_assets: &Option<Res<MapAssets>>,
 ) {
     let transform = Transform {
         translation: Vec3::from_array(prop.transform.translation),
@@ -102,17 +108,27 @@ fn spawn_prop_visual(
         .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
         .unwrap_or_else(|| placeholder_color(&prop.kind));
 
-    commands.spawn((
+    let mut entity = commands.spawn((
         Name::new(format!("Map Prop {} ({})", prop.id, prop.kind)),
+        transform,
+        MapPropVisual {
+            prop_id: prop.id.clone(),
+        },
+    ));
+
+    if prop.kind == "tree_oak" {
+        if let Some(assets) = map_assets.as_ref() {
+            entity.insert(WorldAssetRoot(assets.tree_oak.clone()));
+            return;
+        }
+    }
+
+    entity.insert((
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: color,
             ..default()
         })),
-        transform,
-        MapPropVisual {
-            prop_id: prop.id.clone(),
-        },
     ));
 }
 

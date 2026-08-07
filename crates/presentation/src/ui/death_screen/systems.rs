@@ -6,6 +6,7 @@ use lightyear::prelude::{Controlled, MessageSender};
 use bevymmo_client::network::types::ClientConnectionConfig;
 use bevymmo_shared::entity::components::EntityState;
 use bevymmo_shared::network::protocol::{Channel2, PlayerId, RespawnRequest};
+use bevymmo_shared::stats::components::VitalStats;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::ui::text::spawn_text;
@@ -94,12 +95,12 @@ pub fn setup_death_screen(mut commands: Commands, theme: Res<UiTheme>) {
 pub fn update_death_screen_visibility(
     screen: Res<GameScreen>,
     client_config: Option<Res<ClientConnectionConfig>>,
-    players: Query<(&EntityState, Option<&PlayerId>, Has<Controlled>)>,
+    players: Query<(&EntityState, Option<&VitalStats>, Option<&PlayerId>, Has<Controlled>)>,
     mut roots: Query<&mut Node, With<DeathScreenRoot>>,
 ) {
     let local_client_id = client_config.as_deref().map(|c| c.client_id);
     let is_local_dead = local_player_state(&players, local_client_id)
-        .map(|state| state.is_dead())
+        .map(|(state, vital)| state.is_dead() || vital.is_some_and(VitalStats::is_dead))
         .unwrap_or(false);
     let visible = matches!(screen.0, Screen::InGame | Screen::Paused) && is_local_dead;
 
@@ -155,22 +156,22 @@ pub fn update_respawn_button_visuals(
 }
 
 fn local_player_state<'a>(
-    players: &'a Query<(&EntityState, Option<&PlayerId>, Has<Controlled>)>,
+    players: &'a Query<(&EntityState, Option<&VitalStats>, Option<&PlayerId>, Has<Controlled>)>,
     local_client_id: Option<u64>,
-) -> Option<&'a EntityState> {
+) -> Option<(&'a EntityState, Option<&'a VitalStats>)> {
     // Prima cerca per `Controlled` (player locale predetto), poi fallback su
     // `PlayerId == client_id` (player interpolato in single-player d'ospite).
     players
         .iter()
-        .find(|(_, _, controlled)| *controlled)
+        .find(|(_, _, _, controlled)| *controlled)
         .or_else(|| {
-            players.iter().find(|(_, player_id, _)| {
+            players.iter().find(|(_, _, player_id, _)| {
                 player_id.is_some_and(|id| {
                     local_client_id.is_some_and(|client_id| id.0.to_bits() == client_id)
                 })
             })
         })
-        .map(|(state, _, _)| state)
+        .map(|(state, vital, _, _)| (state, vital))
 }
 
 #[cfg(test)]

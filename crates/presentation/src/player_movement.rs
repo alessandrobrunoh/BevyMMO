@@ -17,10 +17,11 @@ use bevymmo_shared::movement::{move_towards_target, effective_movement_speed};
 use bevymmo_shared::network::mode;
 use bevymmo_shared::network::protocol::{Inputs, LookDirection, NetworkEntityId, Position};
 use bevymmo_shared::spells_impl::swift::SwiftSpell;
-use bevymmo_shared::stats::components::MovementStats;
+use bevymmo_shared::stats::components::{MovementStats, VitalStats};
 use bevymmo_shared::stats::modifiers::ActiveStatModifiers;
 
 use crate::spells::cast_bar::ObservedCasts;
+use crate::world::ClientWorldMap;
 
 pub struct PlayerMovementPredictionPlugin;
 
@@ -34,11 +35,13 @@ impl Plugin for PlayerMovementPredictionPlugin {
 fn predict_move_to_target(
     synced_client: Query<(), (With<Client>, With<IsSynced<()>>)>,
     observed_casts: Option<Res<ObservedCasts>>,
+    world_map: Res<ClientWorldMap>,
     mut players: Query<
         (
             &mut Position,
             &ActionState<Inputs>,
             &MovementStats,
+            &VitalStats,
             &NetworkEntityId,
             &mut LookDirection,
             &mut EntityState,
@@ -52,9 +55,14 @@ fn predict_move_to_target(
         return;
     }
 
-    for (position, input, stats, network_id, look_direction, mut state, modifiers, cc_state) in
+    for (position, input, stats, vital, network_id, look_direction, mut state, modifiers, cc_state) in
         &mut players
     {
+        if vital.is_dead() || state.is_dead() {
+            *state = EntityState::Dead;
+            continue;
+        }
+
         if cc_state.map(|c| c.has_blocking_cc()).unwrap_or(false) {
             *state = EntityState::Idle;
             continue;
@@ -66,6 +74,24 @@ fn predict_move_to_target(
             network_id,
             observed_casts.as_deref(),
         );
+
+        if let Inputs::MoveTo(target) = &input.0 {
+            let offset = *target - position.0;
+            let distance = offset.length();
+            if distance > 0.001 {
+                let step = effective_speed.min(distance);
+                let candidate = position.0 + offset / distance * step;
+                if world_map
+                    .collision
+                    .as_ref()
+                    .is_some_and(|grid| grid.is_blocked([candidate.x, candidate.y, candidate.z], 0.45))
+                {
+                    *state = EntityState::Idle;
+                    continue;
+                }
+            }
+        }
+
         move_towards_target(position, look_direction, &input.0, effective_speed, state);
     }
 }

@@ -67,6 +67,13 @@ pub enum Inputs {
     Stop,
 }
 
+/// Reliable point-and-click movement command. This provides the authoritative
+/// server target independently of the prediction input timeline.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct MoveCommand {
+    pub target: Vec3,
+}
+
 impl Default for Inputs {
     fn default() -> Self {
         Self::Stop
@@ -174,6 +181,9 @@ impl Plugin for ProtocolPlugin {
             .add_direction(NetworkDirection::ServerToClient);
 
         app.register_message::<JoinRequest>()
+            .add_direction(NetworkDirection::ClientToServer);
+
+        app.register_message::<MoveCommand>()
             .add_direction(NetworkDirection::ClientToServer);
 
         app.register_message::<SpellCastCommand>()

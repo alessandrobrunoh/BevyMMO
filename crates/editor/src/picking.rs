@@ -1,7 +1,8 @@
 //! Mouse picking: ground raycast (for placement) and entity raycast (for selection).
 
-use bevy::input::mouse::MouseButton;
+use bevy::input::mouse::{MouseButton, MouseButtonInput};
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 use bevymmo_shared::world::TransformData;
 
 use crate::state::{EditorProp, EditorState, EditorTool, SelectedMarker};
@@ -92,8 +93,8 @@ fn pick_prop(
 }
 
 pub fn place_or_select(
-    mouse: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window>,
+    mut mouse_events: MessageReader<MouseButtonInput>,
+    windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -102,16 +103,23 @@ pub fn place_or_select(
     selected_q: Query<Entity, With<SelectedMarker>>,
     mut state: ResMut<EditorState>,
 ) {
-    if !mouse.just_pressed(MouseButton::Left) {
+    let left_clicked = mouse_events
+        .read()
+        .any(|event| event.button == MouseButton::Left && event.state.is_pressed());
+    if !left_clicked {
         return;
     }
     let Ok(window) = windows.single() else {
+        warn!("Editor click ignored: primary window not found");
         return;
     };
     let Some(cursor_pos) = window.cursor_position() else {
+        warn!("Editor click ignored: cursor is outside the window");
         return;
     };
+    info!("Editor click at ({:.0}, {:.0}), tool={:?}", cursor_pos.x, cursor_pos.y, state.tool);
     let Some((camera, camera_transform)) = cameras.iter().next() else {
+        warn!("Editor click ignored: editor camera not found");
         return;
     };
 
@@ -131,6 +139,7 @@ pub fn place_or_select(
         }
         EditorTool::Place => {
             let Some(point) = ground_raycast(camera, camera_transform, cursor_pos) else {
+                warn!("Editor placement ignored: mouse ray does not intersect ground plane");
                 return;
             };
             let snapped = Vec3::new(
@@ -139,8 +148,13 @@ pub fn place_or_select(
                 snap(point.z, state.snap_translation),
             );
             if !state.manifest.bounds.contains(snapped.x, snapped.z) {
+                warn!(
+                    "Editor placement ignored: ({:.1}, {:.1}) is outside map bounds",
+                    snapped.x, snapped.z
+                );
                 return;
             }
+            info!("Placing {} at ({:.1}, {:.1}, {:.1})", state.current_kind, snapped.x, snapped.y, snapped.z);
             place_prop(&mut commands, &mut meshes, &mut materials, &mut state, snapped);
         }
     }
@@ -175,15 +189,17 @@ fn place_prop(
     position: Vec3,
 ) {
     let id = state.next_prop_id();
-    let tint = tint_for_kind(&state.current_kind);
+    let kind = state.current_kind.clone();
+    let tint = tint_for_kind(&kind);
+    let visual_scale = visual_scale_for_kind(&kind);
     let transform_data = TransformData {
         translation: [position.x, position.y, position.z],
         rotation_deg: [0.0, 0.0, 0.0],
-        scale: [1.0, 1.0, 1.0],
+        scale: [visual_scale.x, visual_scale.y, visual_scale.z],
     };
     let prop = bevymmo_shared::world::Prop {
         id: id.clone(),
-        kind: state.current_kind.clone(),
+        kind,
         transform: transform_data,
         tint,
         collision: None,
@@ -192,18 +208,31 @@ fn place_prop(
     state.manifest.props.push(prop);
     state.dirty = true;
 
+    let base_color = tint
+        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
+        .unwrap_or(Color::srgb(0.4, 0.5, 0.7));
     let entity = commands
         .spawn((
             Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
             MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgb(0.4, 0.5, 0.7),
+                base_color,
                 ..default()
             })),
-            Transform::from_translation(position),
+            Transform::from_translation(position).with_scale(visual_scale),
             EditorProp { prop_id: id },
+            SelectedMarker,
         ))
         .id();
     state.selected = Some(entity);
+}
+
+fn visual_scale_for_kind(kind: &str) -> Vec3 {
+    match kind {
+        "tree_oak" => Vec3::new(0.8, 2.5, 0.8),
+        "rock_01" => Vec3::new(1.4, 0.8, 1.2),
+        "house_simple" => Vec3::new(3.0, 2.0, 3.0),
+        _ => Vec3::ONE,
+    }
 }
 
 fn tint_for_kind(kind: &str) -> Option<[f32; 3]> {

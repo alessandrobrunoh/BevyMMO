@@ -8,6 +8,7 @@ pub mod renderer;
 pub mod scenes;
 pub mod spells;
 pub mod ui;
+pub mod world;
 
 use bevy::prelude::*;
 use bevy_asset_loader::prelude::*;
@@ -43,6 +44,7 @@ impl Plugin for PresentationPlugin {
             crate::entity::EntityVisualsPlugin,
             crate::spells::SpellsHudPlugin,
             crate::player_movement::PlayerMovementPredictionPlugin,
+            crate::world::WorldMapPlugin,
         ));
     }
 }

@@ -20,7 +20,9 @@ pub fn spawn_ground(
 ) {
     let size_x = (state.manifest.bounds.max_x - state.manifest.bounds.min_x).abs().max(1.0);
     let size_z = (state.manifest.bounds.max_z - state.manifest.bounds.min_z).abs().max(1.0);
-    let size = size_x.max(size_z) * 1.2;
+    // Keep the visible placement surface aligned with the authored bounds.
+    // Previously this was 20% larger, which made visible clicks silently fail.
+    let size = size_x.max(size_z);
 
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(size, size))),

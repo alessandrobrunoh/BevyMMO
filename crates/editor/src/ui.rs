@@ -5,7 +5,101 @@ use bevy_egui::egui;
 
 use crate::state::{EditorProp, EditorState, EditorTool, SelectedMarker};
 
+#[derive(Component)]
+pub struct NativeEditorHud;
+
+#[derive(Component)]
+pub struct NativeEditorStatus;
+
 const PALETTE_KINDS: &[&str] = &["cube", "tree_oak", "rock_01", "house_simple"];
+
+/// Native Bevy fallback HUD. It makes the editor usable even when egui is
+/// unavailable or its context is not created for the primary window.
+pub fn spawn_native_hud(mut commands: Commands) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(12.0),
+                left: Val::Px(12.0),
+                width: Val::Px(330.0),
+                padding: UiRect::all(Val::Px(10.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(4.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.02, 0.02, 0.03, 0.88)),
+            NativeEditorHud,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("MAP EDITOR"),
+                TextFont {
+                    font_size: FontSize::Px(18.0),
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.85, 0.3)),
+            ));
+            parent.spawn((
+                Text::new("B: Place   V: Select   Delete: Erase"),
+                TextFont {
+                    font_size: FontSize::Px(14.0),
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
+            parent.spawn((
+                Text::new("RMB orbit   MMB pan   Wheel zoom"),
+                TextFont {
+                    font_size: FontSize::Px(12.0),
+                    ..default()
+                },
+                TextColor(Color::srgb(0.75, 0.75, 0.8)),
+            ));
+            parent.spawn((
+                Text::new("Tool: Select | Kind: cube"),
+                TextFont {
+                    font_size: FontSize::Px(14.0),
+                    ..default()
+                },
+                TextColor(Color::srgb(0.5, 1.0, 0.6)),
+                NativeEditorStatus,
+            ));
+        });
+}
+
+/// Keyboard fallback for the toolbar.
+pub fn keyboard_tools(keys: Res<ButtonInput<KeyCode>>, mut state: ResMut<EditorState>) {
+    if keys.just_pressed(KeyCode::KeyB) {
+        state.tool = EditorTool::Place;
+    }
+    if keys.just_pressed(KeyCode::KeyV) {
+        state.tool = EditorTool::Select;
+    }
+}
+
+pub fn update_native_hud(
+    state: Res<EditorState>,
+    mut status: Query<&mut Text, With<NativeEditorStatus>>,
+) {
+    if !state.is_changed() {
+        return;
+    }
+    let Ok(mut text) = status.single_mut() else {
+        return;
+    };
+    let tool = match state.tool {
+        EditorTool::Select => "Select",
+        EditorTool::Place => "Place",
+    };
+    text.0 = format!(
+        "Tool: {tool} | Kind: {} | Props: {} | Selected: {}{}",
+        state.current_kind,
+        state.manifest.props.len(),
+        state.selected.map(|_| "yes").unwrap_or("no"),
+        if state.dirty { " *" } else { "" }
+    );
+}
 
 pub fn inspector_panel(
     mut ctxs: bevy_egui::EguiContexts,

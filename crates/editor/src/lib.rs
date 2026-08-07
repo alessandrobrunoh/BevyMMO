@@ -23,7 +23,10 @@ impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(EguiPlugin::default());
         app.insert_resource(EditorState::default());
-        app.add_systems(Startup, (camera::spawn_camera, ground::spawn_ground));
+        app.add_systems(
+            Startup,
+            (camera::spawn_camera, ground::spawn_ground, ui::spawn_native_hud),
+        );
         app.add_systems(
             Update,
             (
@@ -32,6 +35,8 @@ impl Plugin for EditorPlugin {
                 camera::orbit_camera,
                 io::save_on_ctrl_s,
                 io::load_on_ctrl_o,
+                ui::keyboard_tools,
+                ui::update_native_hud,
             ),
         );
         app.add_systems(EguiPrimaryContextPass, ui::inspector_panel);

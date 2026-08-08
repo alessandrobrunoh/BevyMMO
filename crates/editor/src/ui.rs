@@ -30,7 +30,7 @@ use crate::state::{
 };
 use crate::theme;
 use bevymmo_shared::placeables::{
-    KindId, PlaceableCategory, PlaceableDefinition, PlaceableRegistry,
+    AssetHint, KindId, PlaceableCategory, PlaceableDefinition, PlaceableRegistry,
 };
 
 const LEFT_PANEL_WIDTH: f32 = 280.0;
@@ -137,6 +137,7 @@ pub fn inspector_panel(
                 ui,
                 &mut commands,
                 &mut state,
+                &registry,
                 &selected_q,
                 &prop_q,
                 &terrain_q,
@@ -665,6 +666,7 @@ fn right_panel_ui(
     ui: &mut egui::Ui,
     commands: &mut Commands,
     state: &mut EditorState,
+    registry: &PlaceableRegistry,
     selected_q: &Query<Entity, With<SelectedMarker>>,
     prop_q: &Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
     terrain_q: &Query<(Entity, &Transform), With<EditorTerrain>>,
@@ -700,7 +702,7 @@ fn right_panel_ui(
             return;
         };
 
-        prop_inspector(ui, commands, state, selected_q, entity, prop_index, palette);
+        prop_inspector(ui, commands, state, registry, selected_q, entity, prop_index, palette);
     });
 }
 
@@ -759,6 +761,7 @@ fn prop_inspector(
     ui: &mut egui::Ui,
     commands: &mut Commands,
     state: &mut EditorState,
+    registry: &PlaceableRegistry,
     selected_q: &Query<Entity, With<SelectedMarker>>,
     entity: Entity,
     prop_index: usize,
@@ -766,6 +769,7 @@ fn prop_inspector(
 ) {
     let mut delete_clicked = false;
     let mut dirty = false;
+    let mut tint_changed = false;
     let translation_step = state.snap_translation;
     let rotation_step = state.snap_rotation_deg;
     let scale_step = state.snap_scale;
@@ -791,12 +795,26 @@ fn prop_inspector(
         }
 
         ui.add_space(2.0);
+        let uses_scene = registry
+            .props
+            .get(&prop.kind)
+            .map(|d| matches!(d.asset_hint(), AssetHint::Scene(_)))
+            .unwrap_or(false);
         ui.collapsing("Tint", |ui| {
+            if uses_scene {
+                ui.label(
+                    egui::RichText::new("\u{26a0}\u{fe0f} Tint only affects placeholder cuboids, not GLB models.")
+                        .small()
+                        .color(palette.accent_soft),
+                );
+                ui.add_space(2.0);
+            }
             let mut tint = prop.tint;
             tint_editor(ui, &mut tint);
             if tint != prop.tint {
                 prop.tint = tint;
                 dirty = true;
+                tint_changed = true;
             }
         });
 
@@ -931,6 +949,13 @@ fn prop_inspector(
     } else if dirty {
         state.dirty = true;
         state.validation_dirty = true;
+        if tint_changed {
+            // Tint changes are not applied in-place to the entity's material;
+            // trigger a scene rebuild so the visual picks up the new color.
+            // (For GLB-scene props this has no visible effect — their
+            // materials are embedded in the .glb file.)
+            state.needs_rebuild = true;
+        }
     }
 }
 

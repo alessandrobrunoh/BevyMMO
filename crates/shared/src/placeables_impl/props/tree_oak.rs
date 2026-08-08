@@ -12,7 +12,7 @@ impl PlaceableDefinition for TreeOakProp {
     fn id(&self) -> KindId { KindId::new("tree_oak") }
     fn display_name(&self) -> &'static str { "Oak Tree" }
     fn icon(&self) -> &'static str { "🌳" }
-    fn asset_hint(&self) -> AssetHint { AssetHint::Scene("models/props/tree_oak.glb") }
+    fn asset_hint(&self) -> AssetHint { AssetHint::Scene("models/tree_oak.glb") }
     fn defaults(&self) -> PlaceableDefaults {
         PlaceableDefaults {
             transform: TransformData {

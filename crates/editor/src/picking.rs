@@ -8,6 +8,7 @@ use bevy::gizmos::transform_gizmo::TransformGizmoState;
 use bevy::input::mouse::{MouseButton, MouseButtonInput};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevymmo_shared::placeables::{AssetHint, PlaceableRegistry};
 use bevymmo_shared::world::{Prop, TransformData};
 
 use crate::camera::EditorCamera;
@@ -233,6 +234,8 @@ pub fn place_or_select(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut registry: ResMut<PropMeshRegistry>,
+    asset_server: Res<AssetServer>,
+    placeables: Res<PlaceableRegistry>,
     cache: Res<PickBodyCache>,
     prop_q: Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
     selected_q: Query<Entity, With<SelectedMarker>>,
@@ -305,6 +308,8 @@ pub fn place_or_select(
                 &mut meshes,
                 &mut materials,
                 &mut registry,
+                &asset_server,
+                &placeables,
                 &mut state,
                 snapped,
             );
@@ -397,6 +402,8 @@ pub fn rebuild_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut registry: ResMut<PropMeshRegistry>,
+    asset_server: Res<AssetServer>,
+    placeables: Res<PlaceableRegistry>,
     mut state: ResMut<EditorState>,
     prop_q: Query<Entity, With<EditorProp>>,
     terrain_q: Query<Entity, With<EditorTerrain>>,
@@ -416,7 +423,15 @@ pub fn rebuild_scene(
 
     spawn_terrain_entity(&mut commands, &mut meshes, &mut materials, &mut state);
     for prop in &state.manifest.props {
-        spawn_prop_entity(&mut commands, &mut meshes, &mut materials, prop, &mut registry);
+        spawn_prop_entity(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &mut registry,
+            &asset_server,
+            &placeables,
+            prop,
+        );
     }
 }
 
@@ -436,40 +451,67 @@ fn erase_prop(
     }
 }
 
-/// Spawns a visual for a manifest prop (2x2x2 cuboid scaled by the authored
-/// scale, matching the client's placeholder rendering).
+/// Spawns a visual for a manifest prop.
+///
+/// The visual is chosen from the catalog's `AssetHint`: a GLB scene is loaded
+/// dynamically via `SceneRoot` (same models seen in-game), a placeholder
+/// cuboid is used for `Placeholder`/unknown kinds, and `Invisible` kinds spawn
+/// a marker entity only. Scale = per-placement scale * the kind's inherent
+/// size, mirroring the client's rendering so the editor matches the game.
 pub fn spawn_prop_entity(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    prop: &Prop,
     registry: &mut PropMeshRegistry,
+    asset_server: &AssetServer,
+    placeables: &PlaceableRegistry,
+    prop: &Prop,
 ) -> Entity {
-    let base_color = prop
-        .tint
-        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
-        .unwrap_or_else(|| {
-            tint_for_kind(prop.kind.as_str())
+    let definition = placeables.props.get(&prop.kind);
+    let defaults = definition.map(|d| d.defaults());
+    let kind_scale = defaults
+        .as_ref()
+        .map(|d| Vec3::from_array(d.transform.scale))
+        .unwrap_or(Vec3::ONE);
+
+    let mut entity = commands.spawn((
+        Name::new(format!("{} ({})", prop.id, prop.kind)),
+        Transform {
+            translation: Vec3::from_array(prop.transform.translation),
+            rotation: quat_from_rotation_deg(prop.transform.rotation_deg),
+            scale: Vec3::from_array(prop.transform.scale) * kind_scale,
+        },
+        EditorProp {
+            prop_id: prop.id.clone(),
+        },
+    ));
+
+    match definition.map(|d| d.asset_hint()) {
+        Some(AssetHint::Scene(path)) => {
+            let handle = asset_server.load::<WorldAsset>(format!("{path}#Scene0"));
+            entity.insert(WorldAssetRoot(handle));
+        }
+        Some(AssetHint::Placeholder) | None => {
+            let color = prop
+                .tint
                 .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
-                .unwrap_or(Color::srgb(0.4, 0.5, 0.7))
-        });
-    let mesh = registry.get_or_create_mesh(meshes);
-    let mat = registry.get_or_create_material(materials, base_color);
-    commands
-        .spawn((
-            Name::new(format!("{} ({})", prop.id, prop.kind)),
-            Mesh3d(mesh),
-            MeshMaterial3d(mat),
-            Transform {
-                translation: Vec3::from_array(prop.transform.translation),
-                rotation: quat_from_rotation_deg(prop.transform.rotation_deg),
-                scale: Vec3::from_array(prop.transform.scale),
-            },
-            EditorProp {
-                prop_id: prop.id.clone(),
-            },
-        ))
-        .id()
+                .or_else(|| {
+                    defaults
+                        .as_ref()
+                        .and_then(|d| d.tint)
+                        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
+                })
+                .unwrap_or(Color::srgb(0.4, 0.5, 0.7));
+            let mesh = registry.get_or_create_mesh(meshes);
+            let mat = registry.get_or_create_material(materials, color);
+            entity.insert((Mesh3d(mesh), MeshMaterial3d(mat)));
+        }
+        Some(AssetHint::Invisible) => {
+            // Marker-only placement: keep the tagged entity, attach no visual.
+        }
+    }
+
+    entity.id()
 }
 
 /// Spawns a prop, adds it to the manifest, and selects it.
@@ -478,63 +520,47 @@ fn place_prop(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     registry: &mut ResMut<PropMeshRegistry>,
+    asset_server: &AssetServer,
+    placeables: &PlaceableRegistry,
     state: &mut ResMut<EditorState>,
     position: Vec3,
 ) {
     let id = state.next_prop_id();
     let kind = state.current_kind.clone();
-    let tint = tint_for_kind(&kind);
-    let visual_scale = visual_scale_for_kind(&kind);
+    let kind_id = bevymmo_shared::placeables::KindId::new(kind);
+    // Default tint comes from the catalog definition; per-placement scale is
+    // unitary so the inherent size lives in `defaults()` (coherent with the
+    // client renderer).
+    let tint = placeables
+        .props
+        .get(&kind_id)
+        .and_then(|d| d.defaults().tint);
     let prop = Prop {
         id: id.clone(),
-        kind: bevymmo_shared::placeables::KindId::new(kind),
+        kind: kind_id,
         transform: TransformData {
             translation: [position.x, position.y, position.z],
             rotation_deg: [0.0, 0.0, 0.0],
-            scale: [visual_scale.x, visual_scale.y, visual_scale.z],
+            scale: [1.0, 1.0, 1.0],
         },
         tint,
         collision: None,
         blocks_movement: false,
     };
-    let entity = spawn_prop_entity(commands, meshes, materials, &prop, registry);
+    let entity = spawn_prop_entity(
+        commands,
+        meshes,
+        materials,
+        registry,
+        asset_server,
+        placeables,
+        &prop,
+    );
     state.manifest.props.push(prop);
     state.dirty = true;
 
     commands.entity(entity).insert(SelectedMarker);
     state.selected = Some(entity);
-}
-
-/// Default authored scale written to the manifest for a placed prop.
-fn visual_scale_for_kind(kind: &str) -> Vec3 {
-    match kind {
-        "tree_oak" => Vec3::new(0.8, 2.5, 0.8),
-        "rock_01" => Vec3::new(1.4, 0.8, 1.2),
-        "rock_02" => Vec3::new(0.9, 0.6, 0.8),
-        "bush_01" => Vec3::new(0.8, 0.7, 0.8),
-        "fence_01" => Vec3::new(1.6, 0.9, 0.2),
-        "lamp_01" => Vec3::new(0.3, 1.6, 0.3),
-        "crate_01" => Vec3::new(0.6, 0.6, 0.6),
-        "statue_01" => Vec3::new(0.8, 2.0, 0.8),
-        "house_simple" => Vec3::new(3.0, 2.0, 3.0),
-        _ => Vec3::ONE,
-    }
-}
-
-/// Default tint for a placed prop. `None` keeps the engine default color.
-pub fn tint_for_kind(kind: &str) -> Option<[f32; 3]> {
-    match kind {
-        "tree_oak" => Some([0.2, 0.5, 0.2]),
-        "rock_01" => Some([0.5, 0.5, 0.5]),
-        "rock_02" => Some([0.45, 0.42, 0.38]),
-        "bush_01" => Some([0.25, 0.45, 0.2]),
-        "fence_01" => Some([0.55, 0.4, 0.25]),
-        "lamp_01" => Some([0.9, 0.85, 0.5]),
-        "crate_01" => Some([0.6, 0.45, 0.3]),
-        "statue_01" => Some([0.75, 0.75, 0.78]),
-        "house_simple" => Some([0.7, 0.6, 0.4]),
-        _ => None,
-    }
 }
 
 fn set_selected(

@@ -195,6 +195,8 @@ pub fn duplicate_on_ctrl_d(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut registry: ResMut<crate::picking::PropMeshRegistry>,
+    asset_server: Res<AssetServer>,
+    placeables: Res<bevymmo_shared::placeables::PlaceableRegistry>,
     mut state: ResMut<EditorState>,
     mut history: ResMut<EditorHistory>,
     prop_q: Query<(&EditorProp, &Transform), Without<crate::state::EditorTerrain>>,
@@ -211,6 +213,8 @@ pub fn duplicate_on_ctrl_d(
         &mut meshes,
         &mut materials,
         &mut registry,
+        &asset_server,
+        &placeables,
         &mut state,
         &mut history,
         &prop_q,
@@ -226,6 +230,8 @@ pub fn run_duplicate(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     registry: &mut crate::picking::PropMeshRegistry,
+    asset_server: &AssetServer,
+    placeables: &bevymmo_shared::placeables::PlaceableRegistry,
     state: &mut EditorState,
     history: &mut EditorHistory,
     prop_q: &Query<(&EditorProp, &Transform), Without<crate::state::EditorTerrain>>,
@@ -264,7 +270,15 @@ pub fn run_duplicate(
         blocks_movement: source.blocks_movement,
     };
 
-    let entity = spawn_prop_entity(commands, meshes, materials, &new_prop, registry);
+    let entity = spawn_prop_entity(
+        commands,
+        meshes,
+        materials,
+        registry,
+        asset_server,
+        placeables,
+        &new_prop,
+    );
     state.manifest.props.push(new_prop);
     state.dirty = true;
     state.validation_dirty = true;

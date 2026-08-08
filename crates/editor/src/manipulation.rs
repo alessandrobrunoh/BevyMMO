@@ -23,8 +23,13 @@ pub fn sync_gizmo_settings(state: Res<EditorState>, mut settings: ResMut<Transfo
     settings.snap_translate = Some(state.snap_translation);
     settings.snap_rotate = Some(state.snap_rotation_deg.to_radians());
     settings.snap_scale = Some(state.snap_scale);
-    settings.confine_cursor = true;
-    settings.screen_scale_factor = 0.1;
+    // NOTE: `screen_scale_factor` left at its default (1.0). Setting it to a
+    // small value (e.g. 0.1) starves the rotation/scale drag: combined with
+    // `snap_rotate` the user must drag an enormous distance to advance a
+    // single snap step, which made the gizmo appear frozen.
+    // NOTE: `confine_cursor` left at its default (false). Setting it to true
+    // causes the gizmo to lock the cursor during drag, which on macOS
+    // prevents the drag delta from being read — the gizmo appears frozen.
 }
 
 /// Attaches `TransformGizmoFocus` to the selection only while a manipulation

@@ -30,7 +30,7 @@ impl IronSword {
         Self {
             config: ItemConfig {
                 display_name: Cow::Borrowed("Spada 1"),
-                description: Cow::Borrowed("A sturdy sword that strengthens its wielder."),
+                description: Cow::Borrowed("Forgiata nei meandri delle fucine dimenticate, questa antica lama emana un'energia vitale ancestrale che rinvigorisce chiunque la impugni in battaglia."),
                 category: ItemCategory::Weapon,
                 rarity: ItemRarity::Uncommon,
                 equippable_into: Some(EquipSlot::Weapon),

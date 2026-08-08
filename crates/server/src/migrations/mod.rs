@@ -11,6 +11,7 @@ mod m20260805_000004_rename_fireball_spell_to_ray_of_light;
 mod m20260806_000005_rename_followball_spell_to_fireball;
 mod m20260806_000006_create_player_hotbar;
 mod m20260807_000007_create_player_inventory_and_equipment;
+mod m20260808_000008_create_prop_overrides;
 
 pub struct Migrator;
 
@@ -25,6 +26,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260806_000005_rename_followball_spell_to_fireball::Migration),
             Box::new(m20260806_000006_create_player_hotbar::Migration),
             Box::new(m20260807_000007_create_player_inventory_and_equipment::Migration),
+            Box::new(m20260808_000008_create_prop_overrides::Migration),
         ]
     }
 }

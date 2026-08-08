@@ -198,7 +198,10 @@ fn build_app(config: &AppConfig) -> App {
         });
         app.add_systems(
             Startup,
-            bevymmo_shared::spells_impl::register_default_spells,
+            (
+                bevymmo_shared::spells_impl::register_default_spells,
+                bevymmo_shared::items_impl::register_default_items,
+            ),
         );
     }
 
@@ -210,6 +213,7 @@ fn build_app(config: &AppConfig) -> App {
     app.add_message::<bevymmo_shared::network::protocol::SpellCastProgress>();
     app.add_message::<bevymmo_shared::network::protocol::SpellCastEnded>();
     app.init_resource::<bevymmo_shared::spells::SpellRegistry>();
+    app.init_resource::<bevymmo_shared::items::registry::ItemRegistry>();
 
     #[cfg(feature = "client")]
     if config.mode.has_client() {

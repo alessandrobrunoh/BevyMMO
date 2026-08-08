@@ -113,6 +113,8 @@ pub struct EditorState {
     pub validation_dirty: bool,
     /// Currently selected left-panel tab. Pure UI state.
     pub left_tab: LeftPanelTab,
+    /// Filter text for the palette tab. Empty -> show all kinds.
+    pub palette_search: String,
     /// Set by the menu bar to request a duplicate of the selection. Consumed
     /// by `io::duplicate_on_ctrl_d` so the hotkey and the menu stay in sync.
     pub pending_duplicate: bool,
@@ -178,6 +180,7 @@ impl Default for EditorState {
             validation_issues: Vec::new(),
             validation_dirty: true,
             left_tab: LeftPanelTab::Outliner,
+            palette_search: String::new(),
             pending_duplicate: false,
             pending_focus_selection: false,
             pending_delete_dialog: false,

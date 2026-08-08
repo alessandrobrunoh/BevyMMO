@@ -6,3 +6,4 @@
 //! main thread di Bevy.
 
 pub mod player;
+pub mod prop_override;

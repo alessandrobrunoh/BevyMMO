@@ -13,6 +13,7 @@ pub mod items;
 pub mod migrations;
 pub mod network;
 pub mod persistence;
+pub mod placeables;
 pub mod player_movement;
 pub mod spells;
 pub mod stats;
@@ -47,7 +48,24 @@ impl Plugin for ServerPlugin {
             items::ItemsServerPlugin,
             world::WorldPlugin,
         ));
+
+        // Populate the placeable catalog before any spawn system reads it.
+        // `register_server_placeables` runs on `Startup`, ahead of the
+        // `Update`-based map-load pass in `PlaceablesPlugin`.
+        app.init_resource::<bevymmo_shared::placeables::PlaceableRegistry>()
+            .add_systems(Startup, register_server_placeables)
+            .add_plugins(placeables::PlaceablesPlugin);
     }
+}
+
+/// Populates the server's [`PlaceableRegistry`] with every default kind.
+///
+/// Mirrors the presentation crate's `register_presentation_placeables` so the
+/// server and the editor/client palette agree on what kinds exist.
+fn register_server_placeables(
+    mut registry: bevy::prelude::ResMut<bevymmo_shared::placeables::PlaceableRegistry>,
+) {
+    bevymmo_shared::placeables_impl::register_default_placeables(&mut registry);
 }
 
 pub mod prelude {

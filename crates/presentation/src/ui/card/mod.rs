@@ -31,6 +31,7 @@ impl Plugin for CardPlugin {
                 systems::enforce_card_exclusivity,
                 systems::close_card_on_button,
                 systems::close_card_on_esc,
+                systems::handle_card_drag,
             ),
         );
     }

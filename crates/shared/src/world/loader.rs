@@ -9,6 +9,7 @@ use thiserror::Error;
 
 use super::ids::validate_id;
 use super::manifest::{MapBounds, MapManifest, CURRENT_VERSION};
+use crate::placeables::PlaceableRegistry;
 
 #[derive(Debug, Error)]
 pub enum MapLoadError {
@@ -59,7 +60,7 @@ pub fn load_map<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoadError> {
         source,
     })?;
 
-    let issues = validate(&manifest);
+    let issues = validate_structure(&manifest);
     if !issues.is_empty() {
         return Err(MapLoadError::Validation(issues));
     }
@@ -91,9 +92,10 @@ pub fn save_map<P: AsRef<Path>>(path: P, manifest: &MapManifest) -> Result<(), M
     Ok(())
 }
 
-/// Returns all validation issues found in `manifest`. An empty result means
-/// the manifest is valid.
-pub fn validate(manifest: &MapManifest) -> Vec<ValidationIssue> {
+/// Structural validation: checks that do not depend on the placeable
+/// catalog (version, ids, bounds, scales, prop bounds). Used by [`load_map`]
+/// and as the first pass of [`validate`].
+pub fn validate_structure(manifest: &MapManifest) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
 
     if manifest.version != CURRENT_VERSION {
@@ -142,12 +144,6 @@ pub fn validate(manifest: &MapManifest) -> Vec<ValidationIssue> {
                 prop.id
             )));
         }
-        if prop.kind.as_str().trim().is_empty() {
-            issues.push(ValidationIssue::new(format!(
-                "prop {:?} has empty kind",
-                prop.id
-            )));
-        }
         for axis in 0..3 {
             if prop.transform.scale[axis] <= 0.0 {
                 issues.push(ValidationIssue::new(format!(
@@ -167,6 +163,26 @@ pub fn validate(manifest: &MapManifest) -> Vec<ValidationIssue> {
         }
     }
 
+    issues
+}
+
+/// Returns all validation issues found in `manifest`, including kind checks
+/// against `registry`. An empty result means the manifest is valid.
+///
+/// Combines [`validate_structure`] with a pass that flags any `prop.kind`
+/// not present in the [`PlaceableRegistry`]. Callers without a registry
+/// (e.g. [`load_map`]) should call [`validate_structure`] instead.
+pub fn validate(manifest: &MapManifest, registry: &PlaceableRegistry) -> Vec<ValidationIssue> {
+    let mut issues = validate_structure(manifest);
+    for prop in &manifest.props {
+        if !registry.contains(&prop.kind) {
+            issues.push(ValidationIssue::new(format!(
+                "prop {:?} has unknown kind {:?}",
+                prop.id,
+                prop.kind.as_str()
+            )));
+        }
+    }
     issues
 }
 
@@ -209,7 +225,7 @@ mod tests {
 
     #[test]
     fn empty_manifest_is_valid() {
-        assert!(validate(&empty_manifest()).is_empty());
+        assert!(validate_structure(&empty_manifest()).is_empty());
     }
 
     #[test]
@@ -224,7 +240,7 @@ mod tests {
         )"#;
         let manifest: MapManifest = ron::from_str(source).expect("parse legacy manifest");
         assert_eq!(manifest.terrain, Terrain::default());
-        assert!(validate(&manifest).is_empty());
+        assert!(validate_structure(&manifest).is_empty());
     }
 
     #[test]
@@ -246,7 +262,7 @@ mod tests {
             collision: None,
             blocks_movement: true,
         });
-        let issues = validate(&m);
+        let issues = validate_structure(&m);
         assert!(issues
             .iter()
             .any(|i| i.message.contains("duplicate prop id")));
@@ -256,7 +272,7 @@ mod tests {
     fn unknown_version_is_rejected() {
         let mut m = empty_manifest();
         m.version = 99;
-        let issues = validate(&m);
+        let issues = validate_structure(&m);
         assert!(issues
             .iter()
             .any(|i| i.message.contains("unknown manifest version")));
@@ -319,9 +335,28 @@ mod tests {
             collision: None,
             blocks_movement: true,
         });
-        let issues = validate(&m);
+        let issues = validate_structure(&m);
         assert!(issues
             .iter()
             .any(|i| i.message.contains("outside map bounds")));
+    }
+
+    #[test]
+    fn unknown_kind_is_flagged() {
+        let mut m = empty_manifest();
+        m.props.push(Prop {
+            id: "prop_x".into(),
+            kind: "nonexistent_kind".into(),
+            transform: TransformData::at(0.0, 0.0, 0.0),
+            tint: None,
+            collision: None,
+            blocks_movement: true,
+        });
+        // A default registry has no kinds registered, so any kind is unknown.
+        let registry = PlaceableRegistry::default();
+        let issues = validate(&m, &registry);
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("unknown kind")));
     }
 }

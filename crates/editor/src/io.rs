@@ -124,11 +124,14 @@ fn apply_restored(state: &mut EditorState, manifest: MapManifest) {
 /// Recomputes the cached validation issues when `validation_dirty` is set.
 /// Kept separate from the UI pass so a slow validation rule can never block
 /// the frame.
-pub fn recompute_validation(mut state: ResMut<EditorState>) {
+pub fn recompute_validation(
+    mut state: ResMut<EditorState>,
+    registry: Res<bevymmo_shared::placeables::PlaceableRegistry>,
+) {
     if !state.validation_dirty {
         return;
     }
-    state.validation_issues = validate(&state.manifest);
+    state.validation_issues = validate(&state.manifest, &registry);
     state.validation_dirty = false;
 }
 

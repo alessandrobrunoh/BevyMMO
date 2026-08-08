@@ -4,7 +4,12 @@
 //! via [`register_default_placeables`]. This mirrors the spell framework's
 //! `spells_impl` module.
 
+pub mod creatures;
+pub mod interactables;
+pub mod npcs;
 pub mod props;
+pub mod resources;
+pub mod triggers;
 
 use crate::placeables::PlaceableRegistry;
 
@@ -15,4 +20,9 @@ use crate::placeables::PlaceableRegistry;
 /// machinery always agree on what kinds exist.
 pub fn register_default_placeables(registry: &mut PlaceableRegistry) {
     props::register_all(registry);
+    creatures::register_all(registry);
+    npcs::register_all(registry);
+    triggers::register_all(registry);
+    resources::register_all(registry);
+    interactables::register_all(registry);
 }

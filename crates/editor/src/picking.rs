@@ -18,20 +18,6 @@ use crate::state::{
 };
 use crate::ui::cursor_over_editor_chrome;
 
-/// Palette kinds shown in the left panel.
-pub const PALETTE_KINDS: &[&str] = &[
-    "cube",
-    "crate_01",
-    "bush_01",
-    "tree_oak",
-    "rock_01",
-    "rock_02",
-    "fence_01",
-    "lamp_01",
-    "statue_01",
-    "house_simple",
-];
-
 use std::collections::HashMap;
 
 /// Pre-allocated mesh and material handles shared across props of the same

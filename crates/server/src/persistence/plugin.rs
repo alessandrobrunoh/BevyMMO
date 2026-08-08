@@ -6,11 +6,16 @@ use sea_orm_migration::MigratorTrait;
 use tokio::runtime::Runtime;
 
 use super::repository::player::PlayerRepository;
+use super::repository::prop_override::PropOverrideRepository;
 use crate::migrations::Migrator;
 
 /// Accesso condiviso e asincrono ai player persistiti.
 #[derive(Resource, Clone)]
 pub struct PlayerStore(pub PlayerRepository);
+
+/// Accesso condiviso e asincrono agli override dei prop persistiti.
+#[derive(Resource, Clone)]
+pub struct PropOverrideStore(pub PropOverrideRepository);
 
 /// Runtime Tokio riservato al lavoro sul database fuori dalle schedule di Bevy.
 #[derive(Resource)]
@@ -32,7 +37,8 @@ impl Plugin for PersistencePlugin {
         let runtime = Runtime::new().expect("failed to create persistence Tokio runtime");
         let database = runtime.block_on(connect_and_migrate(&database_url));
 
-        app.insert_resource(PlayerStore(PlayerRepository::new(database)));
+        app.insert_resource(PlayerStore(PlayerRepository::new(database.clone())));
+        app.insert_resource(PropOverrideStore(PropOverrideRepository::new(database)));
         app.insert_resource(PersistenceRuntime(runtime));
     }
 }

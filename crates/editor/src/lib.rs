@@ -50,12 +50,14 @@ impl Plugin for EditorPlugin {
         app.insert_resource(EditorHistory::default());
         app.insert_resource(picking::PickBodyCache::default());
         app.insert_resource(picking::PropMeshRegistry::default());
+        app.init_resource::<bevymmo_shared::placeables::PlaceableRegistry>();
         app.add_systems(
             Startup,
             (
                 camera::spawn_camera,
                 ground::spawn_ground,
                 ui::spawn_native_hud,
+                register_editor_placeables,
             ),
         );
 
@@ -100,4 +102,12 @@ impl Plugin for EditorPlugin {
 
         app.add_systems(EguiPrimaryContextPass, ui::inspector_panel);
     }
+}
+
+/// Populates the [`PlaceableRegistry`] with the default catalog so the editor
+/// validates `prop.kind` against the same definitions as the server/client.
+fn register_editor_placeables(
+    mut registry: ResMut<bevymmo_shared::placeables::PlaceableRegistry>,
+) {
+    bevymmo_shared::placeables_impl::register_default_placeables(&mut registry);
 }

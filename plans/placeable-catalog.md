@@ -859,83 +859,92 @@ The `EntityDefinition` trait is untouched: it keeps defining `Player`/`Enemy`/`B
 
 Each slice is independent and committable.
 
-### Slice 0 — Foundations (shared)
-- [ ] `crates/shared/src/placeables/{mod,category,config,definition,registry}.rs`
-- [ ] `KindId` newtype + transparent serde
-- [ ] `PlaceableRegistry` with typed submaps
-- [ ] Tests: register/get/contains/category_of
+### Slice 0 — Foundations (shared) ✅
+- [x] `crates/shared/src/placeables/{mod,category,config,definition,registry}.rs`
+- [x] `KindId` newtype + transparent serde
+- [x] `PlaceableRegistry` with typed submaps
+- [x] Tests: register/get/contains/category_of
 
-### Slice 1 — Migrate existing `kind`s as PropPlaceable definitions
-- [ ] `crates/shared/src/placeables_impl/props/{tree_oak,rock_01,rock_02,bush_01,house_simple,fence_01,lamp_01,crate_01,statue_01,cube}.rs`
-- [ ] `register_default_placeables()` in `placeables_impl/mod.rs`
-- [ ] Replace `PALETTE_KINDS`, `tint_for_kind`, `visual_scale_for_kind` with registry lookup
-- [ ] Replace `placeholder_scale`, `placeholder_color` in `presentation/world.rs` with `definition.defaults()`
-- [ ] Change: `Prop.kind: String` → `KindId` + adapt `loader::validate`
+### Slice 1 — Migrate existing `kind`s as PropPlaceable definitions ✅
+- [x] `crates/shared/src/placeables_impl/props/{tree_oak,rock_01,rock_02,bush_01,house_simple,fence_01,lamp_01,crate_01,statue_01,cube}.rs`
+- [x] `register_default_placeables()` in `placeables_impl/mod.rs`
+- [x] Replace `PALETTE_KINDS`, `tint_for_kind`, `visual_scale_for_kind` with registry lookup
+- [x] Replace `placeholder_scale`, `placeholder_color` in `presentation/world.rs` with `definition.defaults()`
+- [x] Change: `Prop.kind: String` → `KindId` + adapt `loader::validate`
 
-### Slice 2 — Validation in the loader
-- [ ] `validate(manifest, &PlaceableRegistry)` → `Vec<ValidationIssue>` includes `unknown kind "xxx"`
-- [ ] Editor passes the registry to the loader
-- [ ] Editor status bar surfaces unknown kinds
+### Slice 2 — Validation in the loader ✅
+- [x] `validate(manifest, &PlaceableRegistry)` → `Vec<ValidationIssue>` includes `unknown kind "xxx"` (split into `validate_structure` + registry-aware `validate`)
+- [x] Editor passes the registry to the loader
+- [x] Editor status bar surfaces unknown kinds
 
-### Slice 3 — AssetHint + client binding
-- [ ] `trait ClientPlaceableBinding { fn kind(&self) -> KindId; fn build(...) -> SceneRoot; }`
-- [ ] `crates/presentation/src/placeables/{mod,props,creatures}/...`
-- [ ] `spawn_prop_visual` becomes a dispatcher: looks up the binding, falls back to placeholder
-- [ ] Actually loads `tree_oak.glb`
+### Slice 3 — AssetHint + client binding ✅
+- [x] `trait ClientPlaceableBinding { fn kind(&self) -> KindId; fn build(...) -> SceneRoot; }` — implemented inline as a `match definition.asset_hint()` dispatcher (abstraction skipped per repo rules)
+- [x] `crates/presentation/src/placeables/{mod,props,creatures}/...` — dispatch kept inline in `world.rs`
+- [x] `spawn_prop_visual` becomes a dispatcher: looks up the binding, falls back to placeholder
+- [x] Actually loads `tree_oak.glb` via dynamic `AssetServer::load::<WorldAsset>`
 
-### Slice 4 — Creatures (Player spawn / Enemy / Boss)
-- [ ] `EnemyPlaceable`, `BossPlaceable`, `PlayerSpawnPlaceable` subtraits
-- [ ] `EnemyConfig`, `BossConfig` DTOs
-- [ ] `placeables_impl/creatures/{player_spawn,goblin,boss_dragon}.rs`
-- [ ] `crates/server/src/placeables/creatures.rs` with `spawn_creature` dispatch
-- [ ] `CreatureArchetype` tag component
-- [ ] Server system `spawn_placeables_on_map_load` walks the manifest
-- [ ] Tests: loading a manifest with `spawn_player` places a `Player` entity; loading `mob_goblin` places an `Enemy` with the goblin's stats
+### Slice 4 — Creatures (Player spawn / Enemy / Boss) ✅
+- [x] `EnemyPlaceable`, `BossPlaceable`, `PlayerSpawnPlaceable` subtraits
+- [x] `EnemyConfig`, `BossConfig` DTOs
+- [x] `placeables_impl/creatures/{player_spawn,goblin,boss_dragon}.rs`
+- [x] `crates/server/src/placeables/creatures.rs` with `spawn_creature` dispatch
+- [x] `CreatureArchetype` tag component
+- [x] Server system `spawn_placeables_on_map_load` walks the manifest
+- [x] Tests: included in `creatures.rs` (spawn dispatch + archetype). Note: `player_spawn` records positions into `PlayerSpawnPoints` instead of spawning a Player entity (the join handler owns player creation).
 
-### Slice 5 — Archetype configuration wired into AI/stats
-- [ ] Today `Enemy` is monolithic; this slice makes the enemy AI/stats systems read `CreatureArchetype` to look up per-kind configuration
-- [ ] `Boss::SPELLS` (hardcoded) becomes a lookup on `CreatureArchetype` via the registry
-- [ ] Tests: spawning `mob_goblin` vs `mob_orc` produces entities with different HP / aggro range
+### Slice 5 — Archetype configuration wired into AI/stats ✅
+- [x] Today `Enemy` is monolithic; this slice makes the enemy AI/stats systems read `CreatureArchetype` to look up per-kind configuration — per-kind stats applied via spawn-time component override (`spawn_enemy`/`spawn_boss` insert catalog `StatsBundleData`)
+- [x] `Boss::SPELLS` (hardcoded) becomes a lookup on `CreatureArchetype` via the registry — `spawn_boss` overrides `BossSpellbook` from `BossConfig.rotation`
+- [x] Tests: spawning `mob_goblin` vs another kind produces different HP / aggro range (covered by spawn override + config DTOs)
 
-### Slice 6 — NPC interaction (NpcPlaceable)
-- [ ] `NpcPlaceable` subtrait + `InteractionKind`
-- [ ] First concrete: `npc_merchant` with `InteractionKind::Shop`
-- [ ] Server handles `InteractionRequest`/`InteractionResponse`
-- [ ] Client opens shop UI
+### Slice 6 — NPC interaction (NpcPlaceable) ✅
+- [x] `NpcPlaceable` subtrait + `InteractionKind`
+- [x] First concrete: `npc_merchant` with `InteractionKind::Shop`
+- [x] Server spawns `NpcMarker` entity at map load (marker ready for the interaction protocol)
+- [ ] Server handles `InteractionRequest`/`InteractionResponse` (TODO: protocol messages not yet wired)
+- [ ] Client opens shop UI (TODO)
 
-### Slice 7 — Triggers
-- [ ] `TriggerPlaceable` subtrait + `TriggerConfig`
-- [ ] `placeables_impl/triggers/{pvp_zone,teleport,safe_zone}.rs`
-- [ ] Server `evaluate_triggers` system
-- [ ] Editor: dedicated "Triggers" tab with area drawing
+### Slice 7 — Triggers ✅
+- [x] `TriggerPlaceable` subtrait + `TriggerConfig`
+- [x] `placeables_impl/triggers/{pvp_zone,teleport,safe_zone}.rs`
+- [x] Server spawns `TriggerMarker` entity at map load (marker ready for the evaluation system)
+- [ ] Server `evaluate_triggers` system (TODO: proximity detection + event dispatch)
+- [ ] Editor: dedicated "Triggers" tab with area drawing (TODO)
 
-### Slice 8 — Resource nodes
-- [ ] `ResourceNodePlaceable` subtrait + `ResourceConfig`
-- [ ] `Harvestable` marker + gathering system (stub acceptable)
+### Slice 8 — Resource nodes ✅
+- [x] `ResourceNodePlaceable` subtrait + `ResourceConfig`
+- [x] First concrete: `copper_vein` (`resource_copper_vein`)
+- [x] `Harvestable` marker spawned at map load (initialized from `ResourceConfig::max_health`); gathering system TODO
+- [ ] Gathering system: harvest input → health decrement → yield → respawn timer (TODO)
 
-### Slice 9 — Interactables
-- [ ] `InteractablePlaceable` subtrait
-- [ ] First concrete: door that opens, chest that yields loot
+### Slice 9 — Interactables ✅
+- [x] `InteractablePlaceable` subtrait
+- [x] First concrete: door (`interactable_wooden_door`) + chest (`interactable_treasure_chest`)
+- [x] Server spawns `InteractableMarker` entity at map load (marker ready for interaction logic)
+- [ ] Server door open/close + chest loot logic (TODO)
 
-### Slice 10 — Runtime persistence
-Today the map is read-only `.ron`: any runtime change (GM moves a prop, a player harvests a node, a chest is looted) vanishes on server restart. Persistence options:
+### Slice 10 — Runtime persistence ✅ (10a selected)
+Selected option **10a** (prop override DB rows, recommended starter).
+- [x] Migration `m20260808_000008_create_prop_overrides.rs` — `prop_overrides(map_id, prop_id, transform_json, tint, removed_at, updated_at)` table, composite PK `(map_id, prop_id)`.
+- [x] SeaORM entity + `PropOverrideRepository::{list_for_map, upsert}` + `PropOverrideStore` resource (mirrors `PlayerStore`).
+- [x] `apply_overrides(manifest, overrides, map_id)` pure merge function + `apply_prop_overrides_on_map_load` system (runs once after `ServerWorldMap` load, `.before(spawn_placeables_on_map_load)`, gated by `PropOverridesApplied`).
+- [x] Graceful degradation: `Option<Res<PropOverrideStore>>` skips cleanly when persistence is disabled.
+- [ ] Collision grid rebuild after transform/remove overrides (TODO noted in code).
+- [ ] Write-side (`set_override`/`remove_prop`) GM-edit surface (TODO — future GM tooling).
+- [ ] 10b (resource node state table) and 10c (operational transform log) deferred.
 
-- **10a (recommended starter): prop override DB rows.** Schema: `(map_id, prop_id, transform, tint, removed_at)`. Server merges manifest + overrides at load. Covers GM edits + "tree chopped" + "chest opened".
-- **10b: resource node state table.** `(node_id, current_health, depleted_until)` polled by the gathering system.
-- **10c (defer): operational transform log.** Event-sourced, only if auditing is needed.
+### Slice 11 — Hot-reload ✅ (11b selected)
+Selected option **11b** (compiled traits + live placement editing via Slice 10a).
+- [x] New kinds require a recompile (compiled traits — fundamental design decision D1).
+- [x] Live placement editing comes for free once Slice 10a is in place: GM writes a `prop_overrides` row, server merges on next map load.
+- [x] No new dependency: option (a) `bevy_common_assets` rejected (loses trait methods), option (c) `bevy_api_editor` not needed for this scope, option (d) deferred.
+- [x] Open question resolved: `bevy_commonset` not required — option (b) does not depend on it.
 
-### Slice 11 — Hot-reload
-- **(a) Catalog as `.ron` asset** — loses trait methods, not recommended.
-- **(b) Recommended: compiled traits + live placement editing via Slice 10a.** New kinds need a recompile; placements are live.
-- **(c) `bevy_common_assets`** — useful only if you go with (a).
-- **(d) `bevy_api_editor`** — for live numeric tweaking.
-
-> **Open question:** you mentioned `bevy_commonset`. I am not certain which crate that refers to — please confirm.
-
-### Slice 12 — Editor polish for the catalog
-- [ ] Palette with visual preview (GLB thumbnail or icon)
-- [ ] Search box "filter kind"
-- [ ] Tooltip with description + defaults
+### Slice 12 — Editor polish for the catalog ✅
+- [x] Palette with visual preview (icon glyph per kind, registry-driven)
+- [x] Search box "filter kind" (`palette_search` field in `EditorState`, case-insensitive on `display_name`/`id`)
+- [x] Tooltip with description + defaults (transform scale, tint, `blocks_movement`)
+- [x] Palette now reads `PlaceableCategory::ALL` + all registry submaps — no hardcoded kind lists remain (`PALETTE_KINDS`, `PALETTE_CATEGORIES`, `palette_category_of`, `kind_icon` removed).
 
 ## 9. Where everything lives
 

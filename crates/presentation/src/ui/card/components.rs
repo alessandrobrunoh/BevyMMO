@@ -18,6 +18,26 @@ pub struct CardWindow {
     pub exclusivity: CardExclusivityPolicy,
 }
 
+/// Initial anchor position for a Card window when spawned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CardPositioning {
+    #[default]
+    Center,
+    Right,
+}
+
+/// Marker component for Card windows that can be dragged around by their header.
+#[derive(Component, Debug, Default)]
+pub struct DraggableCard;
+
+/// State component attached to a Card while it is actively being dragged.
+#[derive(Component, Debug)]
+pub struct CardDraggingState {
+    pub drag_start_cursor: Vec2,
+    pub drag_start_left: f32,
+    pub drag_start_top: f32,
+}
+
 /// Identifies the type of card. Used today only for diagnostics; reserved for
 /// per-kind behaviors (ESC closes only the topmost, focused kind, etc.).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +73,10 @@ pub enum CardExclusivityPolicy {
 /// Spawned automatically by [`super::builder::CardBuilder`].
 #[derive(Component, Debug)]
 pub struct CardHeader;
+
+/// Marker component for the header area used as a drag handle.
+#[derive(Component, Debug)]
+pub struct CardHeaderDragHandle;
 
 /// Body region of a Card. Caller-supplied children go in here.
 #[derive(Component, Debug)]

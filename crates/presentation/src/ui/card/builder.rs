@@ -10,7 +10,8 @@ use std::borrow::Cow;
 use bevy::prelude::*;
 
 use super::components::{
-    CardBody, CardExclusivityPolicy, CardFooter, CardHeader, CardKind, CardWindow, CloseCardButton,
+    CardBody, CardExclusivityPolicy, CardFooter, CardHeader, CardHeaderDragHandle, CardKind, CardPositioning,
+    CardWindow, CloseCardButton, DraggableCard,
 };
 use crate::ui::theme::UiTheme;
 
@@ -19,7 +20,7 @@ use crate::ui::theme::UiTheme;
 pub const DEFAULT_CARD_WIDTH: f32 = 520.0;
 pub const DEFAULT_CARD_HEIGHT: f32 = 360.0;
 const HEADER_HEIGHT: f32 = 44.0;
-const INNER_PADDING: f32 = 12.0;
+const INNER_PADDING: f32 = 14.0;
 const HEADER_BOTTOM_GAP: f32 = 12.0;
 
 /// Layout variant for the close button inside the header.
@@ -36,22 +37,6 @@ pub enum CardLayout {
 type CardContentSpawner<'a> = Box<dyn FnOnce(&mut ChildSpawnerCommands) + 'a>;
 
 /// Builder for a standard Card.
-///
-/// All future panels go through here instead of building `Node` trees by hand.
-/// Guarantees uniform header/footer/padding/theme and a single place to evolve
-/// the look-and-feel of every modular panel.
-///
-/// # Example
-/// ```ignore
-/// CardBuilder::new(CardKind::Inventory, "Inventory")
-///     .width(Val::Px(720.0))
-///     .height(Val::Px(480.0))
-///     .exclusive()
-///     .with_body(|body| {
-///         body.spawn(Text::new("Slots..."));
-///     })
-///     .spawn(&mut commands, &theme);
-/// ```
 pub struct CardBuilder<'a> {
     kind: CardKind,
     title: Cow<'a, str>,
@@ -59,6 +44,8 @@ pub struct CardBuilder<'a> {
     height: Val,
     layout: CardLayout,
     exclusivity: CardExclusivityPolicy,
+    positioning: CardPositioning,
+    draggable: bool,
     body: CardContentSpawner<'a>,
     footer: Option<CardContentSpawner<'a>>,
 }
@@ -73,6 +60,8 @@ impl<'a> CardBuilder<'a> {
             height: Val::Px(DEFAULT_CARD_HEIGHT),
             layout: CardLayout::NoClose,
             exclusivity: CardExclusivityPolicy::default(),
+            positioning: CardPositioning::Center,
+            draggable: false,
             body: Box::new(|_| {}),
             footer: None,
         }
@@ -90,6 +79,18 @@ impl<'a> CardBuilder<'a> {
         self
     }
 
+    /// Sets the card positioning (Center or Right).
+    pub fn positioning(mut self, positioning: CardPositioning) -> Self {
+        self.positioning = positioning;
+        self
+    }
+
+    /// Enables dragging the card window around by holding its header.
+    pub fn draggable(mut self) -> Self {
+        self.draggable = true;
+        self
+    }
+
     /// Adds a `Close` button to the header (sets layout to [`CardLayout::WithClose`]).
     pub fn closeable(mut self) -> Self {
         self.layout = CardLayout::WithClose;
@@ -97,7 +98,6 @@ impl<'a> CardBuilder<'a> {
     }
 
     /// Marks this card as `Exclusive` (closes other non-`Coexist` cards on open).
-    /// This is the default; the method is provided for readability at call sites.
     pub fn exclusive(mut self) -> Self {
         self.exclusivity = CardExclusivityPolicy::Exclusive;
         self
@@ -109,8 +109,7 @@ impl<'a> CardBuilder<'a> {
         self
     }
 
-    /// Supplies the body content. The closure receives the body's
-    /// `ChildSpawnerCommands` so the caller can spawn its own children.
+    /// Supplies the body content.
     pub fn with_body<F>(mut self, body: F) -> Self
     where
         F: FnOnce(&mut ChildSpawnerCommands) + 'a,
@@ -119,8 +118,7 @@ impl<'a> CardBuilder<'a> {
         self
     }
 
-    /// Supplies an optional footer (action buttons row). Without this call the
-    /// card has no footer.
+    /// Supplies an optional footer.
     pub fn with_footer<F>(mut self, footer: F) -> Self
     where
         F: FnOnce(&mut ChildSpawnerCommands) + 'a,
@@ -138,35 +136,56 @@ impl<'a> CardBuilder<'a> {
             height,
             layout,
             exclusivity,
+            positioning,
+            draggable,
             body,
             footer,
         } = self;
 
         let header_style = HeaderStyle::from_theme(theme);
 
-        commands
-            .spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    width,
-                    height,
-                    left: Val::Percent(50.0),
-                    top: Val::Percent(50.0),
-                    margin: UiRect {
-                        left: half_negative(width),
-                        top: half_negative(height),
-                        ..default()
-                    },
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(INNER_PADDING)),
-                    row_gap: Val::Px(HEADER_BOTTOM_GAP),
-                    ..default()
-                },
-                BackgroundColor(theme.panel_bg),
-                CardWindow { kind, exclusivity },
-            ))
+        let (left, top) = match positioning {
+            CardPositioning::Center => (
+                Val::Px(match width { Val::Px(w) => (1920.0 - w) * 0.5, _ => 500.0 }),
+                Val::Px(match height { Val::Px(h) => (1080.0 - h) * 0.5, _ => 300.0 }),
+            ),
+            CardPositioning::Right => (
+                Val::Px(match width { Val::Px(w) => 1920.0 - w - 40.0, _ => 1200.0 }),
+                Val::Px(match height { Val::Px(h) => (1080.0 - h) * 0.5, _ => 300.0 }),
+            ),
+        };
+
+        let mut card_entity = commands.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width,
+                height,
+                left,
+                top,
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(INNER_PADDING)),
+                row_gap: Val::Px(HEADER_BOTTOM_GAP),
+                border: UiRect::all(Val::Px(1.5)),
+                border_radius: BorderRadius::all(Val::Px(10.0)),
+                ..default()
+            },
+            BackgroundColor(theme.panel_bg),
+            BorderColor {
+                top: Color::srgba(0.35, 0.38, 0.45, 0.6),
+                right: Color::srgba(0.35, 0.38, 0.45, 0.6),
+                bottom: Color::srgba(0.35, 0.38, 0.45, 0.6),
+                left: Color::srgba(0.35, 0.38, 0.45, 0.6),
+            },
+            CardWindow { kind, exclusivity },
+        ));
+
+        if draggable {
+            card_entity.insert(DraggableCard);
+        }
+
+        card_entity
             .with_children(|card_root| {
-                spawn_header(card_root, kind, layout, &title, &header_style);
+                spawn_header(card_root, kind, layout, &title, &header_style, draggable);
 
                 card_root
                     .spawn((
@@ -187,7 +206,15 @@ impl<'a> CardBuilder<'a> {
                                 width: Val::Percent(100.0),
                                 flex_direction: FlexDirection::Row,
                                 column_gap: Val::Px(8.0),
+                                padding: UiRect::top(Val::Px(8.0)),
+                                border: UiRect::top(Val::Px(1.0)),
                                 ..default()
+                            },
+                            BorderColor {
+                                top: Color::srgba(1.0, 1.0, 1.0, 0.1),
+                                right: Color::NONE,
+                                bottom: Color::NONE,
+                                left: Color::NONE,
                             },
                             CardFooter,
                         ))
@@ -204,33 +231,64 @@ fn spawn_header(
     layout: CardLayout,
     title: &str,
     style: &HeaderStyle,
+    draggable: bool,
 ) {
-    parent
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(HEADER_HEIGHT),
+    let mut header_cmd = parent.spawn((
+        Button,
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Px(HEADER_HEIGHT),
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::SpaceBetween,
+            padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+            border_radius: BorderRadius::all(Val::Px(6.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.06)),
+        CardHeader,
+    ));
+
+    if draggable {
+        header_cmd.insert(CardHeaderDragHandle);
+    }
+
+    header_cmd.with_children(|header| {
+        let title_text = title.to_string();
+
+        header
+            .spawn((Node {
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
-                justify_content: JustifyContent::SpaceBetween,
+                column_gap: Val::Px(8.0),
                 ..default()
-            },
-            CardHeader,
-        ))
-        .with_children(|header| {
-            header.spawn((
-                Text::new(title.to_string()),
-                TextFont {
-                    font_size: FontSize::Px(style.title_font_size),
-                    ..default()
-                },
-                TextColor(style.text_color),
-            ));
+            },))
+            .with_children(|title_node| {
+                if draggable {
+                    title_node.spawn((
+                        Text::new("≡".to_string()),
+                        TextFont {
+                            font_size: FontSize::Px(style.title_font_size * 1.1),
+                            ..default()
+                        },
+                        TextColor(Color::srgba(0.7, 0.75, 0.85, 0.8)),
+                    ));
+                }
 
-            if layout == CardLayout::WithClose {
-                spawn_close_button(header, kind, style);
-            }
-        });
+                title_node.spawn((
+                    Text::new(title_text),
+                    TextFont {
+                        font_size: FontSize::Px(style.title_font_size),
+                        ..default()
+                    },
+                    TextColor(style.text_color),
+                ));
+            });
+
+        if layout == CardLayout::WithClose {
+            spawn_close_button(header, kind, style);
+        }
+    });
 }
 
 fn spawn_close_button(header: &mut ChildSpawnerCommands, kind: CardKind, style: &HeaderStyle) {
@@ -280,14 +338,7 @@ impl HeaderStyle {
     }
 }
 
-/// Returns the negative-half `Val::Px` margin used to center an
-/// absolute-positioned card of the given width/height.
-fn half_negative(v: Val) -> Val {
-    match v {
-        Val::Px(p) => Val::Px(-p * 0.5),
-        other => other,
-    }
-}
+
 
 #[cfg(test)]
 mod tests {

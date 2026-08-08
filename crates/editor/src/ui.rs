@@ -24,12 +24,14 @@ use bevymmo_shared::world::{CollisionShape, TransformData};
 
 use crate::history::EditorHistory;
 use crate::io;
-use crate::picking::PALETTE_KINDS;
 use crate::state::{
     quat_from_rotation_deg, EditorProp, EditorState, EditorTerrain, EditorTool, LeftPanelTab,
     SelectedMarker,
 };
 use crate::theme;
+use bevymmo_shared::placeables::{
+    KindId, PlaceableCategory, PlaceableDefinition, PlaceableRegistry,
+};
 
 const LEFT_PANEL_WIDTH: f32 = 280.0;
 const RIGHT_PANEL_WIDTH: f32 = 340.0;
@@ -77,6 +79,7 @@ pub fn inspector_panel(
     mut ctxs: bevy_egui::EguiContexts,
     mut state: ResMut<EditorState>,
     mut history: ResMut<EditorHistory>,
+    registry: Res<PlaceableRegistry>,
     mut commands: Commands,
     selected_q: Query<Entity, With<SelectedMarker>>,
     prop_q: Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
@@ -118,6 +121,7 @@ pub fn inspector_panel(
                 ui,
                 &mut commands,
                 &mut state,
+                &registry,
                 &selected_q,
                 &prop_q,
                 &palette,
@@ -323,6 +327,7 @@ fn left_panel_ui(
     ui: &mut egui::Ui,
     commands: &mut Commands,
     state: &mut EditorState,
+    registry: &PlaceableRegistry,
     selected_q: &Query<Entity, With<SelectedMarker>>,
     prop_q: &Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
     palette: &theme::EditorPalette,
@@ -334,9 +339,9 @@ fn left_panel_ui(
             .id_salt("left_panel_scroll")
             .show(ui, |ui| match state.left_tab {
                 LeftPanelTab::Outliner => {
-                    outliner_ui(ui, commands, state, selected_q, prop_q, palette)
+                    outliner_ui(ui, commands, state, registry, selected_q, prop_q, palette)
                 }
-                LeftPanelTab::Palette => palette_ui(ui, state, palette),
+                LeftPanelTab::Palette => palette_ui(ui, state, registry, palette),
                 LeftPanelTab::Snap => snap_ui(ui, state, palette),
                 LeftPanelTab::MapSettings => map_settings_ui(ui, state, palette),
             });
@@ -369,6 +374,7 @@ fn outliner_ui(
     ui: &mut egui::Ui,
     commands: &mut Commands,
     state: &mut EditorState,
+    registry: &PlaceableRegistry,
     selected_q: &Query<Entity, With<SelectedMarker>>,
     prop_q: &Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
     palette: &theme::EditorPalette,
@@ -421,7 +427,7 @@ fn outliner_ui(
         .collect();
 
     for (prop_id, kind, prop_entity, is_selected) in scene_entries {
-        let icon = kind_icon(&kind);
+        let icon = kind_icon_for(registry, &kind);
         let label = format!("{icon}  {prop_id}  ({kind})");
         let response = ui.selectable_label(is_selected, label);
         if response.clicked() {
@@ -432,27 +438,127 @@ fn outliner_ui(
     }
 }
 
-fn palette_ui(ui: &mut egui::Ui, state: &mut EditorState, palette: &theme::EditorPalette) {
+fn palette_ui(
+    ui: &mut egui::Ui,
+    state: &mut EditorState,
+    registry: &PlaceableRegistry,
+    palette: &theme::EditorPalette,
+) {
     ui.label(theme::heading("Palette", palette));
     ui.label(theme::caption("Click to set the active brush.", palette));
     ui.add_space(4.0);
 
-    for category in PALETTE_CATEGORIES {
-        ui.collapsing(category.label, |ui| {
-            for kind in PALETTE_KINDS {
-                if palette_category_of(kind) != category.ident {
-                    continue;
-                }
-                let is_selected = state.current_kind == *kind;
-                let icon = kind_icon(kind);
-                let response = ui.selectable_label(is_selected, format!("{icon}  {kind}"));
-                if response.clicked() {
-                    state.current_kind = (*kind).to_string();
-                    state.tool = EditorTool::Place;
+    ui.add(
+        egui::TextEdit::singleline(&mut state.palette_search).hint_text("Filter kinds…"),
+    );
+    ui.add_space(4.0);
+
+    let search = state.palette_search.to_lowercase();
+    let has_search = !search.is_empty();
+
+    for category in PlaceableCategory::ALL {
+        let mut entries: Vec<(&dyn PlaceableDefinition, &str)> = Vec::new();
+        match category {
+            PlaceableCategory::Prop => {
+                for (id, def) in registry.props.iter() {
+                    entries.push((def.as_ref(), id.as_str()));
                 }
             }
-        });
+            PlaceableCategory::Creature => {
+                for (id, def) in registry.enemies.iter() {
+                    entries.push((def.as_ref(), id.as_str()));
+                }
+                for (id, def) in registry.bosses.iter() {
+                    entries.push((def.as_ref(), id.as_str()));
+                }
+                for (id, def) in registry.npcs.iter() {
+                    entries.push((def.as_ref(), id.as_str()));
+                }
+                for (id, def) in registry.player_spawns.iter() {
+                    entries.push((def.as_ref(), id.as_str()));
+                }
+            }
+            PlaceableCategory::Trigger => {
+                for (id, def) in registry.triggers.iter() {
+                    entries.push((def.as_ref(), id.as_str()));
+                }
+            }
+            PlaceableCategory::ResourceNode => {
+                for (id, def) in registry.resources.iter() {
+                    entries.push((def.as_ref(), id.as_str()));
+                }
+            }
+            PlaceableCategory::Interactable => {
+                for (id, def) in registry.interactables.iter() {
+                    entries.push((def.as_ref(), id.as_str()));
+                }
+            }
+        }
+
+        if has_search {
+            entries.retain(|(def, id)| {
+                def.display_name().to_lowercase().contains(&search)
+                    || id.to_lowercase().contains(&search)
+            });
+        }
+
+        if entries.is_empty() {
+            continue;
+        }
+
+        let default_open = has_search || category == PlaceableCategory::Prop;
+        egui::CollapsingHeader::new(category.label())
+            .default_open(default_open)
+            .show(ui, |ui| {
+                for (def, id) in entries {
+                    let is_selected = state.current_kind == id;
+                    let label = format!("{}  {}", def.icon(), def.display_name());
+                    let response = ui.selectable_label(is_selected, label);
+                    let response = response.on_hover_text(format_kind_tooltip(def, id));
+                    if response.clicked() {
+                        state.current_kind = id.to_string();
+                        state.tool = EditorTool::Place;
+                    }
+                }
+            });
     }
+}
+
+/// Tooltip body shown when hovering a palette entry: description (or id if
+/// empty) followed by the kind's default transform scale, tint and
+/// `blocks_movement` flag.
+fn format_kind_tooltip(def: &dyn PlaceableDefinition, id: &str) -> String {
+    let defaults = def.defaults();
+    let scale = defaults.transform.scale;
+    let mut s = String::new();
+    let desc = def.description();
+    if desc.is_empty() {
+        s.push_str(id);
+    } else {
+        s.push_str(desc);
+    }
+    s.push_str("\n\n");
+    s.push_str(&format!(
+        "scale: [{:.2}, {:.2}, {:.2}]\ntint: {:?}\nblocks_movement: {}",
+        scale[0], scale[1], scale[2], defaults.tint, defaults.blocks_movement,
+    ));
+    s
+}
+
+/// Looks up the icon for a placed prop's kind via the registry. Falls back to
+/// the generic box glyph if the kind isn't registered (shouldn't happen for
+/// saved maps, but keeps the outliner readable for unknown ids).
+fn kind_icon_for(registry: &PlaceableRegistry, kind: &str) -> &'static str {
+    let key = KindId::new(kind.to_string());
+    registry.props.get(&key).map(|d| d.icon())
+        .or_else(|| registry.enemies.get(&key).map(|d| d.icon()))
+        .or_else(|| registry.bosses.get(&key).map(|d| d.icon()))
+        .or_else(|| registry.npcs.get(&key).map(|d| d.icon()))
+        .or_else(|| registry.player_spawns.get(&key).map(|d| d.icon()))
+        .or_else(|| registry.triggers.get(&key).map(|d| d.icon()))
+        .or_else(|| registry.resources.get(&key).map(|d| d.icon()))
+        .or_else(|| registry.interactables.get(&key).map(|d| d.icon()))
+        .unwrap_or("▢")
 }
 
 fn snap_ui(ui: &mut egui::Ui, state: &mut EditorState, palette: &theme::EditorPalette) {
@@ -1021,57 +1127,6 @@ fn collision_shape_label(shape: Option<CollisionShape>) -> &'static str {
         Some(CollisionShape::Box { .. }) => "Box",
         Some(CollisionShape::Cylinder { .. }) => "Cylinder",
         Some(CollisionShape::Sphere { .. }) => "Sphere",
-    }
-}
-
-/// Palette categories shown in the Palette tab. Drives the visual grouping.
-struct PaletteCategory {
-    label: &'static str,
-    ident: &'static str,
-}
-
-const PALETTE_CATEGORIES: [PaletteCategory; 4] = [
-    PaletteCategory {
-        label: "Vegetation",
-        ident: "vegetation",
-    },
-    PaletteCategory {
-        label: "Buildings",
-        ident: "buildings",
-    },
-    PaletteCategory {
-        label: "Rocks",
-        ident: "rocks",
-    },
-    PaletteCategory {
-        label: "Props",
-        ident: "props",
-    },
-];
-
-/// Returns the stable category identifier for a palette kind.
-fn palette_category_of(kind: &str) -> &'static str {
-    match kind {
-        "tree_oak" | "bush_01" => "vegetation",
-        "house_simple" | "fence_01" | "lamp_01" => "buildings",
-        "rock_01" | "rock_02" => "rocks",
-        _ => "props",
-    }
-}
-
-/// Lightweight per-kind icon glyph. Falls back to a generic box for unknown
-/// kinds so the palette stays readable as new assets are added.
-fn kind_icon(kind: &str) -> &'static str {
-    match kind {
-        "tree_oak" => "🌳",
-        "bush_01" => "🌿",
-        "house_simple" => "🏠",
-        "fence_01" => "🚧",
-        "lamp_01" => "💡",
-        "rock_01" | "rock_02" => "🪨",
-        "crate_01" => "📦",
-        "statue_01" => "🗿",
-        _ => "▢",
     }
 }
 

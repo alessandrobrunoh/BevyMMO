@@ -19,8 +19,9 @@ pub mod repository;
 pub use entity::player::PlayerRecord;
 pub use entity::player_stats::Model as PlayerStatsRecord;
 pub use error::PersistenceError;
-pub use plugin::{PersistencePlugin, PersistenceRuntime, PlayerStore};
+pub use plugin::{PersistencePlugin, PersistenceRuntime, PlayerStore, PropOverrideStore};
 pub use repository::player::PersistedPlayerSnapshot;
+pub use repository::prop_override::PropOverrideRepository;
 
 /// Normalizes a player name for use as a unique lookup key.
 ///

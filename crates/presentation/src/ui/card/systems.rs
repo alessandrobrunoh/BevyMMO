@@ -15,7 +15,72 @@ use bevy::input::ButtonInput;
 use bevy::prelude::*;
 use std::collections::HashSet;
 
-use super::components::{CardExclusivityPolicy, CardWindow, CloseCardButton};
+use super::components::{
+    CardDraggingState, CardHeaderDragHandle, CardExclusivityPolicy, CardWindow, CloseCardButton, DraggableCard,
+};
+
+/// System to handle dragging draggable Card windows when clicking and dragging their header.
+pub fn handle_card_drag(
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    header_query: Query<(&Interaction, &ChildOf), (With<CardHeaderDragHandle>, Changed<Interaction>)>,
+    card_parents: Query<&ChildOf>,
+    draggable_cards: Query<(Entity, &Node), (With<DraggableCard>, Without<CardDraggingState>)>,
+    mut dragging_query: Query<(Entity, &mut Node, &mut CardDraggingState), With<DraggableCard>>,
+    mut commands: Commands,
+) {
+    let Some(window) = windows.iter().next() else { return };
+    let Some(cursor_pos) = window.cursor_position() else {
+        // Cursor left window, cancel active drags
+        for (entity, _, _) in dragging_query.iter() {
+            commands.entity(entity).remove::<CardDraggingState>();
+        }
+        return;
+    };
+
+    // 1. Handle drag start on header interaction
+    if mouse_button.just_pressed(MouseButton::Left) {
+        for (interaction, child) in header_query.iter() {
+            if *interaction == Interaction::Pressed {
+                // Find root DraggableCard entity by walking up parent tree
+                let mut current = Some(child.0);
+                while let Some(entity) = current {
+                    if let Ok((card_entity, node)) = draggable_cards.get(entity) {
+                        let left_px = match node.left {
+                            Val::Px(p) => p,
+                            _ => 0.0,
+                        };
+                        let top_px = match node.top {
+                            Val::Px(p) => p,
+                            _ => 0.0,
+                        };
+                        commands.entity(card_entity).insert(CardDraggingState {
+                            drag_start_cursor: cursor_pos,
+                            drag_start_left: left_px,
+                            drag_start_top: top_px,
+                        });
+                        break;
+                    }
+                    current = card_parents.get(entity).ok().map(|p| p.0);
+                }
+            }
+        }
+    }
+
+    // 2. Handle active dragging
+    if mouse_button.pressed(MouseButton::Left) {
+        for (_entity, mut node, state) in dragging_query.iter_mut() {
+            let delta = cursor_pos - state.drag_start_cursor;
+            node.left = Val::Px(state.drag_start_left + delta.x);
+            node.top = Val::Px(state.drag_start_top + delta.y);
+        }
+    } else {
+        // Released mouse button, clear drag states
+        for (entity, _, _) in dragging_query.iter() {
+            commands.entity(entity).remove::<CardDraggingState>();
+        }
+    }
+}
 
 /// When a new `Exclusive` card is added, despawn every other open card whose
 /// policy is NOT `Coexist`.

@@ -4,10 +4,10 @@
 //! primitives. A future asset registry will replace these meshes with GLB
 //! scenes without changing the map manifest contract.
 
-use crate::assets::MapAssets;
 use bevy::prelude::*;
 use bevymmo_shared::game_state::{GameScreen, Screen};
 use bevymmo_shared::paths;
+use bevymmo_shared::placeables::{AssetHint, PlaceableRegistry};
 use bevymmo_shared::world::{load_map, CollisionGrid, MapManifest, Prop, Terrain};
 
 #[derive(Resource, Default)]
@@ -84,7 +84,8 @@ fn load_map_when_in_game(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut registry: ResMut<ClientPropMeshRegistry>,
-    map_assets: Option<Res<MapAssets>>,
+    placeables: Res<PlaceableRegistry>,
+    asset_server: Res<AssetServer>,
 ) {
     if world_map.load_attempted || !matches!(screen.0, Screen::InGame | Screen::Paused) {
         return;
@@ -118,8 +119,9 @@ fn load_map_when_in_game(
             &mut meshes,
             &mut materials,
             &mut registry,
+            &placeables,
+            &asset_server,
             prop,
-            &map_assets,
         );
     }
 
@@ -182,9 +184,23 @@ fn spawn_prop_visual(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     registry: &mut ClientPropMeshRegistry,
+    placeables: &PlaceableRegistry,
+    asset_server: &AssetServer,
     prop: &Prop,
-    map_assets: &Option<Res<MapAssets>>,
 ) {
+    // Only static props render a client-side visual. Creature / trigger /
+    // resource / interactable kinds are spawned by the server and reach the
+    // client through entity replication, so we must not also build a local
+    // placeholder cuboid for them.
+    let Some(definition) = placeables.props.get(&prop.kind) else {
+        return;
+    };
+
+    let defaults = definition.defaults();
+
+    // The per-placement scale multiplies the kind's inherent size, so a prop
+    // placed with the manifest's default (unit) scale renders at its
+    // definition size.
     let transform = Transform {
         translation: Vec3::from_array(prop.transform.translation),
         rotation: Quat::from_euler(
@@ -193,13 +209,9 @@ fn spawn_prop_visual(
             prop.transform.rotation_deg[0].to_radians(),
             prop.transform.rotation_deg[2].to_radians(),
         ),
-        scale: Vec3::from_array(prop.transform.scale) * placeholder_scale(prop.kind.as_str()),
+        scale: Vec3::from_array(prop.transform.scale)
+            * Vec3::from_array(defaults.transform.scale),
     };
-
-    let color = prop
-        .tint
-        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
-        .unwrap_or_else(|| placeholder_color(prop.kind.as_str()));
 
     let mut entity = commands.spawn((
         Name::new(format!("Map Prop {} ({})", prop.id, prop.kind)),
@@ -209,36 +221,31 @@ fn spawn_prop_visual(
         },
     ));
 
-    if prop.kind.as_str() == "tree_oak" {
-        if let Some(assets) = map_assets.as_ref() {
-            entity.insert(WorldAssetRoot(assets.tree_oak.clone()));
-            return;
+    match definition.asset_hint() {
+        AssetHint::Scene(path) => {
+            // The hint points at the .glb file; load its first scene as a
+            // WorldAsset. Bevy's built-in scene spawner instantiates the
+            // scene as children of the WorldAssetRoot entity.
+            let handle = asset_server.load::<WorldAsset>(format!("{path}#Scene0"));
+            entity.insert(WorldAssetRoot(handle));
         }
-    }
+        AssetHint::Placeholder => {
+            let color = prop
+                .tint
+                .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
+                .or_else(|| {
+                    defaults
+                        .tint
+                        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
+                })
+                .unwrap_or_else(|| Color::srgb(0.35, 0.5, 0.8));
 
-    let mesh = registry.get_or_create_mesh(meshes);
-    let mat = registry.get_or_create_material(materials, color);
-
-    entity.insert((
-        Mesh3d(mesh),
-        MeshMaterial3d(mat),
-    ));
-}
-
-fn placeholder_scale(kind: &str) -> Vec3 {
-    match kind {
-        "tree_oak" => Vec3::new(0.8, 2.5, 0.8),
-        "rock_01" => Vec3::new(1.4, 0.8, 1.2),
-        "house_simple" => Vec3::new(3.0, 2.0, 3.0),
-        _ => Vec3::ONE,
-    }
-}
-
-fn placeholder_color(kind: &str) -> Color {
-    match kind {
-        "tree_oak" => Color::srgb(0.2, 0.55, 0.2),
-        "rock_01" => Color::srgb(0.45, 0.45, 0.48),
-        "house_simple" => Color::srgb(0.7, 0.5, 0.25),
-        _ => Color::srgb(0.35, 0.5, 0.8),
+            let mesh = registry.get_or_create_mesh(meshes);
+            let mat = registry.get_or_create_material(materials, color);
+            entity.insert((Mesh3d(mesh), MeshMaterial3d(mat)));
+        }
+        AssetHint::Invisible => {
+            // Marker-only placement: keep the tagged entity, attach no visual.
+        }
     }
 }

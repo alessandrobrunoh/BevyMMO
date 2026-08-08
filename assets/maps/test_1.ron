@@ -57,5 +57,41 @@
             collision: Some(Box(half_extents: (1.6, 1.0, 1.6))),
             blocks_movement: true,
         ),
+        (
+            id: "prop_0005",
+            kind: "player_spawn",
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation_deg: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            tint: None,
+            collision: None,
+            blocks_movement: false,
+        ),
+        (
+            id: "prop_0006",
+            kind: "mob_goblin",
+            transform: (
+                translation: (4.0, 0.0, 4.0),
+                rotation_deg: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            tint: None,
+            collision: None,
+            blocks_movement: false,
+        ),
+        (
+            id: "prop_0007",
+            kind: "mob_goblin",
+            transform: (
+                translation: (-4.0, 0.0, 3.0),
+                rotation_deg: (0.0, 0.0, 0.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            tint: None,
+            collision: None,
+            blocks_movement: false,
+        ),
     ],
 )

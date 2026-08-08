@@ -2398,6 +2398,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "config",
+ "gltf",
  "lightyear",
  "ron 0.10.1",
  "serde",

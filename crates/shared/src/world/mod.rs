@@ -12,6 +12,6 @@ pub mod shapes;
 
 pub use collision::CollisionGrid;
 pub use ids::{make_prop_id, validate_id};
-pub use loader::{load_map, save_map, validate, MapLoadError, ValidationIssue};
+pub use loader::{load_map, load_map_auto, load_map_from_glb, save_map, validate, MapLoadError, ValidationIssue};
 pub use manifest::{MapBounds, MapManifest, Prop, Terrain, TransformData, CURRENT_VERSION};
 pub use shapes::{aabb_for_shape, CollisionShape};

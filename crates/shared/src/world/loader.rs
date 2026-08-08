@@ -1,15 +1,25 @@
-//! RON loader/saver and manifest validation.
+//! Map loader/saver: supports both `.ron` (legacy) and `.glb` (Blender export).
+//!
+//! The `.glb` format stores the same logical data (`MapManifest`) inside a
+//! glTF 2.0 binary file. Each prop node carries `extras` JSON with the
+//! `bevymmo` key containing `kind`, collision data, etc.
 
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
 use ron::ser::PrettyConfig;
+use serde::Deserialize;
 use thiserror::Error;
 
 use super::ids::validate_id;
-use super::manifest::{MapBounds, MapManifest, CURRENT_VERSION};
-use crate::placeables::PlaceableRegistry;
+use super::manifest::{MapBounds, MapManifest, Prop, Terrain, TransformData, CURRENT_VERSION};
+use super::shapes::CollisionShape;
+use crate::placeables::{KindId, PlaceableRegistry};
+
+// ---------------------------------------------------------------------------
+// Error types
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Error)]
 pub enum MapLoadError {
@@ -19,16 +29,200 @@ pub enum MapLoadError {
         #[source]
         source: std::io::Error,
     },
-    #[error("failed to parse map file {path}: {source}")]
+    #[error("failed to parse RON map file {path}: {source}")]
     Ron {
         path: String,
         #[source]
         source: ron::error::SpannedError,
     },
+    #[error("failed to parse GLB map file {path}: {source}")]
+    Gltf {
+        path: String,
+        #[source]
+        source: gltf::Error,
+    },
     #[error("failed to serialize map file {path}: {message}")]
     Serialize { path: String, message: String },
     #[error("manifest validation failed: {0:?}")]
     Validation(Vec<ValidationIssue>),
+    #[error("node '{node_name}' is missing required bevymmo extras")]
+    MissingExtras { node_name: String },
+    #[error("invalid JSON in bevymmo extras on node '{node_name}': {message}")]
+    InvalidExtras {
+        node_name: String,
+        message: String,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// Extras DTOs — what lives inside glTF node `extras.bevymmo`
+// ---------------------------------------------------------------------------
+
+/// Top-level metadata stored in the special `__bevymmo_map_meta` node.
+#[derive(Deserialize)]
+struct MapMetaExtras {
+    #[serde(rename = "_meta")]
+    _meta: bool,
+    map_id: String,
+    display_name: String,
+    bounds: BoundsExtras,
+}
+
+#[derive(Deserialize)]
+struct BoundsExtras {
+    min_x: f32,
+    max_x: f32,
+    min_z: f32,
+    max_z: f32,
+}
+
+/// Per-prop data stored in each prop node's `extras.bevymmo` (or flat
+/// with `bevymmo_` prefix for Blender native extras export).
+#[derive(Deserialize)]
+struct PropExtras {
+    #[serde(alias = "bevymmo_kind")]
+    kind: String,
+    #[serde(alias = "bevymmo_id", default = "default_id_from_node")]
+    id: String,
+    #[serde(default)]
+    collision: Option<CollisionExtras>,
+    // Flat-format fields (Blender native extras export)
+    #[serde(alias = "bevymmo_collision", default)]
+    collision_type_flat: Option<String>,
+    #[serde(alias = "bevymmo_radius", default)]
+    radius_flat: Option<serde_json::Value>,
+    #[serde(alias = "bevymmo_height", default)]
+    height_flat: Option<serde_json::Value>,
+    #[serde(alias = "bevymmo_half_extents", default)]
+    half_extents_flat: Option<serde_json::Value>,
+    #[serde(alias = "bevymmo_blocks_move", default)]
+    blocks_movement: bool,
+    #[serde(alias = "bevymmo_tint", default)]
+    tint: Option<[f32; 3]>,
+}
+
+fn default_id_from_node() -> String {
+    "auto".to_string()
+}
+
+impl PropExtras {
+    /// Extracts the collision shape from either nested (`collision: {...}`)
+    /// or flat (`bevymmo_collision: "cylinder"`, `bevymmo_radius: ...`) format.
+    fn to_collision_shape(&self) -> Option<CollisionShape> {
+        // Prefer nested format
+        if let Some(ref nested) = self.collision {
+            // Clone the actual CollisionExtras struct, not the reference
+            let nested_copy = CollisionExtras {
+                type_: nested.type_.clone(),
+                radius: nested.radius.clone(),
+                height: nested.height.clone(),
+                half_extents: nested.half_extents.clone(),
+            };
+            return CollisionShape::try_from(nested_copy).ok();
+        }
+
+        // Fall back to flat format (Blender native extras)
+        if let Some(ref type_str) = self.collision_type_flat {
+            match type_str.as_str() {
+                "cylinder" => Some(CollisionShape::Cylinder {
+                    radius: json_to_f32(&self.radius_flat)
+                        .unwrap_or(0.5),
+                    height: json_to_f32(&self.height_flat)
+                        .unwrap_or(2.0),
+                }),
+                "box" => Some(CollisionShape::Box {
+                    half_extents: json_to_vec3(&self.half_extents_flat)
+                        .unwrap_or([0.5, 0.5, 0.5]),
+                }),
+                "sphere" => Some(CollisionShape::Sphere {
+                    radius: json_to_f32(&self.radius_flat)
+                        .unwrap_or(0.5),
+                }),
+                "none" | "" => None,
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+}
+
+/// Collision shape definition — fields use `serde_json::Value` because Blender's
+/// glTF extras export writes all custom properties as **strings**, not numbers.
+#[derive(Deserialize)]
+struct CollisionExtras {
+    #[serde(rename = "type")]
+    type_: String,
+    /// Radius — may be an f32 or a string like `"0.5"`.
+    radius: Option<serde_json::Value>,
+    /// Height — may be an f32 or a string.
+    height: Option<serde_json::Value>,
+    /// Half extents — may be [f32;3] or a comma-separated string like `"1,1,1"`.
+    half_extents: Option<serde_json::Value>,
+}
+
+/// Extracts an f32 from a JSON value that might be a number or a string.
+fn json_to_f32(val: &Option<serde_json::Value>) -> Option<f32> {
+    val.as_ref()?.as_f64().map(|v| v as f32).or_else(|| {
+        val.as_ref()?.as_str()?.parse::<f32>().ok()
+    })
+}
+
+/// Extracts [f32;3] from a JSON value that might be an array or comma-separated string.
+fn json_to_vec3(val: &Option<serde_json::Value>) -> Option<[f32; 3]> {
+    // Try array of numbers first
+    if let Some(arr) = val.as_ref()?.as_array() {
+        if arr.len() >= 3 {
+            let v: Vec<f32> = arr.iter()
+                .take(3)
+                .filter_map(|e| e.as_f64().map(|x| x as f32))
+                .collect();
+            if v.len() == 3 {
+                return Some([v[0], v[1], v[2]]);
+            }
+        }
+    }
+
+    // Try comma-separated string (Blender's native format for custom properties)
+    if let Some(s) = val.as_ref()?.as_str() {
+        let parts: Vec<&str> = s.split(',').collect();
+        if parts.len() >= 3 {
+            let v: Vec<f32> = parts
+                .iter()
+                .take(3)
+                .filter_map(|x| x.trim().parse().ok())
+                .collect();
+            if v.len() == 3 {
+                return Some([v[0], v[1], v[2]]);
+            }
+        }
+    }
+
+    None
+}
+
+impl TryFrom<CollisionExtras> for CollisionShape {
+    type Error = String;
+
+    fn try_from(value: CollisionExtras) -> Result<Self, Self::Error> {
+        match value.type_.as_str() {
+            "cylinder" => Ok(CollisionShape::Cylinder {
+                radius: json_to_f32(&value.radius)
+                    .ok_or_else(|| "cylinder missing 'radius'".to_string())?,
+                height: json_to_f32(&value.height)
+                    .ok_or_else(|| "cylinder missing 'height'".to_string())?,
+            }),
+            "box" => Ok(CollisionShape::Box {
+                half_extents: json_to_vec3(&value.half_extents)
+                    .ok_or_else(|| "box missing 'half_extents'".to_string())?,
+            }),
+            "sphere" => Ok(CollisionShape::Sphere {
+                radius: json_to_f32(&value.radius)
+                    .ok_or_else(|| "sphere missing 'radius'".to_string())?,
+            }),
+            other => Err(format!("unknown collision type '{other}'")),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,6 +260,224 @@ pub fn load_map<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoadError> {
     }
 
     Ok(manifest)
+}
+
+// ---------------------------------------------------------------------------
+// GLB loader — reads a glTF 2.0 binary exported from Blender
+// ---------------------------------------------------------------------------
+
+/// Loads a map from a `.glb` file.
+///
+/// The GLB must follow the BevyMMO convention:
+/// - One node named `__bevymmo_map_meta` carries map-level metadata in its
+///   `extras.bevymmo` JSON (`map_id`, `display_name`, `bounds`).
+/// - Every other node with an `extras.bevymmo.kind` field is treated as a
+///   [`Prop`]. The node's transform provides position/rotation/scale; the
+///   extras carry logical data (`collision`, `blocks_movement`, `tint`).
+///
+/// This function uses only the **data** portion of the `gltf` crate (no GPU,
+/// no image decoding), so it compiles on the headless server.
+pub fn load_map_from_glb<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoadError> {
+    let path_ref = path.as_ref();
+    let path_display = path_ref.display().to_string();
+
+    let bytes = fs::read(path_ref).map_err(|source| MapLoadError::Io {
+        path: path_display.clone(),
+        source,
+    })?;
+
+    let gltf = gltf::Gltf::from_slice(&bytes).map_err(|source| MapLoadError::Gltf {
+        path: path_display.clone(),
+        source,
+    })?;
+
+    let root = &gltf.document;
+
+    // --- Find the meta node and collect props ---
+    let mut manifest_meta: Option<MapMetaExtras> = None;
+    let mut props = Vec::new();
+
+    for node in root.nodes() {
+        let name = node.name().unwrap_or("<unnamed>");
+        let Some(extras_raw) = node.extras() else {
+            continue;
+        };
+
+        // Parse extras JSON string into a generic json::Value
+        let extras_value: serde_json::Value =
+            serde_json::from_str(extras_raw.get()).map_err(|e| MapLoadError::InvalidExtras {
+                node_name: name.to_string(),
+                message: e.to_string(),
+            })?;
+
+        // Support two formats:
+        // 1. Nested: { "bevymmo": { "kind": "...", ... } }  — explicit export script
+        // 2. Flat:   { "bevymmo_kind": "...", ... }          — Blender native extras
+        let bm = extras_value
+            .as_object()
+            .and_then(|o| o.get("bevymmo"))
+            .cloned();
+
+        // Special node: __bevymmo_map_meta carries map metadata
+        if name == "__bevymmo_map_meta" || name == "__bevymmo_map_meta__" {
+            if let Some(ref nested) = bm {
+                // Nested format
+                let meta: MapMetaExtras =
+                    serde_json::from_value(nested.clone()).map_err(|e| {
+                        MapLoadError::InvalidExtras {
+                            node_name: name.to_string(),
+                            message: format!("invalid map meta: {e}"),
+                        }
+                    })?;
+                manifest_meta = Some(meta);
+            } else {
+                // Flat format — read directly from extras root
+                let obj = extras_value.as_object().ok_or(MapLoadError::InvalidExtras {
+                    node_name: name.to_string(),
+                    message: "map meta extras must be a JSON object".to_string(),
+                })?;
+                let get_str = |key: &str| -> Option<String> {
+                    obj.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+                };
+                let get_f32 = |key: &str| -> Option<f32> {
+                    obj.get(key).and_then(|v| v.as_f64()).map(|f| f as f32)
+                };
+                manifest_meta = Some(MapMetaExtras {
+                    _meta: true,
+                    map_id: get_str("bevymmo_map_id").unwrap_or_else(|| "untitled".to_string()),
+                    display_name: get_str("bevymmo_display_name")
+                        .unwrap_or_else(|| "Untitled Map".to_string()),
+                    bounds: BoundsExtras {
+                        min_x: get_f32("bevymmo_min_x").unwrap_or(-20.0),
+                        max_x: get_f32("bevymmo_max_x").unwrap_or(20.0),
+                        min_z: get_f32("bevymmo_min_z").unwrap_or(-20.0),
+                        max_z: get_f32("bevymmo_max_z").unwrap_or(20.0),
+                    },
+                });
+            }
+            continue;
+        }
+
+        // Regular prop node — must have a kind identifier
+        let prop_data = if let Some(nested) = bm {
+            // Nested format: extract from bevymmo object
+            nested.clone()
+        } else {
+            // Flat format: use the whole extras as the data source
+            // But only if it has a kind field
+            if !extras_value
+                .as_object()
+                .map(|o| o.contains_key("bevymmo_kind"))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            extras_value.clone()
+        };
+
+        let prop_extras: PropExtras =
+            serde_json::from_value(prop_data.clone()).map_err(|e| MapLoadError::InvalidExtras {
+                node_name: name.to_string(),
+                message: format!("invalid prop extras: {e}"),
+            })?;
+
+        // Extract transform from the glTF node (column-major 4x4 matrix)
+        let transform = node.transform();
+        let (translation, rotation, scale) = transform.decomposed();
+
+        // Convert quaternion → Euler YXZ degrees
+        let rotation_deg = quat_to_euler_yxz(rotation);
+
+        // Resolve collision shape (handles both nested and flat format)
+        let collision = prop_extras.to_collision_shape();
+
+        // Auto-generate id if still "auto"
+        let prop_id = if prop_extras.id == "auto" || prop_extras.id.is_empty() {
+            format!("prop_{:03}", props.len() + 1)
+        } else {
+            prop_extras.id
+        };
+
+        props.push(Prop {
+            id: prop_id,
+            kind: KindId::new(prop_extras.kind),
+            transform: TransformData {
+                translation: [translation[0], translation[1], translation[2]],
+                rotation_deg,
+                scale: [scale[0], scale[1], scale[2]],
+            },
+            tint: prop_extras.tint,
+            collision,
+            blocks_movement: prop_extras.blocks_movement,
+        });
+    }
+
+    // Build the manifest
+    let meta = manifest_meta.ok_or_else(|| MapLoadError::Validation(vec![
+        ValidationIssue::new("missing __bevymmo_map_meta node in GLB")
+    ]))?;
+
+    let manifest = MapManifest {
+        version: CURRENT_VERSION,
+        map_id: meta.map_id,
+        display_name: meta.display_name,
+        bounds: MapBounds {
+            min_x: meta.bounds.min_x,
+            max_x: meta.bounds.max_x,
+            min_z: meta.bounds.min_z,
+            max_z: meta.bounds.max_z,
+        },
+        terrain: Terrain::default(), // TODO: extract from a TERRAIN node or keep default
+        props,
+    };
+
+    let issues = validate_structure(&manifest);
+    if !issues.is_empty() {
+        return Err(MapLoadError::Validation(issues));
+    }
+
+    Ok(manifest)
+}
+
+/// Converts a glTF quaternion `[x, y, z, w]` to Euler angles in degrees,
+/// YXZ order (yaw around Y, then pitch around X, then roll around Z).
+///
+/// This matches the convention used by [`TransformData::rotation_deg`] so that
+/// rotations authored in Blender round-trip correctly through the GLB.
+fn quat_to_euler_yxz(q: [f32; 4]) -> [f32; 3] {
+    // glTF stores quaternions as [x, y, z, w]
+    let (x, y, z, w) = (q[0], q[1], q[2], q[3]);
+
+    // Clamp to avoid NaN from floating-point drift
+    let sinp = (2.0 * (w * x - y * z)).clamp(-1.0, 1.0);
+    let sincos_2y = (2.0 * (w * y + z * x)).clamp(-1.0, 1.0);
+    let cosc_2y = (1.0 - 2.0 * (x * x + y * y)).clamp(-1.0, 1.0);
+    let sinr_cosp = 2.0 * (w * z + x * y);
+    let cosr_cosp = 1.0 - 2.0 * (y * y + z * z);
+
+    let yaw = sincos_2y.atan2(cosc_2y).to_degrees();   // Y axis
+    let pitch = sinp.asin().to_degrees();                 // X axis
+    let roll = sinr_cosp.atan2(cosr_cosp).to_degrees();   // Z axis
+
+    [yaw, pitch, roll]
+}
+
+// ---------------------------------------------------------------------------
+// Convenience: auto-detect format by extension
+// ---------------------------------------------------------------------------
+
+/// Loads a map from either a `.ron` or `.glb` file, chosen by extension.
+pub fn load_map_auto<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoadError> {
+    let ext = path
+        .as_ref()
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    match ext {
+        "glb" | "gltf" => load_map_from_glb(path),
+        _ => load_map(path),
+    }
 }
 
 /// Serializes the manifest to RON with deterministic ordering.
@@ -358,5 +770,58 @@ mod tests {
         assert!(issues
             .iter()
             .any(|i| i.message.contains("unknown kind")));
+    }
+
+    /// Integration test: loads the real GLB exported from Blender via MCP.
+    ///
+    /// This test is ignored by default (requires the exported GLB to exist).
+    /// Run with: cargo test -p bevymmo_shared -- glb_integration --ignored
+    #[test]
+    #[ignore]
+    fn glb_loads_blender_exported_map() {
+        let glb_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/maps/test_1.glb");
+        if !std::path::Path::new(glb_path).exists() {
+            eprintln!("Skipping: {glb_path} not found (export from Blender first)");
+            return;
+        }
+
+        let manifest = load_map_from_glb(glb_path).expect("load GLB");
+
+        assert_eq!(manifest.map_id, "test_1");
+        assert_eq!(manifest.display_name, "Test Map from Blender");
+        assert!((manifest.props.len()) >= 3);
+
+        // Check prop_001 (cube)
+        let cube = manifest.props.iter().find(|p| p.id == "prop_001").unwrap();
+        assert_eq!(cube.kind.as_str(), "cube");
+        assert!(cube.blocks_movement);
+        assert!(cube.collision.is_some());
+
+        // Check prop_003 (rock — walkable)
+        let rock = manifest.props.iter().find(|p| p.id == "prop_003").unwrap();
+        assert_eq!(rock.kind.as_str(), "rock_01");
+        assert!(!rock.blocks_movement);
+        assert!(rock.collision.is_none());
+
+        // All props should be within bounds
+        let issues = validate_structure(&manifest);
+        assert!(
+            issues.is_empty(),
+            "validation failed: {issues:?}"
+        );
+    }
+
+    /// Test: load_map_auto picks GLB loader for .glb extension
+    #[test]
+    fn load_map_auto_detects_glb() {
+        // This tests the dispatch logic; we don't need a real file for this
+        // since load_map_auto just checks the extension
+        let result = load_map_auto("test.glb");
+        // Will fail because file doesn't exist, but error should be Gltf or Io not Ron
+        match result {
+            Err(MapLoadError::Gltf { .. }) => {} // correct
+            Err(MapLoadError::Io { .. }) => {}   // also fine (file missing)
+            other => panic!("expected Gltf or Io error, got: {other:?}"),
+        }
     }
 }

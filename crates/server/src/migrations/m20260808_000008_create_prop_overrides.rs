@@ -1,5 +1,16 @@
 use sea_orm_migration::prelude::*;
 
+#[derive(DeriveIden)]
+enum PropOverridesTable {
+    Table,
+    MapId,
+    PropId,
+    TransformJson,
+    Tint,
+    RemovedAt,
+    UpdatedAt,
+}
+
 pub struct Migration;
 
 impl MigrationName for Migration {
@@ -18,36 +29,41 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table(PropOverrides::Table)
+                    .table(PropOverridesTable::Table)
                     .if_not_exists()
                     .col(
-                        ColumnDef::new(PropOverrides::MapId)
+                        ColumnDef::new(PropOverridesTable::MapId)
                             .text()
-                            .not_null()
-                            .primary_key(),
+                            .not_null(),
                     )
                     .col(
-                        ColumnDef::new(PropOverrides::PropId)
+                        ColumnDef::new(PropOverridesTable::PropId)
                             .text()
-                            .not_null()
-                            .primary_key(),
+                            .not_null(),
                     )
                     // JSON-serialized `TransformData`, or NULL when the override
                     // does not touch the transform (e.g. a pure tint or removal).
-                    .col(ColumnDef::new(PropOverrides::TransformJson).text().null())
+                    .col(ColumnDef::new(PropOverridesTable::TransformJson).text().null())
                     // JSON `[f32; 3]` tint, or NULL when unchanged.
-                    .col(ColumnDef::new(PropOverrides::Tint).json().null())
+                    .col(ColumnDef::new(PropOverridesTable::Tint).json().null())
                     // When the prop was removed at runtime; NULL = not removed.
                     .col(
-                        ColumnDef::new(PropOverrides::RemovedAt)
+                        ColumnDef::new(PropOverridesTable::RemovedAt)
                             .timestamp_with_time_zone()
                             .null(),
                     )
                     .col(
-                        ColumnDef::new(PropOverrides::UpdatedAt)
+                        ColumnDef::new(PropOverridesTable::UpdatedAt)
                             .timestamp_with_time_zone()
                             .not_null()
                             .extra("DEFAULT CURRENT_TIMESTAMP"),
+                    )
+                    // Composite primary key (map_id, prop_id)
+                    .primary_key(
+                        Index::create()
+                            .name("pk_prop_overrides")
+                            .col(PropOverridesTable::MapId)
+                            .col(PropOverridesTable::PropId)
                     )
                     .to_owned(),
             )
@@ -56,7 +72,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(PropOverrides::Table).to_owned())
+            .drop_table(Table::drop().table(PropOverridesTable::Table).to_owned())
             .await
     }
 }

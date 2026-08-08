@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use bevymmo_shared::game_state::{GameScreen, Screen};
 use bevymmo_shared::paths;
 use bevymmo_shared::placeables::{AssetHint, PlaceableRegistry};
-use bevymmo_shared::world::{load_map, CollisionGrid, MapManifest, Prop, Terrain};
+use bevymmo_shared::world::{load_map_auto, CollisionGrid, MapManifest, Prop, Terrain};
 
 #[derive(Resource, Default)]
 pub struct ClientWorldMap {
@@ -93,7 +93,7 @@ fn load_map_when_in_game(
     world_map.load_attempted = true;
 
     let map_path = paths::default_map_file();
-    let manifest = match load_map(&map_path) {
+    let manifest = match load_map_auto(&map_path) {
         Ok(manifest) => manifest,
         Err(error) => {
             error!("Unable to load client map {}: {error}", map_path.display());

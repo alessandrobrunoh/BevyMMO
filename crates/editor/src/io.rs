@@ -9,7 +9,7 @@
 use bevy::input::keyboard::Key;
 use bevy::prelude::*;
 use bevymmo_shared::world::{
-    load_map, save_map, validate, MapBounds, MapManifest, Terrain, CURRENT_VERSION,
+    load_map_auto, save_map, validate, MapBounds, MapManifest, Terrain, CURRENT_VERSION,
 };
 
 use crate::history::EditorHistory;
@@ -17,7 +17,7 @@ use crate::state::{EditorProp, EditorState};
 
 /// Default file used by `Ctrl+S` / `Ctrl+O` when no explicit path is set.
 fn default_path(state: &EditorState) -> String {
-    format!("assets/maps/{}.ron", state.manifest.map_id)
+    format!("assets/maps/{}.glb", state.manifest.map_id)
 }
 
 /// Saves the current manifest. Returns an error string on failure so callers
@@ -45,7 +45,7 @@ pub fn load(state: &mut EditorState, history: &mut EditorHistory) -> Result<(), 
         .file_path
         .clone()
         .unwrap_or_else(|| default_path(state));
-    match load_map(&path) {
+    match load_map_auto(&path) {
         Ok(manifest) => {
             state.manifest = manifest;
             state.dirty = false;

@@ -7,7 +7,7 @@
 //! - directly running `target/debug/game.exe` from anywhere
 //! - a deployed bundle where the binary sits next to `assets/`
 //!
-//! Hardcoded relative paths like `"assets/maps/test_1.ron"` or
+//! Hardcoded relative paths like `"assets/maps/test_1.glb"` or
 //! `"../../assets"` only work in the first two cases and silently break in the
 //! others (manifests fail to load, GLB scenes never spawn). The helpers here
 //! resolve the assets folder by walking up from both the executable location
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 const ASSETS_DIR_NAME: &str = "assets";
 
 /// Default map loaded by client and server when no override is provided.
-const DEFAULT_MAP_ID: &str = "test_1";
+const DEFAULT_MAP_ID: &str = "forest_village";
 
 /// Resolves the absolute path to the workspace `assets` directory.
 ///
@@ -54,14 +54,14 @@ pub fn assets_root() -> PathBuf {
 /// Resolves the absolute path to a map manifest inside the assets directory.
 ///
 /// Accepts the map id without extension (e.g. `"test_1"`) and returns
-/// `<assets_root>/maps/<map_id>.ron`.
+/// `<assets_root>/maps/<map_id>.glb`.
 ///
 /// # Example
 /// ```rust,no_run
 /// let path = bevymmo_shared::paths::map_file("test_1");
 /// ```
 pub fn map_file(map_id: &str) -> PathBuf {
-    assets_root().join("maps").join(format!("{map_id}.ron"))
+    assets_root().join("maps").join(format!("{map_id}.glb"))
 }
 
 /// Resolves the path to the default map used by client and server bootstrap.
@@ -97,15 +97,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn map_file_appends_ron_extension_under_maps_subfolder() {
+    fn map_file_appends_glb_extension_under_maps_subfolder() {
         let path = map_file("my_map");
-        assert!(path.ends_with("maps/my_map.ron"));
+        assert!(path.ends_with("maps/my_map.glb"));
     }
 
     #[test]
-    fn default_map_file_points_at_test_1() {
+    fn default_map_file_points_at_forest_village() {
         let path = default_map_file();
-        assert!(path.ends_with("maps/test_1.ron"));
+        assert!(path.ends_with("maps/forest_village.glb"));
     }
 
     #[test]

@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 use bevymmo_shared::paths;
-use bevymmo_shared::world::{load_map, CollisionGrid, MapManifest};
+use bevymmo_shared::world::{load_map_auto, CollisionGrid, MapManifest};
 
 #[derive(Resource, Clone)]
 pub struct ServerWorldMap {
@@ -24,7 +24,7 @@ impl Plugin for WorldPlugin {
 
 fn load_server_map(mut commands: Commands) {
     let map_path = paths::default_map_file();
-    match load_map(&map_path) {
+    match load_map_auto(&map_path) {
         Ok(manifest) => {
             let collision = CollisionGrid::build(&manifest);
             info!(

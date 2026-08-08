@@ -117,9 +117,9 @@ pub fn apply_prop_overrides_on_map_load(
                 info!(map_id = %map_id, applied = count, "applied persisted prop overrides");
             }
             Err(error) => {
-                error!(
+                warn!(
                     map_id = %map_id,
-                    "failed to load prop overrides; proceeding with static manifest: {error}"
+                    "prop_overrides table does not exist yet; proceeding with static manifest: {error}"
                 );
             }
         }

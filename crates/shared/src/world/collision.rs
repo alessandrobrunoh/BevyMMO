@@ -114,20 +114,54 @@ impl SurfaceQuery {
         }
     }
 
-    /// Resolves ground contact at the given world position.
+    /// Resolves ground contact at the given world position using highest-wins.
     ///
     /// Returns `None` if the position is not over any walkable surface.
-    /// For flat surfaces, returns constant height with horizontal normal.
-    /// For mesh-based surfaces, currently returns an error for unsupported
-    /// surface types (this will be extended in future slices).
+    /// When multiple surfaces overlap, returns the highest one. This is the
+    /// right choice for raycasts and target resolution (e.g. click-to-move)
+    /// where we want the visible top surface. For stepping an entity that is
+    /// already standing somewhere, use [`ground_at_reachable`].
     ///
-    /// When multiple surfaces overlap, returns the one most appropriate for
-    /// movement based on current height and traversal rules.
+    /// [`ground_at_reachable`]: SurfaceQuery::ground_at_reachable
     pub fn ground_at(&self, x: f32, z: f32) -> Option<GroundContact> {
         self.surfaces
             .iter()
             .filter(|surface| self.surface_contains_point(surface, x, z))
             .filter_map(|surface| self.resolve_surface(surface, x, z))
+            .max_by(|left, right| left.height.total_cmp(&right.height))
+    }
+
+    /// Resolves the highest surface at `(x, z)` that the entity can step
+    /// onto from `current_y`, applying an **asymmetric** reachability rule:
+    ///
+    /// - Surfaces **above** `current_y + max_step_height` are filtered out.
+    ///   This is what prevents a single tick from teleporting the entity up
+    ///   a cliff or onto an unrelated overlapping surface (the
+    ///   "sale in punti strani" bug).
+    /// - Surfaces **at or below** `current_y + max_step_height` are always
+    ///   kept. This deliberately allows the entity to step *down* by any
+    ///   amount (there is no "fall damage" here) and, crucially, lets an
+    ///   entity that has been stranded above its surface (e.g. by spawn,
+    ///   respawn, teleport or knockback) snap back down onto it. Without
+    ///   this asymmetry the entity would be permanently stuck the first time
+    ///   its Y drifts more than `max_step_height` away from every surface.
+    ///
+    /// Among the reachable candidates, the highest one wins. This lets the
+    /// entity climb ramps and switchbacks one step per tick while naturally
+    /// staying on the current surface when no higher neighbour is reachable.
+    pub fn ground_at_reachable(
+        &self,
+        x: f32,
+        z: f32,
+        current_y: f32,
+        max_step_height: f32,
+    ) -> Option<GroundContact> {
+        let ceiling = current_y + max_step_height;
+        self.surfaces
+            .iter()
+            .filter(|surface| self.surface_contains_point(surface, x, z))
+            .filter_map(|surface| self.resolve_surface(surface, x, z))
+            .filter(|contact| contact.height <= ceiling)
             .max_by(|left, right| left.height.total_cmp(&right.height))
     }
 
@@ -215,7 +249,7 @@ mod tests {
     use super::*;
     use crate::world::{
         HeightfieldData, MapBounds, MapManifest, SurfaceBounds, SurfaceKind, WalkableSurface,
-        WorldMetrics,
+        WorldMetrics, CURRENT_VERSION,
     };
 
     #[test]
@@ -282,9 +316,9 @@ mod tests {
 
         // Create a simple 2x2 heightfield
         let heights = vec![
-            1.0, 1.5, 2.0, // Row 0 (z=0)
-            1.2, 1.7, 2.2, // Row 1 (z=5)
-            1.4, 1.9, 2.4, // Row 2 (z=10)
+            1.0, 1.2, 1.4, // Column 0 (x=0; z varies fastest)
+            1.5, 1.7, 1.9, // Column 1 (x=5)
+            2.0, 2.2, 2.4, // Column 2 (x=10)
         ];
 
         let heightfield = HeightfieldData::new(2, bounds, heights);
@@ -613,8 +647,8 @@ mod tests {
 
         // Create a simple 4x4 heightfield (25 points)
         let mut heights = Vec::new();
-        for z in 0..=4 {
-            for x in 0..=4 {
+        for x in 0..=4 {
+            for z in 0..=4 {
                 // Create a gentle slope from (0,0,1.0) to (20,20,2.6).
                 // The route tests sample every 5m and expect a 0.4m climb per point.
                 let xf = x as f32 / 4.0;
@@ -659,5 +693,107 @@ mod tests {
             mountain_switchback_test: None,
             distant_plateau_test: None,
         }
+    }
+
+    /// Builds a manifest with two overlapping flat surfaces at different
+    /// heights. Used to verify proximity-based surface selection.
+    fn create_overlapping_surfaces_manifest() -> MapManifest {
+        let bounds = SurfaceBounds {
+            min_x: -10.0,
+            max_x: 10.0,
+            min_z: -10.0,
+            max_z: 10.0,
+        };
+        MapManifest {
+            version: CURRENT_VERSION,
+            map_id: "overlapping".to_string(),
+            display_name: "Overlapping".to_string(),
+            bounds: MapBounds {
+                min_x: -10.0,
+                max_x: 10.0,
+                min_z: -10.0,
+                max_z: 10.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: Some(WorldMetrics::default()),
+            surfaces: vec![
+                WalkableSurface {
+                    id: "surface_low".to_string(),
+                    kind: SurfaceKind::Flat,
+                    object: None,
+                    bounds: Some(bounds),
+                    height: Some(1.0),
+                    min_height: None,
+                    max_height: None,
+                    grid_size: None,
+                    size: None,
+                    purpose: None,
+                    heightfield: None,
+                },
+                WalkableSurface {
+                    id: "surface_high".to_string(),
+                    kind: SurfaceKind::Flat,
+                    object: None,
+                    bounds: Some(bounds),
+                    height: Some(5.0),
+                    min_height: None,
+                    max_height: None,
+                    grid_size: None,
+                    size: None,
+                    purpose: None,
+                    heightfield: None,
+                },
+            ],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        }
+    }
+
+    #[test]
+    fn test_ground_at_returns_highest_surface() {
+        // ground_at keeps picking the highest overlapping surface (used by
+        // raycasts / click-to-move target resolution).
+        let query = SurfaceQuery::from_manifest(&create_overlapping_surfaces_manifest());
+        let contact = query
+            .ground_at(0.0, 0.0)
+            .expect("overlapping surfaces should resolve");
+        assert_eq!(contact.height, 5.0);
+    }
+
+    #[test]
+    fn test_ground_at_reachable_asymmetric_step_limit() {
+        // The reachability filter is asymmetric: it blocks climbing more than
+        // max_step_height in a single tick (prevents cliff teleport up), but
+        // always allows descending or snapping back down (so an entity is
+        // never permanently stranded off-surface after spawn/teleport).
+        let query = SurfaceQuery::from_manifest(&create_overlapping_surfaces_manifest());
+
+        // From y=1.0 with a 0.45 step budget: the high surface (h=5.0) is
+        // above the ceiling (1.0 + 0.45 = 1.45) so it is filtered out. Only
+        // the low surface (h=1.0) is reachable.
+        let contact = query
+            .ground_at_reachable(0.0, 0.0, 1.0, 0.45)
+            .expect("low surface should be reachable from itself");
+        assert_eq!(contact.height, 1.0);
+
+        // From y=5.0 with a 0.45 step budget: ceiling = 5.45, so BOTH surfaces
+        // are below the ceiling. Highest-wins picks the high one.
+        let contact = query
+            .ground_at_reachable(0.0, 0.0, 5.0, 0.45)
+            .expect("high surface should be reachable from itself");
+        assert_eq!(contact.height, 5.0);
+
+        // From y=10.0 (stranded well above both surfaces): the asymmetric
+        // filter lets the entity snap back DOWN to the highest surface
+        // instead of being permanently stuck.
+        let contact = query
+            .ground_at_reachable(0.0, 0.0, 10.0, 0.45)
+            .expect("stranded entity should recover onto the highest surface below it");
+        assert_eq!(contact.height, 5.0);
     }
 }

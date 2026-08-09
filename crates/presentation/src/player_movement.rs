@@ -97,7 +97,11 @@ fn predict_move_to_target(
 
         if let Some(surface_query) = world_map.surface_query.as_ref() {
             if !surface_query.is_empty() {
+                // Recovery: snap Y to the ground for any entity that is not
+                // actively chasing a MoveTo target (spawn, respawn, teleport,
+                // knockback, Idle). Mirrors the server-side snap.
                 let Inputs::MoveTo(target) = &input.0 else {
+                    bevymmo_shared::movement::snap_to_ground(&mut position.0, surface_query);
                     *state = EntityState::Idle;
                     continue;
                 };
@@ -108,34 +112,39 @@ fn predict_move_to_target(
                     look_direction.0 = offset_xz.normalize_or_zero();
                 }
 
-                let Some(target_contact) = surface_query.ground_at(target.x, target.z) else {
+                let Some(collision) = world_map.collision.as_ref() else {
                     *state = EntityState::Idle;
                     continue;
                 };
+                let max_step_height = world_map
+                    .manifest
+                    .as_ref()
+                    .map(|m| m.get_world_metrics().max_step_height)
+                    .unwrap_or_default();
 
-                if distance <= bevymmo_shared::movement::ARRIVAL_DISTANCE {
-                    position.0 = Vec3::new(target.x, target_contact.height, target.z);
-                    *state = EntityState::Idle;
-                    continue;
+                match bevymmo_shared::movement::step_on_terrain(
+                    position.0,
+                    target.x,
+                    target.z,
+                    effective_speed,
+                    surface_query,
+                    collision,
+                    max_step_height,
+                ) {
+                    bevymmo_shared::movement::TerrainStep::Arrived(p) => {
+                        position.0 = p;
+                        *state = EntityState::Idle;
+                    }
+                    bevymmo_shared::movement::TerrainStep::Moved(p) => {
+                        position.0 = p;
+                        *state = EntityState::Moving;
+                    }
+                    bevymmo_shared::movement::TerrainStep::Blocked
+                    | bevymmo_shared::movement::TerrainStep::NoSurface => {
+                        bevymmo_shared::movement::snap_to_ground(&mut position.0, surface_query);
+                        *state = EntityState::Idle;
+                    }
                 }
-
-                let step = effective_speed.min(distance);
-                let next_xz = position.0 + offset_xz / distance * step;
-                let Some(next_contact) = surface_query.ground_at(next_xz.x, next_xz.z) else {
-                    *state = EntityState::Idle;
-                    continue;
-                };
-                let candidate = Vec3::new(next_xz.x, next_contact.height, next_xz.z);
-
-                if world_map.collision.as_ref().is_some_and(|grid| {
-                    grid.is_blocked([candidate.x, candidate.y, candidate.z], 0.45)
-                }) {
-                    *state = EntityState::Idle;
-                    continue;
-                }
-
-                position.0 = candidate;
-                *state = EntityState::Moving;
                 continue;
             }
         }

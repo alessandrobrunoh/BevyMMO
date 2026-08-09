@@ -6,13 +6,7 @@ pub struct PlayerAssets {
     #[asset(path = "models/player.glb#Scene0")]
     pub scene: Handle<WorldAsset>,
 
-    // Assumiamo che Animation0 sia Idle e Animation1 sia Walk
-    // (Adegua questi nomi/indici in base al file .glb reale)
-    #[asset(path = "models/player.glb#Animation0")]
-    pub idle: Handle<AnimationClip>,
 
-    #[asset(path = "models/player.glb#Animation1")]
-    pub walk: Handle<AnimationClip>,
 }
 
 #[derive(AssetCollection, Resource)]

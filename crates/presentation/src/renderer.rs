@@ -1,11 +1,10 @@
 use bevy::prelude::*;
 
 use bevymmo_shared::network::protocol::*;
-use bevymmo_shared::entity::components::{EntityKind, EntityState};
-use std::time::Duration;
+use bevymmo_shared::entity::components::EntityKind;
 use std::collections::HashMap;
 use crate::game_state::{GameScreen, Screen};
-use crate::assets::{PlayerAssets, BossDragonAssets};
+use crate::assets::{BossDragonAssets, PlayerAssets};
 
 #[derive(Resource)]
 pub struct RendererAssets {
@@ -50,20 +49,20 @@ fn init_renderer_assets(
 #[derive(Component)]
 pub struct RenderedEntity;
 
-// Imported GLB scenes use a much larger native unit scale than the gameplay
-// world. Keep these values explicit so model proportions can be tuned without
-// touching entity positions or gameplay stats.
-const PLAYER_SCENE_SCALE: f32 = 0.035;
+/// Marks the scene root of a player model whose imported root node needs to be
+/// anchored to the replicated gameplay position.
+#[derive(Component)]
+struct PlayerModelRoot;
+
+/// Prevents re-normalizing the imported node once its scene is instantiated.
+#[derive(Component)]
+struct PlayerModelAnchored;
+
+// The current player.glb is authored in game-world units (unlike the old
+// oversized animated asset), so it must not be scaled down by 0.035.
+const PLAYER_SCENE_SCALE: f32 = 1.0;
 const BOSS_DRAGON_SCENE_SCALE: f32 = 0.12;
 
-#[derive(Component)]
-pub struct AnimationIndices {
-    pub idle: AnimationNodeIndex,
-    pub walk: AnimationNodeIndex,
-}
-
-#[derive(Component)]
-pub struct PlayerAnimation(pub Entity);
 
 pub struct RendererPlugin;
 
@@ -73,8 +72,7 @@ impl Plugin for RendererPlugin {
         app.add_observer(on_entity_position_added);
         app.add_systems(
             Update,
-            (spawn_entity_meshes, sync_transforms, update_colors, setup_animation_players, handle_animations)
-                .chain()
+            (spawn_entity_meshes, sync_transforms, anchor_player_model, update_colors).chain()
                 .run_if(in_game_or_paused),
         )
         .add_systems(Update, cleanup_entity_render.run_if(not_in_game));
@@ -140,6 +138,7 @@ fn on_entity_position_added(
                     WorldAssetRoot(assets.scene.clone()),
                     Transform::from_translation(position.0)
                         .with_scale(Vec3::splat(PLAYER_SCENE_SCALE)),
+                    PlayerModelRoot,
                     RenderedEntity,
                 ));
             }
@@ -209,7 +208,8 @@ fn spawn_entity_meshes(
                     commands.entity(entity).insert((
                         WorldAssetRoot(assets.scene.clone()),
                         Transform::from_translation(position.0)
-                            .with_scale(Vec3::splat(PLAYER_SCENE_SCALE)),
+                                .with_scale(Vec3::splat(PLAYER_SCENE_SCALE)),
+                        PlayerModelRoot,
                         RenderedEntity,
                     ));
                 }
@@ -267,6 +267,40 @@ fn sync_transforms(
     }
 }
 
+/// Removes translations embedded in the instantiated player scene. Bevy may
+/// place an intermediate scene entity between `WorldAssetRoot` and `Node0`, so
+/// inspect the full parent chain instead of assuming a direct child.
+fn anchor_player_model(
+    mut commands: Commands,
+    roots: Query<Entity, With<PlayerModelRoot>>,
+    parents: Query<&ChildOf>,
+    mut scene_nodes: Query<
+        (Entity, &mut Transform),
+        (Without<PlayerModelRoot>, Without<PlayerModelAnchored>),
+    >,
+) {
+    for (entity, mut transform) in &mut scene_nodes {
+        if roots
+            .iter()
+            .any(|root| is_descendant_of(entity, root, &parents))
+        {
+            transform.translation = Vec3::ZERO;
+            commands.entity(entity).insert(PlayerModelAnchored);
+        }
+    }
+}
+
+fn is_descendant_of(entity: Entity, root: Entity, parents: &Query<&ChildOf>) -> bool {
+    let mut current = entity;
+    while let Ok(parent) = parents.get(current) {
+        if parent.0 == root {
+            return true;
+        }
+        current = parent.0;
+    }
+    false
+}
+
 fn update_colors(
     entities: Query<(&EntityColor, &MeshMaterial3d<StandardMaterial>), Changed<EntityColor>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -278,77 +312,6 @@ fn update_colors(
     }
 }
 
-fn setup_animation_players(
-    mut commands: Commands,
-    mut players: Query<(Entity, &mut AnimationPlayer), Added<AnimationPlayer>>,
-    parent_query: Query<&ChildOf>,
-    entity_state_query: Query<(Entity, Option<&EntityKind>), With<EntityState>>,
-    mut graphs: ResMut<Assets<AnimationGraph>>,
-    player_assets: Option<Res<PlayerAssets>>,
-    _dragon_assets: Option<Res<BossDragonAssets>>,
-) {
-    for (entity, mut player) in players.iter_mut() {
-        let mut current = entity;
-        let mut root = None;
-        let mut kind = None;
-        while let Ok(parent) = parent_query.get(current) {
-            current = parent.0;
-            if let Ok((e, k)) = entity_state_query.get(current) {
-                root = Some(e);
-                kind = k;
-                break;
-            }
-        }
-
-        if let Some(root_entity) = root {
-            let mut graph = AnimationGraph::new();
-            let mut idle_idx = None;
-            let mut walk_idx = None;
-
-            if kind.map_or(false, |k| *k == EntityKind::Hostile) {
-                // No animations for Hostile currently
-            } else {
-                if let Some(assets) = player_assets.as_ref() {
-                    idle_idx = Some(graph.add_clip(assets.idle.clone(), 1.0, graph.root));
-                    walk_idx = Some(graph.add_clip(assets.walk.clone(), 1.0, graph.root));
-                }
-            }
-
-            if let (Some(idle), Some(walk)) = (idle_idx, walk_idx) {
-                let graph_handle = graphs.add(graph);
-
-                let mut transitions = AnimationTransitions::new();
-                transitions.play(&mut player, idle, Duration::ZERO).repeat();
-
-                commands.entity(entity).insert((
-                    AnimationGraphHandle(graph_handle),
-                    transitions,
-                    AnimationIndices { idle, walk }
-                ));
-
-                commands.entity(root_entity).insert(PlayerAnimation(entity));
-            }
-        }
-    }
-}
-
-fn handle_animations(
-    entity_state_query: Query<(&EntityState, &PlayerAnimation), Changed<EntityState>>,
-    mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions, &AnimationIndices)>,
-) {
-    for (state, player_anim) in entity_state_query.iter() {
-        if let Ok((mut player, mut transitions, indices)) = animation_players.get_mut(player_anim.0) {
-            match state {
-                EntityState::Idle | EntityState::Dead => {
-                    transitions.play(&mut player, indices.idle, Duration::from_millis(250)).repeat();
-                }
-                EntityState::Moving => {
-                    transitions.play(&mut player, indices.walk, Duration::from_millis(250)).repeat();
-                }
-            }
-        }
-    }
-}
 
 fn cleanup_entity_render(mut commands: Commands, entities: Query<Entity, With<RenderedEntity>>) {
     for entity in entities.iter() {

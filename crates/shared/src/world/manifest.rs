@@ -321,10 +321,14 @@ impl HeightfieldData {
 
         // Sample the four corners of the cell
         let stride = (self.resolution + 1) as usize;
-        let h00 = self.heights[z0 * stride + x0];
-        let h10 = self.heights[z0 * stride + x1];
-        let h01 = self.heights[z1 * stride + x0];
-        let h11 = self.heights[z1 * stride + x1];
+        // Heightfields are stored with Z varying fastest: index = x * stride + z.
+        // Using the conventional row-major index here transposed the terrain,
+        // making movement sample a height from a different location on maps
+        // whose slopes differ along X and Z.
+        let h00 = self.heights[x0 * stride + z0];
+        let h10 = self.heights[x1 * stride + z0];
+        let h01 = self.heights[x0 * stride + z1];
+        let h11 = self.heights[x1 * stride + z1];
 
         // Bilinear interpolation
         let h0 = h00 * (1.0 - fx) + h10 * fx;

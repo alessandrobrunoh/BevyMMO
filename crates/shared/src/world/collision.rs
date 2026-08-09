@@ -13,6 +13,16 @@ use super::shapes::aabb_for_shape;
 
 use crate::world::manifest::WalkableMeshData;
 
+/// Vertical slack used when rejecting obstacles whose Y range sits clearly
+/// below the player.
+///
+/// Without this tolerance a player standing a few centimetres above a rock
+/// (e.g. due to ground-snap rounding) would slip past the very obstacle it
+/// should be colliding with. We keep the slack tight (smaller than the
+/// player radius) so that a rock on the ground cannot block a player walking
+/// on a platform a couple of metres above.
+pub const OBSTACLE_Y_TOLERANCE: f32 = 0.25;
+
 #[derive(Clone, Copy, Debug)]
 struct Obstacle {
     min: [f32; 3],
@@ -75,9 +85,25 @@ impl CollisionGrid {
     }
 
     /// Returns true when a player circle in the X/Z plane intersects a
-    /// blocking obstacle. Y is intentionally ignored while terrain is flat.
+    /// blocking obstacle.
+    ///
+    /// The Y axis is honoured with [`OBSTACLE_Y_TOLERANCE`] of slack: an
+    /// obstacle whose top sits more than the tolerance below the query point
+    /// is treated as ground-floor clutter and ignored by an entity on a
+    /// higher platform directly above. This is what prevents a rock on the
+    /// floor from blocking a player walking on a bridge over it.
+    ///
+    /// Entities at or below the obstacle's top (e.g. standing next to a wall
+    /// on the same floor) are still blocked as before, so existing flat-map
+    /// behaviour is preserved.
     pub fn is_blocked(&self, point: [f32; 3], radius: f32) -> bool {
         self.obstacles.iter().any(|obstacle| {
+            // Vertical reject: skip obstacles clearly below the query point.
+            // The tolerance absorbs minor snap drift while still separating
+            // vertically stacked gameplay layers (rock vs bridge).
+            if point[1] > obstacle.max[1] + OBSTACLE_Y_TOLERANCE {
+                return false;
+            }
             let closest_x = point[0].clamp(obstacle.min[0], obstacle.max[0]);
             let closest_z = point[2].clamp(obstacle.min[2], obstacle.max[2]);
             let dx = point[0] - closest_x;
@@ -1459,6 +1485,71 @@ mod tests {
         assert!(
             !grid.is_blocked([8.0, 0.0, 5.0], 0.5),
             "Point just outside blocker should not be blocked"
+        );
+    }
+
+    /// Regression for the Y-aware `is_blocked` fix.
+    ///
+    /// A blocking obstacle placed on the ground must not stop an entity
+    /// standing on a platform directly above it. The obstacle's top
+    /// (`max[1]`) is well below the player Y minus the tolerance, so the
+    /// reject branch kicks in and the query returns false.
+    #[test]
+    fn test_blocker_below_player_does_not_block() {
+        use super::super::shapes::CollisionShape;
+        use crate::world::manifest::{BlockerData, BlockerKind, TransformData};
+
+        // Cylinder at y=0, height=1.0 → AABB Y range [-0.5, +0.5].
+        let blocker = BlockerData {
+            id: "rock_under_bridge".to_string(),
+            kind: BlockerKind::Cylinder,
+            object: Some("rock_under_bridge".to_string()),
+            transform: Some(TransformData {
+                translation: [5.0, 0.0, 5.0],
+                rotation_deg: [0.0, 0.0, 0.0],
+                scale: [1.0, 1.0, 1.0],
+            }),
+            shape: Some(CollisionShape::Cylinder {
+                radius: 2.0,
+                height: 1.0,
+            }),
+            blocks_movement: true,
+        };
+
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "stacked_layers".to_string(),
+            display_name: "Stacked Layers".to_string(),
+            bounds: MapBounds {
+                min_x: 0.0,
+                max_x: 20.0,
+                min_z: 0.0,
+                max_z: 20.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: None,
+            surfaces: vec![],
+            traversals: vec![],
+            blockers: vec![blocker],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        let grid = CollisionGrid::build(&manifest);
+
+        // Same-floor player still gets blocked (player_y at obstacle top).
+        assert!(
+            grid.is_blocked([5.0, 0.5, 5.0], 0.5),
+            "Player at the rock's top should still collide"
+        );
+
+        // Player on a raised platform 5m above should be ignored.
+        assert!(
+            !grid.is_blocked([5.0, 5.0, 5.0], 0.5),
+            "Rock on the ground must not block a player on a platform above"
         );
     }
 

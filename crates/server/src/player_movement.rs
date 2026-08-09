@@ -149,11 +149,12 @@ fn server_move_to_target(
             .unwrap_or_else(|| input.0.clone());
 
         if !world_map.surface_query.is_empty() {
+            let max_step_height = world_map.manifest.get_world_metrics().max_step_height;
             // Recovery: align persisted/spawned/teleported positions with the
             // authoritative terrain before reachability checks. A player loaded
             // at y=0 on a raised hill must not be treated as too low to climb
             // the surface already below their feet.
-            snap_to_ground(&mut position.0, &world_map.surface_query);
+            snap_to_ground(&mut position.0, &world_map.surface_query, max_step_height);
 
             let Inputs::MoveTo(target) = authoritative_input else {
                 *state = EntityState::Idle;
@@ -166,7 +167,6 @@ fn server_move_to_target(
                 look_direction.0 = offset_xz.normalize_or_zero();
             }
 
-            let max_step_height = world_map.manifest.get_world_metrics().max_step_height;
             match step_on_terrain(
                 position.0,
                 target.x,
@@ -185,7 +185,7 @@ fn server_move_to_target(
                     *state = EntityState::Moving;
                 }
                 TerrainStep::Blocked | TerrainStep::NoSurface => {
-                    snap_to_ground(&mut position.0, &world_map.surface_query);
+                    snap_to_ground(&mut position.0, &world_map.surface_query, max_step_height);
                     *state = EntityState::Idle;
                 }
             }

@@ -99,10 +99,15 @@ fn predict_move_to_target(
 
         if let Some(surface_query) = world_map.surface_query.as_ref() {
             if !surface_query.is_empty() {
+                let max_step_height = world_map
+                    .manifest
+                    .as_ref()
+                    .map(|m| m.get_world_metrics().max_step_height)
+                    .unwrap_or_default();
                 // Recovery: mirror the server-side terrain snap before
                 // reachability checks so prediction starts from the same
                 // height as the authoritative simulation.
-                snap_to_ground(&mut position.0, surface_query);
+                snap_to_ground(&mut position.0, surface_query, max_step_height);
 
                 let Inputs::MoveTo(target) = &input.0 else {
                     *state = EntityState::Idle;
@@ -119,11 +124,6 @@ fn predict_move_to_target(
                     *state = EntityState::Idle;
                     continue;
                 };
-                let max_step_height = world_map
-                    .manifest
-                    .as_ref()
-                    .map(|m| m.get_world_metrics().max_step_height)
-                    .unwrap_or_default();
 
                 match step_on_terrain(
                     position.0,
@@ -143,7 +143,7 @@ fn predict_move_to_target(
                         *state = EntityState::Moving;
                     }
                     TerrainStep::Blocked | TerrainStep::NoSurface => {
-                        snap_to_ground(&mut position.0, surface_query);
+                        snap_to_ground(&mut position.0, surface_query, max_step_height);
                         *state = EntityState::Idle;
                     }
                 }

@@ -212,22 +212,51 @@ pub fn step_towards_2d_target(
 
 // ==================== GROUND SNAP ====================
 
-/// Snaps an entity's Y to the ground surface at its current XZ position.
+/// Permissive vertical budget used by [`snap_to_ground`] when the caller does
+/// not have a manifest-derived `max_step_height` handy.
+///
+/// It is intentionally generous: snap is a *recovery* path for spawn,
+/// respawn and teleport, so we want to absorb large drifts (a player loaded
+/// from the DB at y=0 onto a raised hill). Capping it prevents the documented
+/// teleport-to-top-surface bug on overlapping surfaces while still allowing
+/// the common "persisted Y is off by a few metres" case to recover.
+pub const SNAP_STEP_BUDGET: f32 = 5.0;
+
+/// Snaps an entity's Y to the highest reachable ground surface at its current
+/// XZ position.
 ///
 /// Returns `true` if the Y was changed. This is the recovery path for spawn,
 /// respawn, teleport, knockback, or any other code path that writes `Position`
-/// without resolving the terrain height. Without it, an entity placed below the
-/// surface (e.g. spawn at y=0 when the terrain is at y=1.7) can never climb
-/// back up, because `ground_at_reachable` blocks surfaces above
-/// `current_y + max_step_height`.
+/// without resolving the terrain height.
+///
+/// Unlike the previous `ground_at` based implementation, this uses
+/// [`SurfaceQuery::ground_at_reachable`] so that overlapping surfaces above
+/// `current_y + max_step_height` cannot teleport the entity onto the wrong
+/// platform (e.g. a player walking under a bridge ending up on the bridge).
+/// Surfaces *below* the entity are always reachable, so the recovery still
+/// snaps a stranded entity (e.g. spawned below the surface) back down onto it.
 ///
 /// On a flat surface (no height data), this is a no-op.
-pub fn snap_to_ground(position: &mut Vec3, surface_query: &SurfaceQuery) -> bool {
-    if let Some(contact) = surface_query.ground_at(position.x, position.z) {
-        if (contact.height - position.y).abs() > 0.001 {
-            position.y = contact.height;
-            return true;
-        }
+///
+/// # Arguments
+///
+/// * `max_step_height` - Vertical reach budget for the snap. Pass
+///   [`SNAP_STEP_BUDGET`] for generic recovery, or the manifest's
+///   `world_metrics.max_step_height` when you want spawn to honour the same
+///   step rule as live movement.
+pub fn snap_to_ground(
+    position: &mut Vec3,
+    surface_query: &SurfaceQuery,
+    max_step_height: f32,
+) -> bool {
+    let Some(contact) =
+        surface_query.ground_at_reachable(position.x, position.z, position.y, max_step_height)
+    else {
+        return false;
+    };
+    if (contact.height - position.y).abs() > 0.001 {
+        position.y = contact.height;
+        return true;
     }
     false
 }

@@ -14,7 +14,10 @@ use serde_json;
 use thiserror::Error;
 
 use super::ids::validate_id;
-use super::manifest::{MapBounds, MapManifest, Prop, Terrain, TransformData, CURRENT_VERSION};
+use super::manifest::{
+    HeightfieldData, MapBounds, MapManifest, Prop, SurfaceBounds, SurfaceKind, Terrain,
+    TransformData, WalkableMeshData, WalkableSurface, CURRENT_VERSION,
+};
 use super::shapes::CollisionShape;
 use crate::placeables::{KindId, PlaceableRegistry};
 
@@ -315,6 +318,221 @@ pub fn has_world_json_sidecar<P: AsRef<Path>>(map_path: P) -> bool {
 // GLB loader — reads a glTF 2.0 binary exported from Blender
 // ---------------------------------------------------------------------------
 
+/// Prefix used by Blender-authored walkable surface objects.
+///
+/// The level designer names any mesh that the player should be able to walk
+/// on with this prefix (e.g. `WALKABLE_main_floor`, `WALKABLE_ramp_01`). The
+/// GLB loader picks those up automatically and registers them as walkable
+/// surfaces even when no `.world.json` sidecar is present.
+const WALKABLE_NODE_PREFIX: &str = "WALKABLE_";
+
+/// `bevymmo_kind` value that marks a node as a walkable surface. Used by
+/// the Blender add-on when it wants to be explicit instead of relying on the
+/// `WALKABLE_` naming convention.
+const WALKABLE_KIND_TAG: &str = "walkable_surface";
+
+/// Default heightfield sampling resolution baked into auto-extracted
+/// surfaces when no `.world.json` sidecar overrides it.
+///
+/// A 32x32 grid keeps the per-cell footprint ≈1m on a typical map and is
+/// the same default used by the existing `.world.json` fixtures.
+const DEFAULT_HEIGHTFIELD_RESOLUTION: u32 = 32;
+
+/// Returns `true` when a glTF node represents a walkable surface.
+///
+/// Detection is name-based (`WALKABLE_*` prefix) or extras-based
+/// (`bevymmo_kind == "walkable_surface"`). The extras check is permissive:
+/// any malformed JSON is treated as "not a surface".
+fn is_walkable_node(node: &gltf::Node<'_>) -> bool {
+    if node
+        .name()
+        .is_some_and(|name| name.starts_with(WALKABLE_NODE_PREFIX))
+    {
+        return true;
+    }
+    let Some(extras_raw) = node.extras() else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(extras_raw.get()) else {
+        return false;
+    };
+    let kind = value
+        .as_object()
+        .and_then(|object| {
+            object
+                .get("bevymmo")
+                .and_then(|b| b.get("kind"))
+                .or_else(|| object.get("bevymmo_kind"))
+        })
+        .and_then(|k| k.as_str())
+        .unwrap_or("");
+    kind == WALKABLE_KIND_TAG
+}
+
+/// Extracts a single mesh primitive's vertex positions and triangle indices
+/// from a glTF node, transformed into world space.
+///
+/// Returns `None` when the node has no mesh, the primitive has no POSITION
+/// accessor, or the buffer data cannot be resolved from the embedded GLB
+/// blob. Non-indexed geometry is converted to a sequential index list.
+fn extract_node_mesh_world_space(
+    node: &gltf::Node<'_>,
+    blob: Option<&[u8]>,
+) -> Option<WalkableMeshData> {
+    let mesh = node.mesh()?;
+    let primitive = mesh.primitives().next()?;
+    let reader = primitive.reader(move |buffer: gltf::Buffer<'_>| match buffer.source() {
+        gltf::buffer::Source::Bin => blob,
+        gltf::buffer::Source::Uri(_) => None,
+    });
+
+    let positions = reader.read_positions()?;
+
+    // glTF stores node transforms as either a 4x4 matrix or a decomposed
+    // (T, R, S) triple. `Transform::matrix()` normalises both into a
+    // column-major 4x4 we can apply per-vertex.
+    let matrix = node.transform().matrix();
+
+    let mut vertices: Vec<[f32; 3]> = Vec::new();
+    for position in positions {
+        let [x, y, z] = position;
+        // Column-major multiplication: v' = M * v (homogeneous, w=1).
+        let tx = matrix[0][0] * x + matrix[1][0] * y + matrix[2][0] * z + matrix[3][0];
+        let ty = matrix[0][1] * x + matrix[1][1] * y + matrix[2][1] * z + matrix[3][1];
+        let tz = matrix[0][2] * x + matrix[1][2] * y + matrix[2][2] * z + matrix[3][2];
+        vertices.push([tx, ty, tz]);
+    }
+
+    // Index list: fall back to sequential indices for non-indexed geometry
+    // so the downstream triangle resolver has a uniform contract.
+    let indices: Vec<u32> = match reader.read_indices() {
+        Some(reader_indices) => reader_indices.into_u32().collect(),
+        None => (0..vertices.len() as u32).collect(),
+    };
+
+    if vertices.is_empty() || indices.len() < 3 {
+        return None;
+    }
+
+    Some(WalkableMeshData { vertices, indices })
+}
+
+/// Builds a [`WalkableSurface`] from a glTF walkable node.
+///
+/// The surface stores the mesh vertices in world space plus an optional
+/// coarse heightfield (32x32 by default) covering the mesh's XZ bounds. The
+/// heightfield is what `SurfaceQuery::ground_at` falls back to for fast
+/// broad-phase lookups when no explicit `.world.json` is provided.
+fn build_surface_from_node(node: &gltf::Node<'_>, blob: Option<&[u8]>) -> Option<WalkableSurface> {
+    let mesh_data = extract_node_mesh_world_space(node, blob)?;
+    let bounds = compute_mesh_bounds(&mesh_data.vertices);
+    let heightfield = build_coarse_heightfield(&mesh_data, bounds, DEFAULT_HEIGHTFIELD_RESOLUTION);
+    let object_name = node.name().map(|name| name.to_string());
+
+    Some(WalkableSurface {
+        id: object_name
+            .clone()
+            .unwrap_or_else(|| format!("surface_{}", node.index())),
+        kind: SurfaceKind::Mesh,
+        object: object_name,
+        bounds: Some(bounds),
+        height: None,
+        min_height: None,
+        max_height: None,
+        grid_size: None,
+        size: None,
+        purpose: None,
+        heightfield,
+        walkable_mesh: Some(mesh_data),
+        layer: None,
+        max_slope_deg: None,
+    })
+}
+
+/// Computes the XZ footprint of a triangle mesh in world space.
+fn compute_mesh_bounds(vertices: &[[f32; 3]]) -> SurfaceBounds {
+    let mut min_x = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut min_z = f32::MAX;
+    let mut max_z = f32::MIN;
+
+    for [x, _y, z] in vertices {
+        min_x = min_x.min(*x);
+        max_x = max_x.max(*x);
+        min_z = min_z.min(*z);
+        max_z = max_z.max(*z);
+    }
+
+    SurfaceBounds {
+        min_x,
+        max_x,
+        min_z,
+        max_z,
+    }
+}
+
+/// Samples a regular `resolution`x`resolution` grid over the mesh's XZ
+/// bounds and stores the highest vertex Y per cell.
+///
+/// This is intentionally a coarse "max height" approximation — precise
+/// ground resolution happens at query time via the triangle-mesh resolver.
+/// The heightfield exists so broad-phase containment checks and the
+/// default movement code can produce sensible heights for surfaces that
+/// ship without a hand-authored `.world.json`.
+fn build_coarse_heightfield(
+    mesh: &WalkableMeshData,
+    bounds: SurfaceBounds,
+    resolution: u32,
+) -> Option<HeightfieldData> {
+    if mesh.vertices.is_empty() {
+        return None;
+    }
+
+    let dx = ((bounds.max_x - bounds.min_x) / resolution as f32).max(1e-6);
+    let dz = ((bounds.max_z - bounds.min_z) / resolution as f32).max(1e-6);
+
+    // (resolution + 1)² samples, matching HeightfieldData's contract.
+    let side = (resolution + 1) as usize;
+    let mut heights = vec![f32::NEG_INFINITY; side * side];
+
+    for [x, y, z] in &mesh.vertices {
+        let gx = (((x - bounds.min_x) / dx).round() as isize).clamp(0, resolution as isize);
+        let gz = (((z - bounds.min_z) / dz).round() as isize).clamp(0, resolution as isize);
+        let idx = gx as usize + gz as usize * side;
+        if *y > heights[idx] {
+            heights[idx] = *y;
+        }
+    }
+
+    // Replace untouched cells with the mesh's min Y so queries return a
+    // finite value instead of -∞.
+    let min_y = mesh
+        .vertices
+        .iter()
+        .map(|v| v[1])
+        .fold(f32::INFINITY, f32::min);
+    for h in heights.iter_mut() {
+        if !h.is_finite() {
+            *h = min_y;
+        }
+    }
+
+    Some(HeightfieldData::new(resolution, bounds, heights))
+}
+
+/// Walks all glTF root nodes and returns every node flagged as a walkable
+/// surface (see [`is_walkable_node`]).
+fn extract_walkable_surfaces(
+    document: &gltf::Document,
+    blob: Option<&[u8]>,
+) -> Vec<WalkableSurface> {
+    document
+        .nodes()
+        .filter(is_walkable_node)
+        .filter_map(|node| build_surface_from_node(&node, blob))
+        .collect()
+}
+
 /// Loads a map from a `.glb` file.
 ///
 /// The GLB must follow the BevyMMO convention:
@@ -469,6 +687,14 @@ pub fn load_map_from_glb<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoad
         )])
     })?;
 
+    // Auto-extract walkable surfaces from WALKABLE_* nodes (or nodes tagged
+    // with `bevymmo_kind = walkable_surface`). This gives the GLB-only path a
+    // usable ground query without requiring a hand-authored `.world.json`
+    // sidecar. When a sidecar is present, [`load_map_auto`] prefers it and
+    // this code path is never reached.
+    let blob = gltf.blob.as_deref();
+    let surfaces = extract_walkable_surfaces(root, blob);
+
     let manifest = MapManifest {
         version: CURRENT_VERSION,
         map_id: meta.map_id,
@@ -482,7 +708,7 @@ pub fn load_map_from_glb<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoad
         terrain: Terrain::default(), // TODO: extract from a TERRAIN node or keep default
         props,
         world_metrics: None,
-        surfaces: vec![],
+        surfaces,
         traversals: vec![],
         blockers: vec![],
         test_route: vec![],

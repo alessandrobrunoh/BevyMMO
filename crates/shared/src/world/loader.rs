@@ -852,21 +852,18 @@ mod tests {
     /// sibling `.glb`, so this intentionally exercises `load_map_auto` rather
     /// than the legacy GLB-extras loader.
     #[test]
-    fn load_map_auto_prefers_rolling_hills_sidecar() {
-        let glb_path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../assets/maps/rolling_hills_test.glb"
-        );
+    fn load_map_auto_prefers_map_01_sidecar() {
+        let glb_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/maps/map_01.glb");
 
-        let manifest = load_map_auto(glb_path).expect("load rolling_hills_test sidecar manifest");
+        let manifest = load_map_auto(glb_path).expect("load map_01 sidecar manifest");
 
-        assert_eq!(manifest.map_id, "rolling_hills_test");
+        assert_eq!(manifest.map_id, "map_01");
         assert_eq!(manifest.version, 2);
         assert!(manifest.world_metrics.is_some());
         assert!(manifest
             .surfaces
             .iter()
-            .any(|surface| surface.id == "surface_mountain_test"));
+            .any(|surface| surface.id == "surface_map_01"));
         assert!(manifest
             .test_checklist
             .iter()
@@ -878,20 +875,19 @@ mod tests {
 
     /// Integration test: loads the real `.world.json` fixture for the main map.
     #[test]
-    fn loads_rolling_hills_world_json() {
+    fn loads_map_01_world_json() {
         let json_path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../assets/maps/rolling_hills_test.world.json"
+            "/../../assets/maps/map_01.world.json"
         );
         if !std::path::Path::new(json_path).exists() {
             eprintln!("Skipping: {json_path} not found (export from Blender first)");
             return;
         }
 
-        let manifest =
-            load_world_json(json_path).expect("failed to load rolling_hills_test.world.json");
+        let manifest = load_world_json(json_path).expect("failed to load map_01.world.json");
 
-        assert_eq!(manifest.map_id, "rolling_hills_test");
+        assert_eq!(manifest.map_id, "map_01");
         assert_eq!(manifest.version, 2);
         assert!(manifest.world_metrics.is_some());
         assert_eq!(manifest.surfaces.len(), 1);
@@ -900,7 +896,7 @@ mod tests {
         // Check world metrics
         let metrics = manifest
             .world_metrics
-            .expect("rolling_hills_test fixture should include world metrics");
+            .expect("map_01 fixture should include world metrics");
         assert_eq!(metrics.player_radius, 0.35);
         assert_eq!(metrics.player_height, 1.7);
         assert_eq!(metrics.max_step_height, 0.45);

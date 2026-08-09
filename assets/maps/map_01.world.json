@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "map_id": "rolling_hills_test",
-  "display_name": "Rolling Hills Height Test Map",
+  "map_id": "map_01",
+  "display_name": "Map 01",
   "unit_convention": "1 Blender unit = 1 game world unit = 1 meter",
   "bounds": {
     "min_x": -22.0,
@@ -9,6 +9,31 @@
     "min_z": -22.0,
     "max_z": 22.0
   },
+  "terrain": {
+    "transform": {
+      "translation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        44.0,
+        0.1,
+        44.0
+      ]
+    },
+    "tint": [
+      0.16,
+      0.2,
+      0.16
+    ]
+  },
+  "props": [],
   "world_metrics": {
     "player_radius": 0.35,
     "player_height": 1.7,
@@ -18,11 +43,12 @@
   },
   "surfaces": [
     {
-      "id": "surface_mountain_test",
+      "id": "surface_map_01",
       "kind": "mesh",
-      "object": "WALKABLE_Mountain_Test",
+      "object": "WALKABLE_map_01",
       "grid_size": 32,
       "size": 44.0,
+      "max_slope_deg": 45.0,
       "heightfield": {
         "resolution": 32,
         "bounds": {
@@ -1135,6 +1161,5 @@
     "click several points on the hill and verify target height resolves above zero"
   ],
   "mountain_switchback_test": null,
-  "distant_plateau_test": null,
-  "props": []
+  "distant_plateau_test": null
 }

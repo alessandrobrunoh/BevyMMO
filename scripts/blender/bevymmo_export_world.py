@@ -193,31 +193,47 @@ def collect_display_name(meta: bpy.types.Object, fallback: str) -> str:
 # ---------------------------------------------------------------------------
 # Walkable surfaces — mesh + heightfield extraction.
 #
-# Vertices/indices are emitted in world space (Y-up) so the engine can use
-# them verbatim as WalkableMeshData.
+# Blender uses Z-up; the engine uses Y-up. Every coordinate that crosses the
+# export boundary is converted via `_to_engine` so the engine receives
+# vertex/heightfield/transform data it can consume verbatim as
+# WalkableMeshData without further axis swaps.
 #
-# The heightfield is produced by raycasting straight down on a regular grid
-# covering the mesh's XZ footprint. We raycast on the surface mesh itself
-# (not the whole scene) so neighbouring geometry cannot pollute the samples.
+# The heightfield is produced by raycasting straight down (-Z in Blender) on
+# a regular grid covering the mesh's XY footprint. We raycast on the surface
+# mesh itself (not the whole scene) so neighbouring geometry cannot pollute
+# the samples.
 # ---------------------------------------------------------------------------
+
+
+def _to_engine(v) -> list[float]:
+    """Converts a Blender Z-up position to an engine Y-up position.
+
+    Mapping: blender (x, y, z) -> engine (x, z, y).
+    Applied to every vertex, transform translation and raycast hit so the
+    engine can consume the JSON without any axis logic of its own.
+    """
+    return [v[0], v[2], v[1]]
+
+
+def _to_engine_vec(v) -> Vector:
+    """Same as `_to_engine` but returns a mathutils.Vector for raycast math."""
+    return Vector((v[0], v[2], v[1]))
 
 
 def _world_triangles(
     obj: bpy.types.Object, depsgraph
 ) -> tuple[list[list[float]], list[int]]:
-    """Returns (vertices, indices) of the mesh in world space.
+    """Returns (vertices, indices) of the mesh in engine Y-up world space.
 
     Triangles are flattened as `walkable_mesh` expects: vertices as a flat
-    list of `[x, y, z]` and indices as a flat list of u32s in groups of 3.
+    list of `[x, y, z]` (Y-up) and indices as a flat list of u32s in groups
+    of 3.
     """
     evaluated = obj.evaluated_get(depsgraph)
     mesh = evaluated.to_mesh()
     try:
         matrix = evaluated.matrix_world
-        vertices = [
-            [(matrix @ v.co).x, (matrix @ v.co).y, (matrix @ v.co).z]
-            for v in mesh.vertices
-        ]
+        vertices = [_to_engine(matrix @ v.co) for v in mesh.vertices]
         indices: list[int] = []
         for poly in mesh.polygons:
             if len(poly.vertices) < 3:
@@ -237,6 +253,11 @@ def _world_triangles(
 
 
 def _world_xz_bounds(vertices: list[list[float]]) -> dict:
+    """Computes the engine XZ ground-plane bounds from converted vertices.
+
+    Vertices are already in engine Y-up (see `_to_engine`), so X = v[0] and
+    Z = v[2] are the horizontal axes.
+    """
     xs = [v[0] for v in vertices]
     zs = [v[2] for v in vertices]
     return {
@@ -254,11 +275,12 @@ def _build_heightfield(
     raycast_above: float,
     report: ExportReport,
 ) -> dict:
-    """Raycasts straight down on a (resolution+1)² grid to sample surface Y.
+    """Raycasts straight down (-Z in Blender) on a (resolution+1)² grid.
 
-    `raycast_above` is a world Y safely above the mesh's highest vertex so
-    the rays start outside the geometry. Cells that miss become the lowest
-    sampled Y, mirroring the Rust helper in loader.rs.
+    `bounds` are in **engine** XZ (which map to Blender XY). We raycast from
+    above in Blender Z and store the hit Z as the engine Y height. Cells that
+    miss become the lowest sampled height, mirroring the Rust helper in
+    loader.rs.
     """
     side = resolution + 1
     dx = (bounds["max_x"] - bounds["min_x"]) / resolution
@@ -269,8 +291,6 @@ def _build_heightfield(
         )
         return {"resolution": resolution, "bounds": bounds, "heights": []}
 
-    # World-space raycast on the scene: we honour modifiers via the depsgraph
-    # and filter to `obj` only so neighbouring geometry cannot pollute samples.
     depsgraph = bpy.context.evaluated_depsgraph_get()
     scene = bpy.context.scene
 
@@ -278,21 +298,21 @@ def _build_heightfield(
     sampled_min = math.inf
 
     for gz in range(side):
-        z = bounds["min_z"] + dz * gz
+        # Engine Z corresponds to Blender Y on the ground plane.
+        b_y = bounds["min_z"] + dz * gz
         for gx in range(side):
-            x = bounds["min_x"] + dx * gx
-            origin = Vector((x, raycast_above, z))
-            # Cast in world space on the whole scene, then reject anything
-            # that doesn't hit our surface.
-            hit, _loc, _normal, hit_obj, _ = scene.ray_cast(
-                depsgraph, origin, Vector((0, -1, 0))
-            )
+            b_x = bounds["min_x"] + dx * gx
+            # Raycast straight down in Blender Z from above the mesh.
+            origin = Vector((b_x, b_y, raycast_above))
+            result = scene.ray_cast(depsgraph, origin, Vector((0, 0, -1)))
+            hit = result[0]
+            hit_obj = result[4]
             if not hit or hit_obj != obj:
                 continue
-            # _loc is world-space intersection; Y is up.
-            y = _loc.y
-            heights[gx + gz * side] = y
-            sampled_min = min(sampled_min, y)
+            # Blender Z is the height -> store as engine Y.
+            height_z = result[1].z
+            heights[gx + gz * side] = height_z
+            sampled_min = min(sampled_min, height_z)
 
     if sampled_min is math.inf:
         report.warn(
@@ -300,7 +320,6 @@ def _build_heightfield(
         )
         sampled_min = 0.0
 
-    # Fill missed cells with the lowest sampled Y so queries stay finite.
     final_heights = [h if h is not None else sampled_min for h in heights]
     return {"resolution": resolution, "bounds": bounds, "heights": final_heights}
 
@@ -322,6 +341,9 @@ def collect_surfaces(resolution: int, report: ExportReport) -> list[dict]:
             continue
 
         bounds = _world_xz_bounds(vertices)
+        # Vertices are engine Y-up: v[1] = height (Blender Z).
+        # raycast_above needs to be above the mesh in Blender Z, which equals
+        # the max engine Y, so max_y + 10 is correct.
         max_y = max(v[1] for v in vertices)
         min_y = min(v[1] for v in vertices)
         raycast_above = max_y + 10.0
@@ -374,31 +396,41 @@ def _shape_from_props(obj: bpy.types.Object) -> Optional[dict]:
     return None
 
 
-def _as_vec3(raw):
+def _as_vec3(raw, to_engine: bool = True):
+    """Parses a 3-float array/string from a custom property.
+
+    When `to_engine` is True (default), applies the Z-up -> Y-up swap so
+    values authored in Blender's native orientation reach the engine in
+    its own coordinate system.
+    """
+    parsed = None
     if isinstance(raw, (list, tuple)) and len(raw) >= 3:
-        return [float(raw[0]), float(raw[1]), float(raw[2])]
-    if isinstance(raw, str):
+        parsed = [float(raw[0]), float(raw[1]), float(raw[2])]
+    elif isinstance(raw, str):
         parts = [s.strip() for s in raw.split(",") if s.strip()]
         if len(parts) >= 3:
             try:
-                return [float(parts[0]), float(parts[1]), float(parts[2])]
+                parsed = [float(parts[0]), float(parts[1]), float(parts[2])]
             except ValueError:
                 return None
-    return None
+    if parsed is None:
+        return None
+    return _to_engine(parsed) if to_engine else parsed
 
 
 def _transform_to_dict(obj: bpy.types.Object) -> dict:
     loc, rot, scale = obj.matrix_world.decompose()
+    # Convert Blender Z-up to engine Y-up: (x, y, z) -> (x, z, y).
+    engine_loc = _to_engine(loc)
     # Euler YXZ in degrees — matches TransformData::rotation_deg.
     euler = rot.to_euler("YXZ")
+    # Swap Y/Z rotation components to match the axis swap.
+    engine_rot = [math.degrees(euler.x), math.degrees(euler.z), math.degrees(euler.y)]
+    engine_scale = [scale.x, scale.z, scale.y]
     return {
-        "translation": [loc.x, loc.y, loc.z],
-        "rotation_deg": [
-            math.degrees(euler.x),
-            math.degrees(euler.y),
-            math.degrees(euler.z),
-        ],
-        "scale": [scale.x, scale.y, scale.z],
+        "translation": engine_loc,
+        "rotation_deg": engine_rot,
+        "scale": engine_scale,
     }
 
 
@@ -456,9 +488,13 @@ def collect_traversals(report: ExportReport) -> list[dict]:
         start = _as_vec3(custom_prop(obj, "bevymmo_start"))
         end = _as_vec3(custom_prop(obj, "bevymmo_end"))
         if start is None and obj.name + "_start" in bpy.data.objects:
-            start = list(bpy.data.objects[obj.name + "_start"].matrix_world.translation)
+            start = _to_engine(
+                bpy.data.objects[obj.name + "_start"].matrix_world.translation
+            )
         if end is None and obj.name + "_end" in bpy.data.objects:
-            end = list(bpy.data.objects[obj.name + "_end"].matrix_world.translation)
+            end = _to_engine(
+                bpy.data.objects[obj.name + "_end"].matrix_world.translation
+            )
 
         if start is None or end is None:
             report.warn(

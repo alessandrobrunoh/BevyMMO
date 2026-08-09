@@ -29,7 +29,9 @@ pub struct NpcMarker {
 pub fn spawn_npc(commands: &mut Commands, kind_id: KindId, position: Vec3) -> Entity {
     commands
         .spawn((
-            NpcMarker { kind_id: kind_id.clone() },
+            NpcMarker {
+                kind_id: kind_id.clone(),
+            },
             Transform::from_translation(position),
             Name::new(format!("NPC {}", kind_id)),
         ))

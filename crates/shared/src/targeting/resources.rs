@@ -49,7 +49,6 @@ impl CurrentTarget {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

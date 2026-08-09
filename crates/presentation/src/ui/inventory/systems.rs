@@ -31,10 +31,7 @@ pub fn toggle_inventory(
     window_query: Query<(Entity, &CardWindow)>,
     theme: Res<UiTheme>,
     registry: Res<ItemRegistry>,
-    player_query: Query<
-        (&Inventory, &Equipment),
-        With<lightyear::prelude::Controlled>,
-    >,
+    player_query: Query<(&Inventory, &Equipment), With<lightyear::prelude::Controlled>>,
 ) {
     if !keys.just_pressed(KeyCode::KeyI) {
         return;
@@ -189,17 +186,21 @@ fn spawn_inventory_window(
                                             BackgroundColor(theme.button_bg),
                                             ItemSlotButton { index: idx as u8 },
                                         ))
-                                        .with_children(|btn| {
-                                            btn.spawn((
-                                                Text::new(item_name),
-                                                TextFont {
-                                                    font_size: FontSize::Px(theme.button_font_size * 0.85),
-                                                    ..default()
-                                                },
-                                                TextColor(theme.text_color),
-                                                ItemSlotText { index: idx as u8 },
-                                            ));
-                                        });
+                                        .with_children(
+                                            |btn| {
+                                                btn.spawn((
+                                                    Text::new(item_name),
+                                                    TextFont {
+                                                        font_size: FontSize::Px(
+                                                            theme.button_font_size * 0.85,
+                                                        ),
+                                                        ..default()
+                                                    },
+                                                    TextColor(theme.text_color),
+                                                    ItemSlotText { index: idx as u8 },
+                                                ));
+                                            },
+                                        );
                                     }
                                 });
                         });
@@ -212,10 +213,7 @@ pub fn update_inventory_ui(
     mut slot_texts: Query<(&ItemSlotText, &mut Text), Without<WeaponSlotText>>,
     mut weapon_text: Query<&mut Text, With<WeaponSlotText>>,
     registry: Res<ItemRegistry>,
-    player_query: Query<
-        (&Inventory, &Equipment),
-        With<lightyear::prelude::Controlled>,
-    >,
+    player_query: Query<(&Inventory, &Equipment), With<lightyear::prelude::Controlled>>,
 ) {
     let Some((inventory, equipment)) = player_query.iter().next() else {
         return;
@@ -245,26 +243,35 @@ pub fn update_inventory_ui(
     }
 }
 
-type SlotClicksQuery<'w, 's> = Query<'w, 's, (&'static Interaction, &'static ItemSlotButton), (Changed<Interaction>, With<Button>)>;
-type EquipClicksQuery<'w, 's> = Query<'w, 's, (&'static Interaction, &'static EquipButton), (Changed<Interaction>, With<Button>)>;
-type UnequipClicksQuery<'w, 's> = Query<'w, 's, (&'static Interaction, &'static UnequipButton), (Changed<Interaction>, With<Button>)>;
+type SlotClicksQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static ItemSlotButton),
+    (Changed<Interaction>, With<Button>),
+>;
+type EquipClicksQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static EquipButton),
+    (Changed<Interaction>, With<Button>),
+>;
+type UnequipClicksQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static UnequipButton),
+    (Changed<Interaction>, With<Button>),
+>;
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_inventory_interactions(
     mut state: ResMut<InventoryUiState>,
     slot_clicks: SlotClicksQuery,
-    weapon_clicks: Query<
-        &Interaction,
-        (Changed<Interaction>, With<WeaponSlotButton>),
-    >,
+    weapon_clicks: Query<&Interaction, (Changed<Interaction>, With<WeaponSlotButton>)>,
     equip_clicks: EquipClicksQuery,
     unequip_clicks: UnequipClicksQuery,
     mut equip_senders: Query<&mut MessageSender<EquipItemCommand>, With<ConnectedClient>>,
     mut unequip_senders: Query<&mut MessageSender<UnequipItemCommand>, With<ConnectedClient>>,
-    player_query: Query<
-        (&Inventory, &Equipment),
-        With<lightyear::prelude::Controlled>,
-    >,
+    player_query: Query<(&Inventory, &Equipment), With<lightyear::prelude::Controlled>>,
     registry: Res<ItemRegistry>,
     theme: Res<UiTheme>,
     all_cards: Query<(Entity, &CardWindow)>,

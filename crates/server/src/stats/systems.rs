@@ -56,10 +56,7 @@ pub fn apply_healing(mut events: MessageReader<HealEvent>, mut targets: Query<&m
 }
 
 /// Observer handler for `HealEvent` triggers.
-pub fn on_heal_triggered(
-    trigger: On<HealEvent>,
-    mut targets: Query<&mut VitalStats>,
-) {
+pub fn on_heal_triggered(trigger: On<HealEvent>, mut targets: Query<&mut VitalStats>) {
     let event = trigger.event();
     let Ok(mut vital) = targets.get_mut(event.target) else {
         return;

@@ -28,4 +28,3 @@ pub struct Respawning {
 
 /// Respawn duration of the enemy after death, in seconds.
 pub const ENEMY_RESPAWN_SECONDS: f32 = 10.0;
-

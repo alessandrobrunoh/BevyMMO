@@ -5,8 +5,6 @@ use bevy_asset_loader::prelude::*;
 pub struct PlayerAssets {
     #[asset(path = "models/player.glb#Scene0")]
     pub scene: Handle<WorldAsset>,
-
-
 }
 
 #[derive(AssetCollection, Resource)]

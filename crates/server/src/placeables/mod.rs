@@ -16,9 +16,11 @@ use bevy::prelude::*;
 
 use bevymmo_shared::network::mode::has_server;
 
-use crate::placeables::creatures::{spawn_placeables_on_map_load, PlaceablesSpawned, PlayerSpawnPoints};
-use crate::placeables::persistence::{apply_prop_overrides_on_map_load, PropOverridesApplied};
 use crate::persistence::PersistenceRuntime;
+use crate::placeables::creatures::{
+    spawn_placeables_on_map_load, PlaceablesSpawned, PlayerSpawnPoints,
+};
+use crate::placeables::persistence::{apply_prop_overrides_on_map_load, PropOverridesApplied};
 use crate::world::ServerWorldMap;
 
 /// Wires server-only placeable systems.

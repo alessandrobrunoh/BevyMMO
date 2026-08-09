@@ -6,9 +6,7 @@
 
 use bevy::prelude::Vec3;
 
-use crate::spells::{
-    AoeEffect, AoeTargeting, Spell, SpellCastContext, SpellConfig, SpellId,
-};
+use crate::spells::{AoeEffect, AoeTargeting, Spell, SpellCastContext, SpellConfig, SpellId};
 
 pub struct MeteoriteSpell;
 

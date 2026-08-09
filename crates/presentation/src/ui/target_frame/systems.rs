@@ -1,14 +1,14 @@
 //! Sistemi per il target frame (UI panel con info sul target selezionato).
 
-use bevymmo_shared::entity::components::{EntityKind, PlayerName};
-use bevymmo_shared::network::protocol::Position;
-use bevymmo_shared::stats::components::VitalStats;
-use bevymmo_shared::targeting::CurrentTarget;
 use crate::ui::bar::spawn_bar;
 use crate::ui::target_frame::components::{TargetFrame, TargetFrameParts, TargetFrameTarget};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 use bevy::prelude::*;
+use bevymmo_shared::entity::components::{EntityKind, PlayerName};
+use bevymmo_shared::network::protocol::Position;
+use bevymmo_shared::stats::components::VitalStats;
+use bevymmo_shared::targeting::CurrentTarget;
 
 const FRAME_WIDTH: f32 = 200.0;
 const HP_BAR_HEIGHT: f32 = 12.0;

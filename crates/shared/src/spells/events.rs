@@ -68,4 +68,3 @@ pub struct SpellReleaseRequest {
     /// Spell to release.
     pub spell_id: SpellId,
 }
-

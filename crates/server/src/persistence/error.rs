@@ -44,4 +44,3 @@ impl From<sea_orm::DbErr> for PersistenceError {
 
 /// Convenience alias used in repository signatures.
 pub type PersistenceResult<T> = Result<T, PersistenceError>;
-

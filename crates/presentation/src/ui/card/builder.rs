@@ -10,8 +10,8 @@ use std::borrow::Cow;
 use bevy::prelude::*;
 
 use super::components::{
-    CardBody, CardExclusivityPolicy, CardFooter, CardHeader, CardHeaderDragHandle, CardKind, CardPositioning,
-    CardWindow, CloseCardButton, DraggableCard,
+    CardBody, CardExclusivityPolicy, CardFooter, CardHeader, CardHeaderDragHandle, CardKind,
+    CardPositioning, CardWindow, CloseCardButton, DraggableCard,
 };
 use crate::ui::theme::UiTheme;
 
@@ -146,12 +146,24 @@ impl<'a> CardBuilder<'a> {
 
         let (left, top) = match positioning {
             CardPositioning::Center => (
-                Val::Px(match width { Val::Px(w) => (1920.0 - w) * 0.5, _ => 500.0 }),
-                Val::Px(match height { Val::Px(h) => (1080.0 - h) * 0.5, _ => 300.0 }),
+                Val::Px(match width {
+                    Val::Px(w) => (1920.0 - w) * 0.5,
+                    _ => 500.0,
+                }),
+                Val::Px(match height {
+                    Val::Px(h) => (1080.0 - h) * 0.5,
+                    _ => 300.0,
+                }),
             ),
             CardPositioning::Right => (
-                Val::Px(match width { Val::Px(w) => 1920.0 - w - 40.0, _ => 1200.0 }),
-                Val::Px(match height { Val::Px(h) => (1080.0 - h) * 0.5, _ => 300.0 }),
+                Val::Px(match width {
+                    Val::Px(w) => 1920.0 - w - 40.0,
+                    _ => 1200.0,
+                }),
+                Val::Px(match height {
+                    Val::Px(h) => (1080.0 - h) * 0.5,
+                    _ => 300.0,
+                }),
             ),
         };
 
@@ -337,8 +349,6 @@ impl HeaderStyle {
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

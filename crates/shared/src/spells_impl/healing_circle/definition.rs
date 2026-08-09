@@ -3,9 +3,7 @@
 //! Spawns a healing circle on the ground that applies a HoT to entities
 //! that walk into it.
 
-use crate::spells::{
-    AoeEffect, AoeTargeting, Spell, SpellCastContext, SpellConfig, SpellId,
-};
+use crate::spells::{AoeEffect, AoeTargeting, Spell, SpellCastContext, SpellConfig, SpellId};
 use crate::stats::events::{ModifierEffect, ModifierKind};
 
 pub struct HealingCircleSpell;

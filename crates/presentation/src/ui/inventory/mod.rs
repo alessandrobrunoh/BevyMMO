@@ -7,8 +7,8 @@ pub mod systems;
 use bevy::prelude::*;
 use bevymmo_shared::network::mode::has_client;
 
-use components::InventorySelection;
 use crate::game_state::{GameScreen, Screen};
+use components::InventorySelection;
 
 /// Global state resource for the Inventory UI.
 #[derive(Resource, Default)]

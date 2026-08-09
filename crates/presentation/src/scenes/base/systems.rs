@@ -1,6 +1,5 @@
 //! Lifecycle of the game scene, driven by [`GameScreen`].
 
-use bevy::color::Color;
 use bevy::prelude::*;
 use lightyear::prelude::Controlled;
 
@@ -39,17 +38,15 @@ pub fn update_game_scene_lifecycle(
     mut commands: Commands,
     screen: Res<GameScreen>,
     roots: Query<Entity, With<GameSceneRoot>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let in_game = matches!(screen.0, Screen::InGame | Screen::Paused);
     let has_root = roots.iter().next().is_some();
 
     if in_game && !has_root {
-        spawn_game_scene(&mut commands, &mut meshes, &mut materials);
+        spawn_game_scene(&mut commands);
     } else if !in_game && has_root {
         for root in roots.iter() {
-            // recursive despawn: removes camera, light, and ground.
+            // recursive despawn: removes camera and light.
             commands.entity(root).despawn();
         }
     }
@@ -84,16 +81,9 @@ pub fn follow_controlled_player(
     camera_transform.look_at(look_at, Vec3::Y);
 }
 
-fn spawn_game_scene(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-) {
+fn spawn_game_scene(commands: &mut Commands) {
     let cam_transform = Transform::from_xyz(0.0, 25.0, 25.0).looking_at(Vec3::ZERO, Vec3::Y);
     let light_transform = Transform::from_xyz(10.0, 20.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y);
-
-    let plane_mesh = meshes.add(Plane3d::default().mesh().size(50.0, 50.0));
-    let plane_mat = materials.add(Color::srgb(0.2, 0.2, 0.2));
 
     commands
         .spawn((
@@ -118,21 +108,15 @@ fn spawn_game_scene(
                 },
                 light_transform,
             ));
-
-            parent.spawn((
-                Name::new("Ground"),
-                Mesh3d(plane_mesh),
-                MeshMaterial3d::<StandardMaterial>(plane_mat),
-            ));
         });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevymmo_shared::network::protocol::{EntityColor, Position};
     use crate::renderer::RendererPlugin;
     use crate::scenes::base::BaseScenePlugin;
+    use bevymmo_shared::network::protocol::{EntityColor, Position};
 
     fn test_app() -> App {
         let mut app = App::new();
@@ -270,7 +254,10 @@ mod tests {
         app.update();
         let world = app.world();
         let entity_ref = world.entity(entity);
-        assert!(entity_ref.get::<Mesh3d>().is_none(), "Mesh3d should disappear");
+        assert!(
+            entity_ref.get::<Mesh3d>().is_none(),
+            "Mesh3d should disappear"
+        );
         assert!(
             entity_ref
                 .get::<MeshMaterial3d<StandardMaterial>>()

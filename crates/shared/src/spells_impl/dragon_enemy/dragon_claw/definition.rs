@@ -1,6 +1,5 @@
 //! Definition of the `dragon_claw` spell.
 
-
 use crate::spells::{Spell, SpellCastContext, SpellConfig, SpellId};
 
 /// Instant melee strike on the current target.

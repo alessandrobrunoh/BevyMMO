@@ -142,4 +142,3 @@ pub struct CastProgress {
     pub channel_tick_accumulator_seconds: f32,
     pub tick_interval_seconds: f32,
 }
-

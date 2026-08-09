@@ -13,9 +13,9 @@ use lightyear::prelude::client::{InputDelayConfig, InputTimelineConfig};
 use lightyear::prelude::*;
 
 use crate::network::runtime::{
-    receive_messages, receive_spell_visual_effects, DisconnectRequested, PendingClientCleanup,
-    PendingJoinRequest, handle_controlled_spawn, handle_interpolated_spawn,
-    handle_predicted_spawn, lower_controlled_saturation,
+    handle_controlled_spawn, handle_interpolated_spawn, handle_predicted_spawn,
+    lower_controlled_saturation, receive_messages, receive_spell_visual_effects,
+    DisconnectRequested, PendingClientCleanup, PendingJoinRequest,
 };
 use crate::network::types::{ClientConnectionConfig, ConnectedClient};
 

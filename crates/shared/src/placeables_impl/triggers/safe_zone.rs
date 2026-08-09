@@ -1,19 +1,27 @@
 //! Safe zone trigger: marks the inside region as safe (no combat).
 
-use std::sync::Arc;
 use crate::placeables::{
-    AssetHint, KindId, PlaceableDefaults, PlaceableDefinition, PlaceableRegistry,
-    TriggerConfig, TriggerEvent, TriggerPlaceable, TriggerShape,
+    AssetHint, KindId, PlaceableDefaults, PlaceableDefinition, PlaceableRegistry, TriggerConfig,
+    TriggerEvent, TriggerPlaceable, TriggerShape,
 };
 use crate::world::TransformData;
+use std::sync::Arc;
 
 pub struct SafeZoneTrigger;
 
 impl PlaceableDefinition for SafeZoneTrigger {
-    fn id(&self) -> KindId { KindId::new("trigger_safe_zone") }
-    fn display_name(&self) -> &'static str { "Safe Zone" }
-    fn icon(&self) -> &'static str { "🛡️" }
-    fn asset_hint(&self) -> AssetHint { AssetHint::Invisible }
+    fn id(&self) -> KindId {
+        KindId::new("trigger_safe_zone")
+    }
+    fn display_name(&self) -> &'static str {
+        "Safe Zone"
+    }
+    fn icon(&self) -> &'static str {
+        "🛡️"
+    }
+    fn asset_hint(&self) -> AssetHint {
+        AssetHint::Invisible
+    }
     fn defaults(&self) -> PlaceableDefaults {
         PlaceableDefaults {
             transform: TransformData {

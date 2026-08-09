@@ -1,19 +1,27 @@
 //! Treasure chest that rolls a loot table on open.
 
-use std::sync::Arc;
 use crate::placeables::{
     AssetHint, InteractablePlaceable, InteractionKind, KindId, PlaceableDefaults,
     PlaceableDefinition, PlaceableRegistry,
 };
 use crate::world::TransformData;
+use std::sync::Arc;
 
 pub struct TreasureChestInteractable;
 
 impl PlaceableDefinition for TreasureChestInteractable {
-    fn id(&self) -> KindId { KindId::new("interactable_treasure_chest") }
-    fn display_name(&self) -> &'static str { "Treasure Chest" }
-    fn icon(&self) -> &'static str { "🧰" }
-    fn asset_hint(&self) -> AssetHint { AssetHint::Scene("models/interactables/treasure_chest.glb") }
+    fn id(&self) -> KindId {
+        KindId::new("interactable_treasure_chest")
+    }
+    fn display_name(&self) -> &'static str {
+        "Treasure Chest"
+    }
+    fn icon(&self) -> &'static str {
+        "🧰"
+    }
+    fn asset_hint(&self) -> AssetHint {
+        AssetHint::Scene("models/interactables/treasure_chest.glb")
+    }
     fn defaults(&self) -> PlaceableDefaults {
         PlaceableDefaults {
             transform: TransformData {
@@ -30,7 +38,9 @@ impl PlaceableDefinition for TreasureChestInteractable {
 
 impl InteractablePlaceable for TreasureChestInteractable {
     fn interaction(&self) -> InteractionKind {
-        InteractionKind::OpenChest { loot_table_id: "loot_chest_basic".to_string() }
+        InteractionKind::OpenChest {
+            loot_table_id: "loot_chest_basic".to_string(),
+        }
     }
 }
 

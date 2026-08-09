@@ -106,8 +106,6 @@ impl Plugin for EditorPlugin {
 
 /// Populates the [`PlaceableRegistry`] with the default catalog so the editor
 /// validates `prop.kind` against the same definitions as the server/client.
-fn register_editor_placeables(
-    mut registry: ResMut<bevymmo_shared::placeables::PlaceableRegistry>,
-) {
+fn register_editor_placeables(mut registry: ResMut<bevymmo_shared::placeables::PlaceableRegistry>) {
     bevymmo_shared::placeables_impl::register_default_placeables(&mut registry);
 }

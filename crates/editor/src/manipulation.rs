@@ -77,9 +77,20 @@ pub fn writeback_manifest(
     mut state: ResMut<EditorState>,
     selected_prop_q: Query<
         (&EditorProp, &Transform),
-        (Without<EditorTerrain>, With<SelectedMarker>, Changed<Transform>),
+        (
+            Without<EditorTerrain>,
+            With<SelectedMarker>,
+            Changed<Transform>,
+        ),
     >,
-    terrain_q: Query<&Transform, (With<EditorTerrain>, With<SelectedMarker>, Changed<Transform>)>,
+    terrain_q: Query<
+        &Transform,
+        (
+            With<EditorTerrain>,
+            With<SelectedMarker>,
+            Changed<Transform>,
+        ),
+    >,
 ) {
     let Some(selected) = state.selected else {
         return;

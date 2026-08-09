@@ -1,10 +1,10 @@
 use bevy::prelude::*;
 
-use bevymmo_shared::network::protocol::*;
-use bevymmo_shared::entity::components::EntityKind;
-use std::collections::HashMap;
-use crate::game_state::{GameScreen, Screen};
 use crate::assets::{BossDragonAssets, PlayerAssets};
+use crate::game_state::{GameScreen, Screen};
+use bevymmo_shared::entity::components::EntityKind;
+use bevymmo_shared::network::protocol::*;
+use std::collections::HashMap;
 
 #[derive(Resource)]
 pub struct RendererAssets {
@@ -24,7 +24,12 @@ impl RendererAssets {
         let key = [r.to_bits(), g.to_bits(), b.to_bits()];
         self.color_materials
             .entry(key)
-            .or_insert_with(|| materials.add(StandardMaterial { base_color: color, ..default() }))
+            .or_insert_with(|| {
+                materials.add(StandardMaterial {
+                    base_color: color,
+                    ..default()
+                })
+            })
             .clone()
     }
 }
@@ -63,7 +68,6 @@ struct PlayerModelAnchored;
 const PLAYER_SCENE_SCALE: f32 = 1.0;
 const BOSS_DRAGON_SCENE_SCALE: f32 = 0.12;
 
-
 pub struct RendererPlugin;
 
 impl Plugin for RendererPlugin {
@@ -72,7 +76,13 @@ impl Plugin for RendererPlugin {
         app.add_observer(on_entity_position_added);
         app.add_systems(
             Update,
-            (spawn_entity_meshes, sync_transforms, anchor_player_model, update_colors).chain()
+            (
+                spawn_entity_meshes,
+                sync_transforms,
+                anchor_player_model,
+                update_colors,
+            )
+                .chain()
                 .run_if(in_game_or_paused),
         )
         .add_systems(Update, cleanup_entity_render.run_if(not_in_game));
@@ -121,7 +131,7 @@ fn on_entity_position_added(
                     base_color: color.0,
                     emissive: LinearRgba::rgb(0.1, 0.7, 1.0),
                     ..default()
-                })
+                }),
             )
         };
         commands.entity(entity).insert((
@@ -178,7 +188,16 @@ fn spawn_entity_meshes(
     player_assets: Option<Res<PlayerAssets>>,
     dragon_assets: Option<Res<BossDragonAssets>>,
     mut renderer_assets: Option<ResMut<RendererAssets>>,
-    entities: Query<(Entity, &Position, &EntityColor, Option<&EntityKind>, Option<&ProjectileVisual>), Without<RenderedEntity>>,
+    entities: Query<
+        (
+            Entity,
+            &Position,
+            &EntityColor,
+            Option<&EntityKind>,
+            Option<&ProjectileVisual>,
+        ),
+        Without<RenderedEntity>,
+    >,
 ) {
     for (entity, position, color, kind, projectile_visual) in entities.iter() {
         let is_projectile = projectile_visual.is_some();
@@ -192,7 +211,7 @@ fn spawn_entity_meshes(
                         base_color: color.0,
                         emissive: LinearRgba::rgb(0.1, 0.7, 1.0),
                         ..default()
-                    })
+                    }),
                 )
             };
             commands.entity(entity).insert((
@@ -208,7 +227,7 @@ fn spawn_entity_meshes(
                     commands.entity(entity).insert((
                         WorldAssetRoot(assets.scene.clone()),
                         Transform::from_translation(position.0)
-                                .with_scale(Vec3::splat(PLAYER_SCENE_SCALE)),
+                            .with_scale(Vec3::splat(PLAYER_SCENE_SCALE)),
                         PlayerModelRoot,
                         RenderedEntity,
                     ));
@@ -226,7 +245,7 @@ fn spawn_entity_meshes(
                 let (mesh, material) = if let Some(ra) = renderer_assets.as_mut() {
                     (
                         ra.fallback_mesh_small.clone(),
-                        ra.get_or_create_color_material(&mut materials, color.0)
+                        ra.get_or_create_color_material(&mut materials, color.0),
                     )
                 } else {
                     (
@@ -234,7 +253,7 @@ fn spawn_entity_meshes(
                         materials.add(StandardMaterial {
                             base_color: color.0,
                             ..default()
-                        })
+                        }),
                     )
                 };
                 commands.entity(entity).insert((
@@ -311,7 +330,6 @@ fn update_colors(
         }
     }
 }
-
 
 fn cleanup_entity_render(mut commands: Commands, entities: Query<Entity, With<RenderedEntity>>) {
     for entity in entities.iter() {

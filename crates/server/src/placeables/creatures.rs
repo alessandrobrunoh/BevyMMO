@@ -123,7 +123,9 @@ fn spawn_boss(
         combat,
         vital,
         // Slice 5: override the default BossSpellbook with the per-kind rotation.
-        BossSpellbook { spells: config.rotation },
+        BossSpellbook {
+            spells: config.rotation,
+        },
     ));
     entity
 }
@@ -224,8 +226,13 @@ mod tests {
         let goblin_id = KindId::new("mob_goblin");
         let entity = {
             let mut commands = app.world_mut().commands();
-            spawn_creature(&mut commands, &registry, &goblin_id, Vec3::new(1.0, 0.0, 2.0))
-                .expect("goblin should spawn")
+            spawn_creature(
+                &mut commands,
+                &registry,
+                &goblin_id,
+                Vec3::new(1.0, 0.0, 2.0),
+            )
+            .expect("goblin should spawn")
         };
         app.update();
 

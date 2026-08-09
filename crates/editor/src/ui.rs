@@ -449,9 +449,7 @@ fn palette_ui(
     ui.label(theme::caption("Click to set the active brush.", palette));
     ui.add_space(4.0);
 
-    ui.add(
-        egui::TextEdit::singleline(&mut state.palette_search).hint_text("Filter kinds…"),
-    );
+    ui.add(egui::TextEdit::singleline(&mut state.palette_search).hint_text("Filter kinds…"));
     ui.add_space(4.0);
 
     let search = state.palette_search.to_lowercase();
@@ -551,7 +549,10 @@ fn format_kind_tooltip(def: &dyn PlaceableDefinition, id: &str) -> String {
 /// saved maps, but keeps the outliner readable for unknown ids).
 fn kind_icon_for(registry: &PlaceableRegistry, kind: &str) -> &'static str {
     let key = KindId::new(kind.to_string());
-    registry.props.get(&key).map(|d| d.icon())
+    registry
+        .props
+        .get(&key)
+        .map(|d| d.icon())
         .or_else(|| registry.enemies.get(&key).map(|d| d.icon()))
         .or_else(|| registry.bosses.get(&key).map(|d| d.icon()))
         .or_else(|| registry.npcs.get(&key).map(|d| d.icon()))
@@ -702,7 +703,9 @@ fn right_panel_ui(
             return;
         };
 
-        prop_inspector(ui, commands, state, registry, selected_q, entity, prop_index, palette);
+        prop_inspector(
+            ui, commands, state, registry, selected_q, entity, prop_index, palette,
+        );
     });
 }
 
@@ -803,9 +806,11 @@ fn prop_inspector(
         ui.collapsing("Tint", |ui| {
             if uses_scene {
                 ui.label(
-                    egui::RichText::new("\u{26a0}\u{fe0f} Tint only affects placeholder cuboids, not GLB models.")
-                        .small()
-                        .color(palette.accent_soft),
+                    egui::RichText::new(
+                        "\u{26a0}\u{fe0f} Tint only affects placeholder cuboids, not GLB models.",
+                    )
+                    .small()
+                    .color(palette.accent_soft),
                 );
                 ui.add_space(2.0);
             }

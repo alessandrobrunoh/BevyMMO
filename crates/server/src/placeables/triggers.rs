@@ -23,7 +23,9 @@ pub struct TriggerMarker {
 pub fn spawn_trigger(commands: &mut Commands, kind_id: KindId, position: Vec3) -> Entity {
     commands
         .spawn((
-            TriggerMarker { kind_id: kind_id.clone() },
+            TriggerMarker {
+                kind_id: kind_id.clone(),
+            },
             Transform::from_translation(position),
             Name::new(format!("Trigger {}", kind_id)),
         ))

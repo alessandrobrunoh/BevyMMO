@@ -9,4 +9,3 @@ use bevy::prelude::*;
 /// and has no spellbook.
 #[derive(Component, Debug, Default, Clone, Copy)]
 pub struct Dummy;
-

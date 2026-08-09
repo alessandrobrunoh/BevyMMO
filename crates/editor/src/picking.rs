@@ -44,10 +44,12 @@ impl PropMeshRegistry {
         let key = color_key(color);
         self.materials
             .entry(key)
-            .or_insert_with(|| materials.add(StandardMaterial {
-                base_color: color,
-                ..default()
-            }))
+            .or_insert_with(|| {
+                materials.add(StandardMaterial {
+                    base_color: color,
+                    ..default()
+                })
+            })
             .clone()
     }
 }
@@ -66,14 +68,7 @@ pub struct PickBodyCache {
 /// Rebuilds the pick cache only when a prop/terrain transform actually changes or count differs.
 pub fn refresh_pick_cache(
     mut cache: ResMut<PickBodyCache>,
-    changed_props: Query<
-        (),
-        Or<(
-            Changed<Transform>,
-            Added<EditorProp>,
-            Added<EditorTerrain>,
-        )>,
-    >,
+    changed_props: Query<(), Or<(Changed<Transform>, Added<EditorProp>, Added<EditorTerrain>)>>,
     prop_q: Query<(Entity, &EditorProp, &Transform), Without<EditorTerrain>>,
     terrain_q: Query<(Entity, &Transform), (With<EditorTerrain>, Without<EditorProp>)>,
 ) {
@@ -272,7 +267,8 @@ pub fn place_or_select(
 
     match state.tool {
         EditorTool::Select | EditorTool::Move | EditorTool::Rotate | EditorTool::Scale => {
-            if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &cache.bodies) {
+            if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &cache.bodies)
+            {
                 set_selected(&mut commands, &selected_q, entity);
                 state.selected = Some(entity);
             } else {
@@ -315,7 +311,8 @@ pub fn place_or_select(
             );
         }
         EditorTool::Erase => {
-            if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &cache.bodies) {
+            if let Some(entity) = pick_closest(camera, camera_transform, cursor_pos, &cache.bodies)
+            {
                 if let Ok((entity, prop, _)) = prop_q.get(entity) {
                     history.push(&state.manifest);
                     state.validation_dirty = true;

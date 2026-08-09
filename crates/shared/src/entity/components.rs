@@ -63,4 +63,3 @@ pub enum EntityKind {
     /// Hostile enemies (enemy, boss, aggressive creatures).
     Hostile,
 }
-

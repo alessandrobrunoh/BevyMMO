@@ -1,19 +1,27 @@
 //! Wooden door that toggles open / closed on use.
 
-use std::sync::Arc;
 use crate::placeables::{
     AssetHint, InteractablePlaceable, InteractionKind, KindId, PlaceableDefaults,
     PlaceableDefinition, PlaceableRegistry,
 };
 use crate::world::TransformData;
+use std::sync::Arc;
 
 pub struct WoodenDoorInteractable;
 
 impl PlaceableDefinition for WoodenDoorInteractable {
-    fn id(&self) -> KindId { KindId::new("interactable_wooden_door") }
-    fn display_name(&self) -> &'static str { "Wooden Door" }
-    fn icon(&self) -> &'static str { "🚪" }
-    fn asset_hint(&self) -> AssetHint { AssetHint::Scene("models/interactables/wooden_door.glb") }
+    fn id(&self) -> KindId {
+        KindId::new("interactable_wooden_door")
+    }
+    fn display_name(&self) -> &'static str {
+        "Wooden Door"
+    }
+    fn icon(&self) -> &'static str {
+        "🚪"
+    }
+    fn asset_hint(&self) -> AssetHint {
+        AssetHint::Scene("models/interactables/wooden_door.glb")
+    }
     fn defaults(&self) -> PlaceableDefaults {
         PlaceableDefaults {
             transform: TransformData {
@@ -29,7 +37,9 @@ impl PlaceableDefinition for WoodenDoorInteractable {
 }
 
 impl InteractablePlaceable for WoodenDoorInteractable {
-    fn interaction(&self) -> InteractionKind { InteractionKind::OpenDoor }
+    fn interaction(&self) -> InteractionKind {
+        InteractionKind::OpenDoor
+    }
 }
 
 pub fn register(registry: &mut PlaceableRegistry) {

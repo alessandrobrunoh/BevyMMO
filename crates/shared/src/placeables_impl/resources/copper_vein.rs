@@ -1,19 +1,27 @@
 //! Copper ore vein resource node with a GLB model.
 
-use std::sync::Arc;
 use crate::placeables::{
-    AssetHint, KindId, PlaceableDefaults, PlaceableDefinition, PlaceableRegistry,
-    ResourceConfig, ResourceNodePlaceable,
+    AssetHint, KindId, PlaceableDefaults, PlaceableDefinition, PlaceableRegistry, ResourceConfig,
+    ResourceNodePlaceable,
 };
 use crate::world::TransformData;
+use std::sync::Arc;
 
 pub struct CopperVeinDefinition;
 
 impl PlaceableDefinition for CopperVeinDefinition {
-    fn id(&self) -> KindId { KindId::new("resource_copper_vein") }
-    fn display_name(&self) -> &'static str { "Copper Vein" }
-    fn icon(&self) -> &'static str { "🪨" }
-    fn asset_hint(&self) -> AssetHint { AssetHint::Scene("models/resources/copper_vein.glb") }
+    fn id(&self) -> KindId {
+        KindId::new("resource_copper_vein")
+    }
+    fn display_name(&self) -> &'static str {
+        "Copper Vein"
+    }
+    fn icon(&self) -> &'static str {
+        "🪨"
+    }
+    fn asset_hint(&self) -> AssetHint {
+        AssetHint::Scene("models/resources/copper_vein.glb")
+    }
     fn defaults(&self) -> PlaceableDefaults {
         PlaceableDefaults {
             transform: TransformData {

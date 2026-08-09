@@ -31,19 +31,15 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(PropOverridesTable::Table)
                     .if_not_exists()
-                    .col(
-                        ColumnDef::new(PropOverridesTable::MapId)
-                            .text()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(PropOverridesTable::PropId)
-                            .text()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(PropOverridesTable::MapId).text().not_null())
+                    .col(ColumnDef::new(PropOverridesTable::PropId).text().not_null())
                     // JSON-serialized `TransformData`, or NULL when the override
                     // does not touch the transform (e.g. a pure tint or removal).
-                    .col(ColumnDef::new(PropOverridesTable::TransformJson).text().null())
+                    .col(
+                        ColumnDef::new(PropOverridesTable::TransformJson)
+                            .text()
+                            .null(),
+                    )
                     // JSON `[f32; 3]` tint, or NULL when unchanged.
                     .col(ColumnDef::new(PropOverridesTable::Tint).json().null())
                     // When the prop was removed at runtime; NULL = not removed.
@@ -63,7 +59,7 @@ impl MigrationTrait for Migration {
                         Index::create()
                             .name("pk_prop_overrides")
                             .col(PropOverridesTable::MapId)
-                            .col(PropOverridesTable::PropId)
+                            .col(PropOverridesTable::PropId),
                     )
                     .to_owned(),
             )

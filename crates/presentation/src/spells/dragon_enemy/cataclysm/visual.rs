@@ -8,8 +8,8 @@ use bevy::color::Color;
 use bevy::prelude::*;
 
 use bevymmo_shared::network::protocol::SpellVisualEffect;
-use bevymmo_shared::spells_impl::dragon_enemy::FIRE_ORANGE;
 use bevymmo_shared::spells_impl::dragon_enemy::cataclysm::CataclysmSpell;
+use bevymmo_shared::spells_impl::dragon_enemy::FIRE_ORANGE;
 
 use crate::spells::effects::SpellVisual;
 

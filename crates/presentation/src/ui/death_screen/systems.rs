@@ -95,7 +95,12 @@ pub fn setup_death_screen(mut commands: Commands, theme: Res<UiTheme>) {
 pub fn update_death_screen_visibility(
     screen: Res<GameScreen>,
     client_config: Option<Res<ClientConnectionConfig>>,
-    players: Query<(&EntityState, Option<&VitalStats>, Option<&PlayerId>, Has<Controlled>)>,
+    players: Query<(
+        &EntityState,
+        Option<&VitalStats>,
+        Option<&PlayerId>,
+        Has<Controlled>,
+    )>,
     mut roots: Query<&mut Node, With<DeathScreenRoot>>,
 ) {
     let local_client_id = client_config.as_deref().map(|c| c.client_id);
@@ -156,7 +161,12 @@ pub fn update_respawn_button_visuals(
 }
 
 fn local_player_state<'a>(
-    players: &'a Query<(&EntityState, Option<&VitalStats>, Option<&PlayerId>, Has<Controlled>)>,
+    players: &'a Query<(
+        &EntityState,
+        Option<&VitalStats>,
+        Option<&PlayerId>,
+        Has<Controlled>,
+    )>,
     local_client_id: Option<u64>,
 ) -> Option<(&'a EntityState, Option<&'a VitalStats>)> {
     // Prima cerca per `Controlled` (player locale predetto), poi fallback su
@@ -178,8 +188,8 @@ fn local_player_state<'a>(
 mod tests {
     use super::*;
     use crate::game_state::{GameScreen, Screen};
-    use bevymmo_shared::entity::components::EntityState;
     use crate::ui::theme::UiTheme;
+    use bevymmo_shared::entity::components::EntityState;
     use lightyear::prelude::Controlled;
 
     fn test_app() -> App {

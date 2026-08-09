@@ -7,4 +7,3 @@ use bevy::prelude::*;
 /// remain in `crate::network::protocol` because they are tied to lightyear replication.
 #[derive(Component, Debug, Default, Clone, Copy)]
 pub struct Player;
-

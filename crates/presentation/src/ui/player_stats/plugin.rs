@@ -25,8 +25,8 @@ impl Plugin for PlayerStatsPlugin {
 mod tests {
     use super::*;
     use crate::game_state::{GameScreen, Screen};
-    use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
     use crate::ui::theme::UiTheme;
+    use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
     use lightyear::prelude::Controlled;
 
     fn test_app() -> App {

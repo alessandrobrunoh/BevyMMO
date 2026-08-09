@@ -3,11 +3,8 @@
 //! Instant expanding ring attack from caster (radius 10.0) that applies
 //! moderate damage and a 0.4s Stun to all enemies in range.
 
-
 use crate::crowd_control::CrowdControlKind;
-use crate::spells::{
-    AoeEffect, AoeTargeting, Spell, SpellCastContext, SpellConfig, SpellId,
-};
+use crate::spells::{AoeEffect, AoeTargeting, Spell, SpellCastContext, SpellConfig, SpellId};
 
 pub struct WingBuffetSpell;
 

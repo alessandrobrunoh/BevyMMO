@@ -14,7 +14,6 @@ use bevymmo_shared::network::protocol::{SpellCastEnded, SpellCastProgress, Spell
 use bevymmo_shared::spells::events::{SpellCastRequest, SpellReleaseRequest};
 use bevymmo_shared::spells::registry::SpellRegistry;
 
-
 use crate::spells::projectile::update_homing_projectiles;
 use crate::spells::systems::*;
 
@@ -35,7 +34,10 @@ impl Plugin for SpellsServerPlugin {
             .add_message::<SpellVisualEffect>()
             .add_message::<SpellCastProgress>()
             .add_message::<SpellCastEnded>()
-            .add_systems(Startup, bevymmo_shared::spells_impl::register_default_spells)
+            .add_systems(
+                Startup,
+                bevymmo_shared::spells_impl::register_default_spells,
+            )
             .add_systems(
                 FixedUpdate,
                 (

@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 const ASSETS_DIR_NAME: &str = "assets";
 
 /// Default map loaded by client and server when no override is provided.
-const DEFAULT_MAP_ID: &str = "walkable_world_map";
+const DEFAULT_MAP_ID: &str = "rolling_hills_test";
 
 /// Resolves the absolute path to the workspace `assets` directory.
 ///
@@ -103,9 +103,9 @@ mod tests {
     }
 
     #[test]
-    fn default_map_file_points_at_walkable_world_map() {
+    fn default_map_file_points_at_rolling_hills_test() {
         let path = default_map_file();
-        assert!(path.ends_with("maps/walkable_world_map.glb"));
+        assert!(path.ends_with("maps/rolling_hills_test.glb"));
     }
 
     #[test]

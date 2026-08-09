@@ -13,7 +13,9 @@ use lightyear::prelude::*;
 use bevymmo_shared::crowd_control::CrowdControlState;
 use bevymmo_shared::entity::components::EntityState;
 use bevymmo_shared::entity::player::components::Player;
-use bevymmo_shared::movement::{effective_movement_speed, move_towards_target};
+use bevymmo_shared::movement::{
+    effective_movement_speed, move_towards_target, snap_to_ground, step_on_terrain, TerrainStep,
+};
 use bevymmo_shared::network::mode;
 use bevymmo_shared::network::protocol::{Inputs, LookDirection, NetworkEntityId, Position};
 use bevymmo_shared::spells::{ChannelMovementPolicy, SpellId, SpellRegistry};
@@ -97,11 +99,12 @@ fn predict_move_to_target(
 
         if let Some(surface_query) = world_map.surface_query.as_ref() {
             if !surface_query.is_empty() {
-                // Recovery: snap Y to the ground for any entity that is not
-                // actively chasing a MoveTo target (spawn, respawn, teleport,
-                // knockback, Idle). Mirrors the server-side snap.
+                // Recovery: mirror the server-side terrain snap before
+                // reachability checks so prediction starts from the same
+                // height as the authoritative simulation.
+                snap_to_ground(&mut position.0, surface_query);
+
                 let Inputs::MoveTo(target) = &input.0 else {
-                    bevymmo_shared::movement::snap_to_ground(&mut position.0, surface_query);
                     *state = EntityState::Idle;
                     continue;
                 };
@@ -122,7 +125,7 @@ fn predict_move_to_target(
                     .map(|m| m.get_world_metrics().max_step_height)
                     .unwrap_or_default();
 
-                match bevymmo_shared::movement::step_on_terrain(
+                match step_on_terrain(
                     position.0,
                     target.x,
                     target.z,
@@ -131,17 +134,16 @@ fn predict_move_to_target(
                     collision,
                     max_step_height,
                 ) {
-                    bevymmo_shared::movement::TerrainStep::Arrived(p) => {
+                    TerrainStep::Arrived(p) => {
                         position.0 = p;
                         *state = EntityState::Idle;
                     }
-                    bevymmo_shared::movement::TerrainStep::Moved(p) => {
+                    TerrainStep::Moved(p) => {
                         position.0 = p;
                         *state = EntityState::Moving;
                     }
-                    bevymmo_shared::movement::TerrainStep::Blocked
-                    | bevymmo_shared::movement::TerrainStep::NoSurface => {
-                        bevymmo_shared::movement::snap_to_ground(&mut position.0, surface_query);
+                    TerrainStep::Blocked | TerrainStep::NoSurface => {
+                        snap_to_ground(&mut position.0, surface_query);
                         *state = EntityState::Idle;
                     }
                 }

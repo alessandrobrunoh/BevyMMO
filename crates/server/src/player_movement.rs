@@ -14,7 +14,8 @@ use bevymmo_shared::crowd_control::CrowdControlState;
 use bevymmo_shared::entity::components::EntityState;
 use bevymmo_shared::entity::player::components::Player;
 use bevymmo_shared::movement::{
-    effective_movement_speed, move_towards_target, should_block_movement_for_cast, MoveTarget,
+    effective_movement_speed, move_towards_target, should_block_movement_for_cast, snap_to_ground,
+    step_on_terrain, MoveTarget, TerrainStep,
 };
 use bevymmo_shared::network::mode;
 use bevymmo_shared::network::protocol::{Inputs, LookDirection, MoveCommand, PlayerId, Position};
@@ -43,7 +44,12 @@ impl Plugin for PlayerMovementPlugin {
                 .run_if(mode::has_client),
         );
         app.add_systems(Update, receive_move_commands.run_if(mode::has_server));
-        app.add_systems(FixedUpdate, server_move_to_target.run_if(mode::has_server));
+        app.add_systems(
+            FixedUpdate,
+            (server_move_to_target, log_authoritative_player_positions)
+                .chain()
+                .run_if(mode::has_server),
+        );
     }
 }
 
@@ -143,13 +149,13 @@ fn server_move_to_target(
             .unwrap_or_else(|| input.0.clone());
 
         if !world_map.surface_query.is_empty() {
-            // Recovery: snap Y to the ground for any entity that is not
-            // actively chasing a MoveTo target (spawn, respawn, teleport,
-            // knockback, Idle). Without this, an entity placed below the
-            // terrain can never climb back because ground_at_reachable
-            // blocks surfaces above current_y + max_step_height.
+            // Recovery: align persisted/spawned/teleported positions with the
+            // authoritative terrain before reachability checks. A player loaded
+            // at y=0 on a raised hill must not be treated as too low to climb
+            // the surface already below their feet.
+            snap_to_ground(&mut position.0, &world_map.surface_query);
+
             let Inputs::MoveTo(target) = authoritative_input else {
-                bevymmo_shared::movement::snap_to_ground(&mut position.0, &world_map.surface_query);
                 *state = EntityState::Idle;
                 continue;
             };
@@ -161,7 +167,7 @@ fn server_move_to_target(
             }
 
             let max_step_height = world_map.manifest.get_world_metrics().max_step_height;
-            match bevymmo_shared::movement::step_on_terrain(
+            match step_on_terrain(
                 position.0,
                 target.x,
                 target.z,
@@ -170,20 +176,16 @@ fn server_move_to_target(
                 &world_map.collision,
                 max_step_height,
             ) {
-                bevymmo_shared::movement::TerrainStep::Arrived(p) => {
+                TerrainStep::Arrived(p) => {
                     position.0 = p;
                     *state = EntityState::Idle;
                 }
-                bevymmo_shared::movement::TerrainStep::Moved(p) => {
+                TerrainStep::Moved(p) => {
                     position.0 = p;
                     *state = EntityState::Moving;
                 }
-                bevymmo_shared::movement::TerrainStep::Blocked
-                | bevymmo_shared::movement::TerrainStep::NoSurface => {
-                    bevymmo_shared::movement::snap_to_ground(
-                        &mut position.0,
-                        &world_map.surface_query,
-                    );
+                TerrainStep::Blocked | TerrainStep::NoSurface => {
+                    snap_to_ground(&mut position.0, &world_map.surface_query);
                     *state = EntityState::Idle;
                 }
             }
@@ -212,6 +214,31 @@ fn server_move_to_target(
             &authoritative_input,
             effective_speed,
             state,
+        );
+    }
+}
+
+fn log_authoritative_player_positions(
+    time: Res<Time>,
+    mut elapsed_seconds: Local<f32>,
+    world_map: Res<ServerWorldMap>,
+    players: Query<(Entity, &Position, Option<&PlayerMoveTarget>, &EntityState), With<Player>>,
+) {
+    *elapsed_seconds += time.delta_secs();
+    if *elapsed_seconds < 0.25 {
+        return;
+    }
+    *elapsed_seconds = 0.0;
+
+    for (entity, position, move_target, state) in &players {
+        let ground_y = world_map
+            .surface_query
+            .ground_at(position.x, position.z)
+            .map(|contact| contact.height);
+        let target = move_target.map(|target| target.0);
+        info!(
+            "SERVER PLAYER XYZ {entity:?}: pos=({:.3}, {:.3}, {:.3}) ground_y={:?} target={:?} state={:?}",
+            position.x, position.y, position.z, ground_y, target, state
         );
     }
 }

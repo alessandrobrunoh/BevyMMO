@@ -5,7 +5,6 @@
 //! `enemy_respawn`) so downstream systems can react
 //! (logging, loot drops, achievements, audio, ...).
 
-
 use bevy::ecs::entity::Entity;
 use bevy::prelude::Message;
 

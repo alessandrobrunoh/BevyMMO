@@ -39,11 +39,7 @@ pub struct PropOverridesApplied;
 /// [`PropOverrideRepository::list_for_map`]).
 ///
 /// [`PropOverrideRepository::list_for_map`]: crate::persistence::repository::prop_override::PropOverrideRepository::list_for_map
-pub fn apply_overrides(
-    manifest: &mut MapManifest,
-    overrides: &[PropOverrideModel],
-    map_id: &str,
-) {
+pub fn apply_overrides(manifest: &mut MapManifest, overrides: &[PropOverrideModel], map_id: &str) {
     let removed: std::collections::HashSet<&str> = overrides
         .iter()
         .filter(|o| o.removed_at.is_some())
@@ -54,7 +50,10 @@ pub fn apply_overrides(
     }
 
     for override_row in overrides.iter().filter(|o| o.removed_at.is_none()) {
-        let Some(prop) = manifest.props.iter_mut().find(|p| p.id == override_row.prop_id)
+        let Some(prop) = manifest
+            .props
+            .iter_mut()
+            .find(|p| p.id == override_row.prop_id)
         else {
             // Override targets a prop that isn't in this manifest (e.g. stale
             // row from a previous map revision, or already removed above).
@@ -108,7 +107,9 @@ pub fn apply_prop_overrides_on_map_load(
 ) {
     if let Some(store) = store {
         let map_id = world_map.manifest.map_id.clone();
-        let overrides = runtime.0.block_on(async { store.0.list_for_map(&map_id).await });
+        let overrides = runtime
+            .0
+            .block_on(async { store.0.list_for_map(&map_id).await });
 
         match overrides {
             Ok(rows) => {

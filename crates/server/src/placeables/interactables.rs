@@ -25,7 +25,10 @@ pub struct InteractableMarker {
 pub fn spawn_interactable(commands: &mut Commands, kind_id: KindId, position: Vec3) -> Entity {
     commands
         .spawn((
-            InteractableMarker { kind_id: kind_id.clone(), consumed: false },
+            InteractableMarker {
+                kind_id: kind_id.clone(),
+                consumed: false,
+            },
             Transform::from_translation(position),
             Name::new(format!("Interactable {}", kind_id)),
         ))

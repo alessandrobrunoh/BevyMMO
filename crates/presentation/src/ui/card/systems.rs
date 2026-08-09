@@ -16,20 +16,26 @@ use bevy::prelude::*;
 use std::collections::HashSet;
 
 use super::components::{
-    CardDraggingState, CardHeaderDragHandle, CardExclusivityPolicy, CardWindow, CloseCardButton, DraggableCard,
+    CardDraggingState, CardExclusivityPolicy, CardHeaderDragHandle, CardWindow, CloseCardButton,
+    DraggableCard,
 };
 
 /// System to handle dragging draggable Card windows when clicking and dragging their header.
 pub fn handle_card_drag(
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
-    header_query: Query<(&Interaction, &ChildOf), (With<CardHeaderDragHandle>, Changed<Interaction>)>,
+    header_query: Query<
+        (&Interaction, &ChildOf),
+        (With<CardHeaderDragHandle>, Changed<Interaction>),
+    >,
     card_parents: Query<&ChildOf>,
     draggable_cards: Query<(Entity, &Node), (With<DraggableCard>, Without<CardDraggingState>)>,
     mut dragging_query: Query<(Entity, &mut Node, &mut CardDraggingState), With<DraggableCard>>,
     mut commands: Commands,
 ) {
-    let Some(window) = windows.iter().next() else { return };
+    let Some(window) = windows.iter().next() else {
+        return;
+    };
     let Some(cursor_pos) = window.cursor_position() else {
         // Cursor left window, cancel active drags
         for (entity, _, _) in dragging_query.iter() {

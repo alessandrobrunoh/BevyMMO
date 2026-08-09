@@ -103,7 +103,7 @@ mod tests {
     }
 
     #[test]
-    fn default_map_file_points_at_map_01() {
+    fn default_map_file_points_at_map_02() {
         let path = default_map_file();
         assert!(path.ends_with("maps/map_02.glb"));
     }

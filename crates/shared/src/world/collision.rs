@@ -11,6 +11,8 @@
 use super::manifest::{MapManifest, SurfaceKind, WalkableSurface};
 use super::shapes::aabb_for_shape;
 
+use crate::world::manifest::WalkableMeshData;
+
 #[derive(Clone, Copy, Debug)]
 struct Obstacle {
     min: [f32; 3],
@@ -25,6 +27,8 @@ pub struct CollisionGrid {
 impl CollisionGrid {
     pub fn build(manifest: &MapManifest) -> Self {
         let mut obstacles = Vec::new();
+
+        // Process blocking props
         for prop in &manifest.props {
             let Some(shape) = prop.collision else {
                 continue;
@@ -43,6 +47,30 @@ impl CollisionGrid {
             }
             obstacles.push(Obstacle { min, max });
         }
+
+        // Process blocking blockers
+        for blocker in &manifest.blockers {
+            let Some(transform) = &blocker.transform else {
+                continue;
+            };
+            let Some(shape) = blocker.shape else {
+                continue;
+            };
+            if !blocker.blocks_movement {
+                continue;
+            }
+
+            let (mut min, mut max) = aabb_for_shape(transform.translation, shape);
+            let scale = transform.scale.map(f32::abs);
+            for axis in 0..3 {
+                let center = transform.translation[axis];
+                let half_extent = (max[axis] - min[axis]) * 0.5 * scale[axis];
+                min[axis] = center - half_extent;
+                max[axis] = center + half_extent;
+            }
+            obstacles.push(Obstacle { min, max });
+        }
+
         Self { obstacles }
     }
 
@@ -166,6 +194,9 @@ impl SurfaceQuery {
     }
 
     /// Checks if a surface contains a given 2D point (x, z).
+    ///
+    /// For surfaces with walkable_mesh data, this is a broad-phase check only.
+    /// The exact triangle containment test is performed in resolve_surface.
     fn surface_contains_point(&self, surface: &WalkableSurface, x: f32, z: f32) -> bool {
         match surface.kind {
             SurfaceKind::Flat => {
@@ -186,7 +217,17 @@ impl SurfaceQuery {
                 false
             }
             SurfaceKind::Mesh => {
-                // For mesh surfaces, check heightfield bounds if available
+                // For mesh surfaces with walkable_mesh data, use bounds as broad-phase
+                if surface.walkable_mesh.is_some() {
+                    if let Some(ref heightfield) = surface.heightfield {
+                        return heightfield.bounds.contains(x, z);
+                    }
+                    if let Some(bounds) = surface.bounds {
+                        return bounds.contains(x, z);
+                    }
+                    return false;
+                }
+                // For mesh surfaces without walkable_mesh, check heightfield bounds if available
                 if let Some(ref heightfield) = surface.heightfield {
                     return heightfield.bounds.contains(x, z);
                 }
@@ -199,25 +240,140 @@ impl SurfaceQuery {
         }
     }
 
+    /// Resolves ground contact for a triangle mesh surface.
+    ///
+    /// Performs an exact point-in-triangle test on the X/Z plane and computes
+    /// the interpolated height and surface normal using barycentric coordinates.
+    fn resolve_triangle_mesh(
+        &self,
+        mesh: &WalkableMeshData,
+        surface: &WalkableSurface,
+        x: f32,
+        z: f32,
+    ) -> Option<GroundContact> {
+        let max_slope = surface.max_slope_deg.unwrap_or(45.0);
+        let max_slope_rad = max_slope.to_radians();
+        let min_normal_y = max_slope_rad.cos();
+
+        let tri_count = mesh.indices.len() / 3;
+        for tri_idx in 0..tri_count {
+            let i0 = mesh.indices[tri_idx * 3] as usize;
+            let i1 = mesh.indices[tri_idx * 3 + 1] as usize;
+            let i2 = mesh.indices[tri_idx * 3 + 2] as usize;
+
+            let v0 = mesh.vertices[i0];
+            let v1 = mesh.vertices[i1];
+            let v2 = mesh.vertices[i2];
+
+            // Check if point (x, z) is inside triangle on X/Z plane
+            let p = [x, z];
+            if !Self::point_in_triangle_2d(p, [v0[0], v0[2]], [v1[0], v1[2]], [v2[0], v2[2]]) {
+                continue;
+            }
+
+            // Compute triangle normal
+            let edge1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
+            let edge2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
+            let mut normal = [
+                edge1[1] * edge2[2] - edge1[2] * edge2[1],
+                edge1[2] * edge2[0] - edge1[0] * edge2[2],
+                edge1[0] * edge2[1] - edge1[1] * edge2[0],
+            ];
+
+            // Normalize
+            let length =
+                (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+            if length < 1e-6 {
+                continue; // Degenerate triangle
+            }
+            normal = [normal[0] / length, normal[1] / length, normal[2] / length];
+
+            // Check slope: normal should point up (positive Y)
+            if normal[1] < min_normal_y {
+                continue; // Too steep
+            }
+
+            // Compute barycentric coordinates for height interpolation
+            let (w0, w1, w2) =
+                Self::barycentric_coords_2d(p, [v0[0], v0[2]], [v1[0], v1[2]], [v2[0], v2[2]]);
+
+            // Interpolate height
+            let height = w0 * v0[1] + w1 * v1[1] + w2 * v2[1];
+
+            return Some(GroundContact::new(height, normal));
+        }
+
+        None // No triangle contains the point
+    }
+
+    /// Checks if a point `(x, z)` is inside a triangle on the X/Z plane.
+    ///
+    /// Uses the sign-of-cross-product method: the point is inside when it
+    /// lies on the same side of all three edges.
+    fn point_in_triangle_2d(p: [f32; 2], a: [f32; 2], b: [f32; 2], c: [f32; 2]) -> bool {
+        // Vectors relative to vertex `a`.
+        let v0 = [c[0] - a[0], c[1] - a[1]];
+        let v1 = [b[0] - a[0], b[1] - a[1]];
+        let v2 = [p[0] - a[0], p[1] - a[1]];
+
+        let dot00 = v0[0] * v0[0] + v0[1] * v0[1];
+        let dot01 = v0[0] * v1[0] + v0[1] * v1[1];
+        let dot02 = v0[0] * v2[0] + v0[1] * v2[1];
+        let dot11 = v1[0] * v1[0] + v1[1] * v1[1];
+        let dot12 = v1[0] * v2[0] + v1[1] * v2[1];
+
+        let inv_denom = 1.0 / (dot00 * dot11 - dot01 * dot01);
+        let u = (dot11 * dot02 - dot01 * dot12) * inv_denom;
+        let v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
+
+        (u >= 0.0) && (v >= 0.0) && (u + v <= 1.0)
+    }
+
+    /// Computes barycentric coordinates for a point in a 2D triangle.
+    ///
+    /// Returns `(w_a, w_b, w_c)` — the weights for vertices `a`, `b`, `c`
+    /// respectively. The weights sum to 1.0 inside the triangle.
+    fn barycentric_coords_2d(
+        p: [f32; 2],
+        a: [f32; 2],
+        b: [f32; 2],
+        c: [f32; 2],
+    ) -> (f32, f32, f32) {
+        let v0 = [c[0] - a[0], c[1] - a[1]];
+        let v1 = [b[0] - a[0], b[1] - a[1]];
+        let v2 = [p[0] - a[0], p[1] - a[1]];
+
+        let dot00 = v0[0] * v0[0] + v0[1] * v0[1];
+        let dot01 = v0[0] * v1[0] + v0[1] * v1[1];
+        let dot02 = v0[0] * v2[0] + v0[1] * v2[1];
+        let dot11 = v1[0] * v1[0] + v1[1] * v1[1];
+        let dot12 = v1[0] * v2[0] + v1[1] * v2[1];
+
+        let inv_denom = 1.0 / (dot00 * dot11 - dot01 * dot01);
+        let u = (dot11 * dot02 - dot01 * dot12) * inv_denom;
+        let v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
+        let w = 1.0 - u - v;
+
+        (w, u, v)
+    }
+
     /// Resolves ground contact for a specific surface.
     fn resolve_surface(&self, surface: &WalkableSurface, x: f32, z: f32) -> Option<GroundContact> {
         match surface.kind {
-            SurfaceKind::Flat => {
-                // Flat surfaces have constant height
-                surface.height.map(|height| GroundContact::flat(height))
-            }
+            SurfaceKind::Flat => surface.height.map(GroundContact::flat),
             SurfaceKind::FlatMesh => {
                 // For flat_mesh, try heightfield data first, then fall back to constant height
                 if let Some(ref heightfield) = surface.heightfield {
-                    heightfield
-                        .sample_height(x, z)
-                        .map(|height| GroundContact::flat(height))
+                    heightfield.sample_height(x, z).map(GroundContact::flat)
                 } else {
-                    // Fall back to constant height
-                    surface.height.map(|height| GroundContact::flat(height))
+                    surface.height.map(GroundContact::flat)
                 }
             }
             SurfaceKind::Mesh => {
+                // For mesh surfaces with walkable_mesh data, perform exact triangle test
+                if let Some(ref mesh) = surface.walkable_mesh {
+                    return self.resolve_triangle_mesh(mesh, surface, x, z);
+                }
                 // For mesh surfaces, use heightfield data if available
                 if let Some(ref heightfield) = surface.heightfield {
                     heightfield.sample_height(x, z).map(|height| {
@@ -566,6 +722,9 @@ mod tests {
                 size: Some(10.0),
                 purpose: Some("Test flat surface".to_string()),
                 heightfield: None,
+                walkable_mesh: None,
+                layer: None,
+                max_slope_deg: None,
             }],
             traversals: vec![],
             blockers: vec![],
@@ -608,6 +767,9 @@ mod tests {
                     size: Some(10.0),
                     purpose: Some("First flat surface".to_string()),
                     heightfield: None,
+                    walkable_mesh: None,
+                    layer: None,
+                    max_slope_deg: None,
                 },
                 WalkableSurface {
                     id: "surface_2".to_string(),
@@ -626,6 +788,9 @@ mod tests {
                     size: Some(10.0),
                     purpose: Some("Second flat surface".to_string()),
                     heightfield: None,
+                    walkable_mesh: None,
+                    layer: None,
+                    max_slope_deg: None,
                 },
             ],
             traversals: vec![],
@@ -685,6 +850,9 @@ mod tests {
                 size: Some(20.0),
                 purpose: Some("Test heightfield surface".to_string()),
                 heightfield: Some(heightfield),
+                walkable_mesh: None,
+                layer: None,
+                max_slope_deg: None,
             }],
             traversals: vec![],
             blockers: vec![],
@@ -730,6 +898,9 @@ mod tests {
                     size: None,
                     purpose: None,
                     heightfield: None,
+                    walkable_mesh: None,
+                    layer: None,
+                    max_slope_deg: None,
                 },
                 WalkableSurface {
                     id: "surface_high".to_string(),
@@ -743,6 +914,9 @@ mod tests {
                     size: None,
                     purpose: None,
                     heightfield: None,
+                    walkable_mesh: None,
+                    layer: None,
+                    max_slope_deg: None,
                 },
             ],
             traversals: vec![],
@@ -795,5 +969,507 @@ mod tests {
             .ground_at_reachable(0.0, 0.0, 10.0, 0.45)
             .expect("stranded entity should recover onto the highest surface below it");
         assert_eq!(contact.height, 5.0);
+    }
+
+    // ==================== TRIANGLE MESH TESTS ====================
+
+    #[test]
+    fn test_triangle_mesh_ramp() {
+        // Create a simple 2-triangle ramp covering a 10×10 area
+        // Triangle 1: (0,0,0), (10,0,0), (10,0,10) - right triangle with normal up
+        // Triangle 2: (0,0,0), (10,0,10), (0,0,10) - left triangle with normal up
+        let mesh = WalkableMeshData {
+            vertices: vec![
+                [0.0, 0.0, 0.0],   // v0
+                [10.0, 0.0, 0.0],  // v1
+                [10.0, 0.0, 10.0], // v2
+                [0.0, 0.0, 10.0],  // v3
+            ],
+            indices: vec![0, 2, 1, 0, 3, 2], // Two triangles with correct winding
+        };
+
+        let surface = WalkableSurface {
+            id: "test_ramp".to_string(),
+            kind: SurfaceKind::Mesh,
+            object: None,
+            bounds: Some(SurfaceBounds {
+                min_x: 0.0,
+                max_x: 10.0,
+                min_z: 0.0,
+                max_z: 10.0,
+            }),
+            height: None,
+            min_height: Some(0.0),
+            max_height: Some(5.0),
+            grid_size: None,
+            size: Some(10.0),
+            purpose: Some("Test ramp".to_string()),
+            heightfield: None,
+            walkable_mesh: Some(mesh),
+            layer: None,
+            max_slope_deg: Some(45.0),
+        };
+
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "test_ramp".to_string(),
+            display_name: "Test Ramp".to_string(),
+            bounds: MapBounds {
+                min_x: -5.0,
+                max_x: 15.0,
+                min_z: -5.0,
+                max_z: 15.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: None,
+            surfaces: vec![surface],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        let query = SurfaceQuery::from_manifest(&manifest);
+
+        // Test point at center of area (5, 5) should have height 0.0 (flat triangles)
+        let contact = query.ground_at(5.0, 5.0);
+        assert!(contact.is_some());
+        let ground = contact.expect("Ground contact should exist");
+        assert_eq!(
+            ground.height, 0.0,
+            "Height should be 0.0 for flat triangles"
+        );
+
+        // Test point outside ramp should return None
+        let contact = query.ground_at(15.0, 15.0);
+        assert!(contact.is_none(), "Point outside ramp should return None");
+
+        // Verify normal is flat (0,1,0) for horizontal surface
+        let contact = query.ground_at(5.0, 5.0);
+        assert!(contact.is_some());
+        let ground = contact.expect("Ground contact should exist");
+        assert_eq!(
+            ground.normal,
+            [0.0, 1.0, 0.0],
+            "Normal should be flat for horizontal surface"
+        );
+    }
+
+    #[test]
+    fn test_triangle_mesh_crescent_hole() {
+        // Create a frame shape with a hole in the center
+        // This tests that the exact triangle test rejects points in the "hole"
+        // even though they're within the 2D bounding box
+        let mesh = WalkableMeshData {
+            vertices: vec![
+                // Outer frame vertices
+                [0.0, 0.0, 0.0],   // v0
+                [10.0, 0.0, 0.0],  // v1
+                [10.0, 0.0, 10.0], // v2
+                [0.0, 0.0, 10.0],  // v3
+                // Inner hole vertices
+                [2.0, 0.0, 2.0], // v4
+                [8.0, 0.0, 2.0], // v5
+                [8.0, 0.0, 8.0], // v6
+                [2.0, 0.0, 8.0], // v7
+            ],
+            // Create 8 triangles for the frame with correct winding order
+            // Each frame edge has two triangles
+            indices: vec![
+                0, 4, 5, // Bottom-left frame triangle
+                0, 5, 1, // Bottom-right frame triangle
+                1, 5, 6, // Right-bottom frame triangle
+                1, 6, 2, // Right-top frame triangle
+                2, 6, 7, // Top-right frame triangle
+                2, 7, 3, // Top-left frame triangle
+                3, 7, 4, // Left-top frame triangle
+                3, 4, 0, // Left-bottom frame triangle
+            ],
+        };
+
+        let surface = WalkableSurface {
+            id: "test_crescent".to_string(),
+            kind: SurfaceKind::Mesh,
+            object: None,
+            bounds: Some(SurfaceBounds {
+                min_x: 0.0,
+                max_x: 10.0,
+                min_z: 0.0,
+                max_z: 10.0,
+            }),
+            height: None,
+            min_height: Some(0.0),
+            max_height: Some(0.0),
+            grid_size: None,
+            size: Some(10.0),
+            purpose: Some("Crescent with hole".to_string()),
+            heightfield: None,
+            walkable_mesh: Some(mesh),
+            layer: None,
+            max_slope_deg: Some(45.0),
+        };
+
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "test_crescent".to_string(),
+            display_name: "Test Crescent".to_string(),
+            bounds: MapBounds {
+                min_x: -5.0,
+                max_x: 15.0,
+                min_z: -5.0,
+                max_z: 15.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: None,
+            surfaces: vec![surface],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        let query = SurfaceQuery::from_manifest(&manifest);
+
+        // Point in the center hole should return None (no triangle contains it)
+        let contact = query.ground_at(5.0, 5.0);
+        assert!(contact.is_none(), "Point in hole should return None");
+
+        // Point on the outer ring should return Some height
+        let contact = query.ground_at(1.0, 5.0);
+        assert!(contact.is_some(), "Point on outer ring should return Some");
+
+        // Point outside the mesh should return None
+        let contact = query.ground_at(15.0, 15.0);
+        assert!(contact.is_none(), "Point outside mesh should return None");
+    }
+
+    #[test]
+    fn test_slope_rejection() {
+        // Create a near-vertical triangle that should be rejected
+        // Triangle with vertices at different heights to create steep slope
+        let mesh = WalkableMeshData {
+            vertices: vec![
+                [0.0, 0.0, 0.0],  // v0 - ground level
+                [1.0, 10.0, 0.0], // v1 - 10 units up, very steep
+                [1.0, 0.0, 1.0],  // v2 - ground level
+            ],
+            indices: vec![0, 1, 2], // One steep triangle
+        };
+
+        let surface = WalkableSurface {
+            id: "test_steep".to_string(),
+            kind: SurfaceKind::Mesh,
+            object: None,
+            bounds: Some(SurfaceBounds {
+                min_x: 0.0,
+                max_x: 1.0,
+                min_z: 0.0,
+                max_z: 1.0,
+            }),
+            height: None,
+            min_height: Some(0.0),
+            max_height: Some(10.0),
+            grid_size: None,
+            size: Some(1.0),
+            purpose: Some("Steep slope".to_string()),
+            heightfield: None,
+            walkable_mesh: Some(mesh),
+            layer: None,
+            max_slope_deg: Some(45.0), // Max 45 degree slope
+        };
+
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "test_steep".to_string(),
+            display_name: "Test Steep Slope".to_string(),
+            bounds: MapBounds {
+                min_x: -5.0,
+                max_x: 5.0,
+                min_z: -5.0,
+                max_z: 5.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: None,
+            surfaces: vec![surface],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        let query = SurfaceQuery::from_manifest(&manifest);
+
+        // The steep triangle should be rejected, returning None
+        let contact = query.ground_at(0.5, 0.5);
+        assert!(contact.is_none(), "Steep triangle should be rejected");
+    }
+
+    #[test]
+    fn test_normal_computation() {
+        // Create a tilted triangle and verify normal is computed correctly
+        // Copy the passing ramp test structure exactly, just with one vertex raised
+        let mesh = WalkableMeshData {
+            vertices: vec![
+                [0.0, 0.0, 0.0],   // v0
+                [10.0, 0.0, 0.0],  // v1
+                [10.0, 0.0, 10.0], // v2 - will be raised
+                [0.0, 0.0, 10.0],  // v3
+            ],
+            // Same indices as ramp test: 0, 2, 1, 0, 3, 2
+            indices: vec![0, 2, 1, 0, 3, 2],
+        };
+
+        // Manually raise v2 to create a tilted surface
+        let mut vertices = mesh.vertices.clone();
+        vertices[2] = [10.0, 3.0, 10.0]; // Raise v2 by 3 units
+        let tilted_mesh = WalkableMeshData {
+            vertices,
+            indices: mesh.indices,
+        };
+
+        let surface = WalkableSurface {
+            id: "test_normal".to_string(),
+            kind: SurfaceKind::Mesh,
+            object: None,
+            bounds: Some(SurfaceBounds {
+                min_x: 0.0,
+                max_x: 10.0,
+                min_z: 0.0,
+                max_z: 10.0,
+            }),
+            height: None,
+            min_height: Some(0.0),
+            max_height: Some(10.0),
+            grid_size: None,
+            size: Some(10.0),
+            purpose: Some("Normal test".to_string()),
+            heightfield: None,
+            walkable_mesh: Some(tilted_mesh),
+            layer: None,
+            max_slope_deg: Some(45.0),
+        };
+
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "test_normal".to_string(),
+            display_name: "Test Normal".to_string(),
+            bounds: MapBounds {
+                min_x: -5.0,
+                max_x: 15.0,
+                min_z: -5.0,
+                max_z: 15.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: None,
+            surfaces: vec![surface],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        let query = SurfaceQuery::from_manifest(&manifest);
+
+        // Test point that should be on the tilted surface
+        let contact = query.ground_at(8.0, 2.0);
+        assert!(contact.is_some());
+        let ground = contact.expect("Ground contact should exist");
+
+        // Normal should not be flat (0,1,0) for tilted surface
+        assert_ne!(
+            ground.normal,
+            [0.0, 1.0, 0.0],
+            "Normal should not be flat for tilted surface"
+        );
+
+        // Normal should be normalized (length ≈ 1.0)
+        let normal_length =
+            (ground.normal[0].powi(2) + ground.normal[1].powi(2) + ground.normal[2].powi(2)).sqrt();
+        assert!(
+            (normal_length - 1.0).abs() < 0.01,
+            "Normal should be normalized"
+        );
+
+        // Y component should be positive (pointing up)
+        assert!(
+            ground.normal[1] > 0.0,
+            "Normal should point up (positive Y)"
+        );
+    }
+
+    // ==================== BLOCKER COLLISION TESTS ====================
+
+    #[test]
+    fn test_blocker_collision() {
+        use super::super::shapes::CollisionShape;
+        use crate::world::manifest::{BlockerData, BlockerKind, TransformData};
+
+        // Create a blocker at position (5, 0, 5) with cylinder shape
+        let blocker = BlockerData {
+            id: "test_blocker".to_string(),
+            kind: BlockerKind::Cylinder,
+            object: Some("test_blocker".to_string()),
+            transform: Some(TransformData {
+                translation: [5.0, 0.0, 5.0],
+                rotation_deg: [0.0, 0.0, 0.0],
+                scale: [1.0, 1.0, 1.0],
+            }),
+            shape: Some(CollisionShape::Cylinder {
+                radius: 2.0,
+                height: 3.0,
+            }),
+            blocks_movement: true,
+        };
+
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "test_blocker".to_string(),
+            display_name: "Test Blocker".to_string(),
+            bounds: MapBounds {
+                min_x: 0.0,
+                max_x: 20.0,
+                min_z: 0.0,
+                max_z: 20.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: None,
+            surfaces: vec![],
+            traversals: vec![],
+            blockers: vec![blocker],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        let grid = CollisionGrid::build(&manifest);
+
+        // Point near blocker should be blocked
+        assert!(
+            grid.is_blocked([5.0, 0.0, 5.0], 0.5),
+            "Point near blocker should be blocked"
+        );
+
+        // Point far from blocker should not be blocked
+        assert!(
+            !grid.is_blocked([15.0, 0.0, 15.0], 0.5),
+            "Point far from blocker should not be blocked"
+        );
+
+        // Point exactly at blocker edge should be blocked
+        assert!(
+            grid.is_blocked([7.0, 0.0, 5.0], 0.1),
+            "Point at blocker edge should be blocked"
+        );
+
+        // Point just outside blocker should not be blocked
+        assert!(
+            !grid.is_blocked([8.0, 0.0, 5.0], 0.5),
+            "Point just outside blocker should not be blocked"
+        );
+    }
+
+    #[test]
+    fn test_blocker_without_transform_or_shape_skipped() {
+        use super::super::shapes::CollisionShape;
+        use crate::world::manifest::{BlockerData, BlockerKind, TransformData};
+
+        // Create a blocker without transform (should be skipped)
+        let blocker_no_transform = BlockerData {
+            id: "test_blocker".to_string(),
+            kind: BlockerKind::Cylinder,
+            object: Some("test_blocker".to_string()),
+            transform: None, // Missing transform
+            shape: Some(CollisionShape::Cylinder {
+                radius: 2.0,
+                height: 3.0,
+            }),
+            blocks_movement: true,
+        };
+
+        // Create a blocker without shape (should be skipped)
+        let blocker_no_shape = BlockerData {
+            id: "test_blocker2".to_string(),
+            kind: BlockerKind::Cylinder,
+            object: Some("test_blocker2".to_string()),
+            transform: Some(TransformData {
+                translation: [10.0, 0.0, 10.0],
+                rotation_deg: [0.0, 0.0, 0.0],
+                scale: [1.0, 1.0, 1.0],
+            }),
+            shape: None, // Missing shape
+            blocks_movement: true,
+        };
+
+        // Create a blocker with blocks_movement = false (should be skipped)
+        let blocker_non_blocking = BlockerData {
+            id: "test_blocker3".to_string(),
+            kind: BlockerKind::Cylinder,
+            object: Some("test_blocker3".to_string()),
+            transform: Some(TransformData {
+                translation: [15.0, 0.0, 15.0],
+                rotation_deg: [0.0, 0.0, 0.0],
+                scale: [1.0, 1.0, 1.0],
+            }),
+            shape: Some(CollisionShape::Cylinder {
+                radius: 2.0,
+                height: 3.0,
+            }),
+            blocks_movement: false, // Not blocking
+        };
+
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "test_blocker_skip".to_string(),
+            display_name: "Test Blocker Skip".to_string(),
+            bounds: MapBounds {
+                min_x: 0.0,
+                max_x: 20.0,
+                min_z: 0.0,
+                max_z: 20.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: None,
+            surfaces: vec![],
+            traversals: vec![],
+            blockers: vec![blocker_no_transform, blocker_no_shape, blocker_non_blocking],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        let grid = CollisionGrid::build(&manifest);
+
+        // All blockers should have been skipped, so no obstacles
+        assert_eq!(grid.obstacle_count(), 0, "All blockers should be skipped");
+
+        // No point should be blocked since there are no obstacles
+        assert!(
+            !grid.is_blocked([5.0, 0.0, 5.0], 0.5),
+            "No blocking should occur"
+        );
+        assert!(
+            !grid.is_blocked([10.0, 0.0, 10.0], 0.5),
+            "No blocking should occur"
+        );
+        assert!(
+            !grid.is_blocked([15.0, 0.0, 15.0], 0.5),
+            "No blocking should occur"
+        );
     }
 }

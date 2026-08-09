@@ -195,22 +195,60 @@ pub struct WalkableSurface {
     /// Kind of surface (flat, mesh, etc.).
     pub kind: SurfaceKind,
     /// Object name reference (for mesh-based surfaces).
+    #[serde(default)]
     pub object: Option<String>,
     /// Optional surface bounds (for flat surfaces).
+    #[serde(default)]
     pub bounds: Option<SurfaceBounds>,
     /// Optional constant height (for flat_mesh surfaces).
+    #[serde(default)]
     pub height: Option<f32>,
     /// Optional min/max height range (for validation).
+    #[serde(default)]
     pub min_height: Option<f32>,
+    #[serde(default)]
     pub max_height: Option<f32>,
     /// Optional grid size for spatial queries.
+    #[serde(default)]
     pub grid_size: Option<u32>,
     /// Physical size of the surface.
+    #[serde(default)]
     pub size: Option<f32>,
     /// Optional purpose description.
+    #[serde(default)]
     pub purpose: Option<String>,
     /// Optional heightfield data for mesh surfaces.
+    #[serde(default)]
     pub heightfield: Option<HeightfieldData>,
+    /// Triangulated mesh data for precise point-in-triangle ground queries.
+    ///
+    /// This is the preferred representation for ramps, curved paths, and any
+    /// surface whose walkable footprint is not a simple rectangle. When
+    /// present, the query performs an exact triangle test instead of relying
+    /// on the 2D bounds broad-phase alone.
+    #[serde(default)]
+    pub walkable_mesh: Option<WalkableMeshData>,
+    /// Optional layer / connectivity group this surface belongs to.
+    #[serde(default)]
+    pub layer: Option<String>,
+    /// Optional per-surface maximum walkable slope in degrees. Overrides the
+    /// global `max_walkable_slope_deg` when set.
+    #[serde(default)]
+    pub max_slope_deg: Option<f32>,
+}
+
+/// Triangulated walkable mesh data exported from Blender.
+///
+/// Vertices are in world space (Y-up after glTF conversion). Indices reference
+/// into the `vertices` array in groups of three (one triangle per triplet).
+/// The winding must be counter-clockwise when viewed from above so that the
+/// computed face normal points up.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct WalkableMeshData {
+    /// Flat list of vertex positions `[x, y, z]`.
+    pub vertices: Vec<[f32; 3]>,
+    /// Triangle indices into `vertices`. Length must be a multiple of 3.
+    pub indices: Vec<u32>,
 }
 
 /// Kind of walkable surface.
@@ -395,7 +433,25 @@ pub struct BlockerData {
     /// Kind of blocker.
     pub kind: BlockerKind,
     /// Object name reference.
-    pub object: String,
+    #[serde(default)]
+    pub object: Option<String>,
+    /// World-space transform of the blocker volume.
+    ///
+    /// When present the runtime uses this instead of looking up the GLB node,
+    /// so the server (headless) can resolve collisions without visual assets.
+    #[serde(default)]
+    pub transform: Option<TransformData>,
+    /// Collision shape (box half-extents, cylinder radius/height, …).
+    #[serde(default)]
+    pub shape: Option<CollisionShape>,
+    /// Whether this blocker prevents movement. Defaults to `true`.
+    #[serde(default = "default_blocks_movement")]
+    pub blocks_movement: bool,
+}
+
+/// Default value for [`BlockerData::blocks_movement`].
+fn default_blocks_movement() -> bool {
+    true
 }
 
 /// Kind of blocking object.

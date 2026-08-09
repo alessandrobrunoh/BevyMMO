@@ -1,0 +1,1262 @@
+{
+  "version": 2,
+  "map_id": "walkable_world_map",
+  "display_name": "Walkable World Validation Map",
+  "unit_convention": "1 Blender unit = 1 game world unit = 1 meter",
+  "bounds": {
+    "min_x": -15.0,
+    "max_x": 30.0,
+    "min_z": -26.0,
+    "max_z": 15.0
+  },
+  "world_metrics": {
+    "player_radius": 0.35,
+    "player_height": 1.7,
+    "eye_height": 1.6,
+    "max_step_height": 0.45,
+    "max_walkable_slope_deg": 45.0
+  },
+  "terrain": {
+    "transform": {
+      "translation": [
+        0.0,
+        -0.5,
+        0.0
+      ],
+      "rotation_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        40.0,
+        1.0,
+        40.0
+      ]
+    },
+    "tint": null
+  },
+  "props": [],
+  "surfaces": [
+    {
+      "id": "ground",
+      "kind": "flat",
+      "object": "WALKABLE_Ground",
+      "bounds": {
+        "min_x": -39.356,
+        "max_x": 33.2,
+        "min_z": -35.2401,
+        "max_z": 35.2401
+      },
+      "layer": "ground",
+      "height": 0.0,
+      "min_height": 0.0,
+      "max_height": 0.0
+    },
+    {
+      "id": "test_top",
+      "kind": "flat",
+      "object": "WALKABLE_TestTop",
+      "bounds": {
+        "min_x": -6.4289,
+        "max_x": 6.4289,
+        "min_z": 8.0,
+        "max_z": 16.0
+      },
+      "layer": "test_top",
+      "height": 4.0,
+      "min_height": 4.0,
+      "max_height": 4.0
+    },
+    {
+      "id": "ramp_ground_to_test_top",
+      "kind": "mesh",
+      "object": "RAMP_Ground_to_TestTop",
+      "bounds": {
+        "min_x": -6.4509,
+        "max_x": 2.2587,
+        "min_z": 0.0,
+        "max_z": 8.0
+      },
+      "layer": "ground",
+      "min_height": 0.0,
+      "max_height": 4.0,
+      "max_slope_deg": 30.0,
+      "walkable_mesh": {
+        "vertices": [
+          [
+            -6.4509,
+            0.0,
+            0.0
+          ],
+          [
+            2.2587,
+            0.0,
+            0.0
+          ],
+          [
+            2.2587,
+            8.0,
+            4.0
+          ],
+          [
+            -6.4509,
+            8.0,
+            4.0
+          ]
+        ],
+        "indices": [
+          0,
+          1,
+          2,
+          0,
+          2,
+          3
+        ]
+      },
+      "from_surface": "ground",
+      "to_surface": "test_top",
+      "traversal_kind": "ramp"
+    },
+    {
+      "id": "ramp_crescent",
+      "kind": "mesh",
+      "object": "RAMP_Crescent",
+      "bounds": {
+        "min_x": 2.75,
+        "max_x": 17.25,
+        "min_z": 2.5235,
+        "max_z": 9.7735
+      },
+      "layer": "crescent",
+      "min_height": 0.0,
+      "max_height": 4.0,
+      "max_slope_deg": 35.0,
+      "walkable_mesh": {
+        "vertices": [
+          [
+            14.75,
+            2.5235,
+            0.0
+          ],
+          [
+            14.75,
+            2.5235,
+            0.0
+          ],
+          [
+            17.25,
+            2.5235,
+            0.0
+          ],
+          [
+            14.6587,
+            3.4502,
+            0.25
+          ],
+          [
+            14.6587,
+            3.4502,
+            0.25
+          ],
+          [
+            14.6587,
+            3.4502,
+            0.25
+          ],
+          [
+            17.1107,
+            3.9379,
+            0.25
+          ],
+          [
+            17.1107,
+            3.9379,
+            0.25
+          ],
+          [
+            17.1107,
+            3.9379,
+            0.25
+          ],
+          [
+            14.3884,
+            4.3412,
+            0.5
+          ],
+          [
+            14.3884,
+            4.3412,
+            0.5
+          ],
+          [
+            14.3884,
+            4.3412,
+            0.5
+          ],
+          [
+            16.6981,
+            5.298,
+            0.5
+          ],
+          [
+            16.6981,
+            5.298,
+            0.5
+          ],
+          [
+            16.6981,
+            5.298,
+            0.5
+          ],
+          [
+            13.9495,
+            5.1625,
+            0.75
+          ],
+          [
+            13.9495,
+            5.1625,
+            0.75
+          ],
+          [
+            13.9495,
+            5.1625,
+            0.75
+          ],
+          [
+            16.0282,
+            6.5514,
+            0.75
+          ],
+          [
+            16.0282,
+            6.5514,
+            0.75
+          ],
+          [
+            16.0282,
+            6.5514,
+            0.75
+          ],
+          [
+            13.3588,
+            5.8823,
+            1.0
+          ],
+          [
+            13.3588,
+            5.8823,
+            1.0
+          ],
+          [
+            13.3588,
+            5.8823,
+            1.0
+          ],
+          [
+            15.1265,
+            7.65,
+            1.0
+          ],
+          [
+            15.1265,
+            7.65,
+            1.0
+          ],
+          [
+            15.1265,
+            7.65,
+            1.0
+          ],
+          [
+            12.639,
+            6.473,
+            1.25
+          ],
+          [
+            12.639,
+            6.473,
+            1.25
+          ],
+          [
+            12.639,
+            6.473,
+            1.25
+          ],
+          [
+            14.0279,
+            8.5517,
+            1.25
+          ],
+          [
+            14.0279,
+            8.5517,
+            1.25
+          ],
+          [
+            14.0279,
+            8.5517,
+            1.25
+          ],
+          [
+            11.8177,
+            6.9119,
+            1.5
+          ],
+          [
+            11.8177,
+            6.9119,
+            1.5
+          ],
+          [
+            11.8177,
+            6.9119,
+            1.5
+          ],
+          [
+            12.7745,
+            9.2216,
+            1.5
+          ],
+          [
+            12.7745,
+            9.2216,
+            1.5
+          ],
+          [
+            12.7745,
+            9.2216,
+            1.5
+          ],
+          [
+            10.9267,
+            7.1822,
+            1.75
+          ],
+          [
+            10.9267,
+            7.1822,
+            1.75
+          ],
+          [
+            10.9267,
+            7.1822,
+            1.75
+          ],
+          [
+            11.4144,
+            9.6342,
+            1.75
+          ],
+          [
+            11.4144,
+            9.6342,
+            1.75
+          ],
+          [
+            11.4144,
+            9.6342,
+            1.75
+          ],
+          [
+            10.0,
+            7.2735,
+            2.0
+          ],
+          [
+            10.0,
+            7.2735,
+            2.0
+          ],
+          [
+            10.0,
+            7.2735,
+            2.0
+          ],
+          [
+            10.0,
+            9.7735,
+            2.0
+          ],
+          [
+            10.0,
+            9.7735,
+            2.0
+          ],
+          [
+            10.0,
+            9.7735,
+            2.0
+          ],
+          [
+            9.0733,
+            7.1822,
+            2.25
+          ],
+          [
+            9.0733,
+            7.1822,
+            2.25
+          ],
+          [
+            9.0733,
+            7.1822,
+            2.25
+          ],
+          [
+            8.5856,
+            9.6342,
+            2.25
+          ],
+          [
+            8.5856,
+            9.6342,
+            2.25
+          ],
+          [
+            8.5856,
+            9.6342,
+            2.25
+          ],
+          [
+            8.1823,
+            6.9119,
+            2.5
+          ],
+          [
+            8.1823,
+            6.9119,
+            2.5
+          ],
+          [
+            8.1823,
+            6.9119,
+            2.5
+          ],
+          [
+            7.2255,
+            9.2216,
+            2.5
+          ],
+          [
+            7.2255,
+            9.2216,
+            2.5
+          ],
+          [
+            7.2255,
+            9.2216,
+            2.5
+          ],
+          [
+            7.361,
+            6.473,
+            2.75
+          ],
+          [
+            7.361,
+            6.473,
+            2.75
+          ],
+          [
+            7.361,
+            6.473,
+            2.75
+          ],
+          [
+            5.9721,
+            8.5517,
+            2.75
+          ],
+          [
+            5.9721,
+            8.5517,
+            2.75
+          ],
+          [
+            5.9721,
+            8.5517,
+            2.75
+          ],
+          [
+            6.6412,
+            5.8823,
+            3.0
+          ],
+          [
+            6.6412,
+            5.8823,
+            3.0
+          ],
+          [
+            6.6412,
+            5.8823,
+            3.0
+          ],
+          [
+            4.8735,
+            7.65,
+            3.0
+          ],
+          [
+            4.8735,
+            7.65,
+            3.0
+          ],
+          [
+            4.8735,
+            7.65,
+            3.0
+          ],
+          [
+            6.0505,
+            5.1625,
+            3.25
+          ],
+          [
+            6.0505,
+            5.1625,
+            3.25
+          ],
+          [
+            6.0505,
+            5.1625,
+            3.25
+          ],
+          [
+            3.9718,
+            6.5514,
+            3.25
+          ],
+          [
+            3.9718,
+            6.5514,
+            3.25
+          ],
+          [
+            3.9718,
+            6.5514,
+            3.25
+          ],
+          [
+            5.6116,
+            4.3412,
+            3.5
+          ],
+          [
+            5.6116,
+            4.3412,
+            3.5
+          ],
+          [
+            5.6116,
+            4.3412,
+            3.5
+          ],
+          [
+            3.3019,
+            5.298,
+            3.5
+          ],
+          [
+            3.3019,
+            5.298,
+            3.5
+          ],
+          [
+            3.3019,
+            5.298,
+            3.5
+          ],
+          [
+            5.3413,
+            3.4502,
+            3.75
+          ],
+          [
+            5.3413,
+            3.4502,
+            3.75
+          ],
+          [
+            5.3413,
+            3.4502,
+            3.75
+          ],
+          [
+            2.8893,
+            3.9379,
+            3.75
+          ],
+          [
+            2.8893,
+            3.9379,
+            3.75
+          ],
+          [
+            2.8893,
+            3.9379,
+            3.75
+          ],
+          [
+            5.25,
+            2.5235,
+            4.0
+          ],
+          [
+            2.75,
+            2.5235,
+            4.0
+          ],
+          [
+            2.75,
+            2.5235,
+            4.0
+          ]
+        ],
+        "indices": [
+          1,
+          8,
+          4,
+          5,
+          14,
+          10,
+          11,
+          20,
+          16,
+          17,
+          26,
+          22,
+          23,
+          32,
+          28,
+          29,
+          38,
+          34,
+          35,
+          44,
+          40,
+          41,
+          50,
+          47,
+          46,
+          56,
+          53,
+          52,
+          62,
+          59,
+          58,
+          68,
+          65,
+          64,
+          74,
+          71,
+          70,
+          80,
+          77,
+          76,
+          86,
+          83,
+          81,
+          91,
+          89,
+          87,
+          94,
+          93,
+          0,
+          2,
+          6,
+          3,
+          7,
+          12,
+          9,
+          13,
+          18,
+          15,
+          19,
+          24,
+          21,
+          25,
+          30,
+          27,
+          31,
+          36,
+          33,
+          37,
+          42,
+          39,
+          43,
+          48,
+          45,
+          49,
+          55,
+          51,
+          54,
+          61,
+          57,
+          60,
+          67,
+          63,
+          66,
+          73,
+          69,
+          72,
+          79,
+          75,
+          78,
+          85,
+          82,
+          84,
+          92,
+          88,
+          90,
+          95
+        ]
+      },
+      "from_surface": "ground",
+      "to_surface": "mountain_01_top",
+      "traversal_kind": "ramp"
+    },
+    {
+      "id": "mountain_01_top",
+      "kind": "flat",
+      "object": "WALKABLE_Mountain_01_Top",
+      "bounds": {
+        "min_x": 2.0,
+        "max_x": 6.0,
+        "min_z": -2.6142,
+        "max_z": 2.6142
+      },
+      "layer": "mountain_01",
+      "height": 4.0,
+      "min_height": 4.0,
+      "max_height": 4.0
+    },
+    {
+      "id": "ramp_castle_floor_1_to_2",
+      "kind": "mesh",
+      "object": "RAMP_Castle_Floor_1_to_2",
+      "bounds": {
+        "min_x": -13.5,
+        "max_x": -11.5,
+        "min_z": -12.0,
+        "max_z": -6.0
+      },
+      "layer": "castle",
+      "min_height": 0.05,
+      "max_height": 3.55,
+      "max_slope_deg": 35.0,
+      "walkable_mesh": {
+        "vertices": [
+          [
+            -13.5,
+            -12.0,
+            0.05
+          ],
+          [
+            -11.5,
+            -12.0,
+            0.05
+          ],
+          [
+            -11.5,
+            -6.0,
+            3.55
+          ],
+          [
+            -13.5,
+            -6.0,
+            3.55
+          ]
+        ],
+        "indices": [
+          0,
+          2,
+          3,
+          0,
+          1,
+          2
+        ]
+      },
+      "from_surface": "castle_floor_1",
+      "to_surface": "castle_floor_2",
+      "traversal_kind": "ramp"
+    },
+    {
+      "id": "ramp_castle_floor_2_to_3",
+      "kind": "mesh",
+      "object": "RAMP_Castle_Floor_2_to_3",
+      "bounds": {
+        "min_x": -13.5,
+        "max_x": -11.5,
+        "min_z": -11.9,
+        "max_z": -5.9
+      },
+      "layer": "castle",
+      "min_height": 3.55,
+      "max_height": 7.05,
+      "max_slope_deg": 35.0,
+      "walkable_mesh": {
+        "vertices": [
+          [
+            -13.5,
+            -11.9,
+            3.55
+          ],
+          [
+            -11.5,
+            -11.9,
+            3.55
+          ],
+          [
+            -11.5,
+            -5.9,
+            7.05
+          ],
+          [
+            -13.5,
+            -5.9,
+            7.05
+          ]
+        ],
+        "indices": [
+          0,
+          2,
+          3,
+          0,
+          1,
+          2
+        ]
+      },
+      "from_surface": "castle_floor_2",
+      "to_surface": "castle_floor_3",
+      "traversal_kind": "ramp"
+    },
+    {
+      "id": "ramp_castle_floor_3_to_4",
+      "kind": "mesh",
+      "object": "RAMP_Castle_Floor_3_to_4",
+      "bounds": {
+        "min_x": -13.5,
+        "max_x": -11.5,
+        "min_z": -11.8,
+        "max_z": -5.8
+      },
+      "layer": "castle",
+      "min_height": 7.05,
+      "max_height": 10.55,
+      "max_slope_deg": 35.0,
+      "walkable_mesh": {
+        "vertices": [
+          [
+            -13.5,
+            -11.8,
+            7.05
+          ],
+          [
+            -11.5,
+            -11.8,
+            7.05
+          ],
+          [
+            -11.5,
+            -5.8,
+            10.55
+          ],
+          [
+            -13.5,
+            -5.8,
+            10.55
+          ]
+        ],
+        "indices": [
+          0,
+          2,
+          3,
+          0,
+          1,
+          2
+        ]
+      },
+      "from_surface": "castle_floor_3",
+      "to_surface": "castle_floor_4",
+      "traversal_kind": "ramp"
+    },
+    {
+      "id": "castle_floor_1",
+      "kind": "flat",
+      "object": "WALKABLE_Castle_Floor_1",
+      "bounds": {
+        "min_x": -20.4,
+        "max_x": -11.6,
+        "min_z": -12.4,
+        "max_z": -3.6
+      },
+      "layer": "castle",
+      "height": 0.01,
+      "min_height": 0.01,
+      "max_height": 0.01
+    },
+    {
+      "id": "castle_floor_2",
+      "kind": "flat",
+      "object": "WALKABLE_Castle_Floor_2",
+      "bounds": {
+        "min_x": -20.4,
+        "max_x": -11.6,
+        "min_z": -12.4,
+        "max_z": -3.6
+      },
+      "layer": "castle",
+      "height": 3.52,
+      "min_height": 3.52,
+      "max_height": 3.52
+    },
+    {
+      "id": "castle_floor_3",
+      "kind": "flat",
+      "object": "WALKABLE_Castle_Floor_3",
+      "bounds": {
+        "min_x": -20.4,
+        "max_x": -11.6,
+        "min_z": -12.4,
+        "max_z": -3.6
+      },
+      "layer": "castle",
+      "height": 7.03,
+      "min_height": 7.03,
+      "max_height": 7.03
+    },
+    {
+      "id": "castle_floor_4",
+      "kind": "flat",
+      "object": "WALKABLE_Castle_Floor_4",
+      "bounds": {
+        "min_x": -20.4,
+        "max_x": -11.6,
+        "min_z": -12.4,
+        "max_z": -3.6
+      },
+      "layer": "castle",
+      "height": 10.54,
+      "min_height": 10.54,
+      "max_height": 10.54
+    }
+  ],
+  "traversals": [],
+  "blockers": [
+    {
+      "id": "test_top_back_cliff",
+      "kind": "box",
+      "object": "BLOCKER_TestTop_BackCliff",
+      "transform": {
+        "translation": [
+          0.0,
+          2.5,
+          16.25
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "shape": {
+        "type": "box",
+        "half_extents": [
+          4.25,
+          2.5,
+          0.25
+        ]
+      },
+      "blocks_movement": true
+    },
+    {
+      "id": "test_top_left_cliff",
+      "kind": "box",
+      "object": "BLOCKER_TestTop_LeftCliff",
+      "transform": {
+        "translation": [
+          -6.983,
+          2.5,
+          8.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "shape": {
+        "type": "box",
+        "half_extents": [
+          0.25,
+          2.5,
+          8.0
+        ]
+      },
+      "blocks_movement": true
+    },
+    {
+      "id": "test_top_right_cliff",
+      "kind": "box",
+      "object": "BLOCKER_TestTop_RightCliff",
+      "transform": {
+        "translation": [
+          2.25,
+          2.5,
+          8.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "shape": {
+        "type": "box",
+        "half_extents": [
+          0.25,
+          2.5,
+          8.0
+        ]
+      },
+      "blocks_movement": true
+    },
+    {
+      "id": "mountain_01_back_cliff",
+      "kind": "box",
+      "object": "BLOCKER_Mountain_01_BackCliff",
+      "transform": {
+        "translation": [
+          10.0,
+          0.0,
+          -21.85
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "shape": {
+        "type": "box",
+        "half_extents": [
+          2.5,
+          3.0,
+          0.25
+        ]
+      },
+      "blocks_movement": true
+    },
+    {
+      "id": "mountain_01_left_cliff",
+      "kind": "box",
+      "object": "BLOCKER_Mountain_01_LeftCliff",
+      "transform": {
+        "translation": [
+          7.6829,
+          0.0,
+          -2.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "shape": {
+        "type": "box",
+        "half_extents": [
+          0.25,
+          3.0,
+          4.0
+        ]
+      },
+      "blocks_movement": true
+    },
+    {
+      "id": "mountain_01_right_cliff",
+      "kind": "box",
+      "object": "BLOCKER_Mountain_01_RightCliff",
+      "transform": {
+        "translation": [
+          10.0,
+          0.0,
+          -25.6249
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "shape": {
+        "type": "box",
+        "half_extents": [
+          0.25,
+          3.0,
+          4.0
+        ]
+      },
+      "blocks_movement": true
+    },
+    {
+      "id": "blocker_mapboundary_north",
+      "kind": "box",
+      "object": "BLOCKER_MapBoundary_North",
+      "transform": {
+        "translation": [
+          0.0,
+          1.5,
+          15.25
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "shape": {
+        "type": "box",
+        "half_extents": [
+          15.25,
+          1.5,
+          0.25
+        ]
+      },
+      "blocks_movement": true
+    },
+    {
+      "id": "blocker_mapboundary_south",
+      "kind": "box",
+      "object": "BLOCKER_MapBoundary_South",
+      "transform": {
+        "translation": [
+          0.0,
+          1.5,
+          -15.25
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "shape": {
+        "type": "box",
+        "half_extents": [
+          15.25,
+          1.5,
+          0.25
+        ]
+      },
+      "blocks_movement": true
+    },
+    {
+      "id": "blocker_mapboundary_east",
+      "kind": "box",
+      "object": "BLOCKER_MapBoundary_East",
+      "transform": {
+        "translation": [
+          26.4837,
+          1.5,
+          0.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "shape": {
+        "type": "box",
+        "half_extents": [
+          0.25,
+          1.5,
+          15.25
+        ]
+      },
+      "blocks_movement": true
+    },
+    {
+      "id": "blocker_mapboundary_west",
+      "kind": "box",
+      "object": "BLOCKER_MapBoundary_West",
+      "transform": {
+        "translation": [
+          -15.25,
+          1.5,
+          0.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "shape": {
+        "type": "box",
+        "half_extents": [
+          0.25,
+          1.5,
+          15.25
+        ]
+      },
+      "blocks_movement": true
+    }
+  ],
+  "test_route": [],
+  "test_checklist": []
+}

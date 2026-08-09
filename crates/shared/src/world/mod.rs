@@ -19,6 +19,7 @@ pub use loader::{
 pub use manifest::{
     BlockerData, BlockerKind, HeightfieldData, MapBounds, MapManifest, PlateauTest, Prop,
     SurfaceBounds, SurfaceKind, SwitchbackTest, Terrain, TestRoutePoint, TransformData,
-    TraversalData, TraversalKind, WalkableSurface, WorldMetrics, CURRENT_VERSION, LEGACY_VERSION_1,
+    TraversalData, TraversalKind, WalkableMeshData, WalkableSurface, WorldMetrics, CURRENT_VERSION,
+    LEGACY_VERSION_1,
 };
 pub use shapes::{aabb_for_shape, CollisionShape};

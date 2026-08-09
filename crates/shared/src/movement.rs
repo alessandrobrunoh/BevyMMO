@@ -384,7 +384,10 @@ fn try_step(
 
     let candidate = Vec3::new(next_x, next_contact.height, next_z);
 
-    if collision_grid.is_blocked([candidate.x, candidate.y, candidate.z], STEP_COLLISION_RADIUS) {
+    if collision_grid.is_blocked(
+        [candidate.x, candidate.y, candidate.z],
+        STEP_COLLISION_RADIUS,
+    ) {
         return None;
     }
 
@@ -540,6 +543,9 @@ mod tests {
                 size: Some(20.0),
                 purpose: Some("Test surface for movement".to_string()),
                 heightfield: None,
+                walkable_mesh: None,
+                layer: None,
+                max_slope_deg: None,
             }],
             traversals: vec![],
             blockers: vec![],
@@ -673,6 +679,9 @@ mod tests {
                     size: None,
                     purpose: None,
                     heightfield: None,
+                    walkable_mesh: None,
+                    layer: None,
+                    max_slope_deg: None,
                 },
                 WalkableSurface {
                     id: "surface_ramp".to_string(),
@@ -686,6 +695,9 @@ mod tests {
                     size: None,
                     purpose: None,
                     heightfield: Some(ramp_hf),
+                    walkable_mesh: None,
+                    layer: None,
+                    max_slope_deg: None,
                 },
             ],
             traversals: vec![],
@@ -731,7 +743,15 @@ mod tests {
 
         let mut prev_y = pos.y;
         for _ in 0..200 {
-            match step_on_terrain(pos, target.x, target.z, speed, &query, &grid, max_step_height) {
+            match step_on_terrain(
+                pos,
+                target.x,
+                target.z,
+                speed,
+                &query,
+                &grid,
+                max_step_height,
+            ) {
                 TerrainStep::Arrived(p) => {
                     pos = p;
                     break;

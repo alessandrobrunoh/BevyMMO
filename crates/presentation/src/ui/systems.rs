@@ -10,7 +10,7 @@ use bevy::input::ButtonInput;
 use bevy::input::ButtonState;
 use bevy::prelude::*;
 
-use bevymmo_client::input::key_mapping::KeyBindings;
+use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::game_state::{
     validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen,
@@ -81,6 +81,8 @@ pub fn update_button_actions(
             UiButtonAction::Exit => {
                 exit.write(AppExit::Success);
             }
+            // Handled by `settings::systems::reset_keybinds_on_button`.
+            UiButtonAction::ResetKeybinds => {}
         }
     }
 }
@@ -203,15 +205,16 @@ pub fn update_connection_failure(
     text.0 = failure.0.clone().unwrap_or_default();
 }
 
-/// Mostra/nasconde il pause overlay con [`KeyBindings::toggle_pause`], solo in `InGame`/`Paused`.
+/// Mostra/nasconde il pause overlay con the configured `TogglePause` key,
+/// only in `InGame`/`Paused`.
 ///
 /// Non tocca `Time`, `FixedUpdate` o la rete.
 pub fn toggle_pause(
     keys: Res<ButtonInput<KeyCode>>,
-    bindings: Res<KeyBindings>,
+    settings: Res<GameSettingsResource>,
     mut screen: ResMut<GameScreen>,
 ) {
-    if !keys.just_pressed(bindings.toggle_pause) {
+    if !settings.just_pressed(KeyAction::TogglePause, &keys) {
         return;
     }
     match screen.0 {
@@ -224,12 +227,13 @@ pub fn toggle_pause(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevymmo_shared::user_settings::{GameSettings, KeyBinding, KeyModifiers};
 
     fn test_app() -> App {
         let mut app = App::new();
         app.init_resource::<ButtonInput<KeyCode>>();
         app.init_resource::<GameScreen>();
-        app.init_resource::<KeyBindings>();
+        app.insert_resource(GameSettingsResource(GameSettings::default()));
         app.add_systems(Update, toggle_pause);
         app
     }
@@ -241,10 +245,35 @@ mod tests {
     }
 
     #[test]
-    fn pause_key_is_taken_from_key_bindings() {
+    fn pause_uses_default_escape_binding() {
         let mut app = test_app();
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
-        app.world_mut().resource_mut::<KeyBindings>().toggle_pause = KeyCode::KeyP;
+
+        press(&mut app, KeyCode::KeyP);
+        app.update();
+        assert_eq!(app.world().resource::<GameScreen>().0, Screen::InGame);
+
+        press(&mut app, KeyCode::Escape);
+        app.update();
+        assert_eq!(app.world().resource::<GameScreen>().0, Screen::Paused);
+    }
+
+    #[test]
+    fn pause_respects_custom_binding() {
+        let mut app = test_app();
+        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.world_mut()
+            .resource_mut::<GameSettingsResource>()
+            .0
+            .keybinds
+            .bindings
+            .insert(
+                KeyAction::TogglePause,
+                KeyBinding {
+                    key: KeyCode::KeyP,
+                    modifiers: KeyModifiers::default(),
+                },
+            );
 
         press(&mut app, KeyCode::Escape);
         app.update();

@@ -23,6 +23,7 @@ pub mod spells;
 pub mod spells_impl;
 pub mod stats;
 pub mod targeting;
+pub mod user_settings;
 pub mod world;
 
 pub use crate::movement::{ClientSurfaceQuery, MoveTarget};
@@ -48,6 +49,10 @@ pub mod prelude {
         UpdateHotbarSlotRequest,
     };
     pub use crate::settings::Settings;
+    pub use crate::user_settings::{
+        GameSettings, GameSettingsResource, GeneralSettings, GraphicsSettings, KeyAction,
+        KeyBinding, KeybindSettings, KeyModifiers, Resolution, WindowMode,
+    };
     pub use crate::spells::{
         default_player_hotbar, AoeEffect, AoeTargeting, CastKind, CastProgress,
         ChannelMovementPolicy, HotbarSlot, ProjectileSpawnRequest, Spell, SpellCastContext,

@@ -6,6 +6,7 @@ use bevymmo_shared::network::protocol::{Channel2, UpdateHotbarSlotRequest};
 use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId, SpellRegistry};
 use lightyear::prelude::MessageSender;
 
+use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::UiTheme;
 
 const SPELLBOOK_WIDTH: f32 = 760.0;
@@ -13,6 +14,7 @@ const SPELLBOOK_HEIGHT: f32 = 460.0;
 
 pub fn toggle_spellbook(
     keys: Res<ButtonInput<KeyCode>>,
+    settings: Res<GameSettingsResource>,
     mut state: ResMut<SpellbookUiState>,
     mut commands: Commands,
     window_query: Query<Entity, With<SpellbookWindow>>,
@@ -20,7 +22,7 @@ pub fn toggle_spellbook(
     registry: Res<SpellRegistry>,
     player_query: Query<&SpellHotbar, With<lightyear::prelude::Controlled>>,
 ) {
-    if !keys.just_pressed(KeyCode::KeyK) {
+    if !settings.just_pressed(KeyAction::ToggleSpellbook, &keys) {
         return;
     }
 

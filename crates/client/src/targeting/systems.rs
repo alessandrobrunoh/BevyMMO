@@ -178,16 +178,20 @@ pub fn select_target_with_right_click(
     }
 }
 
-/// System to clear target with Escape key.
+/// System to clear target with the configured "Clear Target" key.
 pub fn clear_target_with_escape(
     keyboard: Option<Res<ButtonInput<KeyCode>>>,
+    settings: Option<Res<bevymmo_shared::user_settings::GameSettingsResource>>,
     mut current_target: ResMut<CurrentTarget>,
 ) {
     let Some(keyboard) = keyboard else {
         return;
     };
+    let Some(settings) = settings else {
+        return;
+    };
 
-    if keyboard.just_pressed(KeyCode::Escape) {
+    if settings.just_pressed(bevymmo_shared::user_settings::KeyAction::ClearTarget, &keyboard) {
         current_target.clear();
     }
 }

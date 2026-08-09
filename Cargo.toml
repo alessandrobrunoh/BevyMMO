@@ -22,6 +22,8 @@ lightyear = { version = "0.28", features = [
     "udp",
 ] }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dirs = "5"
 clap = { version = "4.5", features = ["derive"] }
 config = { version = "0.15", default-features = false, features = ["toml"] }
 sea-orm = { version = "1.1", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-uuid"] }

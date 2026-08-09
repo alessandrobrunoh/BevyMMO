@@ -8,6 +8,7 @@ use bevymmo_shared::spells::{
     CastKind, ChannelMovementPolicy, HotbarSlot, SpellHotbar, SpellId, SpellRegistry,
 };
 use bevymmo_shared::targeting::CurrentTarget;
+use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
 use lightyear::prelude::Controlled;
 use lightyear::prelude::MessageSender;
 
@@ -18,6 +19,7 @@ use crate::spells::ui::{SpellHudCooldownStarted, SpellHudState};
 #[allow(clippy::too_many_arguments)]
 pub fn cast_spells_on_key(
     keys: Option<Res<ButtonInput<KeyCode>>>,
+    settings: Res<GameSettingsResource>,
     screen: Res<GameScreen>,
     hud_state: Res<SpellHudState>,
     current_target: Res<CurrentTarget>,
@@ -89,20 +91,20 @@ pub fn cast_spells_on_key(
         }
     });
 
-    let check_slot = |key: KeyCode, slot: HotbarSlot| {
-        if keys.just_pressed(key) {
+    let check_slot = |action: KeyAction, slot: HotbarSlot| {
+        if settings.just_pressed(action, &keys) {
             hotbar.spell_for_slot(slot).cloned()
         } else {
             None
         }
     };
 
-    for (key, slot) in [
-        (KeyCode::KeyQ, HotbarSlot::Q),
-        (KeyCode::KeyW, HotbarSlot::W),
-        (KeyCode::KeyE, HotbarSlot::E),
+    for (action, slot) in [
+        (KeyAction::CastSpellQ, HotbarSlot::Q),
+        (KeyAction::CastSpellW, HotbarSlot::W),
+        (KeyAction::CastSpellE, HotbarSlot::E),
     ] {
-        let Some(spell_id) = check_slot(key, slot) else {
+        let Some(spell_id) = check_slot(action, slot) else {
             continue;
         };
 

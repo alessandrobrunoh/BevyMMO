@@ -17,6 +17,8 @@ pub enum UiButtonAction {
     Resume,
     ReturnToMainMenu,
     Exit,
+    /// Settings → Keybinds → "Reset to defaults".
+    ResetKeybinds,
 }
 
 /// UI Button with associated semantic action.

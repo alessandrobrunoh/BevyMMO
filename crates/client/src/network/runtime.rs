@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevymmo_shared::network::protocol::{
     EntityColor, Inputs, PlayerId, PlayerMessage, SpellVisualEffect,
 };
-use lightyear::prelude::input::native::{ActionState, InputMarker};
+use lightyear::prelude::input::native::ActionState;
 use lightyear::prelude::*;
 
 use crate::network::types::ConnectedClient;
@@ -48,21 +48,25 @@ pub fn lower_controlled_saturation(mut controlled: Query<&mut EntityColor, Added
     }
 }
 
-/// Adds `InputMarker` to the controlled (local) player.
+/// Adds the local action state used by client-side movement prediction.
+///
+/// Movement is sent explicitly through `MoveCommand`, so this entity must not
+/// receive Lightyear's `InputMarker<Inputs>` as well. Registering both paths
+/// makes the native input plugin build redundant tick sequences and can cause
+/// an unbounded allocation when its tick range wraps.
 pub fn handle_controlled_spawn(
     trigger: On<Add, Controlled>,
     mut commands: Commands,
-    players: Query<&PlayerId, Without<InputMarker<Inputs>>>,
+    players: Query<&PlayerId, Without<ActionState<Inputs>>>,
 ) {
     let entity = trigger.entity;
     let Ok(player_id) = players.get(entity) else {
         return;
     };
-    info!("Adding InputMarker to controlled player {entity:?} {player_id:?}");
-    commands.entity(entity).insert((
-        InputMarker::<Inputs>::default(),
-        ActionState::<Inputs>::default(),
-    ));
+    info!("Adding local ActionState to controlled player {entity:?} {player_id:?}");
+    commands
+        .entity(entity)
+        .insert(ActionState::<Inputs>::default());
 }
 
 /// Reduces saturation on interpolated entities (other players / other entities).

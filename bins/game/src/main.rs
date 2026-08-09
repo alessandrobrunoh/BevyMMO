@@ -217,7 +217,6 @@ fn build_app(config: &AppConfig) -> App {
 
     #[cfg(feature = "client")]
     if config.mode.has_client() {
-        app.add_plugins(bevymmo_client::input::key_mapping::KeyMappingPlugin);
         app.add_plugins(bevymmo_client::player_movement::PlayerMovementPlugin);
         app.add_plugins(bevymmo_client::targeting::TargetingPlugin);
         // Load client-side model/animation asset collections before renderer

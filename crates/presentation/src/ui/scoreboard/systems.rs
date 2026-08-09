@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
-use bevymmo_client::input::key_mapping::KeyBindings;
 use bevymmo_shared::entity::components::PlayerName;
+use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::ui::theme::UiTheme;
 
@@ -54,7 +54,7 @@ pub fn setup_scoreboard(mut commands: Commands, theme: Res<UiTheme>) {
 pub fn update_scoreboard(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
-    bindings: Res<KeyBindings>,
+    settings: Res<GameSettingsResource>,
     theme: Res<UiTheme>,
     players: Query<&PlayerName>,
     changed_names: Query<(), Changed<PlayerName>>,
@@ -69,7 +69,7 @@ pub fn update_scoreboard(
         return;
     };
 
-    let open = keys.pressed(bindings.show_scoreboard);
+    let open = settings.pressed(KeyAction::ShowScoreboard, &keys);
     root_node.display = if open { Display::Flex } else { Display::None };
 
     if !open {
@@ -127,7 +127,7 @@ mod tests {
         app.add_plugins(InputPlugin);
         app.init_resource::<UiTheme>();
         app.init_resource::<GameScreen>();
-        app.init_resource::<KeyBindings>();
+        app.insert_resource(GameSettingsResource(bevymmo_shared::user_settings::GameSettings::default()));
         app.add_plugins(ScoreboardPlugin);
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
         app

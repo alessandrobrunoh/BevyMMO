@@ -1,24 +1,9 @@
-use bevy::prelude::*;
+//! Client-only input helpers.
+//!
+//! Historical note: this module previously hosted a `KeyBindings` resource
+//! with hardcoded keys. That resource has been superseded by
+//! [`bevymmo_shared::user_settings::GameSettingsResource`] which is fully
+//! rebindable from the Settings UI and persists across sessions. Use
+//! `GameSettingsResource::just_pressed(KeyAction::X, &keys)` from now on.
 
-#[derive(Resource)]
-pub struct KeyBindings {
-    pub show_scoreboard: KeyCode,
-    pub toggle_pause: KeyCode,
-}
-
-impl Default for KeyBindings {
-    fn default() -> Self {
-        Self {
-            show_scoreboard: KeyCode::Tab,
-            toggle_pause: KeyCode::Escape,
-        }
-    }
-}
-
-pub struct KeyMappingPlugin;
-
-impl Plugin for KeyMappingPlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<KeyBindings>();
-    }
-}
+pub use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};

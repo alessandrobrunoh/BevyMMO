@@ -18,6 +18,7 @@ use crate::ui::{
         builder::CardBuilder,
         components::{CardKind, CardPositioning, CardWindow},
     },
+    settings::state::{GameSettingsResource, KeyAction},
     theme::UiTheme,
 };
 
@@ -26,6 +27,7 @@ const INVENTORY_CARD_HEIGHT: f32 = 460.0;
 
 pub fn toggle_inventory(
     keys: Res<ButtonInput<KeyCode>>,
+    settings: Res<GameSettingsResource>,
     mut state: ResMut<InventoryUiState>,
     mut commands: Commands,
     window_query: Query<(Entity, &CardWindow)>,
@@ -33,7 +35,7 @@ pub fn toggle_inventory(
     registry: Res<ItemRegistry>,
     player_query: Query<(&Inventory, &Equipment), With<lightyear::prelude::Controlled>>,
 ) {
-    if !keys.just_pressed(KeyCode::KeyI) {
+    if !settings.just_pressed(KeyAction::ToggleInventory, &keys) {
         return;
     }
 

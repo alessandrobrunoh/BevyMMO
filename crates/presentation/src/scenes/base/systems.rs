@@ -99,19 +99,23 @@ pub fn follow_controlled_player(
 
 /// Handles camera zoom input from keyboard.
 ///
-/// Allows the player to zoom in/out using PageUp/PageDown keys within the defined limits.
+/// Allows the player to zoom in/out using the configured CameraZoomIn /
+/// CameraZoomOut actions within the defined limits.
 pub fn handle_camera_zoom(
     keyboard: Res<ButtonInput<KeyCode>>,
+    settings: Res<bevymmo_shared::user_settings::GameSettingsResource>,
     time: Res<Time>,
     mut zoom: ResMut<CameraZoom>,
 ) {
+    use bevymmo_shared::user_settings::KeyAction;
+
     const ZOOM_SPEED: f32 = 10.0; // Units per second
 
     let mut zoom_direction = 0.0;
 
-    if keyboard.pressed(KeyCode::PageUp) {
+    if settings.pressed(KeyAction::CameraZoomIn, &keyboard) {
         zoom_direction = 1.0; // Zoom in
-    } else if keyboard.pressed(KeyCode::PageDown) {
+    } else if settings.pressed(KeyAction::CameraZoomOut, &keyboard) {
         zoom_direction = -1.0; // Zoom out
     }
 

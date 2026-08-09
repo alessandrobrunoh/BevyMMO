@@ -9,7 +9,7 @@ pub mod player_movement;
 pub mod targeting;
 
 pub mod prelude {
-    pub use crate::input::{KeyBindings, KeyMappingPlugin};
+    pub use crate::input::{GameSettingsResource, KeyAction};
     pub use crate::network::client::ClientTransportPlugins;
     pub use crate::network::runtime::{
         handle_controlled_spawn, handle_interpolated_spawn, handle_predicted_spawn,

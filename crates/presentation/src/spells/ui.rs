@@ -15,6 +15,7 @@ use bevymmo_shared::network::protocol::{
 };
 use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId};
 use bevymmo_shared::targeting::CurrentTarget;
+use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
 use lightyear::prelude::{Controlled, MessageSender};
 
 use crate::game_state::{GameScreen, Screen};
@@ -35,7 +36,9 @@ pub struct SpellHudState {
 #[derive(Resource, Default)]
 struct SpellHudLayoutState {
     initialized: bool,
-    signature: Vec<(HotbarSlot, Option<SpellId>)>,
+    /// `(slot, spell_id, key_label)` — the label is included so the HUD is
+    /// rebuilt when the user rebinds the slot in Settings.
+    signature: Vec<(HotbarSlot, Option<SpellId>, String)>,
 }
 
 impl SpellHudState {
@@ -58,7 +61,7 @@ struct SpellHudRoot;
 struct SpellHudEntry {
     spell_id: Option<SpellId>,
     display_name: String,
-    key_label: &'static str,
+    key_label: String,
 }
 
 pub fn spell_hud_systems(app: &mut App) {
@@ -108,6 +111,7 @@ fn sync_spell_hud(
     mut commands: Commands,
     theme: Res<UiTheme>,
     registry: Res<bevymmo_shared::spells::SpellRegistry>,
+    settings: Res<GameSettingsResource>,
     mut layout_state: ResMut<SpellHudLayoutState>,
     player_query: Query<&SpellHotbar, With<lightyear::prelude::Controlled>>,
     hud_query: Query<Entity, With<SpellHudRoot>>,
@@ -122,10 +126,12 @@ fn sync_spell_hud(
     let mut signature = Vec::new();
     let mut entries = Vec::new();
 
-    for (slot, key_label) in [
-        (HotbarSlot::Q, "Q"),
-        (HotbarSlot::W, "W"),
-        (HotbarSlot::E, "E"),
+    // Map each hotbar slot to its rebindable action and read the current
+    // binding label from the settings resource so the HUD reflects rebinding.
+    for (slot, action) in [
+        (HotbarSlot::Q, KeyAction::CastSpellQ),
+        (HotbarSlot::W, KeyAction::CastSpellW),
+        (HotbarSlot::E, KeyAction::CastSpellE),
     ] {
         let spell_id = hotbar.spell_for_slot(slot).cloned();
         let display_name = spell_id
@@ -133,8 +139,9 @@ fn sync_spell_hud(
             .and_then(|id| registry.get(id))
             .map(|spell_def| spell_def.display_name().to_string())
             .unwrap_or_else(|| "Empty".to_string());
+        let key_label = settings.0.keybinds.get(action).label();
 
-        signature.push((slot, spell_id.clone()));
+        signature.push((slot, spell_id.clone(), key_label.clone()));
         entries.push(SpellHudEntry {
             spell_id,
             display_name,
@@ -340,12 +347,12 @@ mod tests {
         let entry = SpellHudEntry {
             spell_id: Some(SpellId::new("test")),
             display_name: "Test Spell".to_string(),
-            key_label: "Q",
+            key_label: "Q".to_string(),
         };
         let empty_entry = SpellHudEntry {
             spell_id: None,
             display_name: "Empty".to_string(),
-            key_label: "W",
+            key_label: "W".to_string(),
         };
 
         assert_eq!(format_spell_label(&entry, 0.0), "[Q] Test Spell - Ready");

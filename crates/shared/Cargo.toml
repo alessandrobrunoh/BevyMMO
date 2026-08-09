@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = { workspace = true }
+bevy = { workspace = true, features = ["bevy_window", "serialize"] }
 lightyear = { workspace = true, features = [
     "interpolation",
     "prediction",
@@ -17,6 +17,7 @@ ron = "0.10"
 thiserror = "2"
 gltf = { version = "1", default-features = false, features = ["utils", "names", "extras"] }
 serde_json = "1"
+dirs = { workspace = true }
 bevymmo-props-macro = { path = "../bevymmo-props-macro" }
 
 [dev-dependencies]

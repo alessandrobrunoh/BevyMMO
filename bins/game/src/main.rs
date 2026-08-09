@@ -295,14 +295,16 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
             panic!("windowed modes require the 'client' cargo feature to be enabled");
         }
     } else {
-        app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin));
+        let tick_duration = Duration::from_secs_f64(1.0 / config.tick_rate);
+        app.add_plugins((
+            MinimalPlugins.set(bevy::app::ScheduleRunnerPlugin::run_loop(tick_duration)),
+            bevy::state::app::StatesPlugin,
+        ));
         app.add_plugins(LogPlugin {
             filter: config.log_filter.clone(),
             ..default()
         });
-        app.insert_resource(Time::<Fixed>::from_duration(Duration::from_secs_f64(
-            1.0 / config.tick_rate,
-        )));
+        app.insert_resource(Time::<Fixed>::from_duration(tick_duration));
     }
 }
 

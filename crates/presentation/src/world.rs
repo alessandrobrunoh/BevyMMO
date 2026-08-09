@@ -177,8 +177,11 @@ fn sync_surface_query(
     world_map: Res<ClientWorldMap>,
     mut shared_surface_query: ResMut<ClientSurfaceQuery>,
 ) {
-    // Update the shared resource to match the local world map state
-    shared_surface_query.0 = world_map.surface_query.clone();
+    if !world_map.is_changed() {
+        return;
+    }
+
+    shared_surface_query.0.clone_from(&world_map.surface_query);
 }
 
 fn should_load_map_scene(manifest: &MapManifest) -> bool {
@@ -309,5 +312,39 @@ fn spawn_prop_visual(
         AssetHint::Invisible => {
             // Marker-only placement: keep the tagged entity, attach no visual.
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Resource, Default)]
+    struct SurfaceQueryChangeCount(usize);
+
+    fn count_surface_query_changes(mut count: ResMut<SurfaceQueryChangeCount>) {
+        count.0 += 1;
+    }
+
+    #[test]
+    fn surface_query_is_not_rewritten_when_world_map_is_unchanged() {
+        let mut app = App::new();
+        app.init_resource::<ClientWorldMap>()
+            .init_resource::<ClientSurfaceQuery>()
+            .init_resource::<SurfaceQueryChangeCount>()
+            .add_systems(
+                Update,
+                (
+                    sync_surface_query,
+                    count_surface_query_changes.run_if(resource_changed::<ClientSurfaceQuery>),
+                )
+                    .chain(),
+            );
+
+        app.update();
+        assert_eq!(app.world().resource::<SurfaceQueryChangeCount>().0, 1);
+
+        app.update();
+        assert_eq!(app.world().resource::<SurfaceQueryChangeCount>().0, 1);
     }
 }

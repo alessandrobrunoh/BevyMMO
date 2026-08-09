@@ -8,7 +8,7 @@
 //! All math is identical on server/client to ensure movement prediction matches
 //! authoritative server validation.
 
-use super::manifest::{MapManifest, SurfaceKind, WalkableSurface};
+use super::manifest::{HeightfieldData, MapManifest, SurfaceKind, WalkableSurface};
 use super::shapes::aabb_for_shape;
 
 use crate::world::manifest::WalkableMeshData;
@@ -364,7 +364,7 @@ impl SurfaceQuery {
             SurfaceKind::FlatMesh => {
                 // For flat_mesh, try heightfield data first, then fall back to constant height
                 if let Some(ref heightfield) = surface.heightfield {
-                    heightfield.sample_height(x, z).map(GroundContact::flat)
+                    self.resolve_heightfield(surface, heightfield, x, z)
                 } else {
                     surface.height.map(GroundContact::flat)
                 }
@@ -376,17 +376,32 @@ impl SurfaceQuery {
                 }
                 // For mesh surfaces, use heightfield data if available
                 if let Some(ref heightfield) = surface.heightfield {
-                    heightfield.sample_height(x, z).map(|height| {
-                        // TODO: Calculate proper surface normal from heightfield gradient
-                        // For now, use flat normal as approximation
-                        GroundContact::flat(height)
-                    })
+                    self.resolve_heightfield(surface, heightfield, x, z)
                 } else {
                     // No heightfield data available
                     None
                 }
             }
         }
+    }
+
+    /// Resolves a heightfield-backed surface and applies the walkable slope limit.
+    fn resolve_heightfield(
+        &self,
+        surface: &WalkableSurface,
+        heightfield: &HeightfieldData,
+        x: f32,
+        z: f32,
+    ) -> Option<GroundContact> {
+        let height = heightfield.sample_height(x, z)?;
+        let normal = heightfield.sample_normal(x, z)?;
+        let max_slope = surface.max_slope_deg.unwrap_or(45.0);
+        let min_normal_y = max_slope.to_radians().cos();
+        if normal[1] < min_normal_y {
+            return None;
+        }
+
+        Some(GroundContact::new(height, normal))
     }
 
     /// Returns the number of surfaces in the query system.
@@ -497,9 +512,74 @@ mod tests {
             h
         );
 
+        let normal = heightfield
+            .sample_normal(5.0, 5.0)
+            .expect("center point should have an estimated normal");
+        assert!(
+            normal[1] > 0.99,
+            "gentle test slope should remain mostly upward"
+        );
+
         // Test outside bounds
         assert_eq!(heightfield.sample_height(-1.0, 5.0), None);
         assert_eq!(heightfield.sample_height(11.0, 5.0), None);
+    }
+
+    #[test]
+    fn heightfield_query_rejects_surface_above_walkable_slope() {
+        let bounds = SurfaceBounds {
+            min_x: 0.0,
+            max_x: 1.0,
+            min_z: 0.0,
+            max_z: 1.0,
+        };
+        let heightfield = HeightfieldData::new(
+            1,
+            bounds,
+            vec![
+                0.0, 0.0, // x=0
+                10.0, 10.0, // x=1: intentionally cliff-like
+            ],
+        );
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "steep_heightfield".to_string(),
+            display_name: "Steep Heightfield".to_string(),
+            bounds: MapBounds {
+                min_x: 0.0,
+                max_x: 1.0,
+                min_z: 0.0,
+                max_z: 1.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: Some(WorldMetrics::default()),
+            surfaces: vec![WalkableSurface {
+                id: "steep".to_string(),
+                kind: SurfaceKind::Mesh,
+                object: None,
+                bounds: None,
+                height: None,
+                min_height: None,
+                max_height: None,
+                grid_size: Some(1),
+                size: Some(1.0),
+                purpose: None,
+                heightfield: Some(heightfield),
+                walkable_mesh: None,
+                layer: None,
+                max_slope_deg: Some(45.0),
+            }],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        let query = SurfaceQuery::from_manifest(&manifest);
+        assert!(query.ground_at(0.5, 0.5).is_none());
     }
 
     #[test]

@@ -218,6 +218,16 @@ fn server_move_to_target(
     }
 }
 
+/// Emits the authoritative player position often enough to inspect terrain climbing.
+///
+/// Server-side logging is intentionally used instead of client UI/chat because the
+/// server owns the replicated `Position`. If `pos.y` follows `ground_y` here, any
+/// remaining visual mismatch is presentation-side rather than gameplay-side.
+///
+/// # Example
+/// ```text
+/// SERVER PLAYER XYZ Entity(42): pos=(1.250, 3.410, -0.750) ground_y=Some(3.410) target=Some(...) state=Moving
+/// ```
 fn log_authoritative_player_positions(
     time: Res<Time>,
     mut elapsed_seconds: Local<f32>,

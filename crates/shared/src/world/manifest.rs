@@ -375,6 +375,71 @@ impl HeightfieldData {
 
         Some(height)
     }
+
+    /// Estimates the local surface normal from neighboring height samples.
+    ///
+    /// Heightfields are compact gameplay data, not render meshes, so normals are
+    /// reconstructed from central differences. This lets movement reject slopes
+    /// above the map's walkable limit without loading the GLB on the server.
+    /// Boundary samples use clamped one-sided differences.
+    ///
+    /// # Example
+    /// ```rust
+    /// use bevymmo_shared::world::{HeightfieldData, SurfaceBounds};
+    ///
+    /// let heightfield = HeightfieldData::new(
+    ///     1,
+    ///     SurfaceBounds { min_x: 0.0, max_x: 1.0, min_z: 0.0, max_z: 1.0 },
+    ///     vec![0.0, 0.0, 0.0, 0.0],
+    /// );
+    /// assert_eq!(heightfield.sample_normal(0.5, 0.5), Some([0.0, 1.0, 0.0]));
+    /// ```
+    pub fn sample_normal(&self, x: f32, z: f32) -> Option<[f32; 3]> {
+        if !self.bounds.contains(x, z) {
+            return None;
+        }
+        if self.resolution == 0 {
+            return Some([0.0, 1.0, 0.0]);
+        }
+
+        let grid_size = self.resolution as f32;
+        let cell_size_x = (self.bounds.max_x - self.bounds.min_x) / grid_size;
+        let cell_size_z = (self.bounds.max_z - self.bounds.min_z) / grid_size;
+
+        let left_x = (x - cell_size_x).max(self.bounds.min_x);
+        let right_x = (x + cell_size_x).min(self.bounds.max_x);
+        let down_z = (z - cell_size_z).max(self.bounds.min_z);
+        let up_z = (z + cell_size_z).min(self.bounds.max_z);
+
+        let Some(left_height) = self.sample_height(left_x, z) else {
+            return None;
+        };
+        let Some(right_height) = self.sample_height(right_x, z) else {
+            return None;
+        };
+        let Some(down_height) = self.sample_height(x, down_z) else {
+            return None;
+        };
+        let Some(up_height) = self.sample_height(x, up_z) else {
+            return None;
+        };
+
+        let dx = right_x - left_x;
+        let dz = up_z - down_z;
+        if dx.abs() < f32::EPSILON || dz.abs() < f32::EPSILON {
+            return Some([0.0, 1.0, 0.0]);
+        }
+
+        let dhdx = (right_height - left_height) / dx;
+        let dhdz = (up_height - down_height) / dz;
+        let normal = [-dhdx, 1.0, -dhdz];
+        let length = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+        if length < f32::EPSILON {
+            return Some([0.0, 1.0, 0.0]);
+        }
+
+        Some([normal[0] / length, normal[1] / length, normal[2] / length])
+    }
 }
 
 /// Traversal data for stairs, ramps, and other movement aids.

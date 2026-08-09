@@ -863,14 +863,14 @@ mod tests {
         assert_eq!(manifest.map_id, "rolling_hills_test");
         assert_eq!(manifest.version, 2);
         assert!(manifest.world_metrics.is_some());
-        assert!(manifest.surfaces.iter().any(|surface| {
-            surface.id == "surface_mountain_switchback"
-                || surface.id == "surface_distant_plateau_top"
-        }));
+        assert!(manifest
+            .surfaces
+            .iter()
+            .any(|surface| surface.id == "surface_mountain_test"));
         assert!(manifest
             .test_checklist
             .iter()
-            .any(|item| item.contains("distant plateau")));
+            .any(|item| item.contains("central hill")));
 
         let issues = validate_structure(&manifest);
         assert!(issues.is_empty(), "validation failed: {issues:?}");
@@ -894,8 +894,8 @@ mod tests {
         assert_eq!(manifest.map_id, "rolling_hills_test");
         assert_eq!(manifest.version, 2);
         assert!(manifest.world_metrics.is_some());
-        assert!(!manifest.surfaces.is_empty());
-        assert!(!manifest.blockers.is_empty());
+        assert_eq!(manifest.surfaces.len(), 1);
+        assert!(manifest.blockers.is_empty());
 
         // Check world metrics
         let metrics = manifest
@@ -907,30 +907,17 @@ mod tests {
         assert_eq!(metrics.max_walkable_slope_deg, 45.0);
 
         let surface_query = crate::world::SurfaceQuery::from_manifest(&manifest);
-        let mountain_base = surface_query
-            .ground_at(-6.8, -1.0)
-            .expect("mountain base route point should resolve from fixture heightfield");
-        let mountain_summit = surface_query
-            .ground_at(-18.2, 17.0)
-            .expect("mountain summit route point should resolve from fixture heightfield");
+        let outer_edge = surface_query
+            .ground_at(-22.0, -22.0)
+            .expect("outer edge should resolve from fixture heightfield");
+        let central_hill = surface_query
+            .ground_at(0.0, 0.0)
+            .expect("central hill should resolve from fixture heightfield");
         assert!(
-            mountain_summit.height > 4.5 && mountain_summit.height - mountain_base.height > 3.0,
-            "mountain should reach a high summit from the resolved terrain base; base={}, summit={}",
-            mountain_base.height,
-            mountain_summit.height
-        );
-
-        let plateau_entry = surface_query
-            .ground_at(7.0, 4.0)
-            .expect("distant plateau entry point should resolve from fixture heightfield");
-        let plateau_top = surface_query
-            .ground_at(16.0, 16.2)
-            .expect("distant plateau top should resolve from fixture heightfield");
-        assert!(
-            plateau_top.height > 3.2 && plateau_top.height - plateau_entry.height > 1.3,
-            "plateau should resolve as a distinct higher area; entry={}, top={}",
-            plateau_entry.height,
-            plateau_top.height
+            central_hill.height > 5.0 && central_hill.height - outer_edge.height > 5.0,
+            "central hill should be clearly above the map edge; edge={}, center={}",
+            outer_edge.height,
+            central_hill.height
         );
 
         // Validate the manifest structure

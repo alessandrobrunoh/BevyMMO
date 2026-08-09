@@ -525,13 +525,17 @@ fn place_prop(
     let id = state.next_prop_id();
     let kind = state.current_kind.clone();
     let kind_id = bevymmo_shared::placeables::KindId::new(kind);
-    // Default tint comes from the catalog definition; per-placement scale is
-    // unitary so the inherent size lives in `defaults()` (coherent with the
-    // client renderer).
-    let tint = placeables
+    // Pull the entire `PlaceableDefaults` from the catalog so the freshly
+    // placed prop inherits the author-defined collision shape and the
+    // `blocks_movement` flag. Hardcoding these to `None` / `false` here used
+    // to silently void every per-kind collision authored via the `#[props]`
+    // macro, which is why map authors had to re-enter collision by hand for
+    // each placement.
+    let defaults = placeables
         .props
         .get(&kind_id)
-        .and_then(|d| d.defaults().tint);
+        .map(|d| d.defaults())
+        .unwrap_or_default();
     let prop = Prop {
         id: id.clone(),
         kind: kind_id,
@@ -540,9 +544,9 @@ fn place_prop(
             rotation_deg: [0.0, 0.0, 0.0],
             scale: [1.0, 1.0, 1.0],
         },
-        tint,
-        collision: None,
-        blocks_movement: false,
+        tint: defaults.tint,
+        collision: defaults.collision,
+        blocks_movement: defaults.blocks_movement,
     };
     let entity = spawn_prop_entity(
         commands,

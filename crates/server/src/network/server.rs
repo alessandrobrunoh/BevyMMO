@@ -11,14 +11,10 @@ use std::sync::{mpsc, Mutex};
 
 use uuid::Uuid;
 
-use bevymmo_shared::entity::boss::components::Boss;
 use bevymmo_shared::entity::components::{EntityKind, EntityState, PlayerName, SpawnPoint};
-use bevymmo_shared::entity::dummy::components::Dummy;
-use bevymmo_shared::entity::enemy::components::Enemy;
 use bevymmo_shared::entity::events::RespawnedEvent;
 use bevymmo_shared::entity::player::components::Player;
-use bevymmo_shared::entity::player::spawn::PLAYER_SPAWN_POINT;
-use bevymmo_shared::entity::spawn::{spawn_entity, GameEntityBundle};
+use bevymmo_shared::entity::spawn::GameEntityBundle;
 use bevymmo_shared::game_state::validate_player_name;
 use bevymmo_shared::items::components::{Equipment, Inventory};
 use bevymmo_shared::network::protocol::*;
@@ -32,6 +28,21 @@ use crate::items::bonuses::{base_stats_without_equipment, AppliedEquipmentBonus}
 use crate::persistence::{
     normalize_name, PersistedPlayerSnapshot, PersistenceError, PersistenceRuntime, PlayerStore,
 };
+use crate::placeables::creatures::PlayerSpawnPoints;
+use bevymmo_shared::entity::player::spawn::PLAYER_SPAWN_POINT;
+
+/// Picks a deterministic player spawn position from the authored map.
+///
+/// Falls back to [`PLAYER_SPAWN_POINT`] when the map declares no spawn markers.
+/// Determinism is important for prediction: a peer always re-enters at the
+/// same slot, so client/server interpolation timelines stay consistent.
+fn pick_player_spawn(spawn_points: &PlayerSpawnPoints, peer_bits: u64) -> Vec3 {
+    if spawn_points.positions.is_empty() {
+        return PLAYER_SPAWN_POINT;
+    }
+    let index = (peer_bits as usize) % spawn_points.positions.len();
+    spawn_points.positions[index]
+}
 
 /// Server connection settings, stored as a resource.
 /// Public because used as a `run_if` marker by systems that should only
@@ -98,10 +109,7 @@ impl Plugin for ServerPlugins {
             1.0 / 60.0,
         )));
 
-        app.add_systems(
-            Startup,
-            (start_server, spawn_demo_enemy, spawn_demo_dummy, spawn_boss).chain(),
-        );
+        app.add_systems(Startup, start_server);
 
         app.add_observer(handle_new_client);
         app.add_observer(handle_connected_client);
@@ -210,6 +218,7 @@ fn finish_pending_joins(
     connected: Query<(), With<Connected>>,
     pending: Query<(), With<PendingJoin>>,
     active_players: Query<&DbPlayerId, With<Player>>,
+    spawn_points: Res<PlayerSpawnPoints>,
     mut commands: Commands,
 ) {
     let completed: Vec<_> = {
@@ -255,11 +264,22 @@ fn finish_pending_joins(
         let peer_bits = completed_join.peer_id.to_bits();
         let hue = ((peer_bits.wrapping_mul(137).wrapping_add(180) % 360) as f32) / 360.0;
         let color = Color::hsl(hue, 0.8, 0.5);
-        let position = Position(Vec3::new(
-            snapshot.player.pos_x,
-            snapshot.player.pos_y,
-            snapshot.player.pos_z,
-        ));
+
+        // New players have no saved position yet — route them to an authored
+        // spawn marker so they don't fall at the world origin. Returning
+        // players keep their last persisted coordinates.
+        let initial = if snapshot.is_new {
+            pick_player_spawn(&spawn_points, peer_bits)
+        } else {
+            Vec3::new(
+                snapshot.player.pos_x,
+                snapshot.player.pos_y,
+                snapshot.player.pos_z,
+            )
+        };
+        let position = Position(initial);
+        // Tag with the chosen spawn so respawn uses the same anchor.
+        let spawn_point = SpawnPoint(initial);
 
         let player = commands
             .spawn((
@@ -279,6 +299,7 @@ fn finish_pending_joins(
                 AppliedEquipmentBonus::default(),
                 PlayerId(completed_join.peer_id),
                 DbPlayerId(snapshot.player.id),
+                spawn_point,
                 PredictionTarget::to_clients(NetworkTarget::Single(completed_join.peer_id)),
                 InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(
                     completed_join.peer_id,
@@ -387,31 +408,6 @@ fn handle_disconnected_client(
         .remove::<PendingJoin>();
 }
 
-/// Spawns a demo enemy at server startup.
-/// `spawn_entity::<Enemy>()` automatically applies `GameEntity`, stats,
-/// `Position`, `EntityColor`, the `Enemy` bundle, and `Replicate`. Default position
-/// and color are declared in `<Enemy as EntityDefinition>`.
-fn spawn_demo_enemy(mut commands: Commands) {
-    let enemy = spawn_entity::<Enemy>(&mut commands);
-    info!("Spawned demo enemy {:?}", enemy);
-}
-
-fn spawn_demo_dummy(mut commands: Commands) {
-    let dummy = spawn_entity::<Dummy>(&mut commands);
-    info!("Spawned demo dummy {:?}", dummy);
-}
-
-/// Spawns the dragon boss at server startup.
-///
-/// `spawn_entity::<Boss>()` applies `GameEntity`, stats, `Position`,
-/// `EntityColor`, the boss bundle (`Boss`, `BossPhase::Dormant`, `BossArena`,
-/// threat/spellbook/rotation state) and `Replicate`. The boss starts dormant
-/// until a player enters the arena ring (handled in Phase 1).
-fn spawn_boss(mut commands: Commands) {
-    let boss = spawn_entity::<Boss>(&mut commands);
-    info!("Spawned boss {:?}", boss);
-}
-
 /// Translates spell commands arriving from the network into internal ECS requests.
 ///
 /// The client cannot directly specify the caster entity: the server resolves it
@@ -517,6 +513,7 @@ fn handle_respawn_requests(
         ),
         With<Player>,
     >,
+    spawn_points: Res<PlayerSpawnPoints>,
     mut respawned: MessageWriter<RespawnedEvent>,
 ) {
     for (mut receiver, remote_id) in receivers.iter_mut() {
@@ -541,7 +538,10 @@ fn handle_respawn_requests(
                 continue;
             }
 
-            let target_position = spawn_point.map(|s| s.0).unwrap_or(PLAYER_SPAWN_POINT);
+            let peer_bits = player_id.0.to_bits();
+            let target_position = spawn_point
+                .map(|s| s.0)
+                .unwrap_or_else(|| pick_player_spawn(&spawn_points, peer_bits));
             position.0 = target_position;
             vital.current_health = vital.max_health;
             vital.clamp_health();

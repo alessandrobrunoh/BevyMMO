@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 use super::{
     boss_bar, card, connecting, crowd_control_bar, death_screen, debug_position, entity_bar,
-    inventory, main_menu, pause_menu, player_stats, scoreboard, settings, spellbook, systems,
+    inventory, main_menu, pause_menu, player_stats, scoreboard, scrollbar, settings, spellbook, systems,
     target_frame, target_indicator,
 };
 
@@ -37,6 +37,7 @@ impl Plugin for UiPlugin {
             spellbook::SpellbookUiPlugin,
             inventory::InventoryUiPlugin,
             boss_bar::BossBarPlugin,
+            scrollbar::ScrollbarPlugin,
         ));
         app.add_plugins(debug_position::DebugPositionPlugin);
 

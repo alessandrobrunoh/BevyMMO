@@ -9,6 +9,9 @@
 #   - `WALKABLE_*`          -> surfaces with `walkable_mesh` + raycast heightfield
 #   - `BLOCKING_*`          -> blockers with world-space transform + AABB shape
 #   - `TRAVERSAL_*`         -> traversals linking two surfaces (data + helper points)
+#   - objects carrying `bevymmo_kind` (or prefixed `PLACEABLE_`) -> manifest `props`
+#     entries that the server dispatches into props / enemies / bosses /
+#     NPCs / player spawn markers via the placeable catalog.
 #
 # Install: Edit > Preferences > Add-ons > Install... > pick this file.
 # Usage:   File > Export > BevyMMO World (.world.json)
@@ -43,9 +46,20 @@ from mathutils import Vector
 # ---------------------------------------------------------------------------
 
 META_NODE_NAME_PREFIX = "__bevymmo_map_meta"
+# Doc reminder: keep in sync with crates/shared/src/world/loader.rs.
 WALKABLE_PREFIX = "WALKABLE_"
 BLOCKING_PREFIX = "BLOCKING_"
 TRAVERSAL_PREFIX = "TRAVERSAL_"
+PLACEABLE_PREFIX = "PLACEABLE_"
+
+# Custom-property key that tags an object as a placeable marker.
+# Recognised values are the catalog KindIds authored in
+# crates/shared/src/placeables_impl/ (e.g. "player_spawn", "mob_goblin",
+# "boss_dragon", "npc_merchant", "prop_tree", ...).
+KIND_PROP_KEY = "bevymmo_kind"
+ID_PROP_KEY = "bevymmo_id"
+TINT_PROP_KEY = "bevymmo_tint"
+BLOCKS_MOVE_PROP_KEY = "bevymmo_blocks_move"
 
 DEFAULT_WORLD_METRICS = {
     "player_radius": 0.35,
@@ -472,6 +486,115 @@ def collect_traversals(report: ExportReport) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Placeables (props + spawn markers)
+# ---------------------------------------------------------------------------
+
+# Object name prefixes that are already consumed by the dedicated collectors
+# above; we skip them here so a placeable never gets duplicated.
+_RESERVED_PREFIXES = (
+    META_NODE_NAME_PREFIX,
+    WALKABLE_PREFIX,
+    BLOCKING_PREFIX,
+    TRAVERSAL_PREFIX,
+)
+
+
+def _collision_shape_from_props(obj: bpy.types.Object) -> Optional[dict]:
+    """Builds a serialised CollisionShape from bevymmo_collision* custom props.
+
+    Shape names follow `CollisionShape` variants in
+    crates/shared/src/world/shapes.rs. Returns ``None`` when no shape is
+    declared, leaving the prop passable for movement.
+    """
+    kind = custom_prop_str(obj, "bevymmo_collision", "").strip().lower()
+    if not kind or kind == "none":
+        return None
+
+    if kind == "sphere":
+        radius = custom_prop_float(obj, "bevymmo_radius", 0.5)
+        return {"Sphere": {"radius": radius}}
+    if kind == "cylinder":
+        radius = custom_prop_float(obj, "bevymmo_radius", 0.5)
+        height = custom_prop_float(obj, "bevymmo_height", 2.0)
+        return {"Cylinder": {"radius": radius, "height": height}}
+    if kind == "box":
+        raw = custom_prop(obj, "bevymmo_half_extents")
+        if raw is None:
+            half_extents = [0.5, 0.5, 0.5]
+        elif isinstance(raw, (list, tuple)):
+            half_extents = list(raw)
+            if len(half_extents) < 3:
+                half_extents += [0.5] * (3 - len(half_extents))
+        else:
+            # Comma-separated string or scalar
+            try:
+                parts = [float(p.strip()) for p in str(raw).split(",")]
+            except ValueError:
+                parts = [0.5, 0.5, 0.5]
+            half_extents = (parts + [0.5, 0.5, 0.5])[:3]
+        return {"Box": {"half_extents": half_extents[:3]}}
+
+    return None
+
+
+def collect_props(report: ExportReport) -> list[dict]:
+    """Collects authored placeable entries (props + spawn markers).
+
+    An object is treated as a placeable when it carries the `bevymmo_kind`
+    custom property OR its name starts with the ``PLACEABLE_`` prefix. This
+    covers visual props (e.g. ``prop_tree``), AI spawns (``mob_goblin``,
+    ``boss_dragon``) and the invisible player spawn marker
+    (``player_spawn``) — the engine dispatches by category in
+    ``crates/server/src/placeables/creatures.rs::spawn_placeables_on_map_load``.
+
+    Reserved nodes (meta / walkable / blocking / traversal) are skipped to
+    avoid double-counting.
+    """
+    props: list[dict] = []
+
+    for obj in bpy.context.scene.objects:
+        if obj.name.startswith(_RESERVED_PREFIXES):
+            continue
+
+        kind = custom_prop_str(obj, KIND_PROP_KEY, "")
+        is_placeable_prefixed = obj.name.startswith(PLACEABLE_PREFIX)
+        if not kind and not is_placeable_prefixed:
+            continue
+
+        if not kind:
+            # PLACEABLE_<kind> naming fallback so authors can skip custom props.
+            kind = obj.name[len(PLACEABLE_PREFIX) :]
+            if not kind:
+                report.warn(f"{obj.name} uses PLACEABLE_ prefix with no kind; skipped")
+                continue
+
+        prop_id = custom_prop_str(obj, ID_PROP_KEY, "") or obj.name
+        tint_raw = custom_prop(obj, TINT_PROP_KEY)
+        tint = None
+        if tint_raw is not None:
+            if isinstance(tint_raw, (list, tuple)) and len(tint_raw) >= 3:
+                tint = [float(tint_raw[0]), float(tint_raw[1]), float(tint_raw[2])]
+            else:
+                report.warn(f"{obj.name} has invalid {TINT_PROP_KEY}; ignored")
+
+        entry = {
+            "id": prop_id,
+            "kind": kind,
+            "transform": _transform_to_dict(obj),
+            "blocks_movement": bool(custom_prop(obj, BLOCKS_MOVE_PROP_KEY, False)),
+        }
+        if tint is not None:
+            entry["tint"] = tint
+        collision = _collision_shape_from_props(obj)
+        if collision is not None:
+            entry["collision"] = collision
+
+        props.append(entry)
+
+    return props
+
+
+# ---------------------------------------------------------------------------
 # Top-level manifest assembly.
 # ---------------------------------------------------------------------------
 
@@ -503,6 +626,7 @@ def build_manifest(
 
     blockers = collect_blockers(report)
     traversals = collect_traversals(report)
+    props = collect_props(report)
 
     manifest = {
         "version": MANIFEST_VERSION,
@@ -513,6 +637,7 @@ def build_manifest(
         "surfaces": surfaces,
         "traversals": traversals,
         "blockers": blockers,
+        "props": props,
         "test_route": [],
         "test_checklist": [],
         "mountain_switchback_test": None,

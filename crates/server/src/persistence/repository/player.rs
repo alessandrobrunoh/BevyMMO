@@ -33,6 +33,10 @@ use uuid::Uuid;
 /// inventory, and equipment.
 #[derive(Clone, Debug)]
 pub struct PersistedPlayerSnapshot {
+    /// If `true`, the player row was inserted by this call (no prior record).
+    /// Lets the join handler route brand-new players to a `PlayerSpawnPoint`
+    /// instead of the (0,0,0) default column value.
+    pub is_new: bool,
     pub player: PlayerRecord,
     pub stats: StatsBundleData,
     pub hotbar: SpellHotbar,
@@ -57,6 +61,11 @@ impl PlayerRepository {
     /// when absent. `display_name` is only used during creation;
     /// existing rows retain their stored display name.
     ///
+    /// Returns `(PlayerRecord, is_new)` where `is_new` is true when a row was
+    /// inserted by this call. The join handler uses the flag to route
+    /// brand-new players to an authored `PlayerSpawnPoint` instead of the
+    /// default (0,0,0) column value.
+    ///
     /// Concurrency note: relies on the `UNIQUE` constraint on
     /// `normalized_name`. If two callers race to create the same
     /// key, the losing caller will receive a [`PersistenceError::Db`] due to
@@ -66,7 +75,7 @@ impl PlayerRepository {
         &self,
         normalized_name: &str,
         display_name: &str,
-    ) -> PersistenceResult<PlayerRecord> {
+    ) -> PersistenceResult<(PlayerRecord, bool)> {
         let key = normalize_name(normalized_name);
 
         if let Some(existing) = Entity::find()
@@ -74,7 +83,7 @@ impl PlayerRepository {
             .one(&self.db)
             .await?
         {
-            return Ok(existing);
+            return Ok((existing, false));
         }
 
         let new_row = ActiveModel {
@@ -86,7 +95,7 @@ impl PlayerRepository {
             pos_z: Set(0.0),
         };
         let inserted = new_row.insert(&self.db).await?;
-        Ok(inserted)
+        Ok((inserted, true))
     }
 
     /// Persists the last known position for `id`.
@@ -99,7 +108,7 @@ impl PlayerRepository {
         normalized_name: &str,
         display_name: &str,
     ) -> PersistenceResult<PersistedPlayerSnapshot> {
-        let player = self.find_or_create(normalized_name, display_name).await?;
+        let (player, is_new) = self.find_or_create(normalized_name, display_name).await?;
         let stats = match self.load_stats(player.id).await {
             Ok(stats) => stats,
             Err(PersistenceError::NotFound(_)) => {
@@ -114,6 +123,7 @@ impl PlayerRepository {
         let equipment = self.load_or_create_default_equipment(player.id).await?;
 
         Ok(PersistedPlayerSnapshot {
+            is_new,
             player,
             stats,
             hotbar,

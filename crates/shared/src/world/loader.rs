@@ -993,6 +993,63 @@ mod tests {
     }
 
     #[test]
+    fn json_manifest_parses_externally_tagged_collision_shapes() {
+        // Mirrors the shape emitted by scripts/blender/bevymmo_export_world.py
+        // `collect_props`: an externally-tagged CollisionShape plus an enemy
+        // spawn marker and a player spawn marker. We assert the loader keeps
+        // them in authored order and preserves the collision variant.
+        let json = serde_json::json!({
+            "version": 2,
+            "map_id": "spawn_test",
+            "display_name": "Spawn test",
+            "bounds": {"min_x": -10.0, "max_x": 10.0, "min_z": -10.0, "max_z": 10.0},
+            "props": [
+                {
+                    "id": "player_spawn_01",
+                    "kind": "player_spawn",
+                    "transform": {
+                        "translation": [1.0, 0.0, 2.0],
+                        "rotation_deg": [0.0, 0.0, 0.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    },
+                    "blocks_movement": false
+                },
+                {
+                    "id": "mob_goblin_01",
+                    "kind": "mob_goblin",
+                    "transform": {
+                        "translation": [-3.0, 0.0, -1.0],
+                        "rotation_deg": [0.0, 90.0, 0.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    },
+                    "blocks_movement": false,
+                    "collision": {"Cylinder": {"radius": 0.4, "height": 1.6}}
+                }
+            ]
+        });
+
+        let manifest: MapManifest =
+            serde_json::from_value(json).expect("externally-tagged JSON should parse");
+
+        assert_eq!(manifest.props.len(), 2);
+        assert_eq!(manifest.props[0].kind.as_str(), "player_spawn");
+        assert_eq!(manifest.props[0].collision, None);
+        assert_eq!(manifest.props[0].blocks_movement, false);
+
+        let collision = manifest.props[1]
+            .collision
+            .as_ref()
+            .expect("goblin carries a cylinder collision");
+        match collision {
+            CollisionShape::Cylinder { radius, height } => {
+                assert!((radius - 0.4).abs() < f32::EPSILON);
+                assert!((height - 1.6).abs() < f32::EPSILON);
+            }
+            other => panic!("expected Cylinder, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn roundtrip_through_disk_preserves_manifest() {
         let mut m = empty_manifest();
         m.props.push(Prop {

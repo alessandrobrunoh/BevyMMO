@@ -41,7 +41,7 @@ impl TriggerPlaceable for TeleportTrigger {
         TriggerConfig {
             shape: TriggerShape::Circle { radius: 2.0 },
             event: TriggerEvent::Teleport {
-                target_map: "rolling_hills_test".to_string(),
+                target_map: "walkable_world_map".to_string(),
                 target_position: [0.0, 0.0, 0.0],
             },
             once_per_entity: true,

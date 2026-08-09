@@ -286,9 +286,10 @@ fn sync_transforms(
     }
 }
 
-/// Removes translations embedded in the instantiated player scene. Bevy may
-/// place an intermediate scene entity between `WorldAssetRoot` and `Node0`, so
-/// inspect the full parent chain instead of assuming a direct child.
+/// Removes horizontal offsets embedded in the instantiated player scene while
+/// preserving its authored vertical placement. Bevy may place an intermediate
+/// scene entity between `WorldAssetRoot` and `Node0`, so inspect the full parent
+/// chain instead of assuming a direct child.
 fn anchor_player_model(
     mut commands: Commands,
     roots: Query<Entity, With<PlayerModelRoot>>,
@@ -303,7 +304,8 @@ fn anchor_player_model(
             .iter()
             .any(|root| is_descendant_of(entity, root, &parents))
         {
-            transform.translation = Vec3::ZERO;
+            transform.translation.x = 0.0;
+            transform.translation.z = 0.0;
             commands.entity(entity).insert(PlayerModelAnchored);
         }
     }

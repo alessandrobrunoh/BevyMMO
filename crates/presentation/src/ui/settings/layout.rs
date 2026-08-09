@@ -126,6 +126,7 @@ pub fn spawn_settings_shell(
             flex_grow: 1.0,
             height: Val::Percent(100.0),
             flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Center,
             ..default()
         })
         .id();
@@ -134,8 +135,10 @@ pub fn spawn_settings_shell(
     let content_area = commands
         .spawn((
             Node {
+                width: Val::Percent(100.0),
                 flex_grow: 1.0,
                 flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
                 overflow: Overflow::clip_y(),
                 ..default()
             },

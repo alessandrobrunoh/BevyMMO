@@ -535,6 +535,8 @@ pub enum BlockerKind {
 pub struct TestRoutePoint {
     pub x: f32,
     pub z: f32,
+    /// Optional in older world manifests; zero means base elevation.
+    #[serde(default)]
     pub height: f32,
 }
 

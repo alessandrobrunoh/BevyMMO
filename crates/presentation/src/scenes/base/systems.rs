@@ -21,10 +21,12 @@ pub struct GameSceneRoot;
 #[derive(Component, Debug, Clone, Copy)]
 pub struct GameCamera;
 
-// Camera zoom limits (measured as height from ground).
-const DEFAULT_CAMERA_HEIGHT: f32 = 15.0;
-const MIN_CAMERA_HEIGHT: f32 = 8.0;
-const MAX_CAMERA_HEIGHT: f32 = 20.0;
+// Camera zoom limits (measured as height from ground). Map 02 spans roughly
+// 360x360 world units, so the original 15-unit height showed only a tiny
+// fraction of it.
+const DEFAULT_CAMERA_HEIGHT: f32 = 45.0;
+const MIN_CAMERA_HEIGHT: f32 = 20.0;
+const MAX_CAMERA_HEIGHT: f32 = 90.0;
 
 /// Resource to store the current camera zoom height.
 #[derive(Resource, Debug, Clone)]

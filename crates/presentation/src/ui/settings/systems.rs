@@ -341,8 +341,14 @@ pub fn apply_graphics_to_window(
     };
     let g = &settings.0.graphics;
     window.mode = g.mode.to_bevy();
-    window.resolution =
-        bevy::window::WindowResolution::new(g.resolution.width, g.resolution.height);
+    // Fullscreen modes own their surface size. Reassigning a windowed
+    // resolution here on every settings change can shrink or letterbox the
+    // fullscreen surface when an unrelated setting (for example Show FPS) is
+    // toggled.
+    if matches!(g.mode, WindowMode::Windowed) {
+        window.resolution =
+            bevy::window::WindowResolution::new(g.resolution.width, g.resolution.height);
+    }
     window.present_mode = if g.vsync {
         bevy::window::PresentMode::AutoVsync
     } else {
@@ -482,7 +488,7 @@ mod tests {
 
     #[test]
     fn fingerprint_detects_changes() {
-        let mut s1 = GameSettings::default();
+        let s1 = GameSettings::default();
         let mut s2 = GameSettings::default();
         s2.graphics.vsync = !s1.graphics.vsync;
         assert_ne!(

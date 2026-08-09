@@ -26,6 +26,7 @@ pub fn spawn_graphics_panel(
     let panel = commands
         .spawn((
             Node {
+                width: Val::Px(520.0),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(12.0),
                 padding: UiRect::all(Val::Px(24.0)),

@@ -278,8 +278,6 @@ fn finish_pending_joins(
             )
         };
         let position = Position(initial);
-        // Tag with the chosen spawn so respawn uses the same anchor.
-        let spawn_point = SpawnPoint(initial);
 
         let player = commands
             .spawn((
@@ -299,7 +297,6 @@ fn finish_pending_joins(
                 AppliedEquipmentBonus::default(),
                 PlayerId(completed_join.peer_id),
                 DbPlayerId(snapshot.player.id),
-                spawn_point,
                 PredictionTarget::to_clients(NetworkTarget::Single(completed_join.peer_id)),
                 InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(
                     completed_join.peer_id,

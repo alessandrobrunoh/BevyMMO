@@ -3,6 +3,7 @@
 use bevy::{
     input::mouse::{MouseScrollUnit, MouseWheel},
     prelude::*,
+    window::PrimaryWindow,
 };
 
 use crate::ui::theme::UiTheme;
@@ -55,16 +56,14 @@ pub fn spawn_scroll_view(
     content_builder: impl FnOnce(&mut Commands) -> Entity,
 ) -> Entity {
     let wrapper = commands
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
-                ..default()
-            },
-        ))
+        .spawn((Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            flex_direction: FlexDirection::Row,
+            ..default()
+        },))
         .id();
-        
+
     commands.entity(parent).add_child(wrapper);
 
     // Il Viewport che clippa
@@ -80,7 +79,7 @@ pub fn spawn_scroll_view(
             Interaction::default(), // per intercettare l'hover del mouse wheel
         ))
         .id();
-        
+
     commands.entity(wrapper).add_child(viewport);
 
     // Il Contenuto
@@ -116,7 +115,7 @@ pub fn spawn_scroll_view(
                 height: Val::Px(40.0), // Verrà aggiornato dinamicamente
                 ..default()
             },
-            BackgroundColor(theme.button_normal),
+            BackgroundColor(theme.button_bg),
             ScrollbarThumb {
                 viewport_entity: viewport,
                 is_dragging: false,
@@ -155,7 +154,7 @@ fn update_scroll_max(
 }
 
 fn handle_mouse_scroll(
-    mut mouse_wheel_events: EventReader<MouseWheel>,
+    mut mouse_wheel_events: MessageReader<MouseWheel>,
     mut query: Query<(&mut ScrollView, &Interaction)>,
 ) {
     for event in mouse_wheel_events.read() {
@@ -166,7 +165,9 @@ fn handle_mouse_scroll(
                     MouseScrollUnit::Pixel => event.y,
                 };
                 scroll_view.current_scroll -= dy;
-                scroll_view.current_scroll = scroll_view.current_scroll.clamp(0.0, scroll_view.max_scroll);
+                scroll_view.current_scroll = scroll_view
+                    .current_scroll
+                    .clamp(0.0, scroll_view.max_scroll);
             }
         }
     }
@@ -176,10 +177,12 @@ fn handle_scrollbar_drag(
     mut query: Query<(&Interaction, &mut ScrollbarThumb, &mut BackgroundColor)>,
     mut view_q: Query<(&mut ScrollView, &ComputedNode)>,
     mouse_input: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window>,
+    windows: Query<&Window, With<PrimaryWindow>>,
     theme: Res<UiTheme>,
 ) {
-    let window = windows.single();
+    let Ok(window) = windows.single() else {
+        return;
+    };
     let cursor_y = window.cursor_position().map(|p| p.y).unwrap_or(0.0);
 
     for (interaction, mut thumb, mut bg) in query.iter_mut() {
@@ -199,11 +202,11 @@ fn handle_scrollbar_drag(
 
         // Colori
         if thumb.is_dragging || *interaction == Interaction::Pressed {
-            *bg = BackgroundColor(theme.button_pressed);
+            *bg = BackgroundColor(theme.button_pressed_bg);
         } else if *interaction == Interaction::Hovered {
-            *bg = BackgroundColor(theme.button_hovered);
+            *bg = BackgroundColor(theme.button_hovered_bg);
         } else {
-            *bg = BackgroundColor(theme.button_normal);
+            *bg = BackgroundColor(theme.button_bg);
         }
 
         // Calcolo spostamento
@@ -213,7 +216,7 @@ fn handle_scrollbar_drag(
                 // proporzione per tradurre spostamento del mouse in scroll
                 let view_h = view_node.size().y;
                 // thumb occupa min 20.0 px (es.)
-                let max_thumb_travel = view_h - 20.0; 
+                let max_thumb_travel = view_h - 20.0;
                 if max_thumb_travel > 0.0 && view.max_scroll > 0.0 {
                     let scroll_per_px = view.max_scroll / max_thumb_travel;
                     view.current_scroll = thumb.drag_start_scroll + dy * scroll_per_px;
@@ -247,19 +250,19 @@ fn update_scrollbar_visuals(
                 } else {
                     *vis = Visibility::Inherited;
                     let view_h = view_node.size().y;
-                    
+
                     // L'altezza del thumb è proporzionale a quanto contenuto è visibile
                     let content_h = view_h + view.max_scroll;
                     let proportion = view_h / content_h.max(1.0);
                     let thumb_h = (view_h * proportion).max(20.0);
-                    
+
                     thumb_node.height = Val::Px(thumb_h);
-                    
+
                     // Posizione
                     let max_thumb_travel = view_h - thumb_h;
                     let scroll_percent = view.current_scroll / view.max_scroll;
                     let thumb_top = scroll_percent * max_thumb_travel;
-                    
+
                     thumb_node.top = Val::Px(thumb_top);
                 }
             }

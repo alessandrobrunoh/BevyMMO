@@ -4,8 +4,8 @@ use bevy::prelude::*;
 
 use super::{
     boss_bar, card, connecting, crowd_control_bar, death_screen, debug_position, entity_bar,
-    inventory, main_menu, pause_menu, player_stats, scoreboard, scrollbar, settings, spellbook, systems,
-    target_frame, target_indicator,
+    inventory, main_menu, pause_menu, player_stats, scoreboard, scrollbar, settings, spellbook,
+    systems, target_frame, target_indicator,
 };
 
 use crate::ui::theme::UiTheme;
@@ -30,6 +30,8 @@ impl Plugin for UiPlugin {
             pause_menu::PauseMenuPlugin,
             player_stats::PlayerStatsPlugin,
             connecting::ConnectingPlugin,
+        ));
+        app.add_plugins((
             target_indicator::TargetIndicatorPlugin,
             target_frame::TargetFramePlugin,
             death_screen::DeathScreenPlugin,

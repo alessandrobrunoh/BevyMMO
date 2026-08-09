@@ -10,8 +10,8 @@ use crate::ui::theme::UiTheme;
 
 use super::SettingsPanel;
 use crate::ui::settings::state::{GameSettingsResource, Resolution, WindowMode};
-use crate::ui::settings::widgets::dropdown::{spawn_dropdown, DropdownItem};
-use crate::ui::settings::widgets::toggle::spawn_toggle;
+use crate::ui::settings::widgets::dropdown::{spawn_select, DropdownItem};
+use crate::ui::settings::widgets::toggle::spawn_checkbox;
 
 #[derive(Component)]
 pub struct GraphicsRoot;
@@ -52,7 +52,7 @@ pub fn spawn_graphics_panel(
             value: "exclusive".to_string(),
         },
     ];
-    let _ = spawn_dropdown(
+    let _ = spawn_select(
         commands,
         panel,
         "window_mode",
@@ -71,7 +71,7 @@ pub fn spawn_graphics_panel(
     // (headless test, no window yet, etc.).
     let res_items = available_resolutions(&monitors);
     let current_res_label = settings.0.graphics.resolution.label();
-    let _ = spawn_dropdown(
+    let _ = spawn_select(
         commands,
         panel,
         "resolution",
@@ -82,7 +82,7 @@ pub fn spawn_graphics_panel(
     );
 
     // VSync toggle.
-    let _ = spawn_toggle(
+    let _ = spawn_checkbox(
         commands,
         panel,
         "vsync",
@@ -132,8 +132,4 @@ fn available_resolutions(monitors: &Query<&Monitor>) -> Vec<DropdownItem> {
 /// Reflects `GameSettingsResource` onto the panel widgets when values change
 /// outside the UI. Currently a no-op: the graphics widgets are stateless and
 /// read their own component state on click.
-pub fn refresh_graphics_panel(
-    _settings: Res<GameSettingsResource>,
-    _root: Query<&GraphicsRoot>,
-) {
-}
+pub fn refresh_graphics_panel(_settings: Res<GameSettingsResource>, _root: Query<&GraphicsRoot>) {}

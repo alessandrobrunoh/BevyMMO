@@ -35,6 +35,7 @@ pub fn spawn_settings_shell(
     theme: &UiTheme,
     settings: &GameSettingsResource,
     monitors: &Query<&bevy::window::Monitor>,
+    asset_server: &AssetServer,
 ) {
     // Outer row: [ sidebar | content ]
     let shell = commands
@@ -116,6 +117,7 @@ pub fn spawn_settings_shell(
         "Back",
         UiButtonAction::BackToMenu,
         theme,
+        asset_server,
     );
 
     // --- Content area ------------------------------------------------------
@@ -147,6 +149,7 @@ pub fn spawn_settings_shell(
         commands,
         content_area,
         theme,
+        settings,
     );
     let _ = crate::ui::settings::panels::graphics::spawn_graphics_panel(
         commands,
@@ -160,5 +163,6 @@ pub fn spawn_settings_shell(
         content_area,
         theme,
         &settings.0.keybinds,
+        asset_server,
     );
 }

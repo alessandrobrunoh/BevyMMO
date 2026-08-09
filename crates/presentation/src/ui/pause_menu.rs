@@ -24,7 +24,7 @@ impl Plugin for PauseMenuPlugin {
     }
 }
 
-fn setup_pause_menu(mut commands: Commands, theme: Res<UiTheme>) {
+fn setup_pause_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Res<AssetServer>) {
     let backdrop = commands
         .spawn((
             Node {
@@ -65,6 +65,7 @@ fn setup_pause_menu(mut commands: Commands, theme: Res<UiTheme>) {
         "Resume",
         UiButtonAction::Resume,
         &theme,
+        &asset_server,
     );
     spawn_button(
         &mut commands,
@@ -72,6 +73,7 @@ fn setup_pause_menu(mut commands: Commands, theme: Res<UiTheme>) {
         "Return to Main Menu",
         UiButtonAction::ReturnToMainMenu,
         &theme,
+        &asset_server,
     );
 }
 

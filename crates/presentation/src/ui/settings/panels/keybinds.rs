@@ -18,6 +18,7 @@ pub fn spawn_keybinds_panel(
     parent: Entity,
     theme: &UiTheme,
     keybinds: &KeybindSettings,
+    asset_server: &AssetServer,
 ) -> Entity {
     let panel = commands
         .spawn((
@@ -44,6 +45,7 @@ pub fn spawn_keybinds_panel(
         "Reset to defaults",
         UiButtonAction::ResetKeybinds,
         theme,
+        asset_server,
     );
 
     panel

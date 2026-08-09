@@ -12,13 +12,18 @@ use crate::ui::theme::UiTheme;
 use super::SettingsPanel;
 use crate::ui::settings::state::GameSettingsResource;
 use crate::ui::settings::widgets::{
-    dropdown::{spawn_dropdown, DropdownItem},
-    toggle::spawn_toggle,
+    dropdown::{spawn_select, DropdownItem},
+    toggle::spawn_checkbox,
 };
 #[derive(Component)]
 pub struct GeneralRoot;
 
-pub fn spawn_general_panel(commands: &mut Commands, parent: Entity, theme: &UiTheme) -> Entity {
+pub fn spawn_general_panel(
+    commands: &mut Commands,
+    parent: Entity,
+    theme: &UiTheme,
+    settings: &GameSettingsResource,
+) -> Entity {
     let panel = commands
         .spawn((
             Node {
@@ -33,7 +38,7 @@ pub fn spawn_general_panel(commands: &mut Commands, parent: Entity, theme: &UiTh
         .id();
     commands.entity(parent).add_child(panel);
 
-    let _ = spawn_dropdown(
+    let _ = spawn_select(
         commands,
         panel,
         "language",
@@ -46,12 +51,29 @@ pub fn spawn_general_panel(commands: &mut Commands, parent: Entity, theme: &UiTh
         theme,
     );
 
-    let _ = spawn_toggle(
+    let scale_items = [0.75_f32, 1.0, 1.25, 1.5, 2.0]
+        .into_iter()
+        .map(|scale| DropdownItem {
+            label: format!("{}x", scale),
+            value: scale.to_string(),
+        })
+        .collect();
+    let _ = spawn_select(
+        commands,
+        panel,
+        "interface_scale",
+        "Interface scale",
+        scale_items,
+        &settings.0.general.interface_scale.to_string(),
+        theme,
+    );
+
+    let _ = spawn_checkbox(
         commands,
         panel,
         "show_fps",
         "Show FPS overlay",
-        false,
+        settings.0.general.show_fps,
         theme,
     );
 
@@ -60,10 +82,7 @@ pub fn spawn_general_panel(commands: &mut Commands, parent: Entity, theme: &UiTh
 
 /// Reflects `GameSettingsResource` onto the panel widgets when values change
 /// outside the UI (e.g. reset to defaults).
-pub fn refresh_general_panel(
-    _settings: Res<GameSettingsResource>,
-    _root: Query<&GeneralRoot>,
-) {
+pub fn refresh_general_panel(_settings: Res<GameSettingsResource>, _root: Query<&GeneralRoot>) {
     // Widgets are stateless and read their own component state; no work needed
     // today. Hook left in place so future settings (with non-trivial sync)
     // have a clear extension point.

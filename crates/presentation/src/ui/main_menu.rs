@@ -31,7 +31,7 @@ impl Plugin for MainMenuPlugin {
     }
 }
 
-fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>) {
+fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Res<AssetServer>) {
     let root = commands
         .spawn((
             Node {
@@ -73,15 +73,30 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>) {
         .id();
     commands.entity(root).add_child(failure_text);
 
-    spawn_button(&mut commands, root, "Play", UiButtonAction::Play, &theme);
+    spawn_button(
+        &mut commands,
+        root,
+        "Play",
+        UiButtonAction::Play,
+        &theme,
+        &asset_server,
+    );
     spawn_button(
         &mut commands,
         root,
         "Settings",
         UiButtonAction::OpenSettings,
         &theme,
+        &asset_server,
     );
-    spawn_button(&mut commands, root, "Exit", UiButtonAction::Exit, &theme);
+    spawn_button(
+        &mut commands,
+        root,
+        "Exit",
+        UiButtonAction::Exit,
+        &theme,
+        &asset_server,
+    );
 }
 
 fn update_main_menu_visibility(

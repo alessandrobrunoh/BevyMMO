@@ -20,6 +20,9 @@ pub struct ToggleLabel;
 #[derive(Component)]
 pub struct ToggleDisplay;
 
+/// Checkbox control used by settings panels.
+pub type CheckBox = Toggle;
+
 /// Spawns a labeled toggle row and returns its root button entity.
 pub fn spawn_toggle(
     commands: &mut Commands,
@@ -43,10 +46,7 @@ pub fn spawn_toggle(
             },
             BackgroundColor(theme.input_bg),
             BorderColor::all(theme.input_border),
-            Toggle {
-                id: id.into(),
-                on,
-            },
+            Toggle { id: id.into(), on },
         ))
         .id();
     commands.entity(parent).add_child(button);
@@ -88,4 +88,16 @@ pub fn spawn_toggle(
     commands.entity(button).add_child(display_entity);
 
     button
+}
+
+/// Spawns a [`CheckBox`] control.
+pub fn spawn_checkbox(
+    commands: &mut Commands,
+    parent: Entity,
+    id: impl Into<String>,
+    label: impl Into<String>,
+    on: bool,
+    theme: &UiTheme,
+) -> Entity {
+    spawn_toggle(commands, parent, id, label, on, theme)
 }

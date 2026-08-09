@@ -19,14 +19,15 @@ use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, Window};
 
 use super::layout::{ActiveSettingsTab, SettingsTabButton};
-use crate::ui::settings::state::{
-    save_settings, GameSettings, GameSettingsResource, KeyBinding, KeyModifiers, Resolution,
-    WindowMode,
-};
+use super::panels::SettingsPanel;
 use super::widgets::dropdown::{Dropdown, DropdownChanged, DropdownValueText};
 use super::widgets::key_capture::{KeyBindingChanged, KeyCapture};
 use super::widgets::toggle::{Toggle, ToggleDisplay};
 use crate::ui::button::UiButtonAction;
+use crate::ui::settings::state::{
+    save_settings, GameSettings, GameSettingsResource, KeyBinding, KeyModifiers, Resolution,
+    WindowMode,
+};
 use crate::ui::theme::UiTheme;
 
 // ===========================================================================
@@ -58,6 +59,24 @@ pub fn switch_tab_on_click(
         if *interaction == Interaction::Pressed {
             active.0 = button.tab;
         }
+    }
+}
+
+// ===========================================================================
+// Panel visibility
+// ===========================================================================
+
+/// Shows only the panel selected in the sidebar.
+pub fn update_panel_visibility(
+    active: Res<ActiveSettingsTab>,
+    mut panels: Query<(&SettingsPanel, &mut Node)>,
+) {
+    for (panel, mut node) in panels.iter_mut() {
+        node.display = if panel.matches(active.0) {
+            Display::Flex
+        } else {
+            Display::None
+        };
     }
 }
 
@@ -218,11 +237,7 @@ fn is_modifier_key(code: KeyCode) -> bool {
 /// Writes `new_text` into the first descendant (within `children`) text node
 /// found via the value-texts query. The key-capture button has a single child
 /// text node, so depth-1 search is enough.
-fn update_descendant_text(
-    value_texts: &mut Query<&mut Text>,
-    children: &Children,
-    new_text: &str,
-) {
+fn update_descendant_text(value_texts: &mut Query<&mut Text>, children: &Children, new_text: &str) {
     for child in children.iter() {
         if let Ok(mut text) = value_texts.get_mut(child) {
             text.0 = new_text.to_string();
@@ -259,6 +274,11 @@ pub fn apply_widget_events(
             "language" => {
                 settings.0.general.language = ev.value.clone();
             }
+            "interface_scale" => {
+                if let Ok(scale) = ev.value.parse::<f32>() {
+                    settings.0.general.interface_scale = scale.clamp(0.5, 3.0);
+                }
+            }
             _ => {}
         }
     }
@@ -285,9 +305,7 @@ pub fn reset_keybinds_on_button(
 ) {
     let mut triggered = false;
     for (interaction, button) in query.iter() {
-        if *interaction == Interaction::Pressed
-            && button.action == UiButtonAction::ResetKeybinds
-        {
+        if *interaction == Interaction::Pressed && button.action == UiButtonAction::ResetKeybinds {
             triggered = true;
         }
     }
@@ -332,6 +350,13 @@ pub fn apply_graphics_to_window(
     };
 }
 
+/// Applies the persisted interface scale to Bevy's UI scale resource.
+pub fn apply_interface_scale(settings: Res<GameSettingsResource>, mut ui_scale: ResMut<UiScale>) {
+    if settings.is_changed() {
+        ui_scale.0 = settings.0.general.interface_scale.clamp(0.5, 3.0);
+    }
+}
+
 // ===========================================================================
 // Persistence
 // ===========================================================================
@@ -352,11 +377,12 @@ pub(crate) fn persist_settings_when_changed(
     *last_saved = Some(fp);
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct GameSettingsFingerprint {
     mode: WindowMode,
     resolution: Resolution,
     vsync: bool,
+    interface_scale: f32,
     show_fps: bool,
     language: String,
     keybinds_signature: String,
@@ -393,6 +419,7 @@ impl GameSettingsFingerprint {
             mode: s.graphics.mode,
             resolution: s.graphics.resolution,
             vsync: s.graphics.vsync,
+            interface_scale: s.general.interface_scale,
             show_fps: s.general.show_fps,
             language: s.general.language.clone(),
             keybinds_signature,
@@ -407,6 +434,7 @@ impl GameSettingsFingerprint {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::settings::state::KeyAction;
 
     #[test]
     fn parse_resolution_handles_standard_labels() {
@@ -414,7 +442,10 @@ mod tests {
             parse_resolution("1920x1080"),
             Some(Resolution::new(1920, 1080))
         );
-        assert_eq!(parse_resolution("1280x720"), Some(Resolution::new(1280, 720)));
+        assert_eq!(
+            parse_resolution("1280x720"),
+            Some(Resolution::new(1280, 720))
+        );
     }
 
     #[test]
@@ -429,23 +460,19 @@ mod tests {
         let mut s1 = GameSettings::default();
         let mut s2 = GameSettings::default();
 
-        s1.keybinds.bindings.insert(
-            KeyAction::CastSpellQ,
-            KeyBinding::bare(KeyCode::KeyQ),
-        );
-        s1.keybinds.bindings.insert(
-            KeyAction::CastSpellW,
-            KeyBinding::bare(KeyCode::KeyW),
-        );
+        s1.keybinds
+            .bindings
+            .insert(KeyAction::CastSpellQ, KeyBinding::bare(KeyCode::KeyQ));
+        s1.keybinds
+            .bindings
+            .insert(KeyAction::CastSpellW, KeyBinding::bare(KeyCode::KeyW));
 
-        s2.keybinds.bindings.insert(
-            KeyAction::CastSpellW,
-            KeyBinding::bare(KeyCode::KeyW),
-        );
-        s2.keybinds.bindings.insert(
-            KeyAction::CastSpellQ,
-            KeyBinding::bare(KeyCode::KeyQ),
-        );
+        s2.keybinds
+            .bindings
+            .insert(KeyAction::CastSpellW, KeyBinding::bare(KeyCode::KeyW));
+        s2.keybinds
+            .bindings
+            .insert(KeyAction::CastSpellQ, KeyBinding::bare(KeyCode::KeyQ));
 
         assert_eq!(
             GameSettingsFingerprint::from(&s1),

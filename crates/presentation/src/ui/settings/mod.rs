@@ -45,6 +45,7 @@ impl Plugin for SettingsPlugin {
                 Update,
                 (
                     update_settings_visibility,
+                    systems::update_panel_visibility,
                     systems::update_tab_button_visuals,
                     systems::switch_tab_on_click,
                     systems::cycle_dropdown,
@@ -59,6 +60,7 @@ impl Plugin for SettingsPlugin {
                     systems::reset_keybinds_on_button,
                     systems::apply_widget_events,
                     systems::apply_graphics_to_window,
+                    systems::apply_interface_scale,
                     systems::persist_settings_when_changed,
                 ),
             );
@@ -70,6 +72,7 @@ fn setup_settings(
     theme: Res<UiTheme>,
     settings: Res<GameSettingsResource>,
     monitors: Query<&bevy::window::Monitor>,
+    asset_server: Res<AssetServer>,
 ) {
     let root = commands
         .spawn((
@@ -88,7 +91,14 @@ fn setup_settings(
         ))
         .id();
 
-    layout::spawn_settings_shell(&mut commands, root, &theme, &settings, &monitors);
+    layout::spawn_settings_shell(
+        &mut commands,
+        root,
+        &theme,
+        &settings,
+        &monitors,
+        &asset_server,
+    );
 }
 
 /// Toggles the whole settings screen on/off based on `Screen::Settings`.

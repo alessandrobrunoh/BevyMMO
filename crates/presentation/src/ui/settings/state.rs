@@ -3,8 +3,8 @@
 //! convenience and adds the UI-only [`SettingsTab`] enum (sidebar tabs).
 
 pub use bevymmo_shared::user_settings::{
-    save_settings, load_settings, settings_path, GameSettings, GameSettingsResource,
-    GeneralSettings, GraphicsSettings, KeyAction, KeyBinding, KeybindSettings, KeyModifiers,
+    load_settings, save_settings, settings_path, GameSettings, GameSettingsResource,
+    GeneralSettings, GraphicsSettings, KeyAction, KeyBinding, KeyModifiers, KeybindSettings,
     Resolution, WindowMode,
 };
 

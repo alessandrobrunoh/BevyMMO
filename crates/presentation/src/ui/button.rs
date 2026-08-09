@@ -27,7 +27,19 @@ pub struct UiButton {
     pub action: UiButtonAction,
 }
 
-/// Spawns a button with label and theme-consistent style, attached to `parent`.
+const BUTTON_DEFAULT_PATH: &str = "buttons/button-default.png";
+const BUTTON_HOVER_PATH: &str = "buttons/button-hover.png";
+const BUTTON_CLICKED_PATH: &str = "buttons/button-clicked.png";
+
+/// Textures used by the three button interaction states.
+#[derive(Component, Clone)]
+pub struct UiButtonImages {
+    pub default: Handle<Image>,
+    pub hover: Handle<Image>,
+    pub clicked: Handle<Image>,
+}
+
+/// Spawns a button with separate textures for default, hover, and clicked, attached to `parent`.
 ///
 /// Returns the button entity (useful for testing or future references).
 pub fn spawn_button(
@@ -36,19 +48,26 @@ pub fn spawn_button(
     label: impl Into<String>,
     action: UiButtonAction,
     theme: &UiTheme,
+    asset_server: &AssetServer,
 ) -> Entity {
+    let images = UiButtonImages {
+        default: asset_server.load(BUTTON_DEFAULT_PATH),
+        hover: asset_server.load(BUTTON_HOVER_PATH),
+        clicked: asset_server.load(BUTTON_CLICKED_PATH),
+    };
+
     let button = commands
         .spawn((
             Button,
             Node {
                 width: Val::Px(220.0),
-                height: Val::Px(44.0),
+                height: Val::Px(48.0),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
                 ..default()
             },
-            BackgroundColor(theme.button_bg),
+            ImageNode::new(images.default.clone()),
+            UiButtonImages { ..images },
             UiButton { action },
         ))
         .id();

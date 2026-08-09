@@ -36,6 +36,12 @@ pub struct Dropdown {
 #[derive(Component)]
 pub struct DropdownValueText;
 
+/// Select control used by settings panels.
+///
+/// This alias keeps the existing dropdown implementation reusable while
+/// exposing the semantic component name used by the UI.
+pub type Select = Dropdown;
+
 /// Event emitted when the dropdown selection changes (click or programmatic).
 #[derive(Message, Clone, Debug)]
 pub struct DropdownChanged {
@@ -108,4 +114,17 @@ pub fn spawn_dropdown(
     commands.entity(button).add_child(value_entity);
 
     button
+}
+
+/// Spawns a [`Select`] control.
+pub fn spawn_select(
+    commands: &mut Commands,
+    parent: Entity,
+    id: impl Into<String>,
+    label: impl Into<String>,
+    items: Vec<DropdownItem>,
+    initial_value: &str,
+    theme: &UiTheme,
+) -> Entity {
+    spawn_dropdown(commands, parent, id, label, items, initial_value, theme)
 }

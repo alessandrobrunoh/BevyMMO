@@ -97,16 +97,32 @@ impl Default for GraphicsSettings {
 
 /// General preferences. `language` is stored as ISO 639-1 but only "en" is
 /// honored today (i18n not yet implemented).
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GeneralSettings {
     #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default = "default_interface_scale")]
+    pub interface_scale: f32,
     #[serde(default)]
     pub show_fps: bool,
 }
 
 fn default_language() -> String {
     "en".to_string()
+}
+
+fn default_interface_scale() -> f32 {
+    1.5
+}
+
+impl Default for GeneralSettings {
+    fn default() -> Self {
+        Self {
+            language: default_language(),
+            interface_scale: default_interface_scale(),
+            show_fps: false,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -325,11 +341,7 @@ impl GameSettingsResource {
     /// frame) with the right modifiers.
     ///
     /// Used by continuous-input actions like camera zoom.
-    pub fn pressed(
-        &self,
-        action: KeyAction,
-        keys: &bevy::input::ButtonInput<KeyCode>,
-    ) -> bool {
+    pub fn pressed(&self, action: KeyAction, keys: &bevy::input::ButtonInput<KeyCode>) -> bool {
         let binding = self.0.keybinds.get(action);
         keys.pressed(binding.key) && KeyModifiers::from_pressed(keys) == binding.modifiers
     }
@@ -492,10 +504,7 @@ mod tests {
         assert_eq!(back.graphics.resolution.width, 1920);
         assert_eq!(back.graphics.mode, WindowMode::Borderless);
         assert!(back.general.show_fps);
-        assert_eq!(
-            back.keybinds.get(KeyAction::TogglePause).key,
-            KeyCode::KeyP
-        );
+        assert_eq!(back.keybinds.get(KeyAction::TogglePause).key, KeyCode::KeyP);
     }
 
     #[test]

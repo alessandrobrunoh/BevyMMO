@@ -16,7 +16,7 @@ use crate::game_state::{
     validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen,
     PlayerNameError, Screen,
 };
-use crate::ui::button::{UiButton, UiButtonAction};
+use crate::ui::button::{UiButton, UiButtonAction, UiButtonImages};
 use crate::ui::text_input::{TextInput, TextInputErrorText, TextInputValueText};
 use crate::ui::theme::UiTheme;
 
@@ -87,18 +87,19 @@ pub fn update_button_actions(
     }
 }
 
-/// Colore di sfondo del pulsante in base allo stato di interazione.
+/// Aggiorna la texture in base allo stato di interazione.
 pub fn update_button_visuals(
-    theme: Res<UiTheme>,
-    mut query: Query<(&Interaction, &mut BackgroundColor), (With<UiButton>, Changed<Interaction>)>,
+    mut query: Query<
+        (&Interaction, &mut ImageNode, &UiButtonImages),
+        (With<UiButton>, Changed<Interaction>),
+    >,
 ) {
-    for (interaction, mut bg) in query.iter_mut() {
-        let color = match interaction {
-            Interaction::Hovered => theme.button_hovered_bg,
-            Interaction::Pressed => theme.button_pressed_bg,
-            Interaction::None => theme.button_bg,
+    for (interaction, mut image, button_images) in query.iter_mut() {
+        image.image = match interaction {
+            Interaction::None => button_images.default.clone(),
+            Interaction::Hovered => button_images.hover.clone(),
+            Interaction::Pressed => button_images.clicked.clone(),
         };
-        *bg = BackgroundColor(color);
     }
 }
 

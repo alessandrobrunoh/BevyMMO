@@ -13,12 +13,14 @@ pub struct BaseScenePlugin;
 
 impl Plugin for BaseScenePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (
-                systems::update_game_scene_lifecycle,
-                systems::follow_controlled_player,
-            ),
-        );
+        app.init_resource::<systems::CameraZoom>()
+            .add_systems(
+                Update,
+                (
+                    systems::update_game_scene_lifecycle,
+                    systems::follow_controlled_player,
+                    systems::handle_camera_zoom,
+                ),
+            );
     }
 }

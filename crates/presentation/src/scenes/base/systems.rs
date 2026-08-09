@@ -21,11 +21,24 @@ pub struct GameSceneRoot;
 #[derive(Component, Debug, Clone, Copy)]
 pub struct GameCamera;
 
-/// Constant camera offset relative to the followed player.
-///
-/// Maintains the same isometric framing from spawn even as the player
-/// moves: 25 units high and 25 in depth relative to the target.
-const CAMERA_OFFSET: Vec3 = Vec3::new(0.0, 25.0, 25.0);
+// Camera zoom limits (measured as height from ground).
+const DEFAULT_CAMERA_HEIGHT: f32 = 15.0;
+const MIN_CAMERA_HEIGHT: f32 = 8.0;
+const MAX_CAMERA_HEIGHT: f32 = 20.0;
+
+/// Resource to store the current camera zoom height.
+#[derive(Resource, Debug, Clone)]
+pub struct CameraZoom {
+    pub height: f32,
+}
+
+impl Default for CameraZoom {
+    fn default() -> Self {
+        Self {
+            height: DEFAULT_CAMERA_HEIGHT,
+        }
+    }
+}
 
 /// Spawns/despawns the game scene based on [`GameScreen`].
 ///
@@ -54,7 +67,7 @@ pub fn update_game_scene_lifecycle(
 
 /// Moves the game camera to follow the local player (`Controlled`).
 ///
-/// By maintaining a constant offset ([`CAMERA_OFFSET`]) relative to the local
+/// By maintaining a dynamic offset based on the current zoom level relative to the local
 /// player's `Position`, a rotation-free "third-person isometric" effect is achieved:
 /// the camera remains fixed on the player while the server replicates movements.
 /// If the local player is not yet spawned (menu/login), the camera remains
@@ -62,11 +75,12 @@ pub fn update_game_scene_lifecycle(
 ///
 /// # Example
 /// ```ignore
-/// // Player at (10, 0, 5) -> camera at (10, 25, 30) looking at the player.
+/// // Player at (10, 0, 5) -> camera at (10, zoomed_height, zoomed_depth) looking at the player.
 /// ```
 pub fn follow_controlled_player(
     player: Query<&Position, With<Controlled>>,
     mut camera: Query<&mut Transform, With<GameCamera>>,
+    zoom: Res<CameraZoom>,
 ) {
     let Ok(player_position) = player.single() else {
         return;
@@ -75,14 +89,40 @@ pub fn follow_controlled_player(
         return;
     };
 
-    let target = player_position.0 + CAMERA_OFFSET;
+    // Calculate the camera offset based on current zoom height
+    let camera_offset = Vec3::new(0.0, zoom.height, zoom.height);
+    let target = player_position.0 + camera_offset;
     let look_at = player_position.0;
     camera_transform.translation = target;
     camera_transform.look_at(look_at, Vec3::Y);
 }
 
+/// Handles camera zoom input from keyboard.
+///
+/// Allows the player to zoom in/out using PageUp/PageDown keys within the defined limits.
+pub fn handle_camera_zoom(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    mut zoom: ResMut<CameraZoom>,
+) {
+    const ZOOM_SPEED: f32 = 10.0; // Units per second
+
+    let mut zoom_direction = 0.0;
+
+    if keyboard.pressed(KeyCode::PageUp) {
+        zoom_direction = 1.0; // Zoom in
+    } else if keyboard.pressed(KeyCode::PageDown) {
+        zoom_direction = -1.0; // Zoom out
+    }
+
+    if zoom_direction != 0.0 {
+        let zoom_delta = zoom_direction * ZOOM_SPEED * time.delta_secs();
+        zoom.height = (zoom.height - zoom_delta).clamp(MIN_CAMERA_HEIGHT, MAX_CAMERA_HEIGHT);
+    }
+}
+
 fn spawn_game_scene(commands: &mut Commands) {
-    let cam_transform = Transform::from_xyz(0.0, 25.0, 25.0).looking_at(Vec3::ZERO, Vec3::Y);
+    let cam_transform = Transform::from_xyz(0.0, 15.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y);
     let light_transform = Transform::from_xyz(10.0, 20.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y);
 
     commands
@@ -153,7 +193,8 @@ mod tests {
             .world_mut()
             .query_filtered::<&Transform, With<GameCamera>>();
         let cam = cams.single(app.world()).expect("game camera spawned");
-        assert_eq!(cam.translation, Vec3::new(10.0, 25.0, 30.0));
+        // Camera should be at player position + zoom offset (15, 15)
+        assert_eq!(cam.translation, Vec3::new(10.0, 15.0, 20.0));
     }
 
     #[test]

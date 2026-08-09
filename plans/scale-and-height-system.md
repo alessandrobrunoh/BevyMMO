@@ -29,18 +29,36 @@ The project uses Bevy ECS and Lightyear with an authoritative server and client-
 
 Gameplay-specific properties should be stored separately in the world manifest. This prevents a visual asset change from silently changing movement behavior.
 
-### First implementation: stairs as continuous ramps
+### Walkable surfaces: flat ground, ramps, stairs, and hills
 
-The first implementation treats stairs as logical ramps:
+The gameplay system must support more than two-point ramps. Blender-authored maps may contain:
 
-- a start point and end point;
-- a walkable width;
-- a start height and end height derived from those points;
-- linear height interpolation along the traversal direction;
-- a maximum step-height rule for ordinary movement;
-- solid collision kept separate from walkable-surface data.
+- flat ground;
+- ramps and stairs;
+- hills with arbitrary height variation;
+- cliffs and ledges that are not walkable across;
+- upper floors;
+- bridges and walkable platforms;
+- separate walkable regions at different heights.
 
-The visual model may contain individual steps, but the gameplay surface is continuous. This avoids small collision gaps and keeps server/client movement deterministic.
+The authoritative representation should therefore be a simplified, explicitly authored **walkable surface mesh** or equivalent height representation, not the visual mesh itself. Each walkable surface is made from triangles or patches that can answer:
+
+```text
+Given X/Z and the relevant current surface/layer,
+what is the valid ground height Y and surface normal?
+```
+
+For the first runtime implementation, a low-poly gameplay mesh exported from Blender is preferred over trying to reconstruct a surface from the detailed visual `.glb`. A flat floor, a ramp, and a hill can all use the same surface-query model. A stair can use a smooth ramp mesh even when its visual model contains individual steps.
+
+The mesh must be separate from visual geometry because:
+
+- decorative geometry must not become walkable accidentally;
+- a visual mesh can contain ceilings, walls, and overlapping parts;
+- detailed meshes are unnecessarily expensive for server queries;
+- server and client must consume the same simplified data;
+- level designers need explicit control over walkable and non-walkable areas.
+
+Solid blockers remain separate from walkable surfaces. A hill surface tells the game where the player stands; a cliff or wall blocker tells the game where the player cannot move.
 
 ### Server authority
 
@@ -59,6 +77,28 @@ pub const GROUND_SNAP_DISTANCE: f32 = 0.2;
 ```
 
 These values are placeholders for the first implementation and must be centralized rather than duplicated across crates.
+
+### World-unit reference
+
+The map pipeline should define one explicit scale convention:
+
+```text
+1 Blender unit = 1 game world unit = 1 meter
+```
+
+The initial world metrics should be documented and centralized, without coupling them to the surface data model:
+
+```rust
+pub struct WorldMetrics {
+    pub player_radius: f32,
+    pub player_height: f32,
+    pub eye_height: f32,
+    pub max_step_height: f32,
+    pub max_walkable_slope_deg: f32,
+}
+```
+
+The exact values are gameplay decisions. The important requirement is that Blender authoring, entity dimensions, collision radii, stair dimensions, and movement constants use the same unit convention.
 
 ## Blender-to-game authoring contract
 
@@ -103,8 +143,9 @@ Map
 │   └── UpperFloorModel
 │
 ├── GAMEPLAY
-│   ├── SURFACE_Ground
-│   ├── SURFACE_UpperFloor
+│   ├── WALKABLE_Ground
+│   ├── WALKABLE_Hill_North
+│   ├── WALKABLE_UpperFloor
 │   └── STAIR_GroundToUpper
 │
 └── COLLISION
@@ -121,9 +162,31 @@ Objects in `VISUAL` are rendered objects only. They may use normal Blender trans
 
 A visual stair model may show individual steps, railings, and decorations. Its mesh topology does not define the gameplay surface. The associated `STAIR_*` marker defines the traversable ramp.
 
-### Flat walkable surface markers
+### Walkable surface markers and gameplay meshes
 
-A flat upper floor should have a dedicated gameplay marker, preferably an Empty or a non-rendered cuboid, named using this convention:
+A walkable area should have an explicit gameplay object in `GAMEPLAY`. Use a dedicated low-poly mesh for hills, ramps, and irregular terrain, and use an Empty or non-rendered cuboid only for simple flat rectangular floors.
+
+Recommended naming:
+
+```text
+WALKABLE_Ground
+WALKABLE_Hill_North
+WALKABLE_UpperFloor
+```
+
+Recommended custom properties for a walkable mesh:
+
+```text
+gameplay_type = "walkable_surface"
+surface_id = "hill_north"
+surface_kind = "terrain"
+walkable = true
+max_slope_deg = 45.0
+```
+
+The walkable mesh must contain only the surface on which characters may stand. It must not include walls, ceilings, decorative rocks, underside faces, or hidden geometry. The exporter should apply the object's world transform, triangulate or validate the mesh, and write a simplified representation to the gameplay manifest.
+
+For a flat upper floor, a dedicated gameplay marker can still be an Empty or a non-rendered cuboid, named using this convention:
 
 ```text
 SURFACE_UpperFloor
@@ -154,7 +217,44 @@ The exporter should read the marker's world-space transform and dimensions and g
 }
 ```
 
-The marker's dimensions define the walkable region. The marker's world-space `Y` position defines the floor height. The visual floor model should be aligned to the same height, but the marker remains the gameplay source of truth.
+For a flat marker, its dimensions define the walkable region and its world-space `Y` position defines the floor height. For a walkable mesh, the mesh vertices define the varying height. The visual floor or hill model should be aligned to the gameplay object, but the gameplay object remains the source of truth.
+
+### Hills and arbitrary-height terrain
+
+A hill should not be represented by one `height` value or one `start/end` ramp. In Blender, create a simplified duplicate of the walkable portion of the hill in `GAMEPLAY`:
+
+```text
+VISUAL
+└── Hill_North_Detailed
+
+GAMEPLAY
+└── WALKABLE_Hill_North_LowPoly
+```
+
+The gameplay hill mesh should:
+
+- cover only the area where the player may walk;
+- use significantly fewer polygons than the visual hill;
+- preserve important ridges, valleys, paths, and cliff boundaries;
+- avoid near-vertical or inverted triangles unless explicitly supported;
+- have consistent vertex winding and valid normals;
+- use world-space coordinates after Blender transforms are applied.
+
+The exporter should validate every triangle and generate a spatially queryable surface representation. At runtime, the surface query projects a candidate `X/Z` point onto the relevant gameplay triangles and interpolates `Y` using barycentric coordinates. The result includes the interpolated height and triangle normal.
+
+This supports arbitrary height variation without requiring the game to understand how the hill was modeled visually.
+
+For very large maps, the exported triangles should later be indexed in a spatial grid or BVH. The initial implementation may use a deterministic linear scan for small fixtures, but the runtime API must not expose the storage strategy.
+
+### Surface layers and upper floors
+
+Two surfaces may share an `X/Z` region at different heights. The query must therefore not be defined only as `ground_at(x, z)` internally. It must be able to consider the current surface or current `Y`, for example:
+
+```rust
+fn surfaces_at(&self, x: f32, z: f32) -> Vec<GroundContact>;
+```
+
+or an equivalent API that accepts the current position and returns the reachable surface. The first implementation should use stable `surface_id` links and explicit traversal connections. A numeric `floor_id` is not required until multi-floor navigation is implemented.
 
 The exporter must make the coordinate convention explicit:
 
@@ -268,17 +368,19 @@ Add a dedicated Blender Python export script, with the final location chosen acc
 2. Validate required Collections: `VISUAL`, `GAMEPLAY`, and `COLLISION`.
 3. Validate unique ids for surfaces, traversals, and blockers.
 4. Convert marker transforms to world space.
-5. Extract flat surfaces from `SURFACE_*` markers.
-6. Extract ramps from `STAIR_*` markers and `START`/`END` children.
-7. Extract simplified blocking collision from `BLOCKING_*` markers.
-8. Compute map bounds from an explicit map-bounds marker or configured map bounds.
-9. Validate that stair start/end surfaces exist.
-10. Validate that stair endpoints are close enough to the linked surfaces.
-11. Validate that visual objects and gameplay markers are not accidentally exported into the wrong category.
-12. Export the visual scene to `.glb`.
-13. Write the gameplay manifest to `.world.json`.
-14. Print a summary containing map id, visual object count, surface count, traversal count, and blocker count.
-15. Fail with actionable diagnostics instead of writing a partially valid manifest.
+5. Extract flat surfaces from simple `WALKABLE_*` markers.
+6. Extract and validate low-poly walkable meshes from `WALKABLE_*` objects for hills, ramps, and irregular terrain.
+7. Extract traversal links from `STAIR_*` markers and `START`/`END` children.
+8. Extract simplified blocking collision from `BLOCKING_*` markers.
+9. Compute map bounds from an explicit map-bounds marker or configured map bounds.
+10. Validate that walkable meshes have valid triangles, finite coordinates, consistent winding, and acceptable slopes.
+11. Validate that stair start/end surfaces exist.
+12. Validate that stair endpoints are close enough to the linked surfaces.
+13. Validate that visual objects and gameplay markers are not accidentally exported into the wrong category.
+14. Export the visual scene to `.glb`.
+15. Write the gameplay manifest to `.world.json`.
+16. Print a summary containing map id, visual object count, walkable triangle count, surface count, traversal count, and blocker count.
+17. Fail with actionable diagnostics instead of writing a partially valid manifest.
 
 The script should be deterministic: the same Blender scene and export settings must produce equivalent manifest data regardless of object iteration order.
 
@@ -291,6 +393,11 @@ The exporter should reject or report:
 - empty or invalid ids;
 - non-finite coordinates, rotations, scales, or dimensions;
 - zero or negative surface dimensions;
+- empty walkable meshes;
+- degenerate triangles;
+- non-finite mesh vertices;
+- inconsistent triangle winding where it affects normal calculation;
+- unsupported or excessive walkable slopes;
 - zero or negative stair width;
 - stairs with no horizontal length;
 - stairs referencing unknown surfaces;
@@ -305,8 +412,8 @@ Warnings may be used for visual alignment issues that do not make the manifest m
 
 The client should eventually provide a debug mode that draws:
 
-- walkable flat surfaces in green;
-- stair/ramp surfaces in blue;
+- walkable flat surfaces and hills in green;
+- stair/ramp traversal links in blue;
 - solid blockers in red;
 - stair start and end points;
 - surface heights and ids;
@@ -316,8 +423,10 @@ This is important because the most likely authoring error is not a Rust movement
 
 ## Glossary
 
-- **Walkable surface**: an area that supplies a valid height and surface normal for an `X/Z` point.
-- **Ramp/stair**: an inclined walkable surface connecting two elevations.
+- **Walkable surface**: an explicitly authored area or mesh that supplies a valid height and surface normal for a candidate `X/Z` point.
+- **Walkable gameplay mesh**: a simplified Blender-authored mesh used for terrain, hills, ramps, or irregular walkable geometry; it is separate from the visual mesh.
+- **Ramp/stair**: an inclined walkable surface or traversal link connecting two elevations.
+- **Surface layer**: a distinct walkable region that may overlap another region in `X/Z` at a different height.
 - **Solid obstacle**: geometry that blocks movement independently of walkable surfaces.
 - **Ground height**: the authoritative `Y` value at a point on a walkable surface.
 - **Step height**: the largest vertical difference accepted during ordinary movement.
@@ -326,9 +435,11 @@ This is important because the most likely authoring error is not a Rust movement
 
 ## Global acceptance criteria
 
-- [ ] A map can describe flat terrain and at least one stair/ramp with different start and end heights.
-- [ ] Invalid surface definitions are rejected during map validation.
-- [ ] A deterministic shared function can resolve the ground height at a given `X/Z` point.
+- [ ] A map can describe flat terrain, a hill with arbitrary height variation, and at least one stair/ramp with different start and end heights.
+- [ ] Walkable gameplay meshes are separate from visual `.glb` meshes and are exported into the gameplay manifest.
+- [ ] Invalid surface definitions and invalid walkable triangles are rejected during map validation.
+- [ ] A deterministic shared function can resolve the ground height and normal for a candidate `X/Z` point.
+- [ ] Surface queries can distinguish or reject ambiguous upper-floor surfaces instead of silently choosing by iteration order.
 - [ ] The authoritative server moves a player up and down a stair while preserving the correct `Y` coordinate.
 - [ ] A player cannot climb an ordinary obstacle whose height difference exceeds `MAX_STEP_HEIGHT`.
 - [ ] Solid obstacles continue to block movement even when a walkable surface exists nearby.
@@ -336,6 +447,8 @@ This is important because the most likely authoring error is not a Rust movement
 - [ ] Clicking a stair produces a target that uses the correct surface height when possible.
 - [ ] The server recalculates and validates the target height instead of trusting the client.
 - [ ] The camera continues to follow replicated `Position`, including `Y`, without duplicating gameplay height logic in presentation code.
+- [ ] Existing flat manifests remain loadable through a compatibility path and receive an implicit flat walkable surface where appropriate.
+- [ ] The client can visualize walkable meshes, traversal links, and blockers in an early debug mode.
 - [ ] The server remains headless and does not register meshes, materials, scenes, or rendering systems.
 - [ ] `cargo test` passes after every completed slice.
 - [ ] `cargo clippy -- -D warnings` passes before each slice is considered complete.
@@ -347,7 +460,7 @@ This is important because the most likely authoring error is not a Rust movement
 - Ladders with an explicit climbing state.
 - Elevators or moving platforms.
 - Full 3D navmesh/pathfinding.
-- Triangle-level collision against visual meshes.
+- Triangle-level collision against detailed visual meshes. The first implementation may use triangles from a separately authored, simplified gameplay mesh.
 - Persisting the player's exact `Y` coordinate in the database.
 - Dynamically deformable terrain.
 - Curved or procedurally generated stair surfaces.
@@ -445,9 +558,9 @@ Keep the model engine-agnostic and avoid introducing Bevy types into `shared::wo
 
 ---
 
-### Slice 2: Resolve walkable height and surface normal with pure shared math
+### Slice 2: Resolve height and surface normal from flat, ramp, and hill gameplay geometry
 
-**Value**: Server and client can calculate the same ground height for any point on a flat surface or ramp.
+**Value**: Server and client can calculate the same ground height for flat terrain, stairs/ramps, and hills with arbitrary height variation.
 
 **Production path**:
 
@@ -469,28 +582,32 @@ pub struct GroundContact {
 }
 ```
 
-The existing collision grid may be extended or replaced internally, but it must continue to support solid-obstacle queries. The first implementation may use a simple collection of flat surfaces and ramps rather than a general mesh query.
+The existing collision grid may be extended or replaced internally, but it must continue to support solid-obstacle queries. Walkable geometry should support simple flat patches and triangulated gameplay meshes. The initial implementation may use a deterministic linear scan over small fixtures; the storage strategy must remain hidden behind the query API so a spatial grid can be added after profiling.
 
 **Surface query behavior**:
 
 - flat terrain returns a constant height;
-- a ramp returns linearly interpolated height along its traversal direction;
-- points outside the ramp width or horizontal extent do not match the ramp;
-- the query returns the appropriate surface when multiple surfaces overlap according to an explicit deterministic rule;
-- the returned normal is normalized and consistent with the ramp direction.
+- a ramp returns height interpolated from its gameplay geometry;
+- a hill returns height interpolated from the containing gameplay triangle;
+- points outside the walkable mesh return no contact;
+- triangles with unacceptable slope are rejected or treated as non-walkable;
+- the query returns the appropriate surface when multiple surfaces overlap according to current height and traversal rules;
+- the returned normal is normalized and consistent with the gameplay geometry.
 
 **Acceptance criteria**:
 
 - [ ] Flat terrain returns the expected height.
 - [ ] The beginning, middle, and end of a ramp return expected heights.
-- [ ] Points outside the ramp footprint return no ramp contact.
+- [ ] Points on a hill return interpolated heights at multiple arbitrary locations.
+- [ ] Points outside the walkable mesh return no contact.
+- [ ] Excessively steep triangles are rejected according to the configured slope limit.
 - [ ] The result is deterministic and independent of entity or iteration order.
 - [ ] Existing solid-obstacle `is_blocked` behavior remains covered by tests.
 - [ ] The server and presentation crates can consume the same shared query API.
 
 **RED**:
 
-Write pure unit tests for height interpolation, width boundaries, normal calculation, and overlapping-surface selection.
+Write pure unit tests for flat patches, triangle containment, barycentric height interpolation, width boundaries, normal calculation, slope limits, and overlapping-surface selection.
 
 **GREEN**:
 
@@ -498,13 +615,57 @@ Implement the minimum pure geometry required by the tests. Do not integrate with
 
 **MUTATE / KILL MUTANTS**:
 
-Cover likely mutants involving interpolation direction, inclusive/exclusive boundaries, wrong axis selection, missing normalization, and inverted surface precedence.
+Cover likely mutants involving incorrect barycentric interpolation, wrong triangle containment, inclusive/exclusive boundaries, wrong axis selection, missing normalization, incorrect slope comparison, and inverted surface precedence.
 
 **REFACTOR**:
 
 Keep surface calculations independent of `World`, `Commands`, assets, and rendering.
 
-**Done when**: Shared geometry tests pass and the existing collision tests still pass.
+**Done when**: Shared geometry tests pass for flat surfaces, ramps, and hills, and the existing collision tests still pass.
+
+---
+
+### Slice 2.5: Add early debug visualization for authored gameplay geometry
+
+**Value**: Level designers and developers can inspect the actual walkable surfaces and blockers before movement integration is complete.
+
+**Production path**:
+
+`world.json` -> client world/debug resource -> local debug meshes or Bevy gizmos -> visible surfaces, traversal links, and blockers.
+
+**Likely files**:
+
+- `crates/presentation/src/scenes/`
+- `crates/presentation/src/renderer.rs`
+- `crates/presentation/src/lib.rs`
+- shared manifest/world types as needed
+
+**Acceptance criteria**:
+
+- [ ] A debug toggle displays walkable flat patches and hill gameplay meshes.
+- [ ] Stair start/end points and traversal lines are visible.
+- [ ] Blocking collision volumes are visible.
+- [ ] Surface ids and heights can be inspected through logs or debug labels.
+- [ ] Debug visualization is client-only and is not registered in server mode.
+- [ ] Debug entities are cleaned up when leaving the game scene.
+
+**RED**:
+
+Add a presentation test that loads a fixture world and verifies the expected number and types of debug entities.
+
+**GREEN**:
+
+Render the minimum debug representation needed to validate exported geometry. Do not add a production UI or editor workflow yet.
+
+**MUTATE / KILL MUTANTS**:
+
+Cover missing surface categories, wrong transforms, missing cleanup, duplicate debug spawning, and accidental server registration.
+
+**REFACTOR**:
+
+Keep debug visualization local to presentation and driven by the shared manifest; do not duplicate geometry calculations in the renderer.
+
+**Done when**: A developer can visually confirm flat terrain, a hill, an upper floor, a stair, and a blocker before movement integration.
 
 ---
 
@@ -527,13 +688,14 @@ Keep surface calculations independent of `World`, `Commands`, assets, and render
 
 1. Read the current player position and requested target.
 2. Calculate the candidate horizontal step.
-3. Resolve the walkable surface at the candidate `X/Z` position.
-4. Reject the move if no valid surface exists.
-5. Compare candidate ground height with the current height.
-6. Reject or stop if the height difference exceeds `MAX_STEP_HEIGHT`.
-7. Check solid collision at the candidate position.
-8. Set the final candidate position, including the resolved `Y`.
-9. Preserve the existing dead, crowd-control, cast-blocking, and arrival behavior.
+3. Resolve candidate walkable surfaces at the candidate `X/Z` position.
+4. Select a reachable surface using current `Y`, surface identity, and traversal rules.
+5. Reject the move if no valid surface exists.
+6. Compare candidate ground height with the current height.
+7. Reject or stop if the per-tick height difference exceeds `MAX_STEP_HEIGHT` and no valid traversal permits the transition.
+8. Check solid collision at the candidate position.
+9. Set the final candidate position, including the resolved `Y`.
+10. Preserve the existing dead, crowd-control, cast-blocking, and arrival behavior.
 
 The shared movement helper should expose a narrow, reusable operation such as `resolve_walkable_position` rather than placing all world-specific logic inside the server system.
 
@@ -542,6 +704,8 @@ The shared movement helper should expose a narrow, reusable operation such as `r
 - [ ] A player remains on flat ground at the expected height.
 - [ ] A player ascends a ramp over multiple fixed updates.
 - [ ] A player descends a ramp without losing or gaining extra height.
+- [ ] A player follows a hill while `Y` changes continuously according to the gameplay mesh.
+- [ ] A player does not teleport between overlapping upper/lower surfaces without a valid traversal.
 - [ ] A wall higher than `MAX_STEP_HEIGHT` blocks movement.
 - [ ] A solid obstacle blocks movement on a ramp as well as on flat terrain.
 - [ ] Existing dead/crowd-control/cast movement restrictions remain unchanged.
@@ -549,7 +713,7 @@ The shared movement helper should expose a narrow, reusable operation such as `r
 
 **RED**:
 
-Add server movement tests for flat movement, ascent, descent, excessive step height, obstacle blocking, and no-surface rejection.
+Add server movement tests for flat movement, ascent, descent, hill following, excessive step height, upper/lower surface ambiguity, obstacle blocking, traversal transitions, and no-surface rejection.
 
 **GREEN**:
 
@@ -557,7 +721,7 @@ Integrate the shared surface query into the existing authoritative movement path
 
 **MUTATE / KILL MUTANTS**:
 
-Cover mutants that omit the height check, apply the height before collision validation, use the client-provided `Y`, allow movement with no surface, or compare the wrong sign of the height delta.
+Cover mutants that omit the height check, apply the height before collision validation, use the client-provided `Y`, allow movement with no surface, choose an arbitrary overlapping surface, or compare the wrong sign of the height delta. Confirm that `MAX_STEP_HEIGHT` applies per movement step rather than to the total height of a stair or hill.
 
 **REFACTOR**:
 
@@ -585,6 +749,7 @@ Avoid duplicating candidate-position logic. Keep the server system as orchestrat
 
 - [ ] Predicted movement follows the same flat surfaces as the server.
 - [ ] Predicted ascent and descent produce the same positions as authoritative movement for the same tick/input sequence.
+- [ ] Predicted movement follows hill geometry with the same interpolated heights as the server.
 - [ ] The client does not predict climbing a wall that the server rejects.
 - [ ] The client does not apply a client-supplied height as authoritative state.
 - [ ] Existing prediction behavior for casts, crowd control, death, and arrival remains unchanged.
@@ -708,7 +873,7 @@ Follow the existing presentation pattern: replicated/shared state drives local v
 
 ---
 
-### Slice 7: Add authoring and compatibility safeguards
+### Slice 7: Add authoring, compatibility, and level-designer safeguards
 
 **Value**: Future map edits do not silently create unwalkable or visually misaligned stairs.
 
@@ -744,6 +909,123 @@ Editor/map authoring data -> manifest validation -> diagnostics -> saved map con
 Follow the same test-first sequence with validation-focused tests and compatibility fixtures.
 
 **Done when**: A map author can create, validate, load, and visually inspect a stair without manually editing unrelated gameplay code.
+
+## Level Designer workflow
+
+The intended workflow for a level designer should be explicit and repeatable.
+
+### Step 1: Model visual content in Blender
+
+Create the visible map in the `VISUAL` Collection:
+
+- terrain and hills;
+- houses and buildings;
+- stair models;
+- bridges and platforms;
+- decoration and props.
+
+Use the project world-unit convention: one Blender unit equals one game world unit. Apply object transforms where required by the exporter and keep visual topology independent from gameplay topology.
+
+### Step 2: Create gameplay geometry
+
+Create a simplified gameplay representation in `GAMEPLAY`:
+
+- `WALKABLE_Ground` for flat ground;
+- `WALKABLE_Hill_*` for hills or irregular terrain;
+- `WALKABLE_UpperFloor` for elevated floors;
+- `STAIR_*` for explicit links between surfaces.
+
+For hills, duplicate only the walkable terrain area and simplify it. Do not use the detailed visual hill mesh as gameplay geometry. Preserve the shape features that affect movement: ridges, valleys, paths, cliff boundaries, and changes in slope.
+
+For a floor, use a simple flat marker or low-poly plane. For stairs, create the visual stair model separately and add a gameplay ramp marker with explicit `START` and `END` points.
+
+### Step 3: Create blocking geometry
+
+In `COLLISION`, add simplified boxes, cylinders, or other supported blockers:
+
+```text
+BLOCKING_Wall_01
+BLOCKING_Cliff_01
+BLOCKING_Pillar_01
+```
+
+Do not mark every visual object as blocking. Only objects that must prevent movement should receive gameplay collision markers.
+
+### Step 4: Assign ids and metadata
+
+Every gameplay surface, traversal, and blocker receives a stable unique id. The id should describe gameplay identity rather than Blender object numbering:
+
+```text
+surface_ground
+surface_hill_north
+surface_town_upper_floor
+traversal_stair_town_upper
+blocker_town_wall_01
+```
+
+Configure the required custom properties and verify that each stair references existing lower and upper surface ids.
+
+### Step 5: Run the Blender exporter
+
+Run the project export command or Blender Python script. The exporter should:
+
+1. validate Collections and object types;
+2. apply/resolve world transforms;
+3. extract walkable meshes and flat surface markers;
+4. extract stairs and their endpoints;
+5. extract simplified blockers;
+6. validate slopes, degenerate triangles, ids, and references;
+7. write the `.glb` visual asset;
+8. write the `.world.json` gameplay manifest;
+9. print counts and warnings.
+
+The export must fail if a gameplay error exists. A designer should never receive a seemingly successful build with an invalid surface manifest.
+
+### Step 6: Inspect debug geometry
+
+Launch the client with gameplay debug visualization enabled. Check:
+
+- the walkable hill covers exactly the intended area;
+- the player can reach the top and bottom of every stair;
+- the upper floor is at the same height as the visual floor;
+- cliffs and walls are blocked where expected;
+- no decorative mesh is accidentally walkable;
+- no walkable mesh extends through a wall or outside the map;
+- surface normals and slope warnings are correct.
+
+### Step 7: Test movement in-game
+
+Use a standard checklist:
+
+- start on flat ground;
+- walk up the hill;
+- walk down the hill;
+- cross the transition between flat ground and hill;
+- walk up and down every stair;
+- attempt to walk up a cliff;
+- attempt to cross a blocker;
+- approach the edge of an upper floor;
+- click on lower, middle, and upper points of a stair;
+- click on several points of a hill;
+- test the same map in client mode and host-client mode.
+
+### Step 8: Commit the map artifacts together
+
+The `.glb`, `.world.json`, Blender source file, and any exporter configuration must be versioned as one map change. A visual-only change and a gameplay-geometry change should be reviewable independently when possible, but the final map state must keep the artifacts synchronized.
+
+### Level Designer definition of done
+
+A map is ready for gameplay review when:
+
+- the exporter completes without errors;
+- the manifest is versioned with the `.glb`;
+- all walkable surfaces have stable ids;
+- all hills use simplified gameplay geometry;
+- all stairs reference valid surfaces;
+- collision markers are intentional and simplified;
+- debug geometry visually matches the intended map;
+- the player can traverse every intended route;
+- unintended shortcuts and inaccessible areas are documented or fixed.
 
 ## Suggested shared APIs
 

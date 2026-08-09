@@ -11,6 +11,7 @@ use crate::placeables::props;
     asset = "models/new/tree_birch_medium.glb",
     scale = (1.0, 1.0, 1.0),
     tint = (0.3, 0.5, 0.25),
-    blocks_movement = true
+    blocks_movement = true,
+    collision = cylinder(radius = 0.3, height = 5.0)
 )]
 pub struct TreeBirchMediumProp;

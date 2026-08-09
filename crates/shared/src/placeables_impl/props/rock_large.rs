@@ -10,6 +10,7 @@ use crate::placeables::props;
     asset = "models/new/rock_large.glb",
     scale = (1.0, 1.0, 1.0),
     tint = (0.4, 0.38, 0.35),
-    blocks_movement = true
+    blocks_movement = true,
+    collision = sphere(radius = 1.2)
 )]
 pub struct RockLargeProp;

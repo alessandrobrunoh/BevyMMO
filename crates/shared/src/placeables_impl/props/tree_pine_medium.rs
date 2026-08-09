@@ -11,6 +11,7 @@ use crate::placeables::props;
     asset = "models/new/tree_pine_medium.glb",
     scale = (1.0, 1.0, 1.0),
     tint = (0.15, 0.45, 0.2),
-    blocks_movement = true
+    blocks_movement = true,
+    collision = cylinder(radius = 0.35, height = 5.5)
 )]
 pub struct TreePineMediumProp;

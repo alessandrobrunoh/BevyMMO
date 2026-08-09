@@ -11,6 +11,7 @@ use crate::placeables::props;
     asset = "models/new/tree_oak_small.glb",
     scale = (1.0, 1.0, 1.0),
     tint = (0.2, 0.5, 0.2),
-    blocks_movement = true
+    blocks_movement = true,
+    collision = cylinder(radius = 0.3, height = 4.0)
 )]
 pub struct TreeOakSmallProp;

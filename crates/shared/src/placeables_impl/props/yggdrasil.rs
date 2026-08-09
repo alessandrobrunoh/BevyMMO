@@ -13,6 +13,7 @@ use crate::placeables::props;
     asset = "models/new/yggdrasil.glb",
     scale = (1.0, 1.0, 1.0),
     tint = (0.2, 0.4, 0.2),
-    blocks_movement = true
+    blocks_movement = true,
+    collision = cylinder(radius = 1.5, height = 30.0)
 )]
 pub struct YggdrasilProp;

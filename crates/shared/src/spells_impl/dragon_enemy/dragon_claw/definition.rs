@@ -1,6 +1,5 @@
 //! Definition of the `dragon_claw` spell.
 
-use bevy::math::Vec3;
 
 use crate::spells::{Spell, SpellCastContext, SpellConfig, SpellId};
 
@@ -57,6 +56,7 @@ mod tests {
     use super::*;
     use crate::spells::context::SpellCastContext;
     use crate::stats::components::CombatStats;
+    use bevy::math::Vec3;
     use bevy::prelude::World;
 
     #[test]

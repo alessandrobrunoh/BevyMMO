@@ -25,6 +25,8 @@ pub mod stats;
 pub mod targeting;
 pub mod world;
 
+pub use crate::movement::{ClientSurfaceQuery, MoveTarget};
+
 /// Common re-exports for consumers of this crate.
 pub mod prelude {
     pub use crate::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};

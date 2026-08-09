@@ -1,6 +1,5 @@
 //! Spawn bundle and helpers for game entities.
 
-use bevy::color::Color;
 use bevy::ecs::entity::Entity;
 use bevy::prelude::*;
 use lightyear::prelude::{NetworkTarget, Replicate};
@@ -88,6 +87,7 @@ pub fn spawn_entity<T: EntityDefinition>(commands: &mut Commands) -> Entity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::color::Color;
 
     #[test]
     fn standard_spawn_contains_shared_gameplay_components() {

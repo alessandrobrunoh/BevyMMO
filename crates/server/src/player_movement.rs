@@ -13,7 +13,9 @@ use std::collections::HashMap;
 use bevymmo_shared::crowd_control::CrowdControlState;
 use bevymmo_shared::entity::components::EntityState;
 use bevymmo_shared::entity::player::components::Player;
-use bevymmo_shared::movement::{move_towards_target, effective_movement_speed, should_block_movement_for_cast, MoveTarget};
+use bevymmo_shared::movement::{
+    effective_movement_speed, move_towards_target, should_block_movement_for_cast, MoveTarget,
+};
 use bevymmo_shared::network::mode;
 use bevymmo_shared::network::protocol::{Inputs, LookDirection, MoveCommand, PlayerId, Position};
 use bevymmo_shared::spells::CastProgress;
@@ -40,10 +42,7 @@ impl Plugin for PlayerMovementPlugin {
                 .in_set(InputSystems::WriteClientInputs)
                 .run_if(mode::has_client),
         );
-        app.add_systems(
-            Update,
-            receive_move_commands.run_if(mode::has_server),
-        );
+        app.add_systems(Update, receive_move_commands.run_if(mode::has_server));
         app.add_systems(FixedUpdate, server_move_to_target.run_if(mode::has_server));
     }
 }
@@ -105,8 +104,19 @@ fn server_move_to_target(
         With<Player>,
     >,
 ) {
-    for (entity, position, input, move_target, stats, vital, look_direction, mut state, modifiers, cast, cc_state) in
-        &mut players
+    for (
+        entity,
+        mut position,
+        input,
+        move_target,
+        stats,
+        vital,
+        mut look_direction,
+        mut state,
+        modifiers,
+        cast,
+        cc_state,
+    ) in &mut players
     {
         if vital.is_dead() || state.is_dead() {
             *state = EntityState::Dead;
@@ -132,13 +142,60 @@ fn server_move_to_target(
             .map(|target| Inputs::MoveTo(target.0))
             .unwrap_or_else(|| input.0.clone());
 
+        if !world_map.surface_query.is_empty() {
+            let Inputs::MoveTo(target) = authoritative_input else {
+                *state = EntityState::Idle;
+                continue;
+            };
+
+            let offset_xz = Vec3::new(target.x - position.0.x, 0.0, target.z - position.0.z);
+            let distance = offset_xz.length();
+            if distance > 0.001 {
+                look_direction.0 = offset_xz.normalize_or_zero();
+            }
+
+            let Some(target_contact) = world_map.surface_query.ground_at(target.x, target.z) else {
+                *state = EntityState::Idle;
+                continue;
+            };
+
+            if distance <= bevymmo_shared::movement::ARRIVAL_DISTANCE {
+                position.0 = Vec3::new(target.x, target_contact.height, target.z);
+                *state = EntityState::Idle;
+                continue;
+            }
+
+            let step = effective_speed.min(distance);
+            let next_xz = position.0 + offset_xz / distance * step;
+            let Some(next_contact) = world_map.surface_query.ground_at(next_xz.x, next_xz.z) else {
+                *state = EntityState::Idle;
+                continue;
+            };
+            let candidate = Vec3::new(next_xz.x, next_contact.height, next_xz.z);
+
+            if world_map
+                .collision
+                .is_blocked([candidate.x, candidate.y, candidate.z], 0.45)
+            {
+                *state = EntityState::Idle;
+                continue;
+            }
+
+            position.0 = candidate;
+            *state = EntityState::Moving;
+            continue;
+        }
+
         if let Inputs::MoveTo(target) = &authoritative_input {
             let offset = *target - position.0;
             let distance = offset.length();
             if distance > 0.001 {
                 let step = effective_speed.min(distance);
                 let candidate = position.0 + offset / distance * step;
-                if world_map.collision.is_blocked([candidate.x, candidate.y, candidate.z], 0.45) {
+                if world_map
+                    .collision
+                    .is_blocked([candidate.x, candidate.y, candidate.z], 0.45)
+                {
                     *state = EntityState::Idle;
                     continue;
                 }

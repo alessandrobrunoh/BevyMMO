@@ -13,6 +13,7 @@ use crate::stats::events::ModifierOp;
 use crate::stats::events::StatField;
 use crate::stats::modifiers::ActiveStatModifiers;
 use crate::stats::modifiers::StatModifierInstance;
+use crate::world::SurfaceQuery;
 
 /// Distance (in world units) under which a move command is considered satisfied.
 pub const ARRIVAL_DISTANCE: f32 = 0.05;
@@ -24,6 +25,15 @@ pub const ARRIVAL_DISTANCE: f32 = 0.05;
 /// can use it without creating a cross-crate dependency.
 #[derive(Resource, Default)]
 pub struct MoveTarget(pub Option<Vec3>);
+
+/// Client-side surface query data for height-aware click-to-move.
+///
+/// Populated by the presentation layer from loaded map data, consumed by the
+/// client click-to-move system to resolve mouse clicks onto proper terrain heights.
+/// Lives in `shared` so both client and presentation can access it without
+/// cross-crate dependencies.
+#[derive(Resource, Default)]
+pub struct ClientSurfaceQuery(pub Option<SurfaceQuery>);
 
 /// Calculates movement speed after active stat modifiers.
 ///
@@ -114,4 +124,441 @@ pub fn move_towards_target(
 
     position.0 += offset / distance * speed.min(distance);
     *state = EntityState::Moving;
+}
+
+// ==================== HEIGHT-AWARE MOVEMENT HELPERS ====================
+
+/// Resolves a 2D position (x, z) to a 3D position (x, y, z) using surface queries.
+///
+/// Returns `None` if the position is not over any walkable surface.
+/// Returns `Some(Vec3)` with the resolved height if a surface is found.
+///
+/// This is the main helper for height-aware movement, allowing 2D movement
+/// commands (like click-to-move) to be resolved to proper 3D positions on terrain.
+pub fn resolve_ground_position(x: f32, z: f32, surface_query: &SurfaceQuery) -> Option<Vec3> {
+    surface_query
+        .ground_at(x, z)
+        .map(|contact| Vec3::new(x, contact.height, z))
+}
+
+/// Validates that movement between two points is valid.
+///
+/// Checks that both the start and end positions are on walkable surfaces,
+/// and that the movement doesn't cross blocking obstacles.
+///
+/// Returns `true` if movement is valid, `false` otherwise.
+pub fn is_valid_movement(
+    from: Vec3,
+    to: Vec3,
+    surface_query: &SurfaceQuery,
+    collision_grid: &crate::world::CollisionGrid,
+) -> bool {
+    // Check if both start and end positions are on walkable surfaces
+    let from_contact = surface_query.ground_at(from.x, from.z);
+    let to_contact = surface_query.ground_at(to.x, to.z);
+
+    if from_contact.is_none() || to_contact.is_none() {
+        return false;
+    }
+
+    // Check if the movement crosses any blocking obstacles
+    // For now, just check the end point against obstacles
+    // In a full implementation, we would check the path between points
+    if collision_grid.is_blocked([to.x, to.y, to.z], 0.35) {
+        return false;
+    }
+
+    true
+}
+
+/// Steps a single entity towards its 2D move target using surface queries for height.
+///
+/// This is similar to `move_towards_target()` but uses surface queries to
+/// resolve the proper height for the target position, making it suitable for
+/// height-aware movement on terrain with varying elevation.
+///
+/// Returns `Some(new_position)` if movement succeeded, `None` if the target
+/// is not on a walkable surface.
+pub fn step_towards_2d_target(
+    current_position: Vec3,
+    target_x: f32,
+    target_z: f32,
+    speed: f32,
+    surface_query: &SurfaceQuery,
+) -> Option<Vec3> {
+    // Resolve the target height using surface queries
+    let target_height = surface_query.ground_at(target_x, target_z)?;
+    let target = Vec3::new(target_x, target_height.height, target_z);
+
+    // Calculate movement direction and distance
+    let offset = target - current_position;
+    let distance = offset.length();
+
+    if distance <= ARRIVAL_DISTANCE {
+        return Some(target); // Arrived at target
+    }
+
+    // Step towards target
+    let step_distance = speed.min(distance);
+    let new_position = current_position + offset.normalize() * step_distance;
+
+    // Resolve height at the new position
+    let new_height = surface_query.ground_at(new_position.x, new_position.z);
+    match new_height {
+        Some(contact) => Some(Vec3::new(new_position.x, contact.height, new_position.z)),
+        None => Some(new_position), // Fallback to unmodified position if no surface
+    }
+}
+
+// ==================== RAY-TO-SURFACE RESOLUTION ====================
+
+/// Resolves a camera ray to a ground position on walkable surfaces.
+///
+/// Samples points along the ray from the camera and returns the first point
+/// whose X/Z coordinates resolve to a valid ground contact via `SurfaceQuery`.
+/// This enables height-aware click-to-move without relying on visual mesh raycasts.
+///
+/// # Arguments
+/// * `ray_origin` - The camera position in world space
+/// * `ray_direction` - Normalized direction vector from camera through cursor
+/// * `surface_query` - Surface query data for terrain height resolution
+/// * `max_distance` - Maximum distance to sample along the ray (default 100.0)
+/// * `step_size` - Distance between sample points along the ray (default 1.0)
+///
+/// # Returns
+/// * `Some(Vec3)` - First valid ground position on the ray
+/// * `None` - No valid ground position found within max_distance
+///
+/// # Example
+/// ```ignore
+/// let target = resolve_ray_to_ground(
+///     camera_pos,
+///     ray_dir,
+///     &surface_query,
+///     100.0,
+///     1.0
+/// );
+/// ```
+pub fn resolve_ray_to_ground(
+    ray_origin: Vec3,
+    ray_direction: Vec3,
+    surface_query: &SurfaceQuery,
+    max_distance: f32,
+    step_size: f32,
+) -> Option<Vec3> {
+    if surface_query.is_empty() {
+        // Fallback to Y=0 plane when no surface data is available
+        let plane_normal = Vec3::Y;
+        let plane_d = 0.0; // Y = 0 plane
+
+        // Ray-plane intersection: t = -(normal · origin + d) / (normal · direction)
+        let denominator = plane_normal.dot(ray_direction);
+        if denominator.abs() < 1e-6 {
+            return None; // Ray is parallel to plane
+        }
+
+        let t = -(plane_normal.dot(ray_origin) + plane_d) / denominator;
+        if t < 0.0 || t > max_distance {
+            return None; // Intersection is behind camera or too far
+        }
+
+        let intersection = ray_origin + ray_direction * t;
+        return Some(Vec3::new(intersection.x, 0.0, intersection.z));
+    }
+
+    let normalized_direction = ray_direction.normalize_or_zero();
+    if normalized_direction == Vec3::ZERO {
+        return None;
+    }
+
+    // Sample points along the ray to find the first valid ground contact
+    let num_steps = (max_distance / step_size).ceil() as i32;
+
+    for step in 0..=num_steps {
+        let t = step as f32 * step_size;
+        if t > max_distance {
+            break;
+        }
+
+        let sample_point = ray_origin + normalized_direction * t;
+
+        // Check if this X/Z position has a valid ground contact
+        if let Some(ground_contact) = surface_query.ground_at(sample_point.x, sample_point.z) {
+            // Verify the sample point is reasonably close to the actual ground height
+            // This prevents selecting points that are far above/below the terrain
+            let height_diff = (sample_point.y - ground_contact.height).abs();
+            if height_diff <= 5.0 {
+                // Allow some tolerance for steep terrain
+                return Some(Vec3::new(
+                    sample_point.x,
+                    ground_contact.height,
+                    sample_point.z,
+                ));
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::{
+        MapBounds, MapManifest, SurfaceBounds, SurfaceKind, SurfaceQuery, WalkableSurface,
+        WorldMetrics,
+    };
+
+    fn create_test_surface_query() -> (SurfaceQuery, MapManifest) {
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "test_movement".to_string(),
+            display_name: "Test Movement".to_string(),
+            bounds: MapBounds {
+                min_x: -20.0,
+                max_x: 20.0,
+                min_z: -20.0,
+                max_z: 20.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: Some(WorldMetrics::default()),
+            surfaces: vec![WalkableSurface {
+                id: "surface_flat".to_string(),
+                kind: SurfaceKind::Flat,
+                object: None,
+                bounds: Some(SurfaceBounds {
+                    min_x: -10.0,
+                    max_x: 10.0,
+                    min_z: -10.0,
+                    max_z: 10.0,
+                }),
+                height: Some(2.0),
+                min_height: None,
+                max_height: None,
+                grid_size: None,
+                size: Some(20.0),
+                purpose: Some("Test surface for movement".to_string()),
+                heightfield: None,
+            }],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        (SurfaceQuery::from_manifest(&manifest), manifest)
+    }
+
+    #[test]
+    fn test_resolve_ground_position_on_surface() {
+        let (query, _manifest) = create_test_surface_query();
+
+        // Test resolving a position on the surface
+        let pos = resolve_ground_position(0.0, 0.0, &query)
+            .expect("in-bounds surface point should resolve to a 3D position");
+        assert_eq!(pos.x, 0.0);
+        assert_eq!(pos.z, 0.0);
+        assert_eq!(pos.y, 2.0); // Should match the surface height
+    }
+
+    #[test]
+    fn test_resolve_ground_position_off_surface() {
+        let (query, _manifest) = create_test_surface_query();
+
+        // Test resolving a position off the surface
+        let result = resolve_ground_position(100.0, 100.0, &query);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_step_towards_2d_target() {
+        let (query, _manifest) = create_test_surface_query();
+
+        let start = Vec3::new(-5.0, 2.0, -5.0);
+        let target_x = 5.0;
+        let target_z = 5.0;
+        let speed = 1.0;
+
+        // Take a step towards the target
+        let new_pos = step_towards_2d_target(start, target_x, target_z, speed, &query)
+            .expect("in-bounds target should produce a height-aware movement step");
+        // Should have moved towards the target
+        assert!(new_pos.x > start.x);
+        assert!(new_pos.z > start.z);
+        // Height should be resolved from the surface
+        assert_eq!(new_pos.y, 2.0);
+    }
+
+    #[test]
+    fn test_step_towards_2d_target_arrival() {
+        let (query, _manifest) = create_test_surface_query();
+
+        let start = Vec3::new(0.0, 2.0, 0.0);
+        let target_x = 0.05; // Very close to start
+        let target_z = 0.05;
+        let speed = 1.0;
+
+        // Should arrive at target immediately
+        let new_pos = step_towards_2d_target(start, target_x, target_z, speed, &query)
+            .expect("nearby in-bounds target should resolve immediately");
+        // Should be at the target position (within arrival distance)
+        assert!((new_pos.x - target_x).abs() < ARRIVAL_DISTANCE);
+        assert!((new_pos.z - target_z).abs() < ARRIVAL_DISTANCE);
+    }
+
+    #[test]
+    fn test_step_towards_2d_invalid_target() {
+        let (query, _manifest) = create_test_surface_query();
+
+        let start = Vec3::new(0.0, 2.0, 0.0);
+        let target_x = 100.0; // Off surface
+        let target_z = 100.0;
+        let speed = 1.0;
+
+        // Should fail because target is not on a walkable surface
+        let result = step_towards_2d_target(start, target_x, target_z, speed, &query);
+        assert!(result.is_none());
+    }
+
+    // ==================== RAY-TO-SURFACE TESTS ====================
+
+    #[test]
+    fn test_resolve_ray_to_ground_flat_surface() {
+        let (query, _manifest) = create_test_surface_query();
+
+        // Camera above the surface, looking down at the center
+        let camera_pos = Vec3::new(0.0, 10.0, 5.0);
+        let ray_dir = (Vec3::new(0.0, 2.0, 0.0) - camera_pos).normalize();
+
+        let result = resolve_ray_to_ground(camera_pos, ray_dir, &query, 100.0, 0.5);
+
+        assert!(result.is_some(), "Ray should hit the flat surface");
+        let ground_pos = result.unwrap();
+        assert_eq!(ground_pos.y, 2.0, "Height should match surface height");
+        // X should be near 0 (camera is centered on X)
+        assert!((ground_pos.x - 0.0).abs() < 1.0, "X should be near 0");
+        // Z should be closer to 0 than to camera position (5.0), indicating we hit the surface
+        assert!(ground_pos.z < 4.0, "Z should be less than camera Z (5.0)");
+        // Z should be reasonably close to 0 (the target we were aiming at)
+        assert!(ground_pos.z > -1.0, "Z should be greater than -1.0");
+    }
+
+    #[test]
+    fn test_resolve_ray_to_ground_fallback_to_y0_plane() {
+        // Create an empty surface query (no surface data)
+        let empty_query = SurfaceQuery::from_manifest(&MapManifest {
+            version: 2,
+            map_id: "empty".to_string(),
+            display_name: "Empty Map".to_string(),
+            bounds: MapBounds {
+                min_x: -10.0,
+                max_x: 10.0,
+                min_z: -10.0,
+                max_z: 10.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: None,
+            surfaces: vec![], // No surfaces
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        });
+
+        // Camera looking down at the Y=0 plane
+        let camera_pos = Vec3::new(0.0, 10.0, 5.0);
+        let ray_dir = (Vec3::new(0.0, 0.0, 0.0) - camera_pos).normalize();
+
+        let result = resolve_ray_to_ground(camera_pos, ray_dir, &empty_query, 100.0, 0.5);
+
+        assert!(result.is_some(), "Ray should hit Y=0 plane as fallback");
+        let ground_pos = result.unwrap();
+        assert_eq!(ground_pos.y, 0.0, "Height should be 0.0 (fallback plane)");
+    }
+
+    #[test]
+    fn test_resolve_ray_to_ground_no_hit() {
+        let (query, _manifest) = create_test_surface_query();
+
+        // Camera looking away from the surface
+        let camera_pos = Vec3::new(0.0, 10.0, 5.0);
+        let ray_dir = Vec3::new(0.0, 1.0, 0.0); // Looking straight up
+
+        let result = resolve_ray_to_ground(camera_pos, ray_dir, &query, 100.0, 0.5);
+
+        assert!(
+            result.is_none(),
+            "Ray looking up should not hit any surface"
+        );
+    }
+
+    #[test]
+    fn test_resolve_ray_to_ground_parallel_to_plane() {
+        let empty_query = SurfaceQuery::from_manifest(&MapManifest {
+            version: 2,
+            map_id: "empty".to_string(),
+            display_name: "Empty Map".to_string(),
+            bounds: MapBounds {
+                min_x: -10.0,
+                max_x: 10.0,
+                min_z: -10.0,
+                max_z: 10.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: None,
+            surfaces: vec![],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        });
+
+        // Ray parallel to Y=0 plane
+        let camera_pos = Vec3::new(0.0, 0.0, 0.0);
+        let ray_dir = Vec3::new(1.0, 0.0, 0.0); // Horizontal ray
+
+        let result = resolve_ray_to_ground(camera_pos, ray_dir, &empty_query, 100.0, 0.5);
+
+        assert!(
+            result.is_none(),
+            "Horizontal ray should not intersect plane"
+        );
+    }
+
+    #[test]
+    fn test_resolve_ray_to_ground_zero_direction() {
+        let (query, _manifest) = create_test_surface_query();
+
+        let camera_pos = Vec3::new(0.0, 10.0, 5.0);
+        let zero_dir = Vec3::ZERO;
+
+        let result = resolve_ray_to_ground(camera_pos, zero_dir, &query, 100.0, 0.5);
+
+        assert!(result.is_none(), "Zero direction should return None");
+    }
+
+    #[test]
+    fn test_resolve_ray_to_ground_height_tolerance() {
+        let (query, _manifest) = create_test_surface_query();
+
+        // Camera positioned such that ray passes near but not through the surface
+        let camera_pos = Vec3::new(0.0, 10.0, 5.0);
+        let ray_dir = (Vec3::new(0.0, 2.5, 0.0) - camera_pos).normalize(); // Aiming slightly above surface
+
+        let result = resolve_ray_to_ground(camera_pos, ray_dir, &query, 100.0, 0.5);
+
+        // Should still find the surface within tolerance
+        assert!(result.is_some(), "Ray should find surface within tolerance");
+        let ground_pos = result.unwrap();
+        assert_eq!(ground_pos.y, 2.0, "Height should be resolved to surface");
+    }
 }

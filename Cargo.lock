@@ -2350,6 +2350,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevymmo-props-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "bevymmo_client"
 version = "0.1.0"
 dependencies = [
@@ -2397,6 +2406,7 @@ name = "bevymmo_shared"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevymmo-props-macro",
  "config",
  "gltf",
  "lightyear",

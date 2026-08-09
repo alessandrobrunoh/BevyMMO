@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/shared",
+    "crates/bevymmo-props-macro",
     "crates/server",
     "crates/client",
     "crates/presentation",

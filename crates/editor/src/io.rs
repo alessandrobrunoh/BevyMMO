@@ -80,6 +80,14 @@ pub fn new_map(state: &mut EditorState, history: &mut EditorHistory) {
         },
         terrain: Terrain::default(),
         props: Vec::new(),
+        world_metrics: None,
+        surfaces: vec![],
+        traversals: vec![],
+        blockers: vec![],
+        test_route: vec![],
+        test_checklist: vec![],
+        mountain_switchback_test: None,
+        distant_plateau_test: None,
     };
     state.file_path = None;
     state.dirty = true;

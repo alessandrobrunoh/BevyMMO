@@ -11,7 +11,7 @@ use bevy::math::primitives::InfinitePlane3d;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use bevymmo_shared::movement::MoveTarget;
+use bevymmo_shared::movement::{resolve_ray_to_ground, ClientSurfaceQuery, MoveTarget};
 use bevymmo_shared::network::mode;
 use bevymmo_shared::network::protocol::{Channel2, MoveCommand};
 use lightyear::prelude::MessageSender;
@@ -36,6 +36,7 @@ struct ClickIndicator {
 impl Plugin for PlayerMovementPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MoveTarget>();
+        app.init_resource::<ClientSurfaceQuery>();
         app.add_systems(
             Update,
             (select_move_target, animate_click_indicators).run_if(mode::has_client),
@@ -51,6 +52,7 @@ fn select_move_target(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut move_target: ResMut<MoveTarget>,
+    surface_query: Res<ClientSurfaceQuery>,
     mut move_senders: Query<&mut MessageSender<MoveCommand>, With<ConnectedClient>>,
     mut commands: Commands,
     meshes: Option<ResMut<Assets<Mesh>>>,
@@ -81,12 +83,26 @@ fn select_move_target(
     let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
         return;
     };
-    let Some(target) = ray.plane_intersection_point(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y))
-    else {
+
+    // Use height-aware ray-to-surface resolution when surface data is available
+    let target = if let Some(surface_query) = surface_query.0.as_ref() {
+        resolve_ray_to_ground(
+            ray.origin,
+            *ray.direction, // Convert Dir3 to Vec3
+            surface_query,
+            100.0, // max_distance
+            0.5,   // step_size
+        )
+    } else {
+        // Fallback to Y=0 plane when no surface data is available
+        ray.plane_intersection_point(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y))
+            .map(|point| Vec3::new(point.x, 0.0, point.z))
+    };
+
+    let Some(target) = target else {
         return;
     };
 
-    let target = Vec3::new(target.x, 0.0, target.z);
     move_target.0 = Some(target);
 
     // Always forward the very first press immediately; while the button stays

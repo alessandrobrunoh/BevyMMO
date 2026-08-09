@@ -6,12 +6,13 @@
 
 use bevy::prelude::*;
 use bevymmo_shared::paths;
-use bevymmo_shared::world::{load_map_auto, CollisionGrid, MapManifest};
+use bevymmo_shared::world::{load_map_auto, CollisionGrid, MapManifest, SurfaceQuery};
 
 #[derive(Resource, Clone)]
 pub struct ServerWorldMap {
     pub manifest: MapManifest,
     pub collision: CollisionGrid,
+    pub surface_query: SurfaceQuery,
 }
 
 pub struct WorldPlugin;
@@ -27,15 +28,18 @@ fn load_server_map(mut commands: Commands) {
     match load_map_auto(&map_path) {
         Ok(manifest) => {
             let collision = CollisionGrid::build(&manifest);
+            let surface_query = SurfaceQuery::from_manifest(&manifest);
             info!(
-                "Loaded server map {:?} with {} props and {} collision obstacles",
+                "Loaded server map {:?} with {} props, {} collision obstacles, and {} surfaces",
                 manifest.map_id,
                 manifest.props.len(),
-                collision.obstacle_count()
+                collision.obstacle_count(),
+                surface_query.surface_count()
             );
             commands.insert_resource(ServerWorldMap {
                 manifest,
                 collision,
+                surface_query,
             });
         }
         Err(error) => {

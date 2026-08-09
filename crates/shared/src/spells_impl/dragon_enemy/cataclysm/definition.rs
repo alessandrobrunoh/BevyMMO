@@ -3,11 +3,8 @@
 //! Channeling arena-wide spell (5.0s duration). Every 0.5s tick emits
 /// heavy AoE damage to all entities in radius 14.0. Each tick also spawns
 /// an arena-wide red flash visual.
-use bevy::prelude::Vec3;
-
 use crate::spells::{
     AoeEffect, AoeTargeting, ChannelMovementPolicy, Spell, SpellCastContext, SpellConfig, SpellId,
-    TargetingMode,
 };
 
 pub struct CataclysmSpell;
@@ -68,7 +65,7 @@ mod tests {
     use super::*;
     use crate::spells::context::SpellCastContext;
     use crate::stats::components::CombatStats;
-    use bevy::prelude::World;
+    use bevy::prelude::{Vec3, World};
 
     #[test]
     fn cataclysm_has_expected_id_and_config() {

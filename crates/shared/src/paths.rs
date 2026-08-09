@@ -7,7 +7,7 @@
 //! - directly running `target/debug/game.exe` from anywhere
 //! - a deployed bundle where the binary sits next to `assets/`
 //!
-//! Hardcoded relative paths like `"assets/maps/test_1.glb"` or
+//! Hardcoded relative paths like `"assets/maps/rolling_hills_test.glb"` or
 //! `"../../assets"` only work in the first two cases and silently break in the
 //! others (manifests fail to load, GLB scenes never spawn). The helpers here
 //! resolve the assets folder by walking up from both the executable location
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 const ASSETS_DIR_NAME: &str = "assets";
 
 /// Default map loaded by client and server when no override is provided.
-const DEFAULT_MAP_ID: &str = "forest_village";
+const DEFAULT_MAP_ID: &str = "rolling_hills_test";
 
 /// Resolves the absolute path to the workspace `assets` directory.
 ///
@@ -53,12 +53,12 @@ pub fn assets_root() -> PathBuf {
 
 /// Resolves the absolute path to a map manifest inside the assets directory.
 ///
-/// Accepts the map id without extension (e.g. `"test_1"`) and returns
+/// Accepts the map id without extension (e.g. `"rolling_hills_test"`) and returns
 /// `<assets_root>/maps/<map_id>.glb`.
 ///
 /// # Example
 /// ```rust,no_run
-/// let path = bevymmo_shared::paths::map_file("test_1");
+/// let path = bevymmo_shared::paths::map_file("rolling_hills_test");
 /// ```
 pub fn map_file(map_id: &str) -> PathBuf {
     assets_root().join("maps").join(format!("{map_id}.glb"))
@@ -103,9 +103,9 @@ mod tests {
     }
 
     #[test]
-    fn default_map_file_points_at_forest_village() {
+    fn default_map_file_points_at_rolling_hills_test() {
         let path = default_map_file();
-        assert!(path.ends_with("maps/forest_village.glb"));
+        assert!(path.ends_with("maps/rolling_hills_test.glb"));
     }
 
     #[test]

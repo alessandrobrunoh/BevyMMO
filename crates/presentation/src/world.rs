@@ -6,14 +6,18 @@
 
 use bevy::prelude::*;
 use bevymmo_shared::game_state::{GameScreen, Screen};
+use bevymmo_shared::movement::ClientSurfaceQuery;
 use bevymmo_shared::paths;
 use bevymmo_shared::placeables::{AssetHint, PlaceableRegistry};
-use bevymmo_shared::world::{load_map_auto, CollisionGrid, MapManifest, Prop, Terrain};
+use bevymmo_shared::world::{
+    load_map_auto, CollisionGrid, MapManifest, Prop, SurfaceQuery, Terrain,
+};
 
 #[derive(Resource, Default)]
 pub struct ClientWorldMap {
     pub manifest: Option<MapManifest>,
     pub collision: Option<CollisionGrid>,
+    pub surface_query: Option<SurfaceQuery>,
     /// Whether a load attempt has already happened (success or failure).
     /// Prevents the loader from re-running every frame when the map file is
     /// missing or invalid, which would otherwise spam the log.
@@ -27,6 +31,9 @@ pub struct MapPropVisual {
 
 #[derive(Component)]
 pub struct MapTerrainVisual;
+
+#[derive(Component)]
+pub struct MapSceneVisual;
 
 use std::collections::HashMap;
 
@@ -51,10 +58,12 @@ impl ClientPropMeshRegistry {
         let key = color_key(color);
         self.materials
             .entry(key)
-            .or_insert_with(|| materials.add(StandardMaterial {
-                base_color: color,
-                ..default()
-            }))
+            .or_insert_with(|| {
+                materials.add(StandardMaterial {
+                    base_color: color,
+                    ..default()
+                })
+            })
             .clone()
     }
 }
@@ -69,10 +78,16 @@ pub struct WorldMapPlugin;
 impl Plugin for WorldMapPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ClientWorldMap>()
+            .init_resource::<ClientSurfaceQuery>()
             .init_resource::<ClientPropMeshRegistry>()
             .add_systems(
                 Update,
-                (load_map_when_in_game, cleanup_map_when_not_in_game).chain(),
+                (
+                    load_map_when_in_game,
+                    cleanup_map_when_not_in_game,
+                    sync_surface_query,
+                )
+                    .chain(),
             );
     }
 }
@@ -107,25 +122,30 @@ fn load_map_when_in_game(
         manifest.props.len()
     );
 
-    spawn_terrain_visual(
-        &mut commands,
-        &mut meshes,
-        &mut materials,
-        &manifest.terrain,
-    );
-    for prop in &manifest.props {
-        spawn_prop_visual(
+    if should_load_map_scene(&manifest) {
+        spawn_map_scene_visual(&mut commands, &asset_server, &manifest);
+    } else {
+        spawn_terrain_visual(
             &mut commands,
             &mut meshes,
             &mut materials,
-            &mut registry,
-            &placeables,
-            &asset_server,
-            prop,
+            &manifest.terrain,
         );
+        for prop in &manifest.props {
+            spawn_prop_visual(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                &mut registry,
+                &placeables,
+                &asset_server,
+                prop,
+            );
+        }
     }
 
     world_map.collision = Some(CollisionGrid::build(&manifest));
+    world_map.surface_query = Some(SurfaceQuery::from_manifest(&manifest));
     world_map.manifest = Some(manifest);
 }
 
@@ -135,15 +155,62 @@ fn cleanup_map_when_not_in_game(
     mut world_map: ResMut<ClientWorldMap>,
     props: Query<Entity, With<MapPropVisual>>,
     terrain: Query<Entity, With<MapTerrainVisual>>,
+    scenes: Query<Entity, With<MapSceneVisual>>,
 ) {
     if world_map.load_attempted && !matches!(screen.0, Screen::InGame | Screen::Paused) {
-        for entity in props.iter().chain(terrain.iter()) {
+        for entity in props.iter().chain(terrain.iter()).chain(scenes.iter()) {
             commands.entity(entity).despawn();
         }
         world_map.manifest = None;
         world_map.collision = None;
+        world_map.surface_query = None;
         world_map.load_attempted = false;
     }
+}
+
+/// Synchronizes the shared `ClientSurfaceQuery` resource with the local `ClientWorldMap`.
+///
+/// This bridges the presentation layer (which owns `ClientWorldMap`) with the client
+/// layer (which needs surface data for click-to-move) by copying the surface query
+/// data to a shared resource that both crates can access without cross-dependencies.
+fn sync_surface_query(
+    world_map: Res<ClientWorldMap>,
+    mut shared_surface_query: ResMut<ClientSurfaceQuery>,
+) {
+    // Update the shared resource to match the local world map state
+    shared_surface_query.0 = world_map.surface_query.clone();
+}
+
+fn should_load_map_scene(manifest: &MapManifest) -> bool {
+    manifest.version >= 2 && !manifest.surfaces.is_empty()
+}
+
+/// Loads the visual GLB for maps whose gameplay data comes from a `.world.json`
+/// sidecar.
+///
+/// Version 2 maps keep authoritative gameplay data in JSON and visual meshes in
+/// the sibling GLB. Loading the whole scene here prevents the client from
+/// falling back to the old placeholder terrain path while the server can still
+/// ignore visual content.
+///
+/// # Example
+/// ```ignore
+/// // rolling_hills_test.world.json -> maps/rolling_hills_test.glb#Scene0
+/// spawn_map_scene_visual(&mut commands, &asset_server, &manifest);
+/// ```
+fn spawn_map_scene_visual(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    manifest: &MapManifest,
+) {
+    let scene_path = format!("maps/{}.glb#Scene0", manifest.map_id);
+    let handle = asset_server.load::<WorldAsset>(scene_path);
+    commands.spawn((
+        Name::new(format!("Map Scene {}", manifest.map_id)),
+        Transform::default(),
+        WorldAssetRoot(handle),
+        MapSceneVisual,
+    ));
 }
 
 /// Renders the authored ground cube (unit mesh, so `scale` is the full size).
@@ -209,8 +276,7 @@ fn spawn_prop_visual(
             prop.transform.rotation_deg[0].to_radians(),
             prop.transform.rotation_deg[2].to_radians(),
         ),
-        scale: Vec3::from_array(prop.transform.scale)
-            * Vec3::from_array(defaults.transform.scale),
+        scale: Vec3::from_array(prop.transform.scale) * Vec3::from_array(defaults.transform.scale),
     };
 
     let mut entity = commands.spawn((
@@ -233,11 +299,7 @@ fn spawn_prop_visual(
             let color = prop
                 .tint
                 .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
-                .or_else(|| {
-                    defaults
-                        .tint
-                        .map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2]))
-                })
+                .or_else(|| defaults.tint.map(|rgb| Color::srgb(rgb[0], rgb[1], rgb[2])))
                 .unwrap_or_else(|| Color::srgb(0.35, 0.5, 0.8));
 
             let mesh = registry.get_or_create_mesh(meshes);

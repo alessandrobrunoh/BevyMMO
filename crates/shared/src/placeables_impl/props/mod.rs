@@ -6,6 +6,7 @@ pub mod cube;
 pub mod fence_01;
 pub mod house_simple;
 pub mod lamp_01;
+pub mod rock;
 pub mod rock_01;
 pub mod rock_02;
 pub mod statue_01;
@@ -22,6 +23,7 @@ pub fn register_all(registry: &mut PlaceableRegistry) {
     fence_01::register(registry);
     house_simple::register(registry);
     lamp_01::register(registry);
+    rock::register(registry);
     rock_01::register(registry);
     rock_02::register(registry);
     statue_01::register(registry);

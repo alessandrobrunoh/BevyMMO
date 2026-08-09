@@ -10,6 +10,7 @@ use std::path::Path;
 
 use ron::ser::PrettyConfig;
 use serde::Deserialize;
+use serde_json;
 use thiserror::Error;
 
 use super::ids::validate_id;
@@ -35,6 +36,12 @@ pub enum MapLoadError {
         #[source]
         source: ron::error::SpannedError,
     },
+    #[error("failed to parse JSON map file {path}: {source}")]
+    Json {
+        path: String,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("failed to parse GLB map file {path}: {source}")]
     Gltf {
         path: String,
@@ -48,10 +55,7 @@ pub enum MapLoadError {
     #[error("node '{node_name}' is missing required bevymmo extras")]
     MissingExtras { node_name: String },
     #[error("invalid JSON in bevymmo extras on node '{node_name}': {message}")]
-    InvalidExtras {
-        node_name: String,
-        message: String,
-    },
+    InvalidExtras { node_name: String, message: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -125,18 +129,14 @@ impl PropExtras {
         if let Some(ref type_str) = self.collision_type_flat {
             match type_str.as_str() {
                 "cylinder" => Some(CollisionShape::Cylinder {
-                    radius: json_to_f32(&self.radius_flat)
-                        .unwrap_or(0.5),
-                    height: json_to_f32(&self.height_flat)
-                        .unwrap_or(2.0),
+                    radius: json_to_f32(&self.radius_flat).unwrap_or(0.5),
+                    height: json_to_f32(&self.height_flat).unwrap_or(2.0),
                 }),
                 "box" => Some(CollisionShape::Box {
-                    half_extents: json_to_vec3(&self.half_extents_flat)
-                        .unwrap_or([0.5, 0.5, 0.5]),
+                    half_extents: json_to_vec3(&self.half_extents_flat).unwrap_or([0.5, 0.5, 0.5]),
                 }),
                 "sphere" => Some(CollisionShape::Sphere {
-                    radius: json_to_f32(&self.radius_flat)
-                        .unwrap_or(0.5),
+                    radius: json_to_f32(&self.radius_flat).unwrap_or(0.5),
                 }),
                 "none" | "" => None,
                 _ => None,
@@ -163,9 +163,10 @@ struct CollisionExtras {
 
 /// Extracts an f32 from a JSON value that might be a number or a string.
 fn json_to_f32(val: &Option<serde_json::Value>) -> Option<f32> {
-    val.as_ref()?.as_f64().map(|v| v as f32).or_else(|| {
-        val.as_ref()?.as_str()?.parse::<f32>().ok()
-    })
+    val.as_ref()?
+        .as_f64()
+        .map(|v| v as f32)
+        .or_else(|| val.as_ref()?.as_str()?.parse::<f32>().ok())
 }
 
 /// Extracts [f32;3] from a JSON value that might be an array or comma-separated string.
@@ -173,7 +174,8 @@ fn json_to_vec3(val: &Option<serde_json::Value>) -> Option<[f32; 3]> {
     // Try array of numbers first
     if let Some(arr) = val.as_ref()?.as_array() {
         if arr.len() >= 3 {
-            let v: Vec<f32> = arr.iter()
+            let v: Vec<f32> = arr
+                .iter()
                 .take(3)
                 .filter_map(|e| e.as_f64().map(|x| x as f32))
                 .collect();
@@ -262,6 +264,53 @@ pub fn load_map<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoadError> {
     Ok(manifest)
 }
 
+/// Loads a map from a `.world.json` sidecar file and runs validation.
+///
+/// Version 2 maps use `.world.json` sidecar files alongside `.glb` files.
+/// The JSON file contains gameplay-specific data:
+/// - Walkable surfaces for height-aware movement
+/// - Traversal data (stairs, ramps, etc.)
+/// - Blocker data for movement prevention
+/// - World metrics and validation data
+///
+/// Validation errors become `MapLoadError::Validation` so callers can
+/// surface every issue at once.
+pub fn load_world_json<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoadError> {
+    let path_ref = path.as_ref();
+    let path_display = path_ref.display().to_string();
+
+    let source = fs::read_to_string(path_ref).map_err(|source| MapLoadError::Io {
+        path: path_display.clone(),
+        source,
+    })?;
+
+    let manifest: MapManifest =
+        serde_json::from_str(&source).map_err(|source| MapLoadError::Json {
+            path: path_display.clone(),
+            source,
+        })?;
+
+    let issues = validate_structure(&manifest);
+    if !issues.is_empty() {
+        return Err(MapLoadError::Validation(issues));
+    }
+
+    Ok(manifest)
+}
+
+/// Checks if a `.world.json` sidecar file exists for the given map ID.
+///
+/// Given a map path like `/path/to/maps/my_map.glb`, this function checks
+/// if `/path/to/maps/my_map.world.json` exists.
+pub fn has_world_json_sidecar<P: AsRef<Path>>(map_path: P) -> bool {
+    let map_path = map_path.as_ref();
+
+    // Build the expected sidecar path by replacing the extension
+    let sidecar_path = map_path.with_extension("world.json");
+
+    sidecar_path.exists() && sidecar_path.is_file()
+}
+
 // ---------------------------------------------------------------------------
 // GLB loader — reads a glTF 2.0 binary exported from Blender
 // ---------------------------------------------------------------------------
@@ -322,20 +371,21 @@ pub fn load_map_from_glb<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoad
         if name == "__bevymmo_map_meta" || name == "__bevymmo_map_meta__" {
             if let Some(ref nested) = bm {
                 // Nested format
-                let meta: MapMetaExtras =
-                    serde_json::from_value(nested.clone()).map_err(|e| {
-                        MapLoadError::InvalidExtras {
-                            node_name: name.to_string(),
-                            message: format!("invalid map meta: {e}"),
-                        }
-                    })?;
+                let meta: MapMetaExtras = serde_json::from_value(nested.clone()).map_err(|e| {
+                    MapLoadError::InvalidExtras {
+                        node_name: name.to_string(),
+                        message: format!("invalid map meta: {e}"),
+                    }
+                })?;
                 manifest_meta = Some(meta);
             } else {
                 // Flat format — read directly from extras root
-                let obj = extras_value.as_object().ok_or(MapLoadError::InvalidExtras {
-                    node_name: name.to_string(),
-                    message: "map meta extras must be a JSON object".to_string(),
-                })?;
+                let obj = extras_value
+                    .as_object()
+                    .ok_or(MapLoadError::InvalidExtras {
+                        node_name: name.to_string(),
+                        message: "map meta extras must be a JSON object".to_string(),
+                    })?;
                 let get_str = |key: &str| -> Option<String> {
                     obj.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
                 };
@@ -413,9 +463,11 @@ pub fn load_map_from_glb<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoad
     }
 
     // Build the manifest
-    let meta = manifest_meta.ok_or_else(|| MapLoadError::Validation(vec![
-        ValidationIssue::new("missing __bevymmo_map_meta node in GLB")
-    ]))?;
+    let meta = manifest_meta.ok_or_else(|| {
+        MapLoadError::Validation(vec![ValidationIssue::new(
+            "missing __bevymmo_map_meta node in GLB",
+        )])
+    })?;
 
     let manifest = MapManifest {
         version: CURRENT_VERSION,
@@ -429,6 +481,14 @@ pub fn load_map_from_glb<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoad
         },
         terrain: Terrain::default(), // TODO: extract from a TERRAIN node or keep default
         props,
+        world_metrics: None,
+        surfaces: vec![],
+        traversals: vec![],
+        blockers: vec![],
+        test_route: vec![],
+        test_checklist: vec![],
+        mountain_switchback_test: None,
+        distant_plateau_test: None,
     };
 
     let issues = validate_structure(&manifest);
@@ -455,9 +515,9 @@ fn quat_to_euler_yxz(q: [f32; 4]) -> [f32; 3] {
     let sinr_cosp = 2.0 * (w * z + x * y);
     let cosr_cosp = 1.0 - 2.0 * (y * y + z * z);
 
-    let yaw = sincos_2y.atan2(cosc_2y).to_degrees();   // Y axis
-    let pitch = sinp.asin().to_degrees();                 // X axis
-    let roll = sinr_cosp.atan2(cosr_cosp).to_degrees();   // Z axis
+    let yaw = sincos_2y.atan2(cosc_2y).to_degrees(); // Y axis
+    let pitch = sinp.asin().to_degrees(); // X axis
+    let roll = sinr_cosp.atan2(cosr_cosp).to_degrees(); // Z axis
 
     [yaw, pitch, roll]
 }
@@ -466,13 +526,21 @@ fn quat_to_euler_yxz(q: [f32; 4]) -> [f32; 3] {
 // Convenience: auto-detect format by extension
 // ---------------------------------------------------------------------------
 
-/// Loads a map from either a `.ron` or `.glb` file, chosen by extension.
+/// Loads a map from either a `.world.json`, `.ron` or `.glb` file.
+///
+/// Checks for `.world.json` sidecar files first (version 2 format),
+/// then falls back to `.glb` or `.ron` files (version 1 format).
 pub fn load_map_auto<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoadError> {
-    let ext = path
-        .as_ref()
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let path_ref = path.as_ref();
+
+    // Check if a .world.json sidecar exists first (version 2 format)
+    if has_world_json_sidecar(path_ref) {
+        let sidecar_path = path_ref.with_extension("world.json");
+        return load_world_json(sidecar_path);
+    }
+
+    // Fall back to existing behavior for version 1 format
+    let ext = path_ref.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
         "glb" | "gltf" => load_map_from_glb(path),
@@ -510,7 +578,7 @@ pub fn save_map<P: AsRef<Path>>(path: P, manifest: &MapManifest) -> Result<(), M
 pub fn validate_structure(manifest: &MapManifest) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
 
-    if manifest.version != CURRENT_VERSION {
+    if manifest.version != CURRENT_VERSION && manifest.version != 1 {
         issues.push(ValidationIssue::new(format!(
             "unknown manifest version {} (expected {})",
             manifest.version, CURRENT_VERSION
@@ -632,6 +700,14 @@ mod tests {
             },
             terrain: Terrain::default(),
             props: vec![],
+            world_metrics: None,
+            surfaces: vec![],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
         }
     }
 
@@ -767,48 +843,104 @@ mod tests {
         // A default registry has no kinds registered, so any kind is unknown.
         let registry = PlaceableRegistry::default();
         let issues = validate(&m, &registry);
-        assert!(issues
-            .iter()
-            .any(|i| i.message.contains("unknown kind")));
+        assert!(issues.iter().any(|i| i.message.contains("unknown kind")));
     }
 
-    /// Integration test: loads the real GLB exported from Blender via MCP.
+    /// Integration test: loads the current main map through auto-detection.
     ///
-    /// This test is ignored by default (requires the exported GLB to exist).
-    /// Run with: cargo test -p bevymmo_shared -- glb_integration --ignored
+    /// Version 2 maps keep gameplay data in `.world.json` and visuals in the
+    /// sibling `.glb`, so this intentionally exercises `load_map_auto` rather
+    /// than the legacy GLB-extras loader.
     #[test]
-    #[ignore]
-    fn glb_loads_blender_exported_map() {
-        let glb_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/maps/test_1.glb");
-        if !std::path::Path::new(glb_path).exists() {
-            eprintln!("Skipping: {glb_path} not found (export from Blender first)");
+    fn load_map_auto_prefers_rolling_hills_sidecar() {
+        let glb_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/maps/rolling_hills_test.glb"
+        );
+
+        let manifest = load_map_auto(glb_path).expect("load rolling_hills_test sidecar manifest");
+
+        assert_eq!(manifest.map_id, "rolling_hills_test");
+        assert_eq!(manifest.version, 2);
+        assert!(manifest.world_metrics.is_some());
+        assert!(manifest.surfaces.iter().any(|surface| {
+            surface.id == "surface_mountain_switchback"
+                || surface.id == "surface_distant_plateau_top"
+        }));
+        assert!(manifest
+            .test_checklist
+            .iter()
+            .any(|item| item.contains("distant plateau")));
+
+        let issues = validate_structure(&manifest);
+        assert!(issues.is_empty(), "validation failed: {issues:?}");
+    }
+
+    /// Integration test: loads the real `.world.json` fixture for the main map.
+    #[test]
+    fn loads_rolling_hills_world_json() {
+        let json_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/maps/rolling_hills_test.world.json"
+        );
+        if !std::path::Path::new(json_path).exists() {
+            eprintln!("Skipping: {json_path} not found (export from Blender first)");
             return;
         }
 
-        let manifest = load_map_from_glb(glb_path).expect("load GLB");
+        let manifest =
+            load_world_json(json_path).expect("failed to load rolling_hills_test.world.json");
 
-        assert_eq!(manifest.map_id, "test_1");
-        assert_eq!(manifest.display_name, "Test Map from Blender");
-        assert!((manifest.props.len()) >= 3);
+        assert_eq!(manifest.map_id, "rolling_hills_test");
+        assert_eq!(manifest.version, 2);
+        assert!(manifest.world_metrics.is_some());
+        assert!(!manifest.surfaces.is_empty());
+        assert!(!manifest.blockers.is_empty());
 
-        // Check prop_001 (cube)
-        let cube = manifest.props.iter().find(|p| p.id == "prop_001").unwrap();
-        assert_eq!(cube.kind.as_str(), "cube");
-        assert!(cube.blocks_movement);
-        assert!(cube.collision.is_some());
+        // Check world metrics
+        let metrics = manifest
+            .world_metrics
+            .expect("rolling_hills_test fixture should include world metrics");
+        assert_eq!(metrics.player_radius, 0.35);
+        assert_eq!(metrics.player_height, 1.7);
+        assert_eq!(metrics.max_step_height, 0.45);
+        assert_eq!(metrics.max_walkable_slope_deg, 45.0);
 
-        // Check prop_003 (rock — walkable)
-        let rock = manifest.props.iter().find(|p| p.id == "prop_003").unwrap();
-        assert_eq!(rock.kind.as_str(), "rock_01");
-        assert!(!rock.blocks_movement);
-        assert!(rock.collision.is_none());
-
-        // All props should be within bounds
-        let issues = validate_structure(&manifest);
+        let surface_query = crate::world::SurfaceQuery::from_manifest(&manifest);
+        let mountain_base = surface_query
+            .ground_at(-6.8, -1.0)
+            .expect("mountain base route point should resolve from fixture heightfield");
+        let mountain_summit = surface_query
+            .ground_at(-18.2, 17.0)
+            .expect("mountain summit route point should resolve from fixture heightfield");
         assert!(
-            issues.is_empty(),
-            "validation failed: {issues:?}"
+            mountain_summit.height > 4.5 && mountain_summit.height - mountain_base.height > 3.0,
+            "mountain should reach a high summit from the resolved terrain base; base={}, summit={}",
+            mountain_base.height,
+            mountain_summit.height
         );
+
+        let plateau_entry = surface_query
+            .ground_at(7.0, 4.0)
+            .expect("distant plateau entry point should resolve from fixture heightfield");
+        let plateau_top = surface_query
+            .ground_at(16.0, 16.2)
+            .expect("distant plateau top should resolve from fixture heightfield");
+        assert!(
+            plateau_top.height > 3.2 && plateau_top.height - plateau_entry.height > 1.3,
+            "plateau should resolve as a distinct higher area; entry={}, top={}",
+            plateau_entry.height,
+            plateau_top.height
+        );
+
+        // Validate the manifest structure
+        let issues = validate_structure(&manifest);
+        assert!(issues.is_empty(), "validation failed: {issues:?}");
+
+        // Validate using the new manifest validation
+        manifest
+            .validate()
+            .expect("manifest validation should succeed");
     }
 
     /// Test: load_map_auto picks GLB loader for .glb extension

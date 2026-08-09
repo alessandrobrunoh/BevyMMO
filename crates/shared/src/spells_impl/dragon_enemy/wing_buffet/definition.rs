@@ -3,7 +3,6 @@
 //! Instant expanding ring attack from caster (radius 10.0) that applies
 //! moderate damage and a 0.4s Stun to all enemies in range.
 
-use bevy::prelude::Vec3;
 
 use crate::crowd_control::CrowdControlKind;
 use crate::spells::{
@@ -73,7 +72,7 @@ mod tests {
     use super::*;
     use crate::spells::context::SpellCastContext;
     use crate::stats::components::CombatStats;
-    use bevy::prelude::World;
+    use bevy::prelude::{Vec3, World};
 
     #[test]
     fn wing_buffet_has_expected_id_and_config() {

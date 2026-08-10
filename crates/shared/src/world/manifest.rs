@@ -11,6 +11,17 @@ pub const CURRENT_VERSION: u32 = 2;
 /// Legacy version 1 format constant for backward compatibility checks.
 pub const LEGACY_VERSION_1: u32 = 1;
 
+/// Half-stencil distance used by [`HeightfieldData::sample_normal`] to
+/// estimate the surface gradient.
+///
+/// Keeping this constant (in metres) instead of tying it to a single cell
+/// makes the slope estimate resolution-independent: a smooth mountain
+/// samples the same gradient whether the heightfield packs 150 or 1500 cells
+/// per side. 1 m matches the granularity at which a player actually
+/// perceives a slope, while remaining smaller than a typical walkable step
+/// so short cliffs are not smoothed away.
+const NORMAL_SAMPLE_OFFSET_M: f32 = 1.0;
+
 /// A single authored map. Sections that are reserved for later slices are
 /// always present (empty `Vec`) so the format stays stable as features land.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -394,7 +405,25 @@ impl HeightfieldData {
     /// );
     /// assert_eq!(heightfield.sample_normal(0.5, 0.5), Some([0.0, 1.0, 0.0]));
     /// ```
+    ///
+    /// On undersampled heightfields (e.g. a 360 m map at resolution 150 has
+    /// 2.4 m cells), taking differences across a single cell produces
+    /// artificially steep normals: two adjacent samples can differ by several
+    /// metres on a smooth mountain, making the engine reject walkable
+    /// slopes. We sidestep this by sampling at a fixed 1 m offset and letting
+    /// [`sample_height`](Self::sample_height)'s bilinear interpolation
+    /// reconstruct the underlying smooth surface, so the estimated slope is
+    /// resolution-independent.
     pub fn sample_normal(&self, x: f32, z: f32) -> Option<[f32; 3]> {
+        self.sample_normal_with_offset(x, z, NORMAL_SAMPLE_OFFSET_M)
+    }
+
+    /// Normal estimation with an explicit half-stencil distance.
+    ///
+    /// Exposed primarily for tests so the scale-aware behaviour can be
+    /// exercised against synthetic heightfields without depending on the
+    /// 1 m default.
+    pub fn sample_normal_with_offset(&self, x: f32, z: f32, offset_m: f32) -> Option<[f32; 3]> {
         if !self.bounds.contains(x, z) {
             return None;
         }
@@ -402,14 +431,10 @@ impl HeightfieldData {
             return Some([0.0, 1.0, 0.0]);
         }
 
-        let grid_size = self.resolution as f32;
-        let cell_size_x = (self.bounds.max_x - self.bounds.min_x) / grid_size;
-        let cell_size_z = (self.bounds.max_z - self.bounds.min_z) / grid_size;
-
-        let left_x = (x - cell_size_x).max(self.bounds.min_x);
-        let right_x = (x + cell_size_x).min(self.bounds.max_x);
-        let down_z = (z - cell_size_z).max(self.bounds.min_z);
-        let up_z = (z + cell_size_z).min(self.bounds.max_z);
+        let left_x = (x - offset_m).max(self.bounds.min_x);
+        let right_x = (x + offset_m).min(self.bounds.max_x);
+        let down_z = (z - offset_m).max(self.bounds.min_z);
+        let up_z = (z + offset_m).min(self.bounds.max_z);
 
         let Some(left_height) = self.sample_height(left_x, z) else {
             return None;
@@ -621,5 +646,114 @@ impl MapManifest {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Builds a heightfield that represents a smooth 20° ramp sampled at a
+    /// coarse 2 m resolution (mimicking `map_02`'s undersampling).
+    ///
+    /// Before the scale-aware fix, taking ±1 cell differences on this grid
+    /// produced slope estimates wildly above the real 20° because adjacent
+    /// samples can sit on opposite sides of a local feature. With a fixed 1 m
+    /// stencil the estimate must stay close to the true gradient regardless
+    /// of the underlying grid spacing.
+    fn smooth_ramp_heightfield(resolution: u32, side_m: f32, slope_deg: f32) -> HeightfieldData {
+        let stride = (resolution + 1) as usize;
+        let mut heights = Vec::with_capacity(stride * stride);
+        let slope = slope_deg.to_radians().tan();
+        for ix in 0..stride {
+            let x = (ix as f32 / resolution as f32) * side_m;
+            for iz in 0..stride {
+                let z = (iz as f32 / resolution as f32) * side_m;
+                // Linear ramp rising along +X plus a gentle cross-slope so
+                // the gradient is non-trivial in both axes.
+                heights.push(slope * x + 0.5 * slope * z);
+            }
+        }
+        HeightfieldData::new(
+            resolution,
+            SurfaceBounds {
+                min_x: 0.0,
+                max_x: side_m,
+                min_z: 0.0,
+                max_z: side_m,
+            },
+            heights,
+        )
+    }
+
+    #[test]
+    fn sample_normal_recovers_true_slope_on_coarse_grid() {
+        // 50 m ramp at res=25 -> 2 m cells, comparable to map_02's footprint.
+        let target_deg = 20.0;
+        let hf = smooth_ramp_heightfield(25, 50.0, target_deg);
+        let normal = hf
+            .sample_normal(25.0, 25.0)
+            .expect("interior sample must resolve");
+        // The synthetic ramp tilts along both X (slope) and Z (0.5 * slope),
+        // so the magnitude of the gradient is sqrt(1 + 0.25) * tan(target).
+        let expected_deg = (target_deg.to_radians().tan() * 1.25_f32.sqrt())
+            .atan()
+            .to_degrees();
+        let recovered_slope_deg = normal[1].acos().to_degrees();
+        assert!(
+            (recovered_slope_deg - expected_deg).abs() < 1.0,
+            "expected ~{expected_deg:.2}° slope, got {recovered_slope_deg:.2}° (normal={normal:?})"
+        );
+    }
+
+    #[test]
+    fn sample_normal_offset_is_scale_invariant() {
+        // Same physical ramp, sampled at 2 m and 0.5 m cells. Both must
+        // report the same slope; before the fix the coarse grid inflated it.
+        let coarse = smooth_ramp_heightfield(25, 50.0, 15.0);
+        let fine = smooth_ramp_heightfield(100, 50.0, 15.0);
+        let n_coarse = coarse.sample_normal(20.0, 20.0).unwrap();
+        let n_fine = fine.sample_normal(20.0, 20.0).unwrap();
+        let s_coarse = n_coarse[1].acos().to_degrees();
+        let s_fine = n_fine[1].acos().to_degrees();
+        assert!(
+            (s_coarse - s_fine).abs() < 0.5,
+            "coarse={s_coarse:.2}° vs fine={s_fine:.2}°, expected scale-invariant"
+        );
+    }
+
+    #[test]
+    fn sample_normal_with_offset_preserves_steep_cliff() {
+        // A genuine 70° step (above the 45° walkable limit) must still be
+        // detected as steep even with the 1 m smoothing stencil, so the
+        // movement system can reject it.
+        let resolution = 50u32;
+        let stride = (resolution + 1) as usize;
+        let mut heights = vec![0.0; stride * stride];
+        // Cliff at x=25: left half flat at 0, right half flat at 5 m over a
+        // 1 m horizontal span -> ~78° locally.
+        for ix in 0..stride {
+            let x = ix as f32;
+            let h = if x <= 25.0 { 0.0 } else { 5.0 };
+            for iz in 0..stride {
+                heights[ix * stride + iz] = h;
+            }
+        }
+        let hf = HeightfieldData::new(
+            resolution,
+            SurfaceBounds {
+                min_x: 0.0,
+                max_x: resolution as f32,
+                min_z: 0.0,
+                max_z: resolution as f32,
+            },
+            heights,
+        );
+        let normal = hf.sample_normal(25.0, 25.0).unwrap();
+        let slope_deg = normal[1].acos().to_degrees();
+        assert!(
+            slope_deg > 45.0,
+            "cliff should still be flagged as non-walkable, got {slope_deg:.2}°"
+        );
     }
 }

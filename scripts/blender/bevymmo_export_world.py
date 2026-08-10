@@ -311,7 +311,12 @@ def _build_heightfield(
                 continue
             # Blender Z is the height -> store as engine Y.
             height_z = result[1].z
-            heights[gx + gz * side] = height_z
+            # Match the Rust sampler's layout: index = x * stride + z,
+            # where stride = resolution + 1 and z varies fastest. The
+            # previous `gx + gz * side` form silently transposed the
+            # heightfield on asymmetric maps, making slopes appear along
+            # the wrong axis.
+            heights[gx * side + gz] = height_z
             sampled_min = min(sampled_min, height_z)
 
     if sampled_min is math.inf:

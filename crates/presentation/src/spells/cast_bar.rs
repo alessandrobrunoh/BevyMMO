@@ -249,9 +249,6 @@ fn sync_screen_cast_bars(
 /// the channel has a finite duration.
 ///
 /// # Example
-/// ```rust,ignore
-/// app.add_systems(Update, update_screen_cast_bars);
-/// ```
 fn update_screen_cast_bars(
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     caster_query: Query<(&NetworkEntityId, &Position)>,
@@ -259,13 +256,17 @@ fn update_screen_cast_bars(
     mut bar_query: Query<(&ScreenCastBar, &mut Node, &mut CastBarParts)>,
     mut fill_query: Query<&mut Node, Without<ScreenCastBar>>,
     mut text_query: Query<&mut Text>,
+    ui_scale: Res<UiScale>,
 ) {
     let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
 
+    let scale_factor = ui_scale.0;
+
     for (bar, mut node, mut parts) in bar_query.iter_mut() {
         let Some(cast) = observed.0.get(&bar.caster_network_id) else {
+            set_bar_display(&mut node, &mut parts, Display::None);
             continue;
         };
 
@@ -283,7 +284,8 @@ fn update_screen_cast_bars(
             continue;
         };
 
-        set_bar_position(&mut node, &mut parts, viewport_pos);
+        let scaled_viewport_pos = viewport_pos / scale_factor;
+        set_bar_position(&mut node, &mut parts, scaled_viewport_pos);
         update_bar_content(cast, &mut parts, &mut fill_query, &mut text_query);
     }
 }

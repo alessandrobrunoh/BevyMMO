@@ -103,11 +103,14 @@ pub(crate) fn on_vital_stats_added_ui(
 pub fn update_floating_ui_position(
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     target_query: Query<&Position>,
+    ui_scale: Res<UiScale>,
     mut ui_query: Query<(&mut FloatingUi, &mut Node)>,
 ) {
     let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
+
+    let scale_factor = ui_scale.0;
 
     for (mut floating_ui, mut node) in ui_query.iter_mut() {
         let Ok(pos) = target_query.get(floating_ui.target) else {
@@ -133,8 +136,8 @@ pub fn update_floating_ui_position(
         }
         floating_ui.last_viewport = Some(viewport_pos);
 
-        let new_left = Val::Px(viewport_pos.x - super::plugin::BAR_WIDTH * 0.5);
-        let new_top = Val::Px(viewport_pos.y - super::plugin::STACK_HEIGHT);
+        let new_left = Val::Px((viewport_pos.x / scale_factor) - super::plugin::BAR_WIDTH * 0.5);
+        let new_top = Val::Px((viewport_pos.y / scale_factor) - super::plugin::STACK_HEIGHT);
         let new_display = Display::Flex;
 
         if node.left != new_left {

@@ -90,10 +90,13 @@ pub fn update_screen_cc_bars(
     mut bar_query: Query<(&ScreenCrowdControlBar, &mut Node, &mut CrowdControlBarParts)>,
     mut fill_query: Query<&mut Node, Without<ScreenCrowdControlBar>>,
     mut text_query: Query<&mut Text>,
+    ui_scale: Res<UiScale>,
 ) {
     let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
+
+    let scale_factor = ui_scale.0;
 
     for (bar, mut node, mut parts) in bar_query.iter_mut() {
         // Get the target entity's CC state and position
@@ -123,8 +126,9 @@ pub fn update_screen_cc_bars(
             continue;
         };
 
+        let scaled_viewport_pos = viewport_pos / scale_factor;
         // Update bar position and content
-        set_bar_position(&mut node, &mut parts, viewport_pos);
+        set_bar_position(&mut node, &mut parts, scaled_viewport_pos);
         update_bar_content(active_cc, &mut parts, &mut fill_query, &mut text_query);
     }
 }

@@ -44,7 +44,7 @@
       "object": "WALKABLE_map_01",
       "grid_size": 32,
       "size": 44.0,
-      "max_slope_deg": 50.0,
+      "max_slope_deg": 45.0,
       "heightfield": {
         "resolution": 32,
         "bounds": {

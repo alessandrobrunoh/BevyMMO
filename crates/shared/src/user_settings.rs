@@ -112,7 +112,7 @@ fn default_language() -> String {
 }
 
 fn default_interface_scale() -> f32 {
-    1.5
+    1.0
 }
 
 impl Default for GeneralSettings {

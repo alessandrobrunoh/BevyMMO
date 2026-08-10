@@ -18,8 +18,8 @@ use std::path::{Path, PathBuf};
 /// Name of the assets folder at the workspace/project root.
 const ASSETS_DIR_NAME: &str = "assets";
 
-/// Default map loaded by client and server when no override is provided.
-const DEFAULT_MAP_ID: &str = "map_02";
+/// Default map to load when starting a local server or host-client
+pub const DEFAULT_MAP_ID: &str = "map_03";
 
 /// Resolves the absolute path to the workspace `assets` directory.
 ///

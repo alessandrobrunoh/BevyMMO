@@ -89,6 +89,7 @@ impl Plugin for WorldMapPlugin {
                     load_map_when_in_game,
                     cleanup_map_when_not_in_game,
                     sync_surface_query,
+                    draw_steep_slopes,
                 )
                     .chain(),
             );
@@ -388,6 +389,80 @@ fn spawn_prop_visual(
         }
         AssetHint::Invisible => {
             // Marker-only placement: keep the tagged entity, attach no visual.
+        }
+    }
+}
+
+fn draw_steep_slopes(
+    world_map: Res<ClientWorldMap>,
+    mut gizmos: Gizmos,
+) {
+    let Some(manifest) = &world_map.manifest else { return; };
+    let global_max_slope = manifest.world_metrics.unwrap_or_default().max_walkable_slope_deg.to_radians();
+
+    for surface in &manifest.surfaces {
+        let max_slope = surface.max_slope_deg.map(|d| d.to_radians()).unwrap_or(global_max_slope);
+        let min_normal_y = max_slope.cos();
+
+        if let Some(mesh) = &surface.walkable_mesh {
+            for chunk in mesh.indices.chunks(3) {
+                if chunk.len() == 3 {
+                    let v0 = mesh.vertices[chunk[0] as usize];
+                    let v1 = mesh.vertices[chunk[1] as usize];
+                    let v2 = mesh.vertices[chunk[2] as usize];
+                    let p0 = Vec3::from(v0);
+                    let p1 = Vec3::from(v1);
+                    let p2 = Vec3::from(v2);
+
+                    let normal = (p1 - p0).cross(p2 - p0).normalize_or_zero();
+                    
+                    // We only care about normals that are facing somewhat upward.
+                    // If normal.y is less than min_normal_y, the slope is too steep.
+                    if normal.y > 0.0 && normal.y < min_normal_y {
+                        gizmos.line(p0, p1, bevy::color::palettes::basic::RED);
+                        gizmos.line(p1, p2, bevy::color::palettes::basic::RED);
+                        gizmos.line(p2, p0, bevy::color::palettes::basic::RED);
+                    }
+                }
+            }
+        }
+        
+        if let Some(heightfield) = &surface.heightfield {
+            let res = heightfield.resolution as usize;
+            let stride = res + 1;
+            let bounds = &heightfield.bounds;
+            let cell_x = (bounds.max_x - bounds.min_x) / (res as f32);
+            let cell_z = (bounds.max_z - bounds.min_z) / (res as f32);
+
+            for x in 0..res {
+                for z in 0..res {
+                    let center_x = bounds.min_x + (x as f32 + 0.5) * cell_x;
+                    let center_z = bounds.min_z + (z as f32 + 0.5) * cell_z;
+                    
+                    if let Some(normal) = heightfield.sample_normal(center_x, center_z) {
+                        if normal[1] > 0.0 && normal[1] < min_normal_y {
+                            let h00 = heightfield.heights[x * stride + z];
+                            let h10 = heightfield.heights[(x + 1) * stride + z];
+                            let h01 = heightfield.heights[x * stride + (z + 1)];
+                            let h11 = heightfield.heights[(x + 1) * stride + (z + 1)];
+
+                            let px0 = bounds.min_x + (x as f32) * cell_x;
+                            let pz0 = bounds.min_z + (z as f32) * cell_z;
+                            let px1 = px0 + cell_x;
+                            let pz1 = pz0 + cell_z;
+
+                            let p00 = Vec3::new(px0, h00, pz0);
+                            let p10 = Vec3::new(px1, h10, pz0);
+                            let p01 = Vec3::new(px0, h01, pz1);
+                            let p11 = Vec3::new(px1, h11, pz1);
+
+                            // Draw a red cross for steep cells
+                            gizmos.line(p00, p11, bevy::color::palettes::basic::RED);
+                            gizmos.line(p10, p01, bevy::color::palettes::basic::RED);
+                        }
+                    }
+                }
+            }
         }
     }
 }

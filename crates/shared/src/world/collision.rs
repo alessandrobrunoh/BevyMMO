@@ -155,6 +155,8 @@ impl GroundContact {
 pub struct SurfaceQuery {
     /// Walkable surfaces from the manifest.
     surfaces: Vec<WalkableSurface>,
+    /// Global maximum walkable slope in degrees.
+    global_max_slope_deg: f32,
 }
 
 impl SurfaceQuery {
@@ -165,6 +167,7 @@ impl SurfaceQuery {
     pub fn from_manifest(manifest: &MapManifest) -> Self {
         Self {
             surfaces: manifest.surfaces.clone(),
+            global_max_slope_deg: manifest.get_world_metrics().max_walkable_slope_deg,
         }
     }
 
@@ -277,9 +280,9 @@ impl SurfaceQuery {
         x: f32,
         z: f32,
     ) -> Option<GroundContact> {
-        let max_slope = surface.max_slope_deg.unwrap_or(45.0);
+        let max_slope = surface.max_slope_deg.unwrap_or(self.global_max_slope_deg);
         let max_slope_rad = max_slope.to_radians();
-        let min_normal_y = max_slope_rad.cos();
+        let min_normal_y = max_slope_rad.cos() - 1e-4; // Tolerate precision errors
 
         let tri_count = mesh.indices.len() / 3;
         for tri_idx in 0..tri_count {
@@ -352,7 +355,11 @@ impl SurfaceQuery {
         let u = (dot11 * dot02 - dot01 * dot12) * inv_denom;
         let v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
 
-        (u >= 0.0) && (v >= 0.0) && (u + v <= 1.0)
+        // Use a small epsilon to tolerate floating point inaccuracies on triangle edges
+        // This prevents the player from getting stuck on "invisible walls" when crossing
+        // boundaries between adjacent triangles in a mesh surface.
+        let epsilon = 1e-4;
+        (u >= -epsilon) && (v >= -epsilon) && (u + v <= 1.0 + epsilon)
     }
 
     /// Computes barycentric coordinates for a point in a 2D triangle.
@@ -421,8 +428,8 @@ impl SurfaceQuery {
     ) -> Option<GroundContact> {
         let height = heightfield.sample_height(x, z)?;
         let normal = heightfield.sample_normal(x, z)?;
-        let max_slope = surface.max_slope_deg.unwrap_or(45.0);
-        let min_normal_y = max_slope.to_radians().cos();
+        let max_slope = surface.max_slope_deg.unwrap_or(self.global_max_slope_deg);
+        let min_normal_y = max_slope.to_radians().cos() - 1e-4; // Tolerate precision errors
         if normal[1] < min_normal_y {
             return None;
         }

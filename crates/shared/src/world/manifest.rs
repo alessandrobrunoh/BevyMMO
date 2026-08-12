@@ -17,9 +17,9 @@ pub const LEGACY_VERSION_1: u32 = 1;
 /// Keeping this constant (in metres) instead of tying it to a single cell
 /// makes the slope estimate resolution-independent: a smooth mountain
 /// samples the same gradient whether the heightfield packs 150 or 1500 cells
-/// per side. 1 m matches the granularity at which a player actually
-/// perceives a slope, while remaining smaller than a typical walkable step
-/// so short cliffs are not smoothed away.
+/// per side. The one-metre span matches the granularity at which a player
+/// actually perceives a slope, while remaining smaller than a typical
+/// walkable step so short cliffs are not smoothed away.
 const NORMAL_SAMPLE_OFFSET_M: f32 = 1.0;
 
 /// A single authored map. Sections that are reserved for later slices are
@@ -436,18 +436,10 @@ impl HeightfieldData {
         let down_z = (z - offset_m).max(self.bounds.min_z);
         let up_z = (z + offset_m).min(self.bounds.max_z);
 
-        let Some(left_height) = self.sample_height(left_x, z) else {
-            return None;
-        };
-        let Some(right_height) = self.sample_height(right_x, z) else {
-            return None;
-        };
-        let Some(down_height) = self.sample_height(x, down_z) else {
-            return None;
-        };
-        let Some(up_height) = self.sample_height(x, up_z) else {
-            return None;
-        };
+        let left_height = self.sample_height(left_x, z)?;
+        let right_height = self.sample_height(right_x, z)?;
+        let down_height = self.sample_height(x, down_z)?;
+        let up_height = self.sample_height(x, up_z)?;
 
         let dx = right_x - left_x;
         let dz = up_z - down_z;

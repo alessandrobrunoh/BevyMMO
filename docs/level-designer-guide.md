@@ -88,6 +88,27 @@ These numbers come from `WorldMetrics::default()` in
 `crates/shared/src/world/manifest.rs`. If a map overrides metrics, document
 it in `display_name` (e.g. `"Low Gravity Arena"`).
 
+### 2.4 Terrain Budget — the numbers that actually decide whether a map plays
+
+The engine does not walk on your visual mesh. It walks on the **heightfield**
+sampled from it, and it judges slope with a **fixed 1 m stencil**
+(`NORMAL_SAMPLE_OFFSET_M`). Everything below follows from that.
+
+| Rule | Value | Why |
+|---|---|---|
+| Heightfield cell size | **≤ 1.0 m**, ideally 0.5 m | Anything narrower than one cell does not exist for movement. Set `resolution = map_side_m / cell_size`. A 360 m map needs `resolution ≥ 360`, **not** 150. |
+| Map side | **120–180 m** for a hand-authored zone | At 1 m cells a 180 m map is 32 k samples (~400 KB JSON); a 360 m map is 130 k samples (~1.6 MB). Prefer several small maps over one huge one. |
+| Walkable slope | design at **≤ 30°**, hard limit 45° | The 45° limit is a cliff-edge, not a target. Terrain authored at 40° becomes unwalkable after heightfield quantisation. |
+| Cliffs / walls | **≥ 60°** | Leaves an unambiguous gap between "path" and "wall" so the slope test never flip-flops. |
+| Path / ramp width | **≥ 5 m** (5+ cells) | The player capsule is 0.7 m wide, but the collision surface is bilinear over cells: a 2-cell path is half slope-of-the-flank. Mountain switchbacks especially. |
+| Vertical steps | **≤ 0.45 m**, or make it a ramp | `max_step_height`. There is no "middle": 0.5 m ledges are invisible walls. |
+| Relief per map | **≤ 25 m** on a 150 m map | Keeps average slope sane. 40 m of relief needs proportionally more horizontal run. |
+| Props over terrain | keep trunks/rocks **on** the surface, never overhanging it | The heightfield is raycast from above; overhangs and caves cannot be represented at all. |
+
+**Sanity check before shipping a map:** total relief ÷ horizontal run of the
+slope must be under `tan(30°) ≈ 0.58`. A 40 m mountain therefore needs at
+least 70 m of horizontal run per face, or a switchback path that does.
+
 ---
 
 ## 3. Object Naming Conventions
@@ -410,7 +431,7 @@ the loader is permissive but wrong settings silently break transforms.
 |---|---|---|
 | Include > Limit to | (leave unticked, or tick if you have a clean selection) | |
 | Include > Selection Only | Off | Export everything (the meta node must be present) |
-| Transform > +Y Up | **Off** (the engine uses Y up natively; Blender's default is already Y up) | |
+| Transform > +Y Up | **On** (Blender's default). Blender is Z-up, the engine is Y-up; this is the conversion `(x, y, z) -> (x, z, -y)` that the `.world.json` exporter also applies. Turning it off exports the map lying on its side. | |
 | Transform > Apply Modifiers | **On** | |
 | Data > Mesh > Apply | **On** | |
 | Data > Object > Apply | **On** (so empties with custom properties are exported as nodes) | |

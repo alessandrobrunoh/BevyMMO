@@ -38,7 +38,26 @@ from typing import Optional
 import bpy
 from bpy.props import BoolProperty, IntProperty, StringProperty
 from bpy_extras.io_utils import ExportHelper
-from mathutils import Vector
+from mathutils import Matrix, Vector
+
+# Change of basis from Blender's Z-up to the engine's Y-up:
+# (x, y, z) -> (x, z, -y). Identical to what Blender's own glTF exporter
+# applies with "+Y Up" enabled, so the JSON and the GLB agree.
+BLENDER_TO_ENGINE = Matrix(
+    (
+        (1.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 1.0, 0.0),
+        (0.0, -1.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 1.0),
+    )
+)
+BLENDER_TO_ENGINE_INV = BLENDER_TO_ENGINE.inverted()
+
+# The engine estimates terrain slope with a fixed 1 m stencil
+# (NORMAL_SAMPLE_OFFSET_M in crates/shared/src/world/manifest.rs). A
+# heightfield coarser than that cannot describe anything the slope test can
+# see, so the exporter warns above this cell size.
+MAX_RECOMMENDED_CELL_M = 1.0
 
 # ---------------------------------------------------------------------------
 # Conventions — keep these in sync with docs/level-designer-guide.md and
@@ -208,16 +227,26 @@ def collect_display_name(meta: bpy.types.Object, fallback: str) -> str:
 def _to_engine(v) -> list[float]:
     """Converts a Blender Z-up position to an engine Y-up position.
 
-    Mapping: blender (x, y, z) -> engine (x, z, y).
-    Applied to every vertex, transform translation and raycast hit so the
-    engine can consume the JSON without any axis logic of its own.
+    Mapping: blender (x, y, z) -> engine (x, z, **-y**).
+
+    The negated Z is not cosmetic: it is the exact conversion Blender's own
+    glTF exporter applies when "+Y Up" is enabled (the default). Dropping the
+    minus sign mirrors the whole map north/south relative to the rendered
+    `.glb`, so collision, spawns and props end up on the opposite side of the
+    terrain they were authored on.
     """
-    return [v[0], v[2], v[1]]
+    return [v[0], v[2], -v[1]]
 
 
 def _to_engine_vec(v) -> Vector:
     """Same as `_to_engine` but returns a mathutils.Vector for raycast math."""
-    return Vector((v[0], v[2], v[1]))
+    return Vector((v[0], v[2], -v[1]))
+
+
+def _engine_z_to_blender_y(z: float) -> float:
+    """Inverse of the Z mapping, for driving Blender-space raycasts from an
+    engine-space grid."""
+    return -z
 
 
 def _world_triangles(
@@ -277,10 +306,10 @@ def _build_heightfield(
 ) -> dict:
     """Raycasts straight down (-Z in Blender) on a (resolution+1)² grid.
 
-    `bounds` are in **engine** XZ (which map to Blender XY). We raycast from
-    above in Blender Z and store the hit Z as the engine Y height. Cells that
-    miss become the lowest sampled height, mirroring the Rust helper in
-    loader.rs.
+    `bounds` are in **engine** XZ; engine X is Blender X and engine Z is
+    Blender -Y (see `_to_engine`). We raycast from above in Blender Z and
+    store the hit Z as the engine Y height. Cells that miss are interpolated
+    from their neighbours by `_fill_missing_heights`.
     """
     side = resolution + 1
     dx = (bounds["max_x"] - bounds["min_x"]) / resolution
@@ -291,42 +320,104 @@ def _build_heightfield(
         )
         return {"resolution": resolution, "bounds": bounds, "heights": []}
 
+    # Raycast against the evaluated object so modifiers (subdivision,
+    # displacement, ...) are taken into account, exactly like the GLB the
+    # player sees.
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    scene = bpy.context.scene
+    target = obj.evaluated_get(depsgraph)
+
+    cell_m = max(dx, dz)
+    if cell_m > MAX_RECOMMENDED_CELL_M:
+        report.warn(
+            f"WALKABLE_{obj.name}: heightfield cell is {cell_m:.2f} m "
+            f"(resolution={resolution} over {bounds['max_x'] - bounds['min_x']:.0f} m). "
+            f"The engine estimates slopes with a {MAX_RECOMMENDED_CELL_M:.1f} m stencil, so terrain "
+            "detail narrower than one cell (paths, switchbacks, ledges) is lost and "
+            "movement will disagree with what the player sees. Raise the resolution "
+            f"to at least {math.ceil((bounds['max_x'] - bounds['min_x']) / MAX_RECOMMENDED_CELL_M)}."
+        )
+
+    matrix = target.matrix_world
+    matrix_inv = matrix.inverted()
+    # Direction must be transformed without translation, hence the 3x3 part.
+    down_local = (matrix_inv.to_3x3() @ Vector((0.0, 0.0, -1.0))).normalized()
 
     heights: list[Optional[float]] = [None] * (side * side)
-    sampled_min = math.inf
+    misses = 0
 
     for gz in range(side):
-        # Engine Z corresponds to Blender Y on the ground plane.
-        b_y = bounds["min_z"] + dz * gz
+        # Engine Z maps to Blender -Y on the ground plane.
+        b_y = _engine_z_to_blender_y(bounds["min_z"] + dz * gz)
         for gx in range(side):
             b_x = bounds["min_x"] + dx * gx
             # Raycast straight down in Blender Z from above the mesh.
-            origin = Vector((b_x, b_y, raycast_above))
-            result = scene.ray_cast(depsgraph, origin, Vector((0, 0, -1)))
-            hit = result[0]
-            hit_obj = result[4]
-            if not hit or hit_obj != obj:
+            #
+            # This casts against `obj` alone, not the scene: `scene.ray_cast`
+            # returns whichever object is hit first, so every tree, rock or
+            # prop standing on the terrain used to shadow the ground below it
+            # and the sample was discarded. On a decorated map that punched
+            # hundreds of full-depth pits into the collision surface.
+            origin_local = matrix_inv @ Vector((b_x, b_y, raycast_above))
+            hit, location, _normal, _index = target.ray_cast(origin_local, down_local)
+            if not hit:
+                misses += 1
                 continue
             # Blender Z is the height -> store as engine Y.
-            height_z = result[1].z
+            height_z = (matrix @ location).z
             # Match the Rust sampler's layout: index = x * stride + z,
             # where stride = resolution + 1 and z varies fastest. The
             # previous `gx + gz * side` form silently transposed the
             # heightfield on asymmetric maps, making slopes appear along
             # the wrong axis.
             heights[gx * side + gz] = height_z
-            sampled_min = min(sampled_min, height_z)
 
-    if sampled_min is math.inf:
+    if misses:
         report.warn(
-            f"WALKABLE_{obj.name}: no ray hit any cell — heightfield will be empty"
+            f"WALKABLE_{obj.name}: {misses}/{side * side} heightfield samples missed the mesh "
+            "(holes in the surface, or the grid extends past the geometry); "
+            "filled from neighbouring samples."
         )
-        sampled_min = 0.0
-
-    final_heights = [h if h is not None else sampled_min for h in heights]
+    final_heights = _fill_missing_heights(heights, side, report, obj.name)
     return {"resolution": resolution, "bounds": bounds, "heights": final_heights}
+
+
+def _fill_missing_heights(
+    heights: list[Optional[float]], side: int, report: ExportReport, obj_name: str
+) -> list[float]:
+    """Fills `None` samples by flood-filling from their nearest valid neighbours.
+
+    The previous behaviour — substituting the surface's global minimum — turned
+    every missed sample into a full-depth hole. A cell missed on a 40 m summit
+    became a 40 m shaft the player fell into; a cell missed on a slope became a
+    vertical wall the player could not walk past. Averaging the known
+    neighbours keeps the surface continuous, which is what movement needs.
+    """
+    filled = list(heights)
+    if all(h is None for h in filled):
+        report.warn(f"WALKABLE_{obj_name}: no ray hit any cell — heightfield is flat 0")
+        return [0.0] * (side * side)
+
+    while True:
+        pending = [i for i, h in enumerate(filled) if h is None]
+        if not pending:
+            break
+        progressed = False
+        for i in pending:
+            gx, gz = divmod(i, side)
+            neighbours = []
+            for ox, oz in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                nx, nz = gx + ox, gz + oz
+                if 0 <= nx < side and 0 <= nz < side:
+                    value = filled[nx * side + nz]
+                    if value is not None:
+                        neighbours.append(value)
+            if neighbours:
+                filled[i] = sum(neighbours) / len(neighbours)
+                progressed = True
+        if not progressed:
+            break
+
+    return [h if h is not None else 0.0 for h in filled]
 
 
 def collect_surfaces(resolution: int, report: ExportReport) -> list[dict]:
@@ -390,7 +481,12 @@ def _shape_from_props(obj: bpy.types.Object) -> Optional[dict]:
         half_extents = custom_prop(obj, "bevymmo_half_extents")
         if half_extents is None:
             return None
-        return {"type": "box", "half_extents": _as_vec3(half_extents)}
+        extents = _as_vec3(half_extents)
+        if extents is None:
+            return None
+        # Half-extents are sizes, not positions: the axis swap reorders them
+        # but the sign flip on Z must not leak through.
+        return {"type": "box", "half_extents": [abs(e) for e in extents]}
     if kind == "cylinder":
         radius = custom_prop_float(obj, "bevymmo_radius", 0.0)
         height = custom_prop_float(obj, "bevymmo_height", 0.0)
@@ -424,14 +520,18 @@ def _as_vec3(raw, to_engine: bool = True):
 
 
 def _transform_to_dict(obj: bpy.types.Object) -> dict:
-    loc, rot, scale = obj.matrix_world.decompose()
-    # Convert Blender Z-up to engine Y-up: (x, y, z) -> (x, z, y).
-    engine_loc = _to_engine(loc)
-    # Euler YXZ in degrees — matches TransformData::rotation_deg.
+    # Rebase the whole matrix into engine space instead of permuting the
+    # decomposed euler by hand: with the negated Z (see `_to_engine`) a
+    # component swap no longer describes the same rotation, and props would
+    # come out mirrored even when their position was right.
+    engine_matrix = BLENDER_TO_ENGINE @ obj.matrix_world @ BLENDER_TO_ENGINE_INV
+    loc, rot, scale = engine_matrix.decompose()
+    engine_loc = [loc.x, loc.y, loc.z]
+    # Euler YXZ in degrees — matches TransformData::rotation_deg, which the
+    # renderer reads back as Quat::from_euler(YXZ, rot[1], rot[0], rot[2]).
     euler = rot.to_euler("YXZ")
-    # Swap Y/Z rotation components to match the axis swap.
-    engine_rot = [math.degrees(euler.x), math.degrees(euler.z), math.degrees(euler.y)]
-    engine_scale = [scale.x, scale.z, scale.y]
+    engine_rot = [math.degrees(euler.x), math.degrees(euler.y), math.degrees(euler.z)]
+    engine_scale = [abs(scale.x), abs(scale.y), abs(scale.z)]
     return {
         "translation": engine_loc,
         "rotation_deg": engine_rot,

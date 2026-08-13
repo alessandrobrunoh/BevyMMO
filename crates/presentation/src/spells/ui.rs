@@ -378,8 +378,19 @@ fn hide_spell_hud(mut roots: Query<&mut Node, With<SpellHudRoot>>) {
 }
 
 fn format_spell_label(entry: &SpellHudEntry, remaining_seconds: f32) -> String {
-    if entry.spell_id.is_none() {
+    if entry.display_name == "Empty" {
         return format!("[{}] Empty", entry.key_label);
+    }
+
+    // Eidolon gesture: `spell_id` is deliberately `None` (so
+    // `cast_spell_from_hud_click` safely no-ops on it), but `display_name`
+    // IS populated — checking `spell_id` here instead of `display_name`
+    // would wrongly show "Empty" for every equipped Eidolon weapon. No
+    // client-side cooldown is tracked for these yet (see
+    // `AbilityCooldowns`, server-only so far), so there is no countdown to
+    // show.
+    if entry.spell_id.is_none() {
+        return format!("[{}] {}", entry.key_label, entry.display_name);
     }
 
     let cooldown = if remaining_seconds > 0.0 {
@@ -414,5 +425,15 @@ mod tests {
         assert_eq!(format_spell_label(&entry, 0.0), "[Q] Test Spell - Ready");
         assert_eq!(format_spell_label(&entry, 1.25), "[Q] Test Spell - 1.2s");
         assert_eq!(format_spell_label(&empty_entry, 0.0), "[W] Empty");
+    }
+
+    #[test]
+    fn spell_label_shows_the_eidolon_gesture_despite_a_none_spell_id() {
+        let entry = SpellHudEntry {
+            spell_id: None,
+            display_name: "Getto (Fuoco)".to_string(),
+            key_label: "Q".to_string(),
+        };
+        assert_eq!(format_spell_label(&entry, 0.0), "[Q] Getto (Fuoco)");
     }
 }

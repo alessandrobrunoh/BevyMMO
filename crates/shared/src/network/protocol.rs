@@ -4,6 +4,7 @@ use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::entity::components::{EntityKind, EntityState, GameEntity, SpawnPoint};
+use crate::abilities::{AbilitySlot, KnownGlyphs};
 use crate::items::components::{Equipment, Inventory};
 use crate::items::events::{EquipItemCommand, MoveItemCommand, UnequipItemCommand};
 use crate::spells::{HotbarSlot, SpellHotbar};
@@ -155,6 +156,31 @@ pub struct UpdateHotbarSlotRequest {
     pub spell_id: Option<String>,
 }
 
+/// Client -> server command to cast the equipped weapon's Eidolon gesture at
+/// `slot`. Unlike [`SpellCastCommand`], it carries no spell id: the server
+/// resolves gesture + Incisione from the caster's equipped weapon and
+/// `KnownGlyphs`. Instant-only for now (no CastTime/Channeling equivalent
+/// for Eidolon abilities yet).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct EidolonCastCommand {
+    pub slot: AbilitySlot,
+    pub target_position: Option<Vec3>,
+    pub target_id: Option<u64>,
+}
+
+/// Client -> server command to inscribe (or clear) one slot of the
+/// equipped weapon's Incisione. `essence`/`modifiers`/`ancient_word` are
+/// glyph ids as strings (empty `modifiers` = no modifiers); the server
+/// validates ownership (`KnownGlyphs`), tag compatibility, and total Runic
+/// Capacity before applying — an invalid request is rejected wholesale.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct UpdateInscriptionRequest {
+    pub slot: AbilitySlot,
+    pub essence: Option<String>,
+    pub modifiers: Vec<String>,
+    pub ancient_word: Option<String>,
+}
+
 // Protocol Plugin
 pub struct ProtocolPlugin;
 
@@ -213,6 +239,12 @@ impl Plugin for ProtocolPlugin {
         app.register_message::<MoveItemCommand>()
             .add_direction(NetworkDirection::ClientToServer);
 
+        app.register_message::<EidolonCastCommand>()
+            .add_direction(NetworkDirection::ClientToServer);
+
+        app.register_message::<UpdateInscriptionRequest>()
+            .add_direction(NetworkDirection::ClientToServer);
+
         // Input commands
         app.add_plugins(input::native::InputPlugin::<Inputs>::default());
 
@@ -245,6 +277,13 @@ impl Plugin for ProtocolPlugin {
         app.component::<Inventory>().replicate().predict();
 
         app.component::<Equipment>().replicate().predict();
+
+        // Read-only for the owning client: rendered by the inscription UI to
+        // filter which Glifi are pickable, never written to locally (only
+        // the server ever changes it, and nothing does yet — no
+        // learn-a-glyph flow exists). `.predict()` would be wasted, plain
+        // replication is enough.
+        app.component::<KnownGlyphs>().replicate();
 
         app.component::<GameEntity>().replicate();
 

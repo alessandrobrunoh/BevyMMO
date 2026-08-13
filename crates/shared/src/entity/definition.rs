@@ -4,7 +4,7 @@
 //! that each concrete entity implements to centralize spawning and network
 //! configuration. In Bevy it is idiomatic to have marker components
 //! + data bundles, not runtime polymorphism. This trait declares
-//! "how an entity is built" and which network components it requires.
+//!   "how an entity is built" and which network components it requires.
 
 use bevy::color::Color;
 use bevy::prelude::*;

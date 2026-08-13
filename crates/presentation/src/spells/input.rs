@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_shared::items::components::Equipment;
+use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::movement::MoveTarget;
 use bevymmo_shared::network::protocol::{
     Channel2, LookDirection, NetworkEntityId, Position, SpellCastCommand, SpellCastRelease,
@@ -29,6 +31,7 @@ pub fn cast_spells_on_key(
     mut controlled_players: Query<
         (
             &SpellHotbar,
+            &Equipment,
             &NetworkEntityId,
             &Position,
             &mut LookDirection,
@@ -41,6 +44,7 @@ pub fn cast_spells_on_key(
     mut release_senders: Query<&mut MessageSender<SpellCastRelease>, With<ConnectedClient>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
     registry: Res<SpellRegistry>,
+    item_registry: Res<ItemRegistry>,
 ) {
     if !matches!(screen.0, Screen::InGame | Screen::Paused) {
         return;
@@ -49,11 +53,22 @@ pub fn cast_spells_on_key(
         return;
     };
 
-    let Ok((hotbar, local_network_id, player_position, mut look_direction)) =
+    let Ok((hotbar, equipment, local_network_id, player_position, mut look_direction)) =
         controlled_players.single_mut()
     else {
         return;
     };
+
+    // An Eidolon weapon (one with `weapon_abilities()`) owns Q/W/E instead —
+    // see `crate::spells::eidolon_input::cast_eidolon_abilities_on_key`.
+    let equipped_is_eidolon = equipment
+        .weapon
+        .as_ref()
+        .and_then(|weapon| item_registry.get(&weapon.item_id))
+        .is_some_and(|item| item.weapon_abilities().is_some());
+    if equipped_is_eidolon {
+        return;
+    }
 
     let mut target_position = None;
     if let Ok(window) = windows.single() {

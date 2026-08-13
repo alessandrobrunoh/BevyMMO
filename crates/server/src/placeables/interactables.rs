@@ -21,7 +21,7 @@ pub struct InteractableMarker {
 ///
 /// Carries only [`InteractableMarker`] (with `consumed: false`) + [`Transform`]
 /// + [`Name`]; no stats, replication, or visual. The future interaction system
-/// will query `InteractableMarker` to resolve effects.
+///   will query `InteractableMarker` to resolve effects.
 pub fn spawn_interactable(commands: &mut Commands, kind_id: KindId, position: Vec3) -> Entity {
     commands
         .spawn((

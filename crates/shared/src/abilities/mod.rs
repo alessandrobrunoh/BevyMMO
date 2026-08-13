@@ -6,7 +6,9 @@
 
 pub mod ancient_word;
 pub mod base_ability;
+pub mod cooldowns;
 pub mod essence;
+pub mod events;
 pub mod inscription;
 pub mod known_glyphs;
 pub mod modifier;
@@ -15,6 +17,8 @@ pub mod slot;
 pub mod weapon_abilities;
 
 pub use ancient_word::{AncientWord, AncientWordEffect, AncientWordId, AncientWordRegistry, ArcAncientWord};
+pub use cooldowns::AbilityCooldowns;
+pub use events::EidolonCastRequest;
 pub use base_ability::{AbilityGeometry, AbilityId, AbilityParams, AbilityTag, ArcBaseAbility, BaseAbility, BaseAbilityRegistry};
 pub use essence::{ArcEssence, Essence, EssenceEffect, EssenceId, EssenceRegistry, EssenceVisualTheme};
 pub use inscription::{validate_weapon_inscriptions, Inscription, InscriptionError, RuneProfile, WeaponInscriptions};

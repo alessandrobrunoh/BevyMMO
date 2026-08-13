@@ -9,6 +9,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+use bevymmo_shared::abilities::EidolonCastRequest;
 use bevymmo_shared::network::mode::has_server;
 use bevymmo_shared::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
 use bevymmo_shared::spells::events::{SpellCastRequest, SpellReleaseRequest};
@@ -31,6 +32,7 @@ impl Plugin for SpellsServerPlugin {
         app.init_resource::<SpellRegistry>()
             .add_message::<SpellCastRequest>()
             .add_message::<SpellReleaseRequest>()
+            .add_message::<EidolonCastRequest>()
             .add_message::<SpellVisualEffect>()
             .add_message::<SpellCastProgress>()
             .add_message::<SpellCastEnded>()
@@ -42,12 +44,14 @@ impl Plugin for SpellsServerPlugin {
                 FixedUpdate,
                 (
                     process_cast_requests,
+                    process_eidolon_cast_requests,
                     handle_cast_release,
                     advance_cast_progress,
                     replicate_cast_progress,
                     update_homing_projectiles,
                     aoe::update_aoe_regions,
                     tick_spell_cooldowns,
+                    tick_ability_cooldowns,
                 )
                     .chain()
                     .run_if(has_server),

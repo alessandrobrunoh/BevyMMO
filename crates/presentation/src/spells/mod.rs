@@ -4,6 +4,7 @@ pub mod available_choices;
 pub mod cast_bar;
 pub mod dragon_enemy;
 pub mod effects;
+pub mod eidolon_input;
 pub mod healing_circle;
 pub mod input;
 pub mod meteorite;
@@ -26,6 +27,7 @@ impl Plugin for SpellsHudPlugin {
             (
                 available_choices::sync_available_spell_choices,
                 input::cast_spells_on_key,
+                eidolon_input::cast_eidolon_abilities_on_key,
                 dispatch_visual_effects,
                 healing_circle::visual::animate,
                 meteorite::visual::animate,

@@ -2,6 +2,8 @@ use super::components::*;
 use super::SpellSelectorUiState;
 use bevy::prelude::*;
 use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_shared::items::components::Equipment;
+use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::items::AvailableSpellChoices;
 use bevymmo_shared::network::protocol::{Channel2, UpdateHotbarSlotRequest};
 use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId, SpellRegistry};
@@ -14,6 +16,7 @@ const WINDOW_WIDTH: f32 = 760.0;
 const WINDOW_HEIGHT: f32 = 460.0;
 const SLOTS: [HotbarSlot; 3] = [HotbarSlot::Q, HotbarSlot::W, HotbarSlot::E];
 
+#[allow(clippy::too_many_arguments)]
 pub fn toggle_spell_selector(
     keys: Res<ButtonInput<KeyCode>>,
     settings: Res<GameSettingsResource>,
@@ -22,9 +25,26 @@ pub fn toggle_spell_selector(
     window_query: Query<Entity, With<SpellSelectorWindow>>,
     theme: Res<UiTheme>,
     registry: Res<SpellRegistry>,
-    player_query: Query<(&SpellHotbar, &AvailableSpellChoices), With<lightyear::prelude::Controlled>>,
+    item_registry: Res<ItemRegistry>,
+    player_query: Query<
+        (&SpellHotbar, &AvailableSpellChoices, &Equipment),
+        With<lightyear::prelude::Controlled>,
+    >,
 ) {
     if !settings.just_pressed(KeyAction::ToggleSpellbook, &keys) {
+        return;
+    }
+
+    // An Eidolon weapon owns this key instead — see
+    // `crate::ui::inscription::systems::toggle_inscription_window`.
+    let equipped_is_eidolon = player_query.single().is_ok_and(|(_, _, equipment)| {
+        equipment
+            .weapon
+            .as_ref()
+            .and_then(|weapon| item_registry.get(&weapon.item_id))
+            .is_some_and(|item| item.weapon_abilities().is_some())
+    });
+    if equipped_is_eidolon {
         return;
     }
 
@@ -35,7 +55,7 @@ pub fn toggle_spell_selector(
         return;
     }
 
-    let Some((hotbar, choices)) = player_query.iter().next() else {
+    let Some((hotbar, choices, _)) = player_query.iter().next() else {
         // Controlled entity not spawned/replicated yet (e.g. still joining).
         state.is_open = false;
         return;

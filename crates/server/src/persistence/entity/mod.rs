@@ -4,5 +4,6 @@ pub mod player;
 pub mod player_equipment;
 pub mod player_hotbar;
 pub mod player_inventory;
+pub mod player_known_glyphs;
 pub mod player_stats;
 pub mod prop_override;

@@ -1,7 +1,9 @@
 [package]
 name = "bevymmo_shared"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 bevy = { workspace = true, features = ["bevy_window", "serialize"] }
@@ -22,3 +24,6 @@ bevymmo-props-macro = { path = "../bevymmo-props-macro" }
 
 [dev-dependencies]
 serde_json = "1"
+
+[lints]
+workspace = true

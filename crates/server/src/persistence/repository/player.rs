@@ -334,7 +334,7 @@ impl PlayerRepository {
             return Ok(inventory);
         }
 
-        let default_inventory = Inventory::default();
+        let default_inventory = starter_inventory();
         self.save_inventory(player_id, &default_inventory).await?;
         Ok(default_inventory)
     }
@@ -353,7 +353,16 @@ impl PlayerRepository {
         };
 
         Ok(Some(Equipment {
+            bag: row.bag.map(ItemId::new),
+            helmet: row.helmet.map(ItemId::new),
+            cape: row.cape.map(ItemId::new),
             weapon: row.weapon.map(ItemId::new),
+            armor: row.armor.map(ItemId::new),
+            offhand: row.offhand.map(ItemId::new),
+            potion: row.potion.map(ItemId::new),
+            shoes: row.shoes.map(ItemId::new),
+            food: row.food.map(ItemId::new),
+            mount: row.mount.map(ItemId::new),
         }))
     }
 
@@ -363,15 +372,21 @@ impl PlayerRepository {
         player_id: Uuid,
         equipment: &Equipment,
     ) -> PersistenceResult<()> {
+        fn col(item: &Option<ItemId>) -> Option<String> {
+            item.as_ref().map(|id| id.as_str().to_string())
+        }
+
         let update_result = EquipmentEntity::update_many()
-            .col_expr(
-                EquipmentColumn::Weapon,
-                equipment
-                    .weapon
-                    .as_ref()
-                    .map(|w| w.as_str().to_string())
-                    .into(),
-            )
+            .col_expr(EquipmentColumn::Bag, col(&equipment.bag).into())
+            .col_expr(EquipmentColumn::Helmet, col(&equipment.helmet).into())
+            .col_expr(EquipmentColumn::Cape, col(&equipment.cape).into())
+            .col_expr(EquipmentColumn::Weapon, col(&equipment.weapon).into())
+            .col_expr(EquipmentColumn::Armor, col(&equipment.armor).into())
+            .col_expr(EquipmentColumn::Offhand, col(&equipment.offhand).into())
+            .col_expr(EquipmentColumn::Potion, col(&equipment.potion).into())
+            .col_expr(EquipmentColumn::Shoes, col(&equipment.shoes).into())
+            .col_expr(EquipmentColumn::Food, col(&equipment.food).into())
+            .col_expr(EquipmentColumn::Mount, col(&equipment.mount).into())
             .filter(EquipmentColumn::PlayerId.eq(player_id))
             .exec(&self.db)
             .await?;
@@ -379,7 +394,16 @@ impl PlayerRepository {
         if update_result.rows_affected == 0 {
             let new_row = EquipmentActiveModel {
                 player_id: Set(player_id),
-                weapon: Set(equipment.weapon.as_ref().map(|w| w.as_str().to_string())),
+                bag: Set(col(&equipment.bag)),
+                helmet: Set(col(&equipment.helmet)),
+                cape: Set(col(&equipment.cape)),
+                weapon: Set(col(&equipment.weapon)),
+                armor: Set(col(&equipment.armor)),
+                offhand: Set(col(&equipment.offhand)),
+                potion: Set(col(&equipment.potion)),
+                shoes: Set(col(&equipment.shoes)),
+                food: Set(col(&equipment.food)),
+                mount: Set(col(&equipment.mount)),
             };
             new_row.insert(&self.db).await?;
         }
@@ -446,4 +470,37 @@ impl PlayerRepository {
 
         Ok(())
     }
+}
+
+/// Inventory seeded for a brand-new player: one reference item per
+/// [`bevymmo_shared::items::components::EquipSlot`], so every slot in the
+/// inventory UI has something to equip out of the box. Purely a QA/demo
+/// convenience; existing players are never touched (only used on first
+/// creation, see [`PlayerRepository::load_or_create_default_inventory`]).
+fn starter_inventory() -> Inventory {
+    use bevymmo_shared::items_impl::{
+        field_rations::FieldRations, iron_plate_armor::IronPlateArmor, iron_sword::IronSword,
+        leather_helmet::LeatherHelmet, quick_flask::QuickFlask, swift_boots::SwiftBoots,
+        swift_steed::SwiftSteed, travelers_bag::TravelersBag, travelers_cape::TravelersCape,
+        wooden_shield::WoodenShield,
+    };
+
+    let ids = [
+        IronSword::ID,
+        LeatherHelmet::ID,
+        TravelersCape::ID,
+        IronPlateArmor::ID,
+        WoodenShield::ID,
+        QuickFlask::ID,
+        SwiftBoots::ID,
+        FieldRations::ID,
+        SwiftSteed::ID,
+        TravelersBag::ID,
+    ];
+
+    let mut inventory = Inventory::default();
+    for (slot, id) in inventory.slots.iter_mut().zip(ids) {
+        *slot = Some(ItemId::new(id));
+    }
+    inventory
 }

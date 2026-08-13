@@ -298,7 +298,36 @@ pub fn load_world_json<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoadEr
         return Err(MapLoadError::Validation(issues));
     }
 
+    warn_on_map_id_mismatch(path_ref, &manifest);
+
     Ok(manifest)
+}
+
+/// Warns when a sidecar's `map_id` does not match its own filename.
+///
+/// Nothing else ties the two together, and they are used for different things:
+/// the loader picks the sidecar by filename, while the client renders
+/// `maps/<manifest.map_id>.glb`. A sidecar copied from another map keeps the
+/// original `map_id`, and the result is a map whose collision comes from one
+/// file and whose visuals come from a different one — the player then appears
+/// to stand under (or float above) terrain that is not the terrain being
+/// walked on. Both files load fine, so nothing else surfaces the mistake.
+fn warn_on_map_id_mismatch(path: &Path, manifest: &MapManifest) {
+    // `map_02.world.json` yields the file stem `map_02.world`, so strip the
+    // inner extension too before comparing.
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return;
+    };
+    let expected = stem.strip_suffix(".world").unwrap_or(stem);
+    if expected != manifest.map_id {
+        bevy::log::warn!(
+            "Map sidecar {} declares map_id {:?}: gameplay data comes from this file, \
+             but visuals load from maps/{}.glb. Rename the file or fix map_id.",
+            path.display(),
+            manifest.map_id,
+            manifest.map_id
+        );
+    }
 }
 
 /// Checks if a `.world.json` sidecar file exists for the given map ID.
@@ -774,22 +803,52 @@ pub fn load_map_auto<P: AsRef<Path>>(path: P) -> Result<MapManifest, MapLoadErro
     }
 }
 
-/// Serializes the manifest to RON with deterministic ordering.
+/// Serializes the manifest, picking the format from the file extension.
+///
+/// - `.json` (including `.world.json`) -> version 2 JSON, the format
+///   [`load_map_auto`] prefers and the Blender exporter produces.
+/// - `.glb` / `.gltf` -> **rejected**. Those are source meshes, not manifests;
+///   writing a manifest there destroys the authored geometry.
+/// - anything else -> RON, the version 1 format.
 ///
 /// `props` are sorted by `id` so diffs stay readable across edits.
 pub fn save_map<P: AsRef<Path>>(path: P, manifest: &MapManifest) -> Result<(), MapLoadError> {
     let path_ref = path.as_ref();
     let path_display = path_ref.display().to_string();
 
+    let extension = path_ref
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    // Refuse to overwrite a source mesh. `save_map` writes a text manifest, so
+    // pointing it at a `.glb` silently replaced a binary glTF — the authored
+    // geometry — with manifest text.
+    if matches!(extension.as_str(), "glb" | "gltf") {
+        return Err(MapLoadError::Serialize {
+            path: path_display,
+            message: "refusing to write a map manifest over a glTF source mesh; \
+                      save to the '.world.json' sidecar instead"
+                .to_string(),
+        });
+    }
+
     let mut sorted = manifest.clone();
     sorted.props.sort_by(|a, b| a.id.cmp(&b.id));
 
-    let config = PrettyConfig::new();
-    let serialized =
+    let serialized = if extension == "json" {
+        serde_json::to_string_pretty(&sorted).map_err(|source| MapLoadError::Serialize {
+            path: path_display.clone(),
+            message: source.to_string(),
+        })?
+    } else {
+        let config = PrettyConfig::new();
         ron::ser::to_string_pretty(&sorted, config).map_err(|source| MapLoadError::Serialize {
             path: path_display.clone(),
             message: source.to_string(),
-        })?;
+        })?
+    };
 
     fs::write(path_ref, serialized).map_err(|source| MapLoadError::Io {
         path: path_display,
@@ -940,6 +999,62 @@ mod tests {
     #[test]
     fn empty_manifest_is_valid() {
         assert!(validate_structure(&empty_manifest()).is_empty());
+    }
+
+    /// Regression: the editor's default save path pointed at `<map_id>.glb`,
+    /// so `Ctrl+S` replaced the authored binary glTF with manifest text.
+    #[test]
+    fn save_map_refuses_to_overwrite_a_gltf_source_mesh() {
+        let dir = std::env::temp_dir().join("bevymmo_save_map_glb_guard");
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("test_map.glb");
+        fs::write(&path, b"glTF-binary-payload").expect("seed the source mesh");
+
+        let error = save_map(&path, &empty_manifest()).expect_err("must refuse a .glb target");
+        assert!(matches!(error, MapLoadError::Serialize { .. }));
+
+        // The original bytes must be untouched.
+        assert_eq!(
+            fs::read(&path).expect("mesh still readable"),
+            b"glTF-binary-payload"
+        );
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_map_writes_version_2_json_for_a_world_json_path() {
+        let dir = std::env::temp_dir().join("bevymmo_save_map_world_json");
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("test_map.world.json");
+
+        let manifest = empty_manifest();
+        save_map(&path, &manifest).expect("write sidecar");
+
+        let written = fs::read_to_string(&path).expect("read back");
+        assert!(
+            written.trim_start().starts_with('{'),
+            "expected JSON, got: {written:.60}"
+        );
+        // Round trip through the loader the game actually uses.
+        let reloaded = load_world_json(&path).expect("reload sidecar");
+        assert_eq!(reloaded, manifest);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_map_still_writes_ron_for_a_ron_path() {
+        let dir = std::env::temp_dir().join("bevymmo_save_map_ron");
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("test_map.ron");
+
+        save_map(&path, &empty_manifest()).expect("write ron");
+
+        let written = fs::read_to_string(&path).expect("read back");
+        assert!(
+            written.trim_start().starts_with('('),
+            "expected RON, got: {written:.60}"
+        );
+        let _ = fs::remove_file(&path);
     }
 
     #[test]
@@ -1150,10 +1265,45 @@ mod tests {
         assert!(manifest
             .test_checklist
             .iter()
-            .any(|item| item.contains("central hill")));
+            // Wording taken verbatim from map_01.world.json: the point is to
+            // prove the sidecar was read, not the GLB extras.
+            .any(|item| item.contains("center hill")));
 
         let issues = validate_structure(&manifest);
         assert!(issues.is_empty(), "validation failed: {issues:?}");
+    }
+
+    /// Guards the blocker encoding end to end on the shipped default map.
+    ///
+    /// `CollisionShape` is an externally tagged serde enum, so a blocker's
+    /// `shape` must be a single-key map (`{"Box": {...}}`). Anything else does
+    /// not degrade gracefully: `Option<CollisionShape>` fails the whole
+    /// deserialization, so one malformed blocker takes the entire map down.
+    /// The Blender exporter emitted `{"type": "box", ...}` until this was
+    /// caught, which meant no map could ship a blocker at all.
+    #[test]
+    fn map_02_blockers_deserialize_and_reach_the_collision_grid() {
+        let json_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/maps/map_02.world.json"
+        );
+        let manifest = load_world_json(json_path).expect("map_02 sidecar must load");
+
+        assert!(
+            !manifest.blockers.is_empty(),
+            "map_02 is expected to ship blockers for its rocks and tree trunks"
+        );
+        assert!(
+            manifest.blockers.iter().all(|b| b.shape.is_some()),
+            "a blocker without a shape is silently dropped by CollisionGrid::build"
+        );
+
+        let grid = crate::world::CollisionGrid::build(&manifest);
+        assert_eq!(
+            grid.obstacle_count(),
+            manifest.blockers.len(),
+            "every blocking blocker must produce exactly one obstacle"
+        );
     }
 
     /// Integration test: loads the real `.world.json` fixture for the main map.

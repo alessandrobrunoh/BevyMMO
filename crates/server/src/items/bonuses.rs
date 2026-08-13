@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 
-use bevymmo_shared::items::components::Equipment;
+use bevymmo_shared::items::components::{EquipSlot, Equipment};
 use bevymmo_shared::items::effects::ItemEffect;
 use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
@@ -57,10 +57,11 @@ fn compute_bonus(equipment: &Equipment, registry: &ItemRegistry) -> Vec<StatBonu
         }
     };
 
-    if let Some(weapon) = &equipment.weapon {
-        collect(weapon);
+    for slot in EquipSlot::ALL {
+        if let Some(item_id) = equipment.get(slot) {
+            collect(item_id);
+        }
     }
-    // Future slots (helmet, chest, ...) are collected here as they land.
 
     effects
 }
@@ -241,6 +242,7 @@ mod tests {
     fn compute_bonus_ignores_unknown_equipped_item() {
         let equipment = Equipment {
             weapon: Some(ItemId::new("does_not_exist")),
+            ..Default::default()
         };
         let registry = ItemRegistry::default();
 

@@ -372,6 +372,15 @@ pub(crate) fn persist_settings_when_changed(
     settings: Res<GameSettingsResource>,
     mut last_saved: Local<Option<GameSettingsFingerprint>>,
 ) {
+    // Change detection first: building the fingerprint costs a `serde_json`
+    // round trip and a `format!` per keybind plus a sort and a join, and
+    // settings change a handful of times per session. Without this guard that
+    // cost was paid every frame, forever — unlike its neighbours
+    // `apply_graphics_to_window` and `apply_interface_scale`, which already
+    // guard on `is_changed()`.
+    if !settings.is_changed() {
+        return;
+    }
     let fp = GameSettingsFingerprint::from(&settings.0);
     if last_saved.as_ref() == Some(&fp) {
         return;

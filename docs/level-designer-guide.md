@@ -29,14 +29,20 @@ the JSON. This is the **v2 format** and the one every new map must use.
 flowchart LR
     Blend[map.blend] -->|File > Export > glTF 2.0 .glb| Glb[map.glb]
     Blend -->|reference for geometry| Json[map.world.json]
+    Glb -->|scripts/generate_blockers_from_glb.py| Json
     Glb --> Engine[BevyMMO Loader]
     Json --> Engine
     Engine --> Server[Server: collision, spawns]
     Engine --> Client[Client: meshes, transforms]
 ```
 
-The reference example is `assets/maps/rolling_hills_test.{blend,glb,world.json}`.
-Open all three side by side when learning the format.
+One step in that graph is easy to miss and fails silently: decor collision is
+**derived** from the GLB by `scripts/generate_blockers_from_glb.py`, which must
+be re-run after every export. See [§8.3](#83-auto-generated-blockers-for-decor--required-build-step).
+
+The reference examples are `assets/maps/map_01`–`map_04` (`.blend`, `.glb`,
+`.world.json`), plus `assets/maps/map_template.blend` as a starting point.
+Open all three files of one map side by side when learning the format.
 
 ---
 
@@ -168,8 +174,8 @@ map-level custom properties.
 
 | Property name | Type | Example | Notes |
 |---|---|---|---|
-| `bevymmo_map_id` | String | `"rolling_hills_test"` | Must match the filename and `[A-Za-z0-9_-]+`. Used for DB keys. |
-| `bevymmo_display_name` | String | `"Rolling Hills Test Map"` | Human-facing name shown in menus. |
+| `bevymmo_map_id` | String | `"map_02"` | Must match the filename and `[A-Za-z0-9_-]+`. Used for DB keys. |
+| `bevymmo_display_name` | String | `"Map 02"` | Human-facing name shown in menus. |
 | `bevymmo_min_x` | Float | `-22.0` | Map bounds, X minimum |
 | `bevymmo_max_x` | Float | `22.0` | Map bounds, X maximum |
 | `bevymmo_min_z` | Float | `-22.0` | Map bounds, Z minimum |
@@ -409,7 +415,45 @@ player from walking through walls whose visuals are modelled separately.
 > mesh. For non-axis-aligned walls, model the blocker as a thin axis-aligned
 > slab, or split it into multiple blockers.
 
-### 8.3 Common Blocker Patterns
+### 8.3 Auto-Generated Blockers for Decor — **required build step**
+
+Rocks and trees placed as ordinary decor carry no `bevymmo_*` custom
+properties, so the exporter classifies them as neither props nor blockers and
+`CollisionGrid::build` receives zero obstacles for them — the player walks
+straight through every rock. Tagging ~300 objects by hand in Blender is not a
+realistic workflow, so the collision volumes are derived from the GLB instead.
+
+**Run this after every `.world.json` export:**
+
+```sh
+python3 -m pip install -r scripts/requirements.txt   # once; needs numpy
+python3 scripts/generate_blockers_from_glb.py map_02
+```
+
+Preview without writing:
+
+```sh
+python3 scripts/generate_blockers_from_glb.py map_02 --dry-run
+```
+
+The script reads `<map_id>.glb`, derives a box blocker per solid decor node
+from its world transform and mesh bounds, and merges the result into
+`<map_id>.world.json`. It **only rewrites blockers whose `id` starts with
+`AUTO_`** — anything you authored by hand per §8.2 is preserved untouched.
+
+Selection rules it applies (see the constants at the top of the script):
+
+| Rule | Effect |
+|---|---|
+| Name contains `Rock` | Becomes a blocker |
+| Name contains `Tree` **and** `_Base` | Becomes a blocker (the trunk) |
+| Tree canopies (`_Top`) | Skipped — blocking a canopy stops the player metres from the trunk |
+| Height under `MIN_BLOCKER_HEIGHT_M` (1.0 m) | Skipped — comfortably above the 0.45 m `max_step_height`, so low decor like ramp-edge pebbles does not fence off the ramps it decorates |
+
+> Forgetting this step is silent: the map loads, looks correct, and has no
+> decor collision. If players report walking through rocks, run it.
+
+### 8.4 Common Blocker Patterns
 
 | Need | Solution |
 |---|---|
@@ -567,16 +611,21 @@ A complete authoring pass for a new map called `village_square`:
    - File > Export > glTF 2.0 (.glb) with the settings from §9.1
    - Save as `assets/maps/village_square.glb`
 
-9. **Load and test in-engine**
-   - `cargo run -- editor`
-   - `Ctrl+O`, pick `village_square.glb`
-   - Walk around in `cargo run -- host-client` and verify collision,
-     walkable heights, and prop placement
+9. **Generate the decor blockers** *(required — see §8.3)*
+   - `python3 scripts/generate_blockers_from_glb.py village_square`
+   - Skipping this leaves rocks and tree trunks with no collision, and the
+     failure is silent: the map still loads and looks correct
 
-10. **Iterate**
-    - Edit `.blend` → re-export GLB → reload in editor
+10. **Load and test in-engine**
+    - `cargo run -- editor`
+    - `Ctrl+O`, pick `village_square.world.json`
+    - Walk around in `cargo run -- host-client` and verify collision,
+      walkable heights, and prop placement
+
+11. **Iterate**
+    - Edit `.blend` → re-export GLB → **re-run step 9** → reload in editor
     - Edit `.world.json` directly for surface/blocker tweaks (no Blender
-      round-trip needed)
+      round-trip needed); hand-authored blockers survive step 9
 
 ---
 
@@ -639,20 +688,23 @@ route. Author at least one for every map.
 
 ---
 
-## 14. Reference: The `rolling_hills_test` Map
+## 14. Reference Maps
 
-The reference map at `assets/maps/rolling_hills_test.{blend,glb,world.json}`
-exercises every feature:
+There is no single "reference map"; pick the one closest to what you are
+building. All live in `assets/maps/` as a `{blend, glb, world.json}` triple.
 
-- **Bounds**: `-22..22` on both axes.
-- **Walkable surfaces**: 4 surfaces, including a `"mesh"` rolling-terrain
-  with a 32×32 heightfield (1089 samples).
-- **Blockers**: 11 boxes sealing edges, cliffs, and steep slopes.
-- **Test routes**: `test_route`, `mountain_switchback_test`, and
-  `distant_plateau_test` cover the three hardest movement scenarios.
+| Map | Use it as a reference for |
+|---|---|
+| `map_02` | **The default map** (`paths::DEFAULT_MAP_ID`) and the most complete example: large bounds, a high-resolution `"mesh"` surface with a heightfield, and a full set of auto-generated decor blockers (§8.3). Start here. |
+| `map_01`, `map_03`, `map_04` | Small test maps with `±22` bounds and a coarse 32-cell heightfield. Good for reading the format without scrolling through a large heightfield array. |
+| `map_template` | Empty starting point — copy this to begin a new map. |
 
-When in doubt, diff your map's `.world.json` against this one. The
+When in doubt, diff your map's `.world.json` against one of these. The
 structure is identical; only the numbers should differ.
+
+> The heightfield array dominates the file size (a 360-cell surface is
+> ~130k samples, several MB of JSON). Open a small map first if you just want
+> to understand the schema.
 
 ---
 

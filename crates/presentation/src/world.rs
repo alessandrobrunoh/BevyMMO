@@ -83,13 +83,14 @@ impl Plugin for WorldMapPlugin {
         app.init_resource::<ClientWorldMap>()
             .init_resource::<ClientSurfaceQuery>()
             .init_resource::<ClientPropMeshRegistry>()
+            .init_resource::<SteepSlopeDebug>()
             .add_systems(
                 Update,
                 (
                     load_map_when_in_game,
                     cleanup_map_when_not_in_game,
                     sync_surface_query,
-                    draw_steep_slopes,
+                    draw_steep_slopes.run_if(|debug: Res<SteepSlopeDebug>| debug.0),
                 )
                     .chain(),
             );
@@ -252,7 +253,13 @@ fn spawn_heightfield_visual(
         for column in 0..side {
             let x =
                 bounds.min_x + (bounds.max_x - bounds.min_x) * column as f32 / resolution as f32;
-            positions.push([x, heightfield.heights[row * side + column] - 0.02, z]);
+            // Heightfields are stored X-major with Z varying fastest:
+            // `index = x * stride + z` (see `HeightfieldData::sample_height`).
+            // `row` walks Z and `column` walks X, so the index is
+            // `column * side + row`. The transposed `row * side + column`
+            // form built a mirrored copy of the terrain that punched through
+            // the GLB surface across 41% of the map, by up to 22 m.
+            positions.push([x, heightfield.heights[column * side + row] - 0.02, z]);
             normals.push([0.0, 1.0, 0.0]);
         }
     }
@@ -392,6 +399,17 @@ fn spawn_prop_visual(
         }
     }
 }
+
+/// Toggle for the [`draw_steep_slopes`] overlay. Off by default.
+///
+/// The overlay is an authoring aid, not a game visual: it paints red gizmo
+/// crosses over every terrain cell steeper than the walkable limit. Left on,
+/// it draws red smears across the map and costs a full sweep of the
+/// heightfield every frame — 129 600 cells with four bilinear samples each on
+/// map_02. Flip it on from a debug system or the inspector when you need to
+/// see where the terrain stops being walkable.
+#[derive(Resource, Debug, Default, Clone, Copy)]
+pub struct SteepSlopeDebug(pub bool);
 
 fn draw_steep_slopes(
     world_map: Res<ClientWorldMap>,

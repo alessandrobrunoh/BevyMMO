@@ -1,7 +1,9 @@
 [package]
 name = "bevy_lightyear_game"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [features]
 default = [
@@ -49,3 +51,6 @@ bevymmo_editor = { path = "../../crates/editor", optional = true }
 [[bin]]
 name = "game"
 path = "src/main.rs"
+
+[lints]
+workspace = true

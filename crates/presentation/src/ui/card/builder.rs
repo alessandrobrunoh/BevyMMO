@@ -22,6 +22,8 @@ pub const DEFAULT_CARD_HEIGHT: f32 = 360.0;
 const HEADER_HEIGHT: f32 = 44.0;
 const INNER_PADDING: f32 = 14.0;
 const HEADER_BOTTOM_GAP: f32 = 12.0;
+/// Gap between a `CardPositioning::Right` card and the right edge of the viewport.
+const RIGHT_EDGE_GAP: f32 = 40.0;
 
 /// Layout variant for the close button inside the header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -144,27 +146,31 @@ impl<'a> CardBuilder<'a> {
 
         let header_style = HeaderStyle::from_theme(theme);
 
-        let (left, top) = match positioning {
-            CardPositioning::Center => (
-                Val::Px(match width {
-                    Val::Px(w) => (1920.0 - w) * 0.5,
-                    _ => 500.0,
-                }),
-                Val::Px(match height {
-                    Val::Px(h) => (1080.0 - h) * 0.5,
-                    _ => 300.0,
-                }),
-            ),
-            CardPositioning::Right => (
-                Val::Px(match width {
-                    Val::Px(w) => 1920.0 - w - 40.0,
-                    _ => 1200.0,
-                }),
-                Val::Px(match height {
-                    Val::Px(h) => (1080.0 - h) * 0.5,
-                    _ => 300.0,
-                }),
-            ),
+        // Cards are placed relative to the viewport, never to a fixed
+        // resolution: a 50% inset plus a negative half-size margin, the same
+        // pattern `ui::spellbook` uses. Centring against a hardcoded 1920x1080
+        // put every card partly or fully off-screen at the default 800x600
+        // window (`bins/game/src/main.rs`).
+        //
+        // Sizes whose extent is not known at build time (anything but
+        // `Val::Px`) fall back to `margin: auto` centring, which does not need
+        // the size.
+        let (top, bottom, margin_top) = match height {
+            Val::Px(h) => (Val::Percent(50.0), Val::Auto, Val::Px(-h * 0.5)),
+            _ => (Val::Px(0.0), Val::Px(0.0), Val::Auto),
+        };
+        let (left, right, margin_left) = match positioning {
+            CardPositioning::Center => match width {
+                Val::Px(w) => (Val::Percent(50.0), Val::Auto, Val::Px(-w * 0.5)),
+                _ => (Val::Px(0.0), Val::Px(0.0), Val::Auto),
+            },
+            CardPositioning::Right => (Val::Auto, Val::Px(RIGHT_EDGE_GAP), Val::Auto),
+        };
+        let margin = UiRect {
+            left: margin_left,
+            right: Val::Auto,
+            top: margin_top,
+            bottom: Val::Auto,
         };
 
         let mut card_entity = commands.spawn((
@@ -173,7 +179,10 @@ impl<'a> CardBuilder<'a> {
                 width,
                 height,
                 left,
+                right,
                 top,
+                bottom,
+                margin,
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(Val::Px(INNER_PADDING)),
                 row_gap: Val::Px(HEADER_BOTTOM_GAP),
@@ -409,6 +418,51 @@ mod tests {
         assert_eq!(close_buttons.iter(world).count(), 1);
     }
 
+    /// Regression: centring used to be computed against a hardcoded 1920x1080,
+    /// so at the default 800x600 window every card spawned off-screen. The
+    /// placement must be expressed in viewport-relative terms instead.
+    #[test]
+    fn centered_card_is_positioned_relative_to_the_viewport() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        let entity = CardBuilder::new(CardKind::Generic, "Test")
+            .width(Val::Px(400.0))
+            .height(Val::Px(300.0))
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let node = app.world().get::<Node>(entity).expect("card node");
+        assert_eq!(node.left, Val::Percent(50.0));
+        assert_eq!(node.top, Val::Percent(50.0));
+        assert_eq!(node.margin.left, Val::Px(-200.0));
+        assert_eq!(node.margin.top, Val::Px(-150.0));
+    }
+
+    #[test]
+    fn right_positioned_card_anchors_to_the_right_edge() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        let entity = CardBuilder::new(CardKind::Inventory, "Inventory")
+            .width(Val::Px(400.0))
+            .height(Val::Px(300.0))
+            .positioning(CardPositioning::Right)
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let node = app.world().get::<Node>(entity).expect("card node");
+        assert_eq!(node.right, Val::Px(RIGHT_EDGE_GAP));
+        assert_eq!(node.left, Val::Auto);
+        // Vertically centred like any other card.
+        assert_eq!(node.top, Val::Percent(50.0));
+        assert_eq!(node.margin.top, Val::Px(-150.0));
+    }
+
     #[test]
     fn coexist_flag_is_preserved_on_card_window() {
         let mut app = App::new();
@@ -424,11 +478,5 @@ mod tests {
         let world = app.world();
         let window = world.get::<CardWindow>(entity).expect("card window");
         assert_eq!(window.exclusivity, CardExclusivityPolicy::Coexist);
-    }
-
-    #[test]
-    fn half_negative_negates_half_of_pixel_value() {
-        assert_eq!(half_negative(Val::Px(100.0)), Val::Px(-50.0));
-        assert_eq!(half_negative(Val::Percent(50.0)), Val::Percent(50.0));
     }
 }

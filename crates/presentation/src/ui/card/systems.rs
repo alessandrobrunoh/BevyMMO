@@ -127,25 +127,28 @@ pub fn enforce_card_exclusivity(
 /// `CardWindow` header. The walk is bounded by the depth of the card tree,
 /// which is small by construction.
 pub fn close_card_on_button(
-    interactions: Query<&Interaction, (Changed<Interaction>, With<CloseCardButton>)>,
-    close_buttons: Query<&ChildOf, With<CloseCardButton>>,
+    close_buttons: Query<(&Interaction, &ChildOf), (Changed<Interaction>, With<CloseCardButton>)>,
     parents: Query<&ChildOf>,
     cards: Query<Entity, With<CardWindow>>,
     mut commands: Commands,
 ) {
-    let any_pressed = interactions
+    // Only the buttons actually pressed this frame close anything. Iterating
+    // every close button instead (and gating on "some button was pressed")
+    // closed every open card whenever one of them was clicked.
+    let pressed_parents: Vec<Entity> = close_buttons
         .iter()
-        .any(|interaction| *interaction == Interaction::Pressed);
-    if !any_pressed {
+        .filter(|(interaction, _)| **interaction == Interaction::Pressed)
+        .map(|(_, close_parent)| close_parent.0)
+        .collect();
+    if pressed_parents.is_empty() {
         return;
     }
 
     let card_set: HashSet<Entity> = cards.iter().collect();
 
-    // For every close button whose interaction changed this frame, walk up
-    // until we hit a CardWindow ancestor and despawn it.
-    for close_parent in close_buttons.iter() {
-        let mut current = Some(close_parent.0);
+    // Walk up from each pressed button until we hit its CardWindow ancestor.
+    for start in pressed_parents {
+        let mut current = Some(start);
         while let Some(entity) = current {
             if card_set.contains(&entity) {
                 commands.entity(entity).despawn();
@@ -242,6 +245,74 @@ mod tests {
             app.world().entities().contains(coexist),
             "coexist card survives"
         );
+    }
+
+    /// Spawns `card -> header -> close button`, mirroring the real tree built
+    /// by [`super::super::builder::CardBuilder`], so the parent walk is exercised.
+    fn spawn_card_with_close_button(
+        commands: &mut Commands,
+        exclusivity: CardExclusivityPolicy,
+    ) -> (Entity, Entity) {
+        let card = spawn_card(commands, exclusivity);
+        let mut button = Entity::PLACEHOLDER;
+        commands.entity(card).with_children(|card_root| {
+            card_root.spawn(()).with_children(|header| {
+                button = header
+                    .spawn((
+                        CloseCardButton {
+                            kind: super::super::components::CardKind::Generic,
+                        },
+                        Interaction::None,
+                    ))
+                    .id();
+            });
+        });
+        (card, button)
+    }
+
+    #[test]
+    fn close_button_only_despawns_its_own_card() {
+        let mut app = App::new();
+        app.add_systems(Update, close_card_on_button);
+
+        let (first_card, first_button, second_card) = {
+            let mut commands = app.world_mut().commands();
+            let (first_card, first_button) =
+                spawn_card_with_close_button(&mut commands, CardExclusivityPolicy::Coexist);
+            let (second_card, _) =
+                spawn_card_with_close_button(&mut commands, CardExclusivityPolicy::Coexist);
+            (first_card, first_button, second_card)
+        };
+        app.update();
+
+        *app.world_mut()
+            .get_mut::<Interaction>(first_button)
+            .unwrap() = Interaction::Pressed;
+        app.update();
+
+        assert!(
+            !app.world().entities().contains(first_card),
+            "the clicked card must close"
+        );
+        assert!(
+            app.world().entities().contains(second_card),
+            "an unrelated open card must stay open"
+        );
+    }
+
+    #[test]
+    fn unpressed_close_buttons_do_not_despawn_cards() {
+        let mut app = App::new();
+        app.add_systems(Update, close_card_on_button);
+
+        let card = {
+            let mut commands = app.world_mut().commands();
+            spawn_card_with_close_button(&mut commands, CardExclusivityPolicy::Coexist).0
+        };
+        app.update();
+        app.update();
+
+        assert!(app.world().entities().contains(card));
     }
 
     #[test]

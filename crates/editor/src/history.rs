@@ -98,6 +98,15 @@ mod tests {
             },
             terrain: bevymmo_shared::world::Terrain::default(),
             props: Vec::new(),
+            // v2 sections: empty here, the history tests only exercise props.
+            world_metrics: None,
+            surfaces: Vec::new(),
+            traversals: Vec::new(),
+            blockers: Vec::new(),
+            test_route: Vec::new(),
+            test_checklist: Vec::new(),
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
         }
     }
 

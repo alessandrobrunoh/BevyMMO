@@ -1,16 +1,27 @@
 //! Camera occlusion handling for the isometric game camera.
 //!
-//! Props are authored as two glTF nodes:
-//! - `<Name>_Base` (trunk, floor) — always rendered.
-//! - `<Name>_Top`  (canopy, roof) — hidden when it blocks the line of sight
-//!   between the game camera and the locally controlled player.
+//! Anything from the map scene that comes between the camera and the locally
+//! controlled player fades to [`OCCLUDED_ALPHA`] instead of vanishing, so the
+//! player keeps reading what is actually in front of them.
 //!
-//! The `_Top` suffix is the only authoring contract: when Bevy instantiates a
-//! scene, every glTF node becomes an entity that retains its `Name`, so the
-//! [`tag_occludable_tops`] system can promote them to [`OccludableTop`]
-//! automatically with no per-asset setup. See `plans/occlusion_fading_plan.md`
-//! for the full rationale (visibility toggle vs. alpha blend, radius
-//! auto-detection via Bevy's `Aabb`).
+//! **What can fade.** Every mesh node instantiated from the map GLB, except:
+//! - reserved world-format nodes (`WALKABLE_*`, `BLOCKING_*`, …) — the terrain
+//!   must never go translucent;
+//! - nodes whose name ends in `_Base` — the trunk/floor half of a prop, which
+//!   stays put while its `_Top` fades.
+//!
+//! Scoping by scene ancestry rather than by name is what keeps the player's own
+//! model and the generated terrain mesh out of the set: both are spawned
+//! outside the map scene root.
+//!
+//! **Per-entity materials.** glTF materials are shared by every instance that
+//! uses them — map_02's 232 rocks share a handful — so fading one would fade
+//! them all. Each occluder gets a clone of its material when tagged and only
+//! ever writes to that clone.
+//!
+//! The work is split in two systems on purpose: [`update_camera_occlusion`]
+//! decides *whether* each occluder is in the way (pure geometry, no timing) and
+//! [`animate_occluder_fade`] walks the alpha toward that decision.
 
 use bevy::camera::primitives::Aabb;
 use bevy::prelude::*;
@@ -20,90 +31,170 @@ use lightyear::prelude::Controlled;
 use bevymmo_shared::network::protocol::Position;
 
 use super::systems::GameCamera;
+use crate::world::MapSceneVisual;
 
-/// Suffix on a glTF node `Name` that marks a canopy/roof as occludable.
-///
-/// Mirrors the existing `WALKABLE_NODE_PREFIX` convention from
-/// `bevymmo_shared::world::loader`: authoring rules live in the asset, the
-/// client just reads them.
-pub const OCCLUDABLE_TOP_SUFFIX: &str = "_Top";
+/// Suffix marking the half of a prop that must never fade: trunks, floors,
+/// anything that would look wrong left floating.
+pub const OCCLUDER_BASE_SUFFIX: &str = "_Base";
 
-/// Conservative radius (in world units) used while an occluder's mesh asset is
-/// still streaming in and Bevy has not yet attached its `Aabb`.
-///
-/// Picked small enough to avoid over-hiding during the loading window, large
-/// enough that a freshly spawned tree next to the player does not flash its
-/// canopy before the first AABB lands.
-const DEFAULT_OCCLUDER_RADIUS: f32 = 2.0;
+/// Node-name prefixes owned by the world format. Gameplay volumes and the
+/// terrain itself, never props to fade.
+const RESERVED_NODE_PREFIXES: [&str; 4] = ["WALKABLE_", "BLOCKING_", "TRAVERSAL_", "__bevymmo"];
 
-/// Query type for freshly added named nodes that are not yet tagged.
+/// Alpha an occluder fades down to.
 ///
-/// Factored out to keep clippy's `type_complexity` lint quiet.
-type NewNamedQuery<'w, 's> =
-    Query<'w, 's, (Entity, &'static Name), (Added<Name>, Without<OccludableTop>)>;
+/// Not zero on purpose: a ghosted rock still tells the player a rock is there,
+/// which a vanished one does not. Kept low because occluders stack — a copse
+/// puts four or five faded canopies on the same sight line, and at 0.25 each
+/// they still add up to an opaque wall.
+pub const OCCLUDED_ALPHA: f32 = 0.10;
 
-/// Marks a scene node as the occludable "Top" of a prop.
+/// Alpha units per second while fading — the full range in about 0.15 s.
+const FADE_RATE_PER_SEC: f32 = 5.0;
+
+/// World-space slack added around an occluder's box before testing it.
 ///
-/// Inserted automatically by [`tag_occludable_tops`] when the node `Name`
-/// ends with [`OCCLUDABLE_TOP_SUFFIX`]. Carries no per-instance data: the
-/// occlusion radius is derived at runtime from Bevy's `Aabb` (see
-/// [`occluder_world_radius`]) so it tracks whatever scale the `#[props]`
-/// macro and the manifest apply.
+/// The test uses a line but the character is roughly 0.7 m wide, so without
+/// margin a box edge grazing that line stays opaque while still clipping a
+/// shoulder.
+const OCCLUSION_MARGIN_M: f32 = 0.6;
+
+/// Height above the player's feet that the occlusion line aims at.
 ///
-/// # Example
-/// ```ignore
-/// // Authored in Blender as a node named "Yggdrasil_Top".
-/// // At runtime, the scene instance carries the `Name` and the tagging
-/// // system marks it:
-/// commands.entity(entity).insert(OccludableTop);
-/// ```
+/// `Position` sits on the ground; aiming at the torso catches a canopy directly
+/// overhead and ignores a low rock the character's head clears.
+const PLAYER_FOCUS_HEIGHT_M: f32 = 1.2;
+
+/// Marks a map-scene node as something that may fade when it blocks the view.
 #[derive(Component, Reflect, Clone, Copy, Default)]
 #[reflect(Component)]
-pub struct OccludableTop;
+pub struct Occludable;
 
-/// Promotes freshly instantiated glTF nodes ending with `_Top` to
-/// [`OccludableTop`].
+/// Marks a node [`tag_occludables`] already examined and rejected, so the scan
+/// does not reconsider it every frame.
+#[derive(Component, Reflect, Clone, Copy, Default)]
+#[reflect(Component)]
+pub struct NotOccludable;
+
+/// Per-occluder fade state, plus the private material clone it writes to.
+#[derive(Component, Reflect, Clone)]
+#[reflect(Component)]
+pub struct OccluderFade {
+    /// Clone of the node's material, owned by this entity alone.
+    pub material: Handle<StandardMaterial>,
+    /// Alpha the occluder is heading toward: [`OCCLUDED_ALPHA`] or its
+    /// authored opacity.
+    pub target: f32,
+    /// Alpha currently written to [`Self::material`].
+    pub current: f32,
+    /// The material's authored alpha, restored when nothing is in the way.
+    pub opaque_alpha: f32,
+}
+
+/// Whether a glTF node name denotes a prop that may fade.
+fn is_occludable_name(name: &str) -> bool {
+    if RESERVED_NODE_PREFIXES
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+    {
+        return false;
+    }
+    !strip_duplicate_suffix(name).ends_with(OCCLUDER_BASE_SUFFIX)
+}
+
+/// Drops a trailing Blender duplicate index (`.001`), leaving other dotted
+/// tails alone.
 ///
-/// Runs on `Added<Name>` so it fires once per scene node the first frame it
-/// appears (initial spawn or re-entry into `InGame`). Idempotent: the query
-/// filters out entities already tagged with `OccludableTop`, so a second
-/// insert never happens.
-pub fn tag_occludable_tops(mut commands: Commands, new_named: NewNamedQuery) {
-    for (entity, name) in &new_named {
-        if name.as_str().ends_with(OCCLUDABLE_TOP_SUFFIX) {
-            commands.entity(entity).insert(OccludableTop);
-        }
+/// Blender appends `.001`, `.002`, … to every duplicate and the suffix survives
+/// the glTF export, so suffix tests have to strip it first. Before this was
+/// handled, a plain `ends_with("_Top")` matched only 5 of map_02's 73 canopies.
+fn strip_duplicate_suffix(name: &str) -> &str {
+    match name.rsplit_once('.') {
+        Some((head, tail)) if !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()) => head,
+        _ => name,
     }
 }
 
-/// Hides occludable tops that block the line of sight between the game camera
-/// and the locally controlled player.
+type UnexaminedNodes<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static Name,
+        &'static MeshMaterial3d<StandardMaterial>,
+    ),
+    (With<Mesh3d>, Without<Occludable>, Without<NotOccludable>),
+>;
+
+/// Tags map-scene props as [`Occludable`] and gives each one a private material.
 ///
-/// Algorithm (per occluder, all in world space):
-/// 1. **Resolve radius** via [`occluder_world_radius`] (bounding-sphere from
-///    Bevy's `Aabb`, scaled by the entity's global transform).
-/// 2. **Distance cull**: if the occluder is farther from the camera than the
-///    player plus its own radius, it cannot overlap the camera→player segment.
-/// 3. **Ray projection**: project the occluder center onto the normalized
-///    camera→player ray.
-/// 4. **Segment test**: hide when the projection lands between camera and
-///    player (`0 < projection < distance`) and the perpendicular distance
-///    from the ray is below `radius`.
-/// 5. **Player-under-canopy**: also hide when the player itself is inside the
-///    occluder's radius, so the canopy does not cover the character when
-///    standing under the tree.
+/// Scans unexamined mesh nodes rather than reacting to `Added<Name>`: scene
+/// instantiation sets a node's name and its parent in the same frame but not
+/// necessarily before this system observes it, and one missed `Added` would
+/// leave a prop permanently opaque. Every entity is marked one way or the
+/// other, so the scan settles to nothing once the scene has loaded.
+pub fn tag_occludables(
+    mut commands: Commands,
+    unexamined: UnexaminedNodes,
+    parents: Query<&ChildOf>,
+    map_roots: Query<Entity, With<MapSceneVisual>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for (entity, name, material) in &unexamined {
+        let belongs_to_map = map_roots
+            .iter()
+            .any(|root| is_descendant_of(entity, root, &parents));
+
+        if !belongs_to_map || !is_occludable_name(name.as_str()) {
+            commands.entity(entity).insert(NotOccludable);
+            continue;
+        }
+
+        let Some(source) = materials.get(&material.0).cloned() else {
+            // Asset still streaming in: leave the entity unexamined so a later
+            // frame picks it up.
+            continue;
+        };
+
+        let opaque_alpha = source.base_color.alpha();
+        let clone = materials.add(source);
+
+        commands.entity(entity).insert((
+            Occludable,
+            MeshMaterial3d(clone.clone()),
+            OccluderFade {
+                material: clone,
+                target: opaque_alpha,
+                current: opaque_alpha,
+                opaque_alpha,
+            },
+        ));
+    }
+}
+
+fn is_descendant_of(entity: Entity, root: Entity, parents: &Query<&ChildOf>) -> bool {
+    let mut current = entity;
+    while let Ok(parent) = parents.get(current) {
+        if parent.0 == root {
+            return true;
+        }
+        current = parent.0;
+    }
+    false
+}
+
+/// Decides, per occluder, whether it currently stands between camera and player.
 ///
-/// Thread-safety: runs on the main schedule, single-threaded per Bevy's
-/// `Update`. No I/O, no allocations.
+/// Tests the camera→player line against the occluder's box in **local space**:
+/// the line is transformed by the inverse of the node's global transform and
+/// clipped against the local `Aabb` with a slab test. The bounding-sphere
+/// approximation this replaced was fine for a 3 m canopy but wildly over-eager
+/// for map_02's boulders, whose 20×7×20 half-extents give a 29 m bounding
+/// radius — they would have ghosted from thirty metres off to the side.
 pub fn update_camera_occlusion(
     player_query: Query<&Position, With<Controlled>>,
     camera_query: Query<&Transform, With<GameCamera>>,
-    mut occludables: Query<(
-        &GlobalTransform,
-        Option<&Aabb>,
-        &OccludableTop,
-        &mut Visibility,
-    )>,
+    mut occluders: Query<(&GlobalTransform, Option<&Aabb>, &mut OccluderFade), With<Occludable>>,
 ) {
     let Ok(player_position) = player_query.single() else {
         return;
@@ -113,73 +204,123 @@ pub fn update_camera_occlusion(
     };
 
     let camera_pos = camera_transform.translation;
-    let player_pos = player_position.0;
-    let camera_to_player = player_pos - camera_pos;
-    let camera_to_player_dist = camera_to_player.length();
-    if camera_to_player_dist < f32::EPSILON {
+    let focus_pos = player_position.0 + Vec3::Y * PLAYER_FOCUS_HEIGHT_M;
+    if camera_pos.distance_squared(focus_pos) < f32::EPSILON {
         return;
     }
-    let camera_to_player_dir = camera_to_player / camera_to_player_dist;
 
-    for (transform, aabb, _occludable, mut visibility) in occludables.iter_mut() {
-        let radius = occluder_world_radius(transform, aabb);
-        let occluder_pos = transform.translation();
-
-        // Step 1: distance cull — occluder is past the player from the
-        // camera's POV, no chance to overlap the camera→player segment.
-        let camera_to_occluder_dist = camera_pos.distance(occluder_pos);
-        if camera_to_occluder_dist > camera_to_player_dist + radius {
-            *visibility = Visibility::Inherited;
-            continue;
-        }
-
-        // Step 2 & 3: project the occluder center onto the camera→player ray.
-        let to_occluder = occluder_pos - camera_pos;
-        let projection = to_occluder.dot(camera_to_player_dir);
-        let between_camera_and_player = projection > 0.0 && projection < camera_to_player_dist;
-
-        let is_blocking_segment = if between_camera_and_player {
-            let closest_point_on_ray = camera_pos + camera_to_player_dir * projection;
-            closest_point_on_ray.distance(occluder_pos) < radius
-        } else {
-            false
+    for (transform, aabb, mut fade) in occluders.iter_mut() {
+        let blocking = match aabb {
+            Some(aabb) => segment_hits_aabb(camera_pos, focus_pos, transform, aabb),
+            // Bounds not computed yet: assume clear rather than ghosting a prop
+            // that may be nowhere near the camera.
+            None => false,
         };
 
-        // Step 4: player standing under the canopy should also reveal the
-        // character.
-        let player_under_canopy = occluder_pos.distance(player_pos) < radius;
-
-        *visibility = if is_blocking_segment || player_under_canopy {
-            Visibility::Hidden
+        fade.target = if blocking {
+            OCCLUDED_ALPHA
         } else {
-            Visibility::Inherited
+            fade.opaque_alpha
         };
     }
 }
 
-/// Derives the world-space bounding-sphere radius of an occluder.
+/// Whether the segment `start`→`end` intersects an entity's local-space box.
 ///
-/// Uses Bevy's automatically-computed `Aabb` (attached by `bevy_render` to
-/// every `Mesh3d` entity) and scales it by the entity's global transform so
-/// the result reflects the actual in-game size — including any per-placement
-/// scale from the manifest and the `scale = (...)` attribute of the `#[props]`
-/// macro.
+/// Standard slab test, run in local space so a rotated prop is tested against
+/// its true box instead of a padded world-space one. [`OCCLUSION_MARGIN_M`] is
+/// converted per-axis by the node's world scale before being applied.
+fn segment_hits_aabb(start: Vec3, end: Vec3, transform: &GlobalTransform, aabb: &Aabb) -> bool {
+    let inverse = transform.affine().inverse();
+    let origin = inverse.transform_point3(start);
+    let direction = inverse.transform_point3(end) - origin;
+
+    let scale = transform.compute_transform().scale.abs();
+    let margin = Vec3::new(
+        axis_margin(scale.x),
+        axis_margin(scale.y),
+        axis_margin(scale.z),
+    );
+
+    let center = Vec3::from(aabb.center);
+    let half = Vec3::from(aabb.half_extents) + margin;
+    let min = center - half;
+    let max = center + half;
+
+    let mut enter = 0.0_f32;
+    let mut exit = 1.0_f32;
+    for axis in 0..3 {
+        if direction[axis].abs() < 1e-6 {
+            // Parallel to this slab: either always within it, or never.
+            if origin[axis] < min[axis] || origin[axis] > max[axis] {
+                return false;
+            }
+            continue;
+        }
+        let inv_dir = 1.0 / direction[axis];
+        let mut near = (min[axis] - origin[axis]) * inv_dir;
+        let mut far = (max[axis] - origin[axis]) * inv_dir;
+        if near > far {
+            std::mem::swap(&mut near, &mut far);
+        }
+        enter = enter.max(near);
+        exit = exit.min(far);
+        if enter > exit {
+            return false;
+        }
+    }
+    true
+}
+
+fn axis_margin(scale: f32) -> f32 {
+    if scale > 1e-6 {
+        OCCLUSION_MARGIN_M / scale
+    } else {
+        0.0
+    }
+}
+
+/// Walks each occluder's alpha toward its target and writes it to the material.
 ///
-/// Returns [`DEFAULT_OCCLUDER_RADIUS`] when `aabb` is `None` (asset still
-/// streaming in). This keeps occlusion stable during the brief loading window
-/// rather than letting canopies pop fully visible for a frame or two.
-fn occluder_world_radius(transform: &GlobalTransform, aabb: Option<&Aabb>) -> f32 {
-    let Some(aabb) = aabb else {
-        return DEFAULT_OCCLUDER_RADIUS;
-    };
-    // `Aabb::half_extents` is in the entity's local space. Multiplying by the
-    // global transform's scale yields world-space half extents; their length
-    // is the bounding-sphere radius (tight for spheres, conservative for
-    // elongated canopies — which is what we want for occlusion: prefer to
-    // hide a bit too eagerly than to leak the player).
-    let world_scale = transform.compute_transform().scale;
-    let world_half_extents = aabb.half_extents * Vec3A::from(world_scale);
-    world_half_extents.length()
+/// `alpha_mode` flips to `Blend` only while the material is actually
+/// translucent: leaving every prop in the transparency pass would cost sorting
+/// work for the ~300 props that are opaque on any given frame.
+pub fn animate_occluder_fade(
+    time: Res<Time>,
+    mut occluders: Query<&mut OccluderFade>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let step = FADE_RATE_PER_SEC * time.delta_secs();
+    if step <= 0.0 {
+        return;
+    }
+
+    for mut fade in occluders.iter_mut() {
+        if fade.current == fade.target {
+            continue;
+        }
+
+        let delta = (fade.target - fade.current).clamp(-step, step);
+        let next = fade.current + delta;
+        // Snap once within half a step so the equality check above can retire
+        // this entity instead of creeping toward the target forever.
+        fade.current = if (fade.target - next).abs() < step * 0.5 {
+            fade.target
+        } else {
+            next
+        };
+        let current = fade.current;
+
+        let Some(mut material) = materials.get_mut(&fade.material) else {
+            continue;
+        };
+        material.base_color.set_alpha(current);
+        material.alpha_mode = if current >= fade.opaque_alpha {
+            AlphaMode::Opaque
+        } else {
+            AlphaMode::Blend
+        };
+    }
 }
 
 #[cfg(test)]
@@ -188,29 +329,48 @@ mod tests {
     use bevy::ecs::system::RunSystemOnce;
     use bevy::math::Vec3A;
 
-    /// Spawns an occluder at `translation` with a unit-scale global transform
-    /// and a known local-space `half_extent` (so the bounding-sphere radius is
-    /// `half_extent * sqrt(3)`).
-    fn occluder_entity(world: &mut World, translation: Vec3, half_extent: f32) -> Entity {
+    fn test_world() -> World {
+        let mut world = World::new();
+        world.init_resource::<Assets<StandardMaterial>>();
+        world
+    }
+
+    /// Spawns an occluder at `translation` with unit scale and the given
+    /// local-space half extents.
+    fn occluder_with_extents(world: &mut World, translation: Vec3, half: Vec3A) -> Entity {
+        let material = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
         world
             .spawn((
                 Transform::from_translation(translation),
                 GlobalTransform::from_translation(translation),
                 Visibility::Inherited,
-                OccludableTop,
+                Occludable,
+                OccluderFade {
+                    material,
+                    target: 1.0,
+                    current: 1.0,
+                    opaque_alpha: 1.0,
+                },
                 Aabb {
                     center: Vec3A::ZERO,
-                    half_extents: Vec3A::splat(half_extent),
+                    half_extents: half,
                 },
             ))
             .id()
     }
 
-    fn visibility_of(world: &mut World, entity: Entity) -> Visibility {
-        *world
+    fn occluder_entity(world: &mut World, translation: Vec3, half_extent: f32) -> Entity {
+        occluder_with_extents(world, translation, Vec3A::splat(half_extent))
+    }
+
+    fn target_of(world: &World, entity: Entity) -> f32 {
+        world
             .entity(entity)
-            .get::<Visibility>()
-            .expect("occluder has Visibility")
+            .get::<OccluderFade>()
+            .expect("occluder has fade state")
+            .target
     }
 
     /// Spawns a `GameCamera` at `camera` and a `Controlled` player at `player`,
@@ -228,148 +388,129 @@ mod tests {
     }
 
     #[test]
-    fn occluder_between_camera_and_player_is_hidden() {
-        // Camera looks down the +Z axis toward the player.
-        let camera = Vec3::new(0.0, 0.0, -10.0);
-        let player = Vec3::new(0.0, 0.0, 10.0);
-        let mut world = World::new();
+    fn occluder_between_camera_and_player_fades() {
+        let mut world = test_world();
+        let entity = occluder_entity(&mut world, Vec3::ZERO, 5.0);
 
-        // Occluder halfway, dead-center on the camera→player segment. Half
-        // extent 5.0 → bounding radius ~8.66, comfortably larger than the
-        // perpendicular distance (0).
-        let entity = occluder_entity(&mut world, Vec3::new(0.0, 0.0, 0.0), 5.0);
+        run_occlusion(&mut world, Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.0, 10.0));
 
-        run_occlusion(&mut world, camera, player);
         assert_eq!(
-            visibility_of(&mut world, entity),
-            Visibility::Hidden,
-            "occluder on the segment must be hidden"
+            target_of(&world, entity),
+            OCCLUDED_ALPHA,
+            "an occluder on the segment must fade"
         );
     }
 
     #[test]
-    fn occluder_off_axis_stays_visible() {
-        let camera = Vec3::new(0.0, 0.0, -10.0);
-        let player = Vec3::new(0.0, 0.0, 10.0);
-        let mut world = World::new();
-
-        // Half extent 1.0 → bounding radius ~1.73. Occluder sits 50 units to
-        // the side, far outside the segment's tolerance.
+    fn occluder_off_axis_stays_opaque() {
+        let mut world = test_world();
         let entity = occluder_entity(&mut world, Vec3::new(50.0, 0.0, 0.0), 1.0);
 
-        run_occlusion(&mut world, camera, player);
-        assert_eq!(
-            visibility_of(&mut world, entity),
-            Visibility::Inherited,
-            "off-axis occluder must stay visible"
-        );
+        run_occlusion(&mut world, Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.0, 10.0));
+
+        assert_eq!(target_of(&world, entity), 1.0);
     }
 
     #[test]
-    fn occluder_behind_player_stays_visible() {
-        let camera = Vec3::new(0.0, 0.0, -10.0);
-        let player = Vec3::new(0.0, 0.0, 10.0);
-        let mut world = World::new();
-
-        // Occluder lies past the player along the same axis.
+    fn occluder_behind_player_stays_opaque() {
+        let mut world = test_world();
+        // Past the player along the same axis: the segment stops short of it.
         let entity = occluder_entity(&mut world, Vec3::new(0.0, 0.0, 20.0), 1.0);
 
-        run_occlusion(&mut world, camera, player);
-        assert_eq!(
-            visibility_of(&mut world, entity),
-            Visibility::Inherited,
-            "occluder behind the player must stay visible"
-        );
+        run_occlusion(&mut world, Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.0, 10.0));
+
+        assert_eq!(target_of(&world, entity), 1.0);
     }
 
     #[test]
-    fn player_inside_canopy_is_hidden() {
-        // Isometric-style camera, player at the origin.
-        let camera = Vec3::new(0.0, 25.0, 25.0);
-        let player = Vec3::ZERO;
-        let mut world = World::new();
-
-        // Canopy half extent 5.0 → bounding radius ~8.66, centered 4 units
-        // above the player (typical tree placement): player is inside.
+    fn canopy_over_the_player_fades() {
+        let mut world = test_world();
+        // Canopy centred 4 m above the player, as a tree is placed.
         let entity = occluder_entity(&mut world, Vec3::new(0.0, 4.0, 0.0), 5.0);
 
-        run_occlusion(&mut world, camera, player);
+        run_occlusion(&mut world, Vec3::new(0.0, 25.0, 25.0), Vec3::ZERO);
+
         assert_eq!(
-            visibility_of(&mut world, entity),
-            Visibility::Hidden,
-            "canopy over the player must hide so the character stays visible"
+            target_of(&world, entity),
+            OCCLUDED_ALPHA,
+            "a canopy over the player must fade so the character stays readable"
+        );
+    }
+
+    /// A boulder the size of map_02's `Rock_Large` must not ghost from far
+    /// away. Its bounding sphere is ~29 m — the radius the old sphere test used
+    /// as its hit threshold — while the box itself is only 20 m wide.
+    #[test]
+    fn large_boulder_clear_of_the_line_stays_opaque() {
+        let mut world = test_world();
+        let entity = occluder_with_extents(
+            &mut world,
+            Vec3::new(28.0, 7.0, 0.0),
+            Vec3A::new(20.0, 7.0, 20.0),
+        );
+
+        run_occlusion(&mut world, Vec3::new(0.0, 45.0, -45.0), Vec3::ZERO);
+
+        assert_eq!(
+            target_of(&world, entity),
+            1.0,
+            "a boulder whose box clears the sight line must stay opaque"
         );
     }
 
     #[test]
     fn occlusion_noops_without_controlled_player() {
-        let mut world = World::new();
+        let mut world = test_world();
         world.spawn((GameCamera, Transform::from_translation(Vec3::ZERO)));
-
         let entity = occluder_entity(&mut world, Vec3::ZERO, 1.0);
 
         world
             .run_system_once(update_camera_occlusion)
             .expect("system runs");
-        assert_eq!(
-            visibility_of(&mut world, entity),
-            Visibility::Inherited,
-            "no controlled player -> occlusion must not flip visibility"
-        );
+
+        assert_eq!(target_of(&world, entity), 1.0);
     }
 
     #[test]
-    fn tag_occludable_tops_only_tags_top_suffixed_names() {
-        let mut world = World::new();
-        let top_entity = world.spawn(Name::new("Yggdrasil_Top")).id();
-        let base_entity = world.spawn(Name::new("Yggdrasil_Base")).id();
-        let other_entity = world.spawn(Name::new("Rock")).id();
+    fn occludable_names_exclude_bases_and_reserved_nodes() {
+        assert!(is_occludable_name("Template_Rock_Large_Rock_Large.020"));
+        assert!(is_occludable_name(
+            "Template_Tree_Pine_Large_Tree_Pine_Large_Top.018"
+        ));
+        assert!(!is_occludable_name(
+            "Template_Tree_Pine_Large_Tree_Pine_Large_Base.018"
+        ));
+        assert!(!is_occludable_name("WALKABLE_map_02"));
+        assert!(!is_occludable_name("BLOCKING_Ridge"));
+        assert!(!is_occludable_name("__bevymmo_map_meta"));
+        // A dotted tail that is not a duplicate index must not be stripped.
+        assert!(is_occludable_name("Tree_Base.old"));
+    }
 
+    #[test]
+    fn fade_walks_to_the_target_and_settles_exactly_on_it() {
+        let mut world = test_world();
+        let entity = occluder_entity(&mut world, Vec3::ZERO, 1.0);
         world
-            .run_system_once(tag_occludable_tops)
-            .expect("system runs");
+            .entity_mut(entity)
+            .get_mut::<OccluderFade>()
+            .expect("fade state")
+            .target = OCCLUDED_ALPHA;
 
-        assert!(
-            world.entity(top_entity).contains::<OccludableTop>(),
-            "_Top-suffixed node must be tagged"
-        );
-        assert!(
-            !world.entity(base_entity).contains::<OccludableTop>(),
-            "_Base node must not be tagged"
-        );
-        assert!(
-            !world.entity(other_entity).contains::<OccludableTop>(),
-            "unrelated node must not be tagged"
-        );
-    }
+        let mut time = Time::<()>::default();
+        time.advance_by(std::time::Duration::from_millis(50));
+        world.insert_resource(time);
 
-    #[test]
-    fn radius_scales_with_global_transform() {
-        // Half extent 1.0 in local space, but the entity is scaled ×3 in the
-        // world → world-space bounding radius must be 3 * sqrt(3) ~= 5.196.
-        let transform = Transform::from_translation(Vec3::ZERO).with_scale(Vec3::splat(3.0));
-        let global = GlobalTransform::from(transform);
-        let aabb = Aabb {
-            center: Vec3A::ZERO,
-            half_extents: Vec3A::splat(1.0),
-        };
+        for _ in 0..40 {
+            world
+                .run_system_once(animate_occluder_fade)
+                .expect("system runs");
+        }
 
-        let radius = occluder_world_radius(&global, Some(&aabb));
-        let expected = 3.0_f32 * 3.0_f32.sqrt();
-        assert!(
-            (radius - expected).abs() < 1e-4,
-            "expected radius {expected}, got {radius}"
-        );
-    }
-
-    #[test]
-    fn radius_falls_back_to_default_without_aabb() {
-        let transform = GlobalTransform::IDENTITY;
-
-        let radius = occluder_world_radius(&transform, None);
+        let fade = world.entity(entity).get::<OccluderFade>().expect("fade");
         assert_eq!(
-            radius, DEFAULT_OCCLUDER_RADIUS,
-            "missing Aabb must fall back to DEFAULT_OCCLUDER_RADIUS"
+            fade.current, OCCLUDED_ALPHA,
+            "the fade must land exactly on the target, not creep near it"
         );
     }
 }

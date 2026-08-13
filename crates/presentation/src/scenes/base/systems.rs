@@ -1,5 +1,6 @@
 //! Lifecycle of the game scene, driven by [`GameScreen`].
 
+use bevy::light::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
 use lightyear::prelude::Controlled;
 
@@ -21,12 +22,15 @@ pub struct GameSceneRoot;
 #[derive(Component, Debug, Clone, Copy)]
 pub struct GameCamera;
 
-// Camera zoom limits (measured as height from ground). Map 02 spans roughly
-// 360x360 world units, so the original 15-unit height showed only a tiny
-// fraction of it.
-const DEFAULT_CAMERA_HEIGHT: f32 = 45.0;
-const MIN_CAMERA_HEIGHT: f32 = 20.0;
-const MAX_CAMERA_HEIGHT: f32 = 90.0;
+// Camera zoom limits, measured as height above the player.
+//
+// These are what decide how big the character reads on screen. At 45 the whole
+// 360 m map was legible but a 1.7 m character was a few pixels tall; the
+// isometric MMOs this takes after sit around 16-20 m. The range still opens up
+// to a wide survey view, it just no longer starts there.
+const DEFAULT_CAMERA_HEIGHT: f32 = 20.0;
+const MIN_CAMERA_HEIGHT: f32 = 10.0;
+const MAX_CAMERA_HEIGHT: f32 = 70.0;
 
 /// Resource to store the current camera zoom height.
 #[derive(Resource, Debug, Clone)]
@@ -80,23 +84,28 @@ pub fn update_game_scene_lifecycle(
 /// // Player at (10, 0, 5) -> camera at (10, zoomed_height, zoomed_depth) looking at the player.
 /// ```
 pub fn follow_controlled_player(
-    player: Query<&Position, With<Controlled>>,
+    player: Query<(&Position, Option<&Transform>), (With<Controlled>, Without<GameCamera>)>,
     mut camera: Query<&mut Transform, With<GameCamera>>,
     zoom: Res<CameraZoom>,
 ) {
-    let Ok(player_position) = player.single() else {
+    let Ok((player_position, player_transform)) = player.single() else {
         return;
     };
     let Ok(mut camera_transform) = camera.single_mut() else {
         return;
     };
 
-    // Calculate the camera offset based on current zoom height
+    // Follow the *rendered* position, not the simulated one: `Position` only
+    // moves on the fixed schedule, so anchoring the camera to it re-introduces
+    // the per-tick stepping that `RenderSmoothing` exists to remove — and a
+    // stuttering camera is more noticeable than a stuttering character.
+    let anchor = player_transform
+        .map(|transform| transform.translation)
+        .unwrap_or(player_position.0);
+
     let camera_offset = Vec3::new(0.0, zoom.height, zoom.height);
-    let target = player_position.0 + camera_offset;
-    let look_at = player_position.0;
-    camera_transform.translation = target;
-    camera_transform.look_at(look_at, Vec3::Y);
+    camera_transform.translation = anchor + camera_offset;
+    camera_transform.look_at(anchor, Vec3::Y);
 }
 
 /// Handles camera zoom input from keyboard.
@@ -143,15 +152,39 @@ fn spawn_game_scene(commands: &mut Commands) {
                 Name::new("Game Camera"),
                 GameCamera,
                 Camera3d::default(),
+                // `AmbientLight` is a per-camera override of
+                // `GlobalAmbientLight`, whose default brightness of 80 left
+                // everything the sun does not reach almost black. The editor
+                // already uses 250; the game should not look darker than the
+                // tool the map is authored in.
+                AmbientLight {
+                    color: Color::WHITE,
+                    brightness: 250.0,
+                    affects_lightmapped_meshes: true,
+                },
                 cam_transform,
             ));
 
             parent.spawn((
                 Name::new("Sun Light"),
                 DirectionalLight {
+                    // Match the editor's sun (`editor::ground`): the Bevy
+                    // default of 10 000 lux left the map noticeably flatter
+                    // in game than in the tool it is authored with.
+                    illuminance: 12_000.0,
                     shadow_maps_enabled: true,
                     ..default()
                 },
+                // The default cascade config stops casting shadows past
+                // 150 m. Map 02 spans 360 m and the camera sits up to 90 m
+                // above it, so the far half of the map lost its shadows at a
+                // visible straight line across the terrain.
+                CascadeShadowConfigBuilder {
+                    maximum_distance: MAX_CAMERA_HEIGHT * 6.0,
+                    first_cascade_far_bound: 40.0,
+                    ..default()
+                }
+                .build(),
                 light_transform,
             ));
         });
@@ -169,6 +202,14 @@ mod tests {
         app.init_resource::<GameScreen>();
         app.init_resource::<Assets<Mesh>>();
         app.init_resource::<Assets<StandardMaterial>>();
+        // `handle_camera_zoom` reads the keyboard and the user keybinds.
+        // Without these the system fails parameter validation and aborts the
+        // whole schedule, taking every test in this module with it.
+        app.init_resource::<ButtonInput<KeyCode>>();
+        app.init_resource::<bevymmo_shared::user_settings::GameSettingsResource>();
+        app.init_resource::<Time>();
+        // `sync_transforms` reads the fixed-step overstep to interpolate.
+        app.init_resource::<Time<Fixed>>();
         app.add_plugins(BaseScenePlugin);
         app
     }
@@ -199,8 +240,13 @@ mod tests {
             .world_mut()
             .query_filtered::<&Transform, With<GameCamera>>();
         let cam = cams.single(app.world()).expect("game camera spawned");
-        // Camera should be at player position + zoom offset (15, 15)
-        assert_eq!(cam.translation, Vec3::new(10.0, 15.0, 20.0));
+        // Camera sits at player position + (0, height, height); the height
+        // comes from `DEFAULT_CAMERA_HEIGHT`, so derive it instead of
+        // hardcoding a value that goes stale when the zoom range is retuned.
+        assert_eq!(
+            cam.translation,
+            Vec3::new(10.0, DEFAULT_CAMERA_HEIGHT, 5.0 + DEFAULT_CAMERA_HEIGHT)
+        );
     }
 
     #[test]

@@ -182,10 +182,14 @@ fn show_banner(
     let Ok((banner_entity, children)) = banners.single() else {
         return;
     };
-    commands.entity(banner_entity).insert(Node {
-        display: Display::Flex,
-        ..default()
-    });
+    // Modify `display` in place. Inserting a fresh `Node` here replaced the
+    // component wholesale, so `..default()` wiped the absolute positioning,
+    // `top`/`left` and centering set at spawn and the banner rendered at the
+    // layout default instead of screen centre.
+    commands
+        .entity(banner_entity)
+        .entry::<Node>()
+        .and_modify(|mut node| node.display = Display::Flex);
 
     // Replace the text child if present, else spawn one.
     let existing_text = children

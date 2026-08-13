@@ -11,8 +11,9 @@ pub use bevymmo_shared::user_settings::{
 /// Identifies one of the panels shown in the settings sidebar.
 ///
 /// Order of variants = order in the sidebar.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SettingsTab {
+    #[default]
     General,
     Graphics,
     Keybinds,
@@ -32,8 +33,3 @@ impl SettingsTab {
     }
 }
 
-impl Default for SettingsTab {
-    fn default() -> Self {
-        Self::General
-    }
-}

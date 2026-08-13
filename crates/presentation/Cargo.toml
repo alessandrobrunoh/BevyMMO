@@ -1,10 +1,12 @@
 [package]
 name = "bevymmo_presentation"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-bevy = { version = "0.19", default-features = true, features = ["serialize"] }
+bevy = { workspace = true, features = ["default", "serialize"] }
 bevy_asset_loader = { version = "0.27", features = ["3d"] }
 lightyear = { workspace = true }
 bevymmo_shared = { path = "../shared" }
@@ -12,3 +14,6 @@ bevymmo_client = { path = "../client" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 dirs = { workspace = true }
+
+[lints]
+workspace = true

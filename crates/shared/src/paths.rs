@@ -18,8 +18,15 @@ use std::path::{Path, PathBuf};
 /// Name of the assets folder at the workspace/project root.
 const ASSETS_DIR_NAME: &str = "assets";
 
-/// Default map to load when starting a local server or host-client
-pub const DEFAULT_MAP_ID: &str = "map_03";
+/// Default map to load when starting a local server or host-client.
+///
+/// Must name a map whose `.world.json` sidecar declares the same `map_id`:
+/// the loader picks the sidecar by this name, while the client renders
+/// `maps/<manifest.map_id>.glb`. When `map_03`'s sidecar still declared
+/// `map_id = "map_02"`, the game collided against map_03's 44 m test surface
+/// while drawing map_02's 360 m terrain, leaving the player apparently buried
+/// nine metres under the ground they could see.
+pub const DEFAULT_MAP_ID: &str = "map_02";
 
 /// Resolves the absolute path to the workspace `assets` directory.
 ///

@@ -6,7 +6,6 @@
 //! action pushes the *previous* manifest onto [`EditorHistory`] before
 //! mutating, so undo can restore the exact pre-action state.
 
-use bevy::input::keyboard::Key;
 use bevy::prelude::*;
 use bevymmo_shared::world::{
     load_map_auto, save_map, validate, MapBounds, MapManifest, Terrain, CURRENT_VERSION,
@@ -16,8 +15,13 @@ use crate::history::EditorHistory;
 use crate::state::{EditorProp, EditorState};
 
 /// Default file used by `Ctrl+S` / `Ctrl+O` when no explicit path is set.
+///
+/// This is the `.world.json` sidecar, not the `.glb`: [`save_map`] writes a
+/// text manifest, so defaulting to the `.glb` meant `Ctrl+S` overwrote the
+/// authored glTF source mesh. `load_map_auto` resolves the sidecar for either
+/// spelling, so loading is unaffected.
 fn default_path(state: &EditorState) -> String {
-    format!("assets/maps/{}.glb", state.manifest.map_id)
+    format!("assets/maps/{}.world.json", state.manifest.map_id)
 }
 
 /// Saves the current manifest. Returns an error string on failure so callers
@@ -48,6 +52,10 @@ pub fn load(state: &mut EditorState, history: &mut EditorHistory) -> Result<(), 
     match load_map_auto(&path) {
         Ok(manifest) => {
             state.manifest = manifest;
+            // Remember where this map came from, mirroring `save`. Without it
+            // a load-then-save round trip fell back to `default_path` again
+            // instead of writing back to the file the user opened.
+            state.file_path = Some(path.clone());
             state.dirty = false;
             state.next_prop_seq = state.manifest.props.len() as u32 + 1;
             state.needs_rebuild = true;
@@ -303,7 +311,3 @@ fn ctrl_held(keys: &Res<ButtonInput<KeyCode>>) -> bool {
 fn just_pressed(keys: &Res<ButtonInput<KeyCode>>, code: KeyCode) -> bool {
     keys.just_pressed(code)
 }
-
-// Keep `Key` referenced for the future when we switch to the new keyboard API.
-#[allow(dead_code)]
-fn _key_keep(_k: Key) {}

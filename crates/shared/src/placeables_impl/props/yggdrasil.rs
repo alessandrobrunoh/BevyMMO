@@ -1,6 +1,6 @@
 //! Mythical world tree. Single mesh authored at world scale (~36 m tall).
 //!
-//! The canopy node (`Yggdrasil_Top`) is auto-tagged as `OccludableTop` and
+//! The canopy node (`Yggdrasil_Top`) is auto-tagged as `Occludable` and fades when it blocks the camera and
 //! will be hidden when it occludes the player — important given its size
 //! relative to the isometric camera frustum.
 

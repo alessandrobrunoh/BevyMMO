@@ -27,13 +27,13 @@ pub fn spawn_item_detail_card(
     equipment: &Equipment,
     selection: InventorySelection,
 ) {
-    let (item_id, is_equipped, slot_index) = match selection {
+    let (item_id, equipped_slot, slot_index) = match selection {
         InventorySelection::Slot(idx) => {
             let item_id = inventory.slots.get(idx as usize).and_then(|s| s.clone());
-            let is_equipped = item_id.as_ref() == equipment.weapon.as_ref();
-            (item_id, is_equipped, Some(idx))
+            let equipped_slot = item_id.as_ref().and_then(|id| equipment.slot_holding(id));
+            (item_id, equipped_slot, Some(idx))
         }
-        InventorySelection::Weapon => (equipment.weapon.clone(), true, None),
+        InventorySelection::Equipment(slot) => (equipment.get(slot).clone(), Some(slot), None),
     };
 
     let Some(item_id) = item_id else {
@@ -114,7 +114,7 @@ pub fn spawn_item_detail_card(
             }
         })
         .with_footer(move |footer| {
-            if is_equipped {
+            if let Some(slot) = equipped_slot {
                 footer
                     .spawn((
                         Button,
@@ -127,9 +127,7 @@ pub fn spawn_item_detail_card(
                             ..default()
                         },
                         BackgroundColor(Color::srgba(0.7, 0.25, 0.25, 0.8)),
-                        UnequipButton {
-                            slot: bevymmo_shared::items::components::EquipSlot::Weapon,
-                        },
+                        UnequipButton { slot },
                     ))
                     .with_children(|btn| {
                         btn.spawn((

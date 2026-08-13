@@ -1,9 +1,14 @@
 [package]
 name = "bevymmo_editor"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-bevy = { version = "0.19", default-features = true }
+bevy = { workspace = true, features = ["default"] }
 bevy_egui = "0.40"
 bevymmo_shared = { path = "../shared" }
+
+[lints]
+workspace = true

@@ -70,7 +70,7 @@ pub fn spawn_graphics_panel(
     // Resolution dropdown: built from the primary monitor's video modes,
     // falling back to a small hardcoded list when no monitor is available
     // (headless test, no window yet, etc.).
-    let res_items = available_resolutions(&monitors);
+    let res_items = available_resolutions(monitors);
     let current_res_label = settings.0.graphics.resolution.label();
     let _ = spawn_select(
         commands,

@@ -249,9 +249,23 @@ pub fn snap_to_ground(
     surface_query: &SurfaceQuery,
     max_step_height: f32,
 ) -> bool {
-    let Some(contact) =
-        surface_query.ground_at_reachable(position.x, position.z, position.y, max_step_height)
-    else {
+    let contact = surface_query
+        .ground_at_reachable(position.x, position.z, position.y, max_step_height)
+        // Stranded *below* the terrain: `ground_at_reachable` rejects every
+        // surface higher than `current_y + max_step_height`, so an entity that
+        // ends up under the ground has no reachable surface at all and stays
+        // there forever — it cannot move either, because every candidate step
+        // fails the same test. This happens whenever a position is written
+        // without consulting the terrain: a new player at the default
+        // `Vec3::ZERO` on a map whose origin is a hillside, a player whose
+        // persisted coordinates predate a terrain edit, or a teleport.
+        //
+        // Recovery is the whole point of this function, so fall back to the
+        // highest surface at the entity's XZ and lift it out. Live stepping
+        // still goes through `ground_at_reachable` in `try_step`, so this
+        // cannot be used to climb a cliff.
+        .or_else(|| surface_query.ground_at(position.x, position.z));
+    let Some(contact) = contact else {
         return false;
     };
     if (contact.height - position.y).abs() > 0.001 {
@@ -597,6 +611,30 @@ mod tests {
         assert_eq!(pos.x, 0.0);
         assert_eq!(pos.z, 0.0);
         assert_eq!(pos.y, 2.0); // Should match the surface height
+    }
+
+    #[test]
+    fn snap_to_ground_lifts_an_entity_stranded_below_the_terrain() {
+        let (query, _manifest) = create_test_surface_query();
+
+        // Surface sits at y = 2.0; the entity is 9 m under it, as happens to a
+        // player spawned at the default `Vec3::ZERO` on a map whose origin is
+        // a hillside, or one whose persisted Y predates a terrain edit.
+        let mut position = Vec3::new(0.0, -7.0, 0.0);
+        assert!(
+            snap_to_ground(&mut position, &query, 0.45),
+            "an entity below every surface must be recovered, not left stuck"
+        );
+        assert_eq!(position.y, 2.0);
+    }
+
+    #[test]
+    fn snap_to_ground_still_refuses_positions_with_no_surface_at_all() {
+        let (query, _manifest) = create_test_surface_query();
+
+        let mut position = Vec3::new(100.0, -7.0, 100.0);
+        assert!(!snap_to_ground(&mut position, &query, 0.45));
+        assert_eq!(position.y, -7.0);
     }
 
     #[test]

@@ -4,7 +4,16 @@
 //! transport/rendering dependencies, so the registry in the binary (or any
 //! other crate) can compose them freely. Mirrors `crate::spells_impl`.
 
+pub mod field_rations;
+pub mod iron_plate_armor;
 pub mod iron_sword;
+pub mod leather_helmet;
+pub mod quick_flask;
+pub mod swift_boots;
+pub mod swift_steed;
+pub mod travelers_bag;
+pub mod travelers_cape;
+pub mod wooden_shield;
 
 use std::sync::Arc;
 
@@ -14,9 +23,19 @@ use crate::items::registry::ItemRegistry;
 ///
 /// Called once at startup by both the server (authoritative source) and the
 /// client (UI rendering). Keeping the list in `shared` guarantees both sides
-/// agree on what items exist.
+/// agree on what items exist. One reference item per [`crate::items::components::EquipSlot`]
+/// so every slot in the inventory UI has something equippable to test with.
 pub fn register_default_items(mut registry: bevy::prelude::ResMut<ItemRegistry>) {
     registry.register(Arc::new(iron_sword::IronSword::new()));
+    registry.register(Arc::new(leather_helmet::LeatherHelmet::new()));
+    registry.register(Arc::new(travelers_cape::TravelersCape::new()));
+    registry.register(Arc::new(iron_plate_armor::IronPlateArmor::new()));
+    registry.register(Arc::new(wooden_shield::WoodenShield::new()));
+    registry.register(Arc::new(quick_flask::QuickFlask::new()));
+    registry.register(Arc::new(swift_boots::SwiftBoots::new()));
+    registry.register(Arc::new(field_rations::FieldRations::new()));
+    registry.register(Arc::new(swift_steed::SwiftSteed::new()));
+    registry.register(Arc::new(travelers_bag::TravelersBag::new()));
 }
 
 #[cfg(test)]

@@ -26,8 +26,9 @@ impl Plugin for BaseScenePlugin {
                 systems::update_game_scene_lifecycle,
                 systems::follow_controlled_player,
                 systems::handle_camera_zoom,
-                occlusion::tag_occludable_tops,
+                occlusion::tag_occludables,
                 occlusion::update_camera_occlusion.run_if(in_game_or_paused),
+                occlusion::animate_occluder_fade.run_if(in_game_or_paused),
             ),
         );
     }

@@ -1,0 +1,6 @@
+# Bevy systems legitimately take many parameters: every `Query`, `Res` and
+# `Commands` is one. The default threshold of 7 fires on ordinary,
+# well-factored systems (8-11 params), which is noise, but a system in the
+# mid-teens really has outgrown plain parameters and should move to a
+# `SystemParam` bundle — so the lint is raised, not disabled.
+too-many-arguments-threshold = 12

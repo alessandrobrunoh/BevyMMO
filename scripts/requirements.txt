@@ -1,0 +1,12 @@
+# Python dependencies for the standalone map-pipeline scripts under `scripts/`.
+#
+# These are NOT needed to build or run the game — only to re-generate map data
+# from Blender exports. Install with:
+#
+#     python3 -m pip install -r scripts/requirements.txt
+#
+# The Blender add-ons (`scripts/blender/*.py`) run inside Blender's own
+# interpreter and need nothing from this file.
+
+# generate_blockers_from_glb.py: GLB accessor decoding and bounds math.
+numpy>=1.24

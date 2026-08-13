@@ -76,21 +76,6 @@ pub fn spawn_ui_for_new_entities(
     }
 }
 
-pub(crate) fn on_vital_stats_added_ui(
-    trigger: On<Add, VitalStats>,
-    mut commands: Commands,
-    root_query: Query<Entity, With<FloatingUiRoot>>,
-    theme: Res<UiTheme>,
-    entities: Query<Entity, (With<Position>, Without<FloatingUiAttached>)>,
-) {
-    let entity = trigger.entity;
-    if let Ok(target) = entities.get(entity) {
-        let root = get_or_spawn_root(&mut commands, &root_query);
-        spawn_entity_bar(&mut commands, root, target, &theme);
-        commands.entity(target).insert(FloatingUiAttached);
-    }
-}
-
 /// Fase 1 — aggiorna posizione e visibilità del nodo container.
 ///
 /// Usa `With<Camera3d>` per selezionare la camera di gioco: il client ha anche
@@ -130,7 +115,7 @@ pub fn update_floating_ui_position(
         // Skip scrittura se la posizione viewport non è cambiata (tolleranza 0.5px).
         if floating_ui
             .last_viewport
-            .map_or(false, |last| (last - viewport_pos).length_squared() < 0.25)
+            .is_some_and(|last| (last - viewport_pos).length_squared() < 0.25)
         {
             continue;
         }
@@ -263,6 +248,23 @@ pub fn cleanup_floating_ui_root(
 /// Condizione di esecuzione: il client NON è in una schermata di gameplay.
 pub(crate) fn not_in_gameplay(screen: Res<GameScreen>) -> bool {
     !matches!(screen.0, Screen::InGame | Screen::Paused)
+}
+
+/// Determina il colore della barra HP in base al tipo di entità.
+///
+/// - Player: verde-blu
+/// - Friendly: verde
+/// - Neutral: giallo
+/// - Hostile: rosso
+/// - None: fallback a theme.hp_fill
+fn get_hp_fill_color(entity_kind: Option<&EntityKind>, theme: &UiTheme) -> Color {
+    match entity_kind {
+        Some(EntityKind::Player) => Color::srgb(0.3, 0.8, 0.5),
+        Some(EntityKind::Friendly) => Color::srgb(0.2, 0.9, 0.3),
+        Some(EntityKind::Neutral) => Color::srgb(0.9, 0.9, 0.2),
+        Some(EntityKind::Hostile) => Color::srgb(0.9, 0.1, 0.1),
+        None => theme.hp_fill,
+    }
 }
 
 #[cfg(test)]
@@ -533,10 +535,8 @@ mod tests {
     fn centering_constants_match_bar_geometry() {
         assert_eq!(crate::ui::entity_bar::plugin::BAR_WIDTH, 100.0);
         assert_eq!(crate::ui::entity_bar::plugin::BAR_HEIGHT, 14.0);
-        // STACK_HEIGHT = riga nome + gap + barra (>= altezza barra).
-        assert!(
-            crate::ui::entity_bar::plugin::STACK_HEIGHT > crate::ui::entity_bar::plugin::BAR_HEIGHT
-        );
+        // `STACK_HEIGHT > BAR_HEIGHT` è verificato a compile time da un
+        // `const _: () = assert!(..)` in `plugin.rs`.
     }
 
     #[test]
@@ -568,22 +568,5 @@ mod tests {
         let theme = UiTheme::default();
         let color = get_hp_fill_color(None, &theme);
         assert_eq!(color, theme.hp_fill);
-    }
-}
-
-/// Determina il colore della barra HP in base al tipo di entità.
-///
-/// - Player: verde-blu
-/// - Friendly: verde
-/// - Neutral: giallo
-/// - Hostile: rosso
-/// - None: fallback a theme.hp_fill
-fn get_hp_fill_color(entity_kind: Option<&EntityKind>, theme: &UiTheme) -> Color {
-    match entity_kind {
-        Some(EntityKind::Player) => Color::srgb(0.3, 0.8, 0.5),
-        Some(EntityKind::Friendly) => Color::srgb(0.2, 0.9, 0.3),
-        Some(EntityKind::Neutral) => Color::srgb(0.9, 0.9, 0.2),
-        Some(EntityKind::Hostile) => Color::srgb(0.9, 0.1, 0.1),
-        None => theme.hp_fill,
     }
 }

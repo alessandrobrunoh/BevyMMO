@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "map_id": "map_01",
-  "display_name": "Map 01",
+  "map_id": "map_04",
+  "display_name": "Map 04",
   "unit_convention": "1 Blender unit = 1 game world unit = 1 meter",
   "bounds": {
     "min_x": -22.0,

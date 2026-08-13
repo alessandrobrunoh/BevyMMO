@@ -474,6 +474,15 @@ def collect_surfaces(resolution: int, report: ExportReport) -> list[dict]:
 
 
 def _shape_from_props(obj: bpy.types.Object) -> Optional[dict]:
+    """Builds a `CollisionShape` payload for a blocker from its custom props.
+
+    The Rust `CollisionShape` is an externally tagged serde enum, so the only
+    accepted encoding is a single-key map naming the variant — the same one
+    `_collision_shape_from_props` already emits for props. The previous
+    `{"type": "box", ...}` form was not a shape serde could read at all: it
+    made the whole `.world.json` fail to deserialize, so any map that declared
+    even one blocker refused to load.
+    """
     kind = custom_prop_str(obj, "bevymmo_blocker_kind", "")
     if not kind:
         kind = custom_prop_str(obj, "bevymmo_kind", "box")
@@ -486,14 +495,14 @@ def _shape_from_props(obj: bpy.types.Object) -> Optional[dict]:
             return None
         # Half-extents are sizes, not positions: the axis swap reorders them
         # but the sign flip on Z must not leak through.
-        return {"type": "box", "half_extents": [abs(e) for e in extents]}
+        return {"Box": {"half_extents": [abs(e) for e in extents]}}
     if kind == "cylinder":
         radius = custom_prop_float(obj, "bevymmo_radius", 0.0)
         height = custom_prop_float(obj, "bevymmo_height", 0.0)
-        return {"type": "cylinder", "radius": radius, "height": height}
+        return {"Cylinder": {"radius": radius, "height": height}}
     if kind == "sphere":
         radius = custom_prop_float(obj, "bevymmo_radius", 0.0)
-        return {"type": "sphere", "radius": radius}
+        return {"Sphere": {"radius": radius}}
     return None
 
 
@@ -553,7 +562,17 @@ def collect_blockers(report: ExportReport) -> list[dict]:
             )
             continue
 
-        kind = shape["type"]
+        # `shape` is a single-key map naming the serde variant ("Box",
+        # "Cylinder", "Sphere"); `BlockerKind` accepts the lowercase spelling.
+        kind = next(iter(shape)).lower()
+        if kind not in ("box", "cylinder"):
+            # `BlockerKind` has no Sphere variant, so emitting one would make
+            # the whole manifest fail to load rather than just this blocker.
+            report.warn(
+                f"BLOCKING_{obj.name} uses shape {kind!r}, which blockers do not "
+                "support (box or cylinder only); skipped"
+            )
+            continue
         blocker = {
             "id": obj.name,
             "kind": kind,
@@ -818,9 +837,14 @@ class BEVYMMO_OT_export_world(bpy.types.Operator, ExportHelper):
         name="Include walkable_mesh",
         description=(
             "Also export the full triangle mesh per surface (vertices + indices). "
-            "Needed for exact point-in-triangle ground queries; turn off for smaller shipping JSON."
+            "OFF by default and normally best left off: when present, the engine "
+            "ignores the heightfield and resolves every ground query with a linear "
+            "scan over all triangles (SurfaceQuery::resolve_triangle_mesh), which "
+            "costs O(triangles) per query and returns the first matching triangle "
+            "rather than the highest. Only enable it for debugging a surface whose "
+            "heightfield is suspect."
         ),
-        default=True,
+        default=False,
     )
 
     def execute(self, context):

@@ -29,11 +29,24 @@ const ROW_GAP: f32 = 4.0;
 /// proiettato.
 pub(crate) const STACK_HEIGHT: f32 = NAME_LINE_HEIGHT + ROW_GAP + BAR_HEIGHT;
 
+/// Lo stack deve contenere la barra: se qualcuno azzerasse `NAME_LINE_HEIGHT` e
+/// `ROW_GAP`, l'ancoraggio in `update_floating_ui_position` taglierebbe la barra.
+/// Verificato a compile time, non in un `#[test]`: sono costanti, quindi un
+/// assert a runtime non aggiunge nulla e clippy lo segnala giustamente.
+const _: () = assert!(STACK_HEIGHT > BAR_HEIGHT);
+
 pub struct EntityBarPlugin;
 
 impl Plugin for EntityBarPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(systems::on_vital_stats_added_ui);
+        // Nota: nessun observer su `Add<VitalStats>`. Osservatore e
+        // `spawn_ui_for_new_entities` facevano lo stesso lavoro; entrambi
+        // chiamavano `get_or_spawn_root`, la cui `Query` non vede un root
+        // appena spawnato e non ancora flushato, quindi nello stesso frame si
+        // potevano creare due root e due barre per la stessa entità. Il
+        // sistema di polling è idempotente (guardia `FloatingUiAttached`),
+        // riusa il root all'interno della stessa esecuzione ed è già gatato su
+        // `in_gameplay` — l'observer non lo era.
         app.add_systems(
             Update,
             (

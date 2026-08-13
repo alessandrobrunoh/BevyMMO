@@ -5,7 +5,7 @@ use bevymmo_shared::network::protocol::{
     Channel2, LookDirection, NetworkEntityId, Position, SpellCastCommand, SpellCastRelease,
 };
 use bevymmo_shared::spells::{
-    CastKind, ChannelMovementPolicy, HotbarSlot, SpellHotbar, SpellId, SpellRegistry,
+    CastKind, ChannelMovementPolicy, HotbarSlot, SpellHotbar, SpellRegistry,
 };
 use bevymmo_shared::targeting::CurrentTarget;
 use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};

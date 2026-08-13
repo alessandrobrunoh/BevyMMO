@@ -185,14 +185,11 @@ fn equip_item(
         return Err("item is not equippable");
     };
 
-    match target_slot {
-        EquipSlot::Weapon => {
-            let previous = equipment.weapon.take();
-            equipment.weapon = Some(item_id);
-            // The previously equipped weapon swaps back into the inventory slot.
-            inventory.slots[slot_index] = previous;
-        }
-    }
+    // The item previously occupying the target slot (if any) swaps back into
+    // the inventory slot we just emptied.
+    let previous = equipment.get_mut(target_slot).take();
+    *equipment.get_mut(target_slot) = Some(item_id);
+    inventory.slots[slot_index] = previous;
 
     Ok(())
 }
@@ -206,18 +203,17 @@ fn unequip_item(
     equipment: &mut Equipment,
     slot: EquipSlot,
 ) -> Result<(), &'static str> {
-    let Some(item_id) = equipment.weapon.take() else {
-        return Err("weapon slot is empty");
+    let Some(item_id) = equipment.get_mut(slot).take() else {
+        return Err("slot is empty");
     };
 
     let Some(free_slot) = inventory.slots.iter().position(|slot| slot.is_none()) else {
-        // Restore the weapon; nothing was mutated.
-        equipment.weapon = Some(item_id);
+        // Restore the item; nothing was mutated.
+        *equipment.get_mut(slot) = Some(item_id);
         return Err("inventory is full");
     };
 
     inventory.slots[free_slot] = Some(item_id);
-    let _ = slot; // single equip slot today; future slots match here.
     Ok(())
 }
 
@@ -293,6 +289,7 @@ mod tests {
         let mut inventory = inventory_with_sword_in_slot(2);
         let mut equipment = Equipment {
             weapon: Some(ItemId::new("old_sword")),
+            ..Default::default()
         };
         let registry = registry_with_iron_sword();
 
@@ -339,6 +336,7 @@ mod tests {
         inventory.slots[3] = Some(ItemId::new("blocker"));
         let mut equipment = Equipment {
             weapon: Some(ItemId::new(IronSword::ID)),
+            ..Default::default()
         };
 
         assert!(unequip_item(&mut inventory, &mut equipment, EquipSlot::Weapon).is_ok());
@@ -365,10 +363,31 @@ mod tests {
         let sword = ItemId::new(IronSword::ID);
         let mut equipment = Equipment {
             weapon: Some(sword.clone()),
+            ..Default::default()
         };
 
         assert!(unequip_item(&mut inventory, &mut equipment, EquipSlot::Weapon).is_err());
         assert_eq!(equipment.weapon, Some(sword));
+    }
+
+    #[test]
+    fn equip_and_unequip_work_for_a_non_weapon_slot() {
+        use bevymmo_shared::items_impl::leather_helmet::LeatherHelmet;
+
+        let mut registry = registry_with_iron_sword();
+        registry.register(std::sync::Arc::new(LeatherHelmet::new()));
+
+        let mut inventory = Inventory::default();
+        inventory.slots[0] = Some(ItemId::new(LeatherHelmet::ID));
+        let mut equipment = Equipment::default();
+
+        assert!(equip_item(&mut inventory, &mut equipment, &registry, 0).is_ok());
+        assert_eq!(equipment.helmet, Some(ItemId::new(LeatherHelmet::ID)));
+        assert!(inventory.slots[0].is_none());
+
+        assert!(unequip_item(&mut inventory, &mut equipment, EquipSlot::Helmet).is_ok());
+        assert!(equipment.helmet.is_none());
+        assert_eq!(inventory.slots[0], Some(ItemId::new(LeatherHelmet::ID)));
     }
 
     #[test]

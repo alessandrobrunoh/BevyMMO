@@ -4,15 +4,23 @@ use uuid::Uuid;
 
 /// SeaORM model for `player_equipment`.
 ///
-/// One row per player. `weapon` holds the equipped item id (or `NULL`).
-/// Future equipment slots (helmet, chest, ...) get their own nullable columns
-/// via future migrations; the table shape stays stable.
+/// One row per player, one nullable column per [`bevymmo_shared::items::components::EquipSlot`]
+/// variant. `NULL` means the slot is empty.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "player_equipment")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub player_id: Uuid,
+    pub bag: Option<String>,
+    pub helmet: Option<String>,
+    pub cape: Option<String>,
     pub weapon: Option<String>,
+    pub armor: Option<String>,
+    pub offhand: Option<String>,
+    pub potion: Option<String>,
+    pub shoes: Option<String>,
+    pub food: Option<String>,
+    pub mount: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

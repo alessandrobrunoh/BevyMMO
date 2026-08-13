@@ -1,6 +1,6 @@
 //! Large broadleaf oak tree with split Base/Top GLB nodes.
 //!
-//! The canopy node (`Tree_Oak_Large_Top`) is auto-tagged as `OccludableTop`
+//! The canopy node (`Tree_Oak_Large_Top`) is auto-tagged as `Occludable` and fades when it blocks the camera
 //! by the presentation layer so it fades when blocking the camera's view
 //! of the player.
 

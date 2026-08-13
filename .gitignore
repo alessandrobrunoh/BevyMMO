@@ -1,3 +1,23 @@
 /target
+
+# Local configuration and secrets
 .env
 config/local.toml
+
+# Python tooling (Blender scripts under scripts/)
+__pycache__/
+*.py[cod]
+
+# Blender autosave backups. The `.blend` source is tracked; the `.blend1`
+# rolling backup Blender writes next to it is not.
+*.blend1
+*.blend2
+
+# Editor / exporter scratch files
+*.bak
+*.orig
+*.rs.bk
+
+# OS and editor cruft
+.DS_Store
+Thumbs.db

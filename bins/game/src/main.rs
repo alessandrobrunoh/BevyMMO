@@ -228,31 +228,6 @@ fn build_app(config: &AppConfig) -> App {
     app
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn generated_client_ids_are_non_zero_and_distinct() {
-        let first = resolve_client_id(None);
-        let second = resolve_client_id(None);
-
-        assert_ne!(first, 0);
-        assert_ne!(second, 0);
-        assert_ne!(first, second);
-    }
-
-    #[test]
-    fn explicit_non_zero_client_id_is_preserved() {
-        assert_eq!(resolve_client_id(Some(42)), 42);
-    }
-
-    #[test]
-    fn zero_client_id_is_replaced_with_a_generated_value() {
-        assert_ne!(resolve_client_id(Some(0)), 0);
-    }
-}
-
 fn add_platform_plugins(app: &mut App, config: &AppConfig) {
     if config.mode.is_windowed() {
         #[cfg(feature = "client")]
@@ -314,4 +289,29 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
 fn parse_addr(raw: &str, field: &str) -> SocketAddr {
     raw.parse()
         .unwrap_or_else(|e| panic!("invalid socket address for {field}: {raw:?} ({e})"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_client_ids_are_non_zero_and_distinct() {
+        let first = resolve_client_id(None);
+        let second = resolve_client_id(None);
+
+        assert_ne!(first, 0);
+        assert_ne!(second, 0);
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn explicit_non_zero_client_id_is_preserved() {
+        assert_eq!(resolve_client_id(Some(42)), 42);
+    }
+
+    #[test]
+    fn zero_client_id_is_replaced_with_a_generated_value() {
+        assert_ne!(resolve_client_id(Some(0)), 0);
+    }
 }

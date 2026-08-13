@@ -11,6 +11,53 @@ members = [
 default-members = ["bins/game"]
 resolver = "2"
 
+# Shared package metadata. Every member inherits these with
+# `version.workspace = true` etc., so a version or licence change is one edit.
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/alessandrobrunoh/BevyMMO"
+
+[workspace.lints.clippy]
+# Bevy query types are structurally verbose by design:
+# `Query<(Entity, &A, &mut B), (With<C>, Without<D>)>` is the idiomatic spelling,
+# and hiding it behind a `type` alias costs more readability than it buys. This
+# fired 23 times across the workspace, i.e. it is noise here, not signal.
+# `too_many_arguments` is *not* disabled — see `clippy.toml`, which raises its
+# threshold instead so genuinely overgrown systems still warn.
+type_complexity = "allow"
+
+# Dev-profile tuning, aimed squarely at the size of `target/`.
+#
+# A stock debug build of this workspace produced a 45 GB `target/`, 38 GB of it
+# in `deps/`, which is enough to fill a disk mid-link (`ld: write() failed,
+# errno=28`). Almost all of that is DWARF for third-party crates nobody steps
+# through.
+[profile.dev]
+# Keeps file/line in panics and backtraces — what you actually read day to day —
+# without emitting full variable-inspection DWARF for every crate.
+debug = "line-tables-only"
+# `target/debug/incremental` alone reached 6.9 GB. The workspace crates are
+# small enough that a full crate rebuild costs a few seconds, and linking
+# dominates the edit-run loop anyway, so the cache does not pay for its size
+# here.
+incremental = false
+
+# Dependencies are never stepped through: no debug info at all for them. This
+# is where the bulk of the 38 GB came from.
+[profile.dev.package."*"]
+debug = false
+
+# The release profile exists for one artifact: the dedicated server, which runs
+# for days and is built once by CI. Trading build time for runtime throughput is
+# the right way round there.
+[profile.release]
+# Thin LTO gets most of the cross-crate inlining of fat LTO at a fraction of the
+# link time — worth it for a hot ECS loop spread across six workspace crates.
+lto = "thin"
+codegen-units = 1
+
 [workspace.dependencies]
 bevy = { version = "0.19", default-features = false, features = ["bevy_color", "bevy_log"] }
 lightyear = { version = "0.28", features = [

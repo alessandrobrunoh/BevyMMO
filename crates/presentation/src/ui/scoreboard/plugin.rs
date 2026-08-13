@@ -3,7 +3,6 @@
 use bevy::prelude::*;
 
 use super::systems;
-use crate::ui::text::spawn_text;
 
 /// Marker: root della scoreboard.
 #[derive(Component)]

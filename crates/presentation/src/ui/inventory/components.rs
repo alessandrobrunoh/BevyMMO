@@ -7,7 +7,7 @@ use bevymmo_shared::items::components::EquipSlot;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InventorySelection {
     Slot(u8),
-    Weapon,
+    Equipment(EquipSlot),
 }
 
 /// Marker component for the Inventory Card window root.
@@ -15,7 +15,7 @@ pub enum InventorySelection {
 pub struct InventoryWindow;
 
 /// Button component attached to one of the 10 inventory grid slots (0..10).
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone, Copy)]
 pub struct ItemSlotButton {
     pub index: u8,
 }
@@ -26,13 +26,18 @@ pub struct ItemSlotText {
     pub index: u8,
 }
 
-/// Button component attached to the special weapon equipment slot.
-#[derive(Component, Debug)]
-pub struct WeaponSlotButton;
+/// Button component attached to one of the equipment slots (Weapon, Helmet, ...).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EquipSlotButton {
+    pub slot: EquipSlot,
+}
 
-/// Text component inside `WeaponSlotButton` to show equipped weapon display name.
+/// Text component inside an `EquipSlotButton` to show the equipped item name
+/// (or a placeholder dash when empty).
 #[derive(Component, Debug)]
-pub struct WeaponSlotText;
+pub struct EquipSlotText {
+    pub slot: EquipSlot,
+}
 
 /// Button component inside the Item Detail Card to equip the selected item.
 #[derive(Component, Debug)]
@@ -45,3 +50,17 @@ pub struct EquipButton {
 pub struct UnequipButton {
     pub slot: EquipSlot,
 }
+
+/// Origin of a dragged item: either a generic inventory slot or an equipment
+/// slot. Used by the drag-and-drop systems to decide which network command
+/// to send on drop (see `super::drag`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemSlotOrigin {
+    Inventory(u8),
+    Equipment(EquipSlot),
+}
+
+/// Marker for the floating label that follows the cursor while an item is
+/// being dragged.
+#[derive(Component, Debug)]
+pub struct ItemDragGhost;

@@ -43,7 +43,10 @@ impl Plugin for PlayerMovementPlugin {
                 .in_set(InputSystems::WriteClientInputs)
                 .run_if(mode::has_client),
         );
-        app.add_systems(Update, receive_move_commands.run_if(mode::has_server));
+        app.add_systems(
+            Update,
+            (receive_move_commands, forget_disconnected_players).run_if(mode::has_server),
+        );
         app.add_systems(
             FixedUpdate,
             (server_move_to_target, log_authoritative_player_positions)
@@ -78,7 +81,10 @@ fn receive_move_commands(
             else {
                 continue;
             };
-            info!(
+            // `trace!`, not `info!`: this fires once per inbound `MoveCommand`
+            // (up to 20/s per player, unthrottled), so at `info` it turned any
+            // client that spams the channel into log amplification.
+            trace!(
                 "Received authoritative move target for {player_entity:?}: {:?}",
                 command.target
             );
@@ -86,6 +92,22 @@ fn receive_move_commands(
                 .entity(player_entity)
                 .insert(PlayerMoveTarget(command.target));
         }
+    }
+}
+
+/// Drops the per-entity log state of players that left.
+///
+/// [`LastLoggedMoveInputs`] is keyed by `Entity` and was never pruned, so a
+/// long-running server accumulated one entry for every player that had ever
+/// connected. Runs in `Update` rather than `FixedUpdate` because removal
+/// detection is cleared per frame, and `FixedUpdate` may not run on a given
+/// frame.
+fn forget_disconnected_players(
+    mut last_inputs: ResMut<LastLoggedMoveInputs>,
+    mut removed: RemovedComponents<Player>,
+) {
+    for entity in removed.read() {
+        last_inputs.0.remove(&entity);
     }
 }
 

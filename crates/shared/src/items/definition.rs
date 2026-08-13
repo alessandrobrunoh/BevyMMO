@@ -22,6 +22,8 @@ pub enum ItemCategory {
     Consumable,
     Material,
     Quest,
+    /// Worn utility items that are neither weapon nor armor (bag, cape, mount).
+    Accessory,
 }
 
 /// Rarity, purely cosmetic for now (drives slot border color in the UI).

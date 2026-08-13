@@ -29,7 +29,10 @@ pub fn handle_card_drag(
         (With<CardHeaderDragHandle>, Changed<Interaction>),
     >,
     card_parents: Query<&ChildOf>,
-    draggable_cards: Query<(Entity, &Node), (With<DraggableCard>, Without<CardDraggingState>)>,
+    mut draggable_cards: Query<
+        (Entity, &mut Node, &ComputedNode, &UiGlobalTransform),
+        (With<DraggableCard>, Without<CardDraggingState>),
+    >,
     mut dragging_query: Query<(Entity, &mut Node, &mut CardDraggingState), With<DraggableCard>>,
     mut commands: Commands,
 ) {
@@ -44,26 +47,37 @@ pub fn handle_card_drag(
         return;
     };
 
-    // 1. Handle drag start on header interaction
+    // 1. Handle drag start on header interaction.
+    //
+    // Cards are laid out with `CardBuilder`'s viewport-relative centring
+    // (`left`/`top` as `Val::Percent` plus a negative half-size `margin`, see
+    // `card::builder`), not raw `Val::Px`. Reading `node.left`/`node.top`
+    // directly would see `Val::Percent` and silently fall back to `0.0`,
+    // making the card jump to a wrong anchor the instant a drag starts. We
+    // instead read the card's actual on-screen top-left corner from its
+    // computed transform, then rewrite the node to a plain `Val::Px` anchor
+    // at that same spot before applying any cursor delta.
     if mouse_button.just_pressed(MouseButton::Left) {
         for (interaction, child) in header_query.iter() {
             if *interaction == Interaction::Pressed {
                 // Find root DraggableCard entity by walking up parent tree
                 let mut current = Some(child.0);
                 while let Some(entity) = current {
-                    if let Ok((card_entity, node)) = draggable_cards.get(entity) {
-                        let left_px = match node.left {
-                            Val::Px(p) => p,
-                            _ => 0.0,
-                        };
-                        let top_px = match node.top {
-                            Val::Px(p) => p,
-                            _ => 0.0,
-                        };
+                    if let Ok((card_entity, mut node, computed, transform)) =
+                        draggable_cards.get_mut(entity)
+                    {
+                        let top_left = transform.translation - computed.size() * 0.5;
+
+                        node.left = Val::Px(top_left.x);
+                        node.top = Val::Px(top_left.y);
+                        node.right = Val::Auto;
+                        node.bottom = Val::Auto;
+                        node.margin = UiRect::all(Val::Px(0.0));
+
                         commands.entity(card_entity).insert(CardDraggingState {
                             drag_start_cursor: cursor_pos,
-                            drag_start_left: left_px,
-                            drag_start_top: top_px,
+                            drag_start_left: top_left.x,
+                            drag_start_top: top_left.y,
                         });
                         break;
                     }

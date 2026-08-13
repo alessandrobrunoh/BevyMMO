@@ -109,10 +109,21 @@ pub trait BaseAbility: Send + Sync + 'static {
                     self.id().as_str().to_string(),
                     AoeEffect::Damage { amount: power, targeting: AoeTargeting::ExcludeCaster },
                 );
+                // No bespoke per-gesture visual exists yet — the client falls
+                // back to a generic burst for any unrecognized id (see
+                // `bevymmo_presentation::spells::dispatch_visual_effects`).
+                ctx.emit_visual(self.impact_vfx().to_string(), center, center);
             }
             AbilityGeometry::Projectile { .. } => {
                 if let Some(target) = ctx.target_entity {
                     ctx.emit_damage(target, power);
+                    let target_position = ctx
+                        .potential_targets
+                        .iter()
+                        .find(|(entity, _)| *entity == target)
+                        .map(|(_, position)| *position)
+                        .unwrap_or(ctx.caster_position);
+                    ctx.emit_visual(self.impact_vfx().to_string(), ctx.caster_position, target_position);
                 }
             }
             AbilityGeometry::SelfBuff { .. } => {

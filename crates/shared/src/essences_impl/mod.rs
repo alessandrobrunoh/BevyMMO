@@ -3,6 +3,8 @@
 //! riga qui, zero modifiche a codice centrale.
 
 pub mod fuoco;
+pub mod gelo;
+pub mod terra;
 
 use bevy::prelude::ResMut;
 
@@ -10,6 +12,8 @@ use crate::abilities::EssenceRegistry;
 
 pub fn register_default_essences(mut registry: ResMut<EssenceRegistry>) {
     fuoco::FuocoEssence::register(&mut registry);
+    gelo::GeloEssence::register(&mut registry);
+    terra::TerraEssence::register(&mut registry);
 }
 
 #[cfg(test)]
@@ -25,6 +29,6 @@ mod tests {
         app.update();
 
         let registry = app.world().resource::<EssenceRegistry>();
-        assert_eq!(registry.len(), 1);
+        assert_eq!(registry.len(), 3);
     }
 }

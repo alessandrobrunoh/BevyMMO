@@ -559,18 +559,25 @@ impl PlayerRepository {
     }
 }
 
-/// Vocabolario seeded for a brand-new player: enough to actually inscribe
-/// and cast something on `FlameStaff` (§46-47 of the Eidolon design: the
-/// Vocabolario is permanent and independent of equipment, so this is a
-/// one-time head start, not something re-granted on every join).
+/// Vocabolario seeded for a brand-new player: every Essenza/Modificatore
+/// implemented so far, per QA/demo convenience (§46-47 of the Eidolon
+/// design: the Vocabolario is permanent and independent of equipment, so
+/// this is a one-time head start, not something re-granted on every join —
+/// a "real" progression server would gate most of these behind exploration).
 fn starter_known_glyphs() -> KnownGlyphs {
     use bevymmo_shared::abilities::{EssenceId, ModifierId};
-    use bevymmo_shared::essences_impl::fuoco::FuocoEssence;
-    use bevymmo_shared::modifiers_impl::espandere::EspandereModifier;
+    use bevymmo_shared::essences_impl::{fuoco::FuocoEssence, gelo::GeloEssence, terra::TerraEssence};
+    use bevymmo_shared::modifiers_impl::{
+        amplificare::AmplificareModifier, concentrare::ConcentrareModifier, espandere::EspandereModifier,
+    };
 
     let mut known = KnownGlyphs::default();
     known.essences.insert(EssenceId::new(FuocoEssence::ID));
+    known.essences.insert(EssenceId::new(GeloEssence::ID));
+    known.essences.insert(EssenceId::new(TerraEssence::ID));
     known.modifiers.insert(ModifierId::new(EspandereModifier::ID));
+    known.modifiers.insert(ModifierId::new(AmplificareModifier::ID));
+    known.modifiers.insert(ModifierId::new(ConcentrareModifier::ID));
     known
 }
 

@@ -4,6 +4,7 @@ pub mod available_choices;
 pub mod cast_bar;
 pub mod dragon_enemy;
 pub mod effects;
+pub mod eidolon_effects;
 pub mod eidolon_input;
 pub mod healing_circle;
 pub mod input;
@@ -29,6 +30,7 @@ impl Plugin for SpellsHudPlugin {
                 input::cast_spells_on_key,
                 eidolon_input::cast_eidolon_abilities_on_key,
                 dispatch_visual_effects,
+                eidolon_effects::animate,
                 healing_circle::visual::animate,
                 meteorite::visual::animate,
                 ray_of_light::visual::animate,
@@ -101,7 +103,10 @@ fn dispatch_visual_effects(
                 &mut materials,
                 effect,
             ),
-            unknown => debug!("No client visual registered for spell {unknown:?}"),
+            // Eidolon abilities emit `impact_vfx()` ids (e.g.
+            // "bolt_impact_burst") that have no bespoke visual yet — fall
+            // back to a generic burst instead of silently doing nothing.
+            _ => eidolon_effects::spawn(&mut commands, &mut meshes, &mut materials, effect),
         }
     }
 }

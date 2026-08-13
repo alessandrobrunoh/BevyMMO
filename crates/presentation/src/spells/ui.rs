@@ -8,6 +8,9 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 
 use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_shared::abilities::{AbilityId, AbilitySlot, BaseAbilityRegistry, EssenceRegistry};
+use bevymmo_shared::items::components::Equipment;
+use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::movement::MoveTarget;
 use bevymmo_shared::network::mode::has_client;
 use bevymmo_shared::network::protocol::{
@@ -36,9 +39,11 @@ pub struct SpellHudState {
 #[derive(Resource, Default)]
 struct SpellHudLayoutState {
     initialized: bool,
-    /// `(slot, spell_id, key_label)` — the label is included so the HUD is
-    /// rebuilt when the user rebinds the slot in Settings.
-    signature: Vec<(HotbarSlot, Option<SpellId>, String)>,
+    /// `(slot, spell_id, key_label, display_name)` — `display_name` is
+    /// included (not derivable from `spell_id` alone) so the HUD also
+    /// rebuilds when an Eidolon weapon's Incisione changes, even though
+    /// `spell_id` stays `None` throughout that case.
+    signature: Vec<(HotbarSlot, Option<SpellId>, String, String)>,
 }
 
 impl SpellHudState {
@@ -107,16 +112,50 @@ fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
     ));
 }
 
+/// Reads the equipped weapon's Eidolon gesture + inscribed Essenza for
+/// `slot`, if the weapon has Eidolon abilities at all. `None` means this
+/// weapon uses the classic `SpellHotbar` model instead — `sync_spell_hud`
+/// falls back to that.
+fn eidolon_hud_label(
+    slot: AbilitySlot,
+    equipment: &Equipment,
+    item_registry: &ItemRegistry,
+    ability_registry: &BaseAbilityRegistry,
+    essence_registry: &EssenceRegistry,
+) -> Option<String> {
+    let weapon = equipment.weapon.as_ref()?;
+    let item = item_registry.get(&weapon.item_id)?;
+    let weapon_abilities = item.weapon_abilities()?;
+    let ability_id: &AbilityId = weapon_abilities.get(slot);
+    let ability = ability_registry.get(ability_id)?;
+
+    let essence_name = weapon
+        .inscriptions
+        .as_ref()
+        .and_then(|inscriptions| inscriptions.get(slot).essence.as_ref())
+        .and_then(|essence_id| essence_registry.get(essence_id))
+        .map(|essence| essence.display_name().to_string());
+
+    Some(match essence_name {
+        Some(name) => format!("{} ({name})", ability.display_name()),
+        None => ability.display_name().to_string(),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn sync_spell_hud(
     mut commands: Commands,
     theme: Res<UiTheme>,
     registry: Res<bevymmo_shared::spells::SpellRegistry>,
     settings: Res<GameSettingsResource>,
     mut layout_state: ResMut<SpellHudLayoutState>,
-    player_query: Query<&SpellHotbar, With<lightyear::prelude::Controlled>>,
+    player_query: Query<(&SpellHotbar, &Equipment), With<lightyear::prelude::Controlled>>,
+    item_registry: Res<ItemRegistry>,
+    ability_registry: Res<BaseAbilityRegistry>,
+    essence_registry: Res<EssenceRegistry>,
     hud_query: Query<Entity, With<SpellHudRoot>>,
 ) {
-    let Ok(hotbar) = player_query.single() else {
+    let Ok((hotbar, equipment)) = player_query.single() else {
         return;
     };
     let Ok(root_entity) = hud_query.single() else {
@@ -128,20 +167,37 @@ fn sync_spell_hud(
 
     // Map each hotbar slot to its rebindable action and read the current
     // binding label from the settings resource so the HUD reflects rebinding.
-    for (slot, action) in [
-        (HotbarSlot::Q, KeyAction::CastSpellQ),
-        (HotbarSlot::W, KeyAction::CastSpellW),
-        (HotbarSlot::E, KeyAction::CastSpellE),
+    for (slot, ability_slot, action) in [
+        (HotbarSlot::Q, AbilitySlot::Primary, KeyAction::CastSpellQ),
+        (HotbarSlot::W, AbilitySlot::Secondary, KeyAction::CastSpellW),
+        (HotbarSlot::E, AbilitySlot::Ultimate, KeyAction::CastSpellE),
     ] {
-        let spell_id = hotbar.spell_for_slot(slot).cloned();
-        let display_name = spell_id
-            .as_ref()
-            .and_then(|id| registry.get(id))
-            .map(|spell_def| spell_def.display_name().to_string())
-            .unwrap_or_else(|| "Empty".to_string());
+        let eidolon_label = eidolon_hud_label(
+            ability_slot,
+            equipment,
+            &item_registry,
+            &ability_registry,
+            &essence_registry,
+        );
+
+        // An Eidolon weapon's gesture isn't a `SpellId` at all — leave it
+        // `None` so `cast_spell_from_hud_click` (which only acts when
+        // `spell_id` is `Some`) safely no-ops on this entry.
+        let spell_id = if eidolon_label.is_some() {
+            None
+        } else {
+            hotbar.spell_for_slot(slot).cloned()
+        };
+        let display_name = eidolon_label.unwrap_or_else(|| {
+            spell_id
+                .as_ref()
+                .and_then(|id| registry.get(id))
+                .map(|spell_def| spell_def.display_name().to_string())
+                .unwrap_or_else(|| "Empty".to_string())
+        });
         let key_label = settings.0.keybinds.get(action).label();
 
-        signature.push((slot, spell_id.clone(), key_label.clone()));
+        signature.push((slot, spell_id.clone(), key_label.clone(), display_name.clone()));
         entries.push(SpellHudEntry {
             spell_id,
             display_name,

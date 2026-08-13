@@ -1,6 +1,8 @@
 //! Concrete `Modifier` implementations — un file per Modificatore, mirror di
 //! `crate::spells_impl`.
 
+pub mod amplificare;
+pub mod concentrare;
 pub mod espandere;
 
 use bevy::prelude::ResMut;
@@ -9,6 +11,8 @@ use crate::abilities::ModifierRegistry;
 
 pub fn register_default_modifiers(mut registry: ResMut<ModifierRegistry>) {
     espandere::EspandereModifier::register(&mut registry);
+    amplificare::AmplificareModifier::register(&mut registry);
+    concentrare::ConcentrareModifier::register(&mut registry);
 }
 
 #[cfg(test)]
@@ -24,6 +28,6 @@ mod tests {
         app.update();
 
         let registry = app.world().resource::<ModifierRegistry>();
-        assert_eq!(registry.len(), 1);
+        assert_eq!(registry.len(), 3);
     }
 }

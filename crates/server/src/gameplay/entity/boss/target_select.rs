@@ -47,7 +47,7 @@ pub fn highest_threat<'a>(threat: &ThreatTable, players: &'a [PlayerRef]) -> Opt
 }
 
 /// Returns the farthest living player from `origin`, or `None` if no players.
-pub fn farthest_target<'a>(players: &'a [PlayerRef], origin: Vec3) -> Option<&'a PlayerRef> {
+pub fn farthest_target(players: &[PlayerRef], origin: Vec3) -> Option<&PlayerRef> {
     players.iter().max_by(|left, right| {
         left.position
             .distance_squared(origin)
@@ -60,7 +60,7 @@ pub fn farthest_target<'a>(players: &'a [PlayerRef], origin: Vec3) -> Option<&'a
 ///
 /// Used as the fallback target when no player has accrued threat yet, so the
 /// boss starts fighting the moment a player enters the arena ring.
-pub fn nearest_player<'a>(players: &'a [PlayerRef], origin: Vec3) -> Option<&'a PlayerRef> {
+pub fn nearest_player(players: &[PlayerRef], origin: Vec3) -> Option<&PlayerRef> {
     players.iter().min_by(|left, right| {
         left.position
             .distance_squared(origin)

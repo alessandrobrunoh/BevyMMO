@@ -61,12 +61,6 @@ observable behavior intact. Run the full checklist after each slice.
 - [ ] Game screen spawns (camera, light, ground).
 - [ ] Player can move and cast (embedded server + client both work).
 
-### 7. Editor mode (Slice 6+)
-
-- [ ] `cargo run -- editor` opens a window with orbit camera + egui panels.
-- [ ] Editor does not initialize Lightyear client/server.
-- [ ] `cargo run -- server|client|host-client` still work after editor changes.
-
 ## After each slice
 
 | Command | Expected |
@@ -74,5 +68,5 @@ observable behavior intact. Run the full checklist after each slice.
 | `cargo test` | Same count or more; 0 failures |
 | `cargo fmt --check` | Clean |
 | `cargo check --workspace` | Clean (Slice 1+) |
-| Headless server build | Compiles; no `presentation`/`editor` in `cargo tree` (Slice 3+) |
+| Headless server build | Compiles; no `presentation` in `cargo tree` (Slice 3+) |
 | Clippy | No NEW warnings vs the 73-error baseline |

@@ -27,20 +27,22 @@ pub fn spawn_item_detail_card(
     equipment: &Equipment,
     selection: InventorySelection,
 ) {
-    let (item_id, equipped_slot, slot_index) = match selection {
+    let (item_instance, equipped_slot, slot_index) = match selection {
         InventorySelection::Slot(idx) => {
-            let item_id = inventory.slots.get(idx as usize).and_then(|s| s.clone());
-            let equipped_slot = item_id.as_ref().and_then(|id| equipment.slot_holding(id));
-            (item_id, equipped_slot, Some(idx))
+            let item_instance = inventory.slots.get(idx as usize).and_then(|s| s.clone());
+            let equipped_slot = item_instance
+                .as_ref()
+                .and_then(|instance| equipment.slot_holding(instance.instance_id));
+            (item_instance, equipped_slot, Some(idx))
         }
         InventorySelection::Equipment(slot) => (equipment.get(slot).clone(), Some(slot), None),
     };
 
-    let Some(item_id) = item_id else {
+    let Some(item_instance) = item_instance else {
         return;
     };
 
-    let Some(item) = registry.get(&item_id) else {
+    let Some(item) = registry.get(&item_instance.item_id) else {
         return;
     };
 

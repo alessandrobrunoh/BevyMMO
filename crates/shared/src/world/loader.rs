@@ -1149,7 +1149,7 @@ mod tests {
         assert_eq!(manifest.props.len(), 2);
         assert_eq!(manifest.props[0].kind.as_str(), "player_spawn");
         assert_eq!(manifest.props[0].collision, None);
-        assert_eq!(manifest.props[0].blocks_movement, false);
+        assert!(!manifest.props[0].blocks_movement);
 
         let collision = manifest.props[1]
             .collision

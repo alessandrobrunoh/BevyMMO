@@ -19,21 +19,16 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Window mode selectable from the graphics panel.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowMode {
     /// OS-decorated, resizable window.
+    #[default]
     Windowed,
     /// Fullscreen borderless window covering the whole desktop.
     Borderless,
     /// Exclusive fullscreen (changes video mode).
     Exclusive,
-}
-
-impl Default for WindowMode {
-    fn default() -> Self {
-        Self::Windowed
-    }
 }
 
 impl WindowMode {
@@ -500,7 +495,7 @@ mod tests {
 
         let json = serde_json::to_string(&settings).unwrap();
         let back: GameSettings = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.graphics.vsync, false);
+        assert!(!back.graphics.vsync);
         assert_eq!(back.graphics.resolution.width, 1920);
         assert_eq!(back.graphics.mode, WindowMode::Borderless);
         assert!(back.general.show_fps);
@@ -510,7 +505,7 @@ mod tests {
     #[test]
     fn malformed_json_falls_back_to_defaults() {
         let settings: GameSettings = serde_json::from_str("{ invalid }").unwrap_or_default();
-        assert_eq!(settings.graphics.vsync, true); // default
+        assert!(settings.graphics.vsync); // default
     }
 
     #[test]

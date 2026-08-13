@@ -9,9 +9,12 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::abilities::{RuneProfile, WeaponAbilities};
+
 use super::components::EquipSlot;
 use super::effects::ItemEffect;
 use super::registry::ItemId;
+use super::spell_kit::SpellKit;
 
 /// Narrative category, used by the inventory UI (filtering / icons) and by
 /// equip validation (only `Weapon` items can go into the weapon slot, etc.).
@@ -90,6 +93,37 @@ pub trait Item: Send + Sync + 'static {
     /// equippable. The server reads this when validating an equip command.
     fn equip_requirements(&self) -> &[EquipRequirement] {
         &[]
+    }
+
+    /// Spells this item makes available on the Q/W/E hotbar while equipped.
+    ///
+    /// `None` (the default) means the item grants no spells at all — most
+    /// armor/accessory items only contribute [`effects`](Item::effects) and
+    /// never override this. Items that *do* grant spells implement it via
+    /// the `#[item(..., spells(q = [...], w = [...], e = ...))]` macro,
+    /// which also enforces the Q(1+)/W(1+)/E(1) shape at compile time; see
+    /// `bevymmo_server::items::available_spells` for how kits from every
+    /// equipped item are unioned into the player's selectable spell pool.
+    fn spell_kit(&self) -> Option<&SpellKit> {
+        None
+    }
+
+    /// I tre gesti fissi (Primary/Secondary/Ultimate) di questa variante
+    /// d'arma — sistema "Eidolon": il gesto è dell'arma, cosa manifesta
+    /// dipende dall'Incisione del giocatore su quell'esemplare (vedi
+    /// `crate::abilities`). `None` per item senza gesti propri.
+    ///
+    /// Coesiste con [`spell_kit`](Item::spell_kit): un'arma usa l'uno O
+    /// l'altro modello, non entrambi. Nuove armi dovrebbero preferire
+    /// questo; `spell_kit` resta per gli item già esistenti.
+    fn weapon_abilities(&self) -> Option<&WeaponAbilities> {
+        None
+    }
+
+    /// Capacità Runica / Stabilità / Affinità — quanto e cosa questa arma
+    /// può reggere inciso. `None` se `weapon_abilities()` è `None`.
+    fn rune_profile(&self) -> Option<&RuneProfile> {
+        None
     }
 }
 

@@ -73,7 +73,7 @@ fn equip_slot_label(equipment: &Equipment, registry: &ItemRegistry, slot: EquipS
     equipment
         .get(slot)
         .as_ref()
-        .and_then(|id| registry.get(id))
+        .and_then(|instance| registry.get(&instance.item_id))
         .map(|item| item.display_name().to_string())
         .unwrap_or_else(|| EMPTY_SLOT_PLACEHOLDER.to_string())
 }
@@ -161,7 +161,7 @@ fn spawn_inventory_window(
                 .slots
                 .get(idx)
                 .and_then(|opt| opt.as_ref())
-                .and_then(|id| registry_snapshot.get(id))
+                .and_then(|instance| registry_snapshot.get(&instance.item_id))
                 .map(|item| item.display_name().to_string())
                 .unwrap_or_else(|| format!("Slot {}", idx + 1))
         })
@@ -305,7 +305,7 @@ pub fn update_inventory_ui(
             .slots
             .get(slot_text.index as usize)
             .and_then(|opt| opt.as_ref())
-            .and_then(|id| registry.get(id))
+            .and_then(|instance| registry.get(&instance.item_id))
             .map(|item| item.display_name().to_string())
             .unwrap_or_else(|| format!("Slot {}", slot_text.index + 1));
 

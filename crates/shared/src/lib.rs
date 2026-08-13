@@ -8,11 +8,16 @@
 //! Dependency rule: nothing in this crate may depend on the other workspace
 //! crates. See `plans/workspace-crate-split.md` (D1).
 
+pub mod abilities;
+pub mod ancient_words_impl;
+pub mod base_abilities_impl;
 pub mod crowd_control;
 pub mod entity;
+pub mod essences_impl;
 pub mod game_state;
 pub mod items;
 pub mod items_impl;
+pub mod modifiers_impl;
 pub mod movement;
 pub mod network;
 pub mod paths;

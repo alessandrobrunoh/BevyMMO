@@ -5,10 +5,12 @@
 //! other crate) can compose them freely. Mirrors `crate::spells_impl`.
 
 pub mod field_rations;
+pub mod flame_staff;
 pub mod iron_plate_armor;
 pub mod iron_sword;
 pub mod leather_helmet;
 pub mod quick_flask;
+pub mod storm_hammer;
 pub mod swift_boots;
 pub mod swift_steed;
 pub mod travelers_bag;
@@ -27,6 +29,8 @@ use crate::items::registry::ItemRegistry;
 /// so every slot in the inventory UI has something equippable to test with.
 pub fn register_default_items(mut registry: bevy::prelude::ResMut<ItemRegistry>) {
     registry.register(Arc::new(iron_sword::IronSword::new()));
+    registry.register(Arc::new(flame_staff::FlameStaff));
+    registry.register(Arc::new(storm_hammer::StormHammer));
     registry.register(Arc::new(leather_helmet::LeatherHelmet::new()));
     registry.register(Arc::new(travelers_cape::TravelersCape::new()));
     registry.register(Arc::new(iron_plate_armor::IronPlateArmor::new()));

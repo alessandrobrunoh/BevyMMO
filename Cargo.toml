@@ -5,7 +5,6 @@ members = [
     "crates/server",
     "crates/client",
     "crates/presentation",
-    "crates/editor",
     "bins/game",
 ]
 default-members = ["bins/game"]

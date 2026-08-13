@@ -23,6 +23,7 @@ use crate::persistence::entity::player_stats::{
 use crate::persistence::error::{PersistenceError, PersistenceResult};
 use crate::persistence::normalize_name;
 use bevymmo_shared::items::components::{Equipment, Inventory};
+use bevymmo_shared::items::instance::ItemInstance;
 use bevymmo_shared::items::registry::ItemId;
 use bevymmo_shared::spells::{default_player_hotbar, SpellHotbar, SpellId};
 use bevymmo_shared::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
@@ -338,7 +339,33 @@ impl PlayerRepository {
         self.save_inventory(player_id, &default_inventory).await?;
         Ok(default_inventory)
     }
+}
 
+/// Serializes an `ItemInstance` (id + eventuale incisione) as a JSON blob for
+/// a single TEXT equipment column. Prima di poter portare un'Incisione
+/// propria, ogni colonna conteneva solo la stringa nuda dell'`ItemId`; ora
+/// contiene l'intero `ItemInstance`. Righe più vecchie con la sola stringa
+/// nuda non sono più compatibili — accettabile in questa fase di sviluppo
+/// (nessun dato utente live), ma da tenere a mente se questo cambia.
+fn encode_item_instance(item: &Option<ItemInstance>) -> Option<String> {
+    item.as_ref().map(|instance| {
+        serde_json::to_string(instance).expect("ItemInstance serialization cannot fail")
+    })
+}
+
+fn decode_item_instance(raw: Option<String>, player_id: Uuid, column: &str) -> Option<ItemInstance> {
+    raw.and_then(|json| match serde_json::from_str(&json) {
+        Ok(instance) => Some(instance),
+        Err(e) => {
+            bevy::log::error!(
+                "failed to parse equipment.{column} for player {player_id}: {e} — treating slot as empty"
+            );
+            None
+        }
+    })
+}
+
+impl PlayerRepository {
     /// Loads the persisted equipment for a player.
     ///
     /// Returns `None` when no row exists yet (caller falls back to the default
@@ -353,16 +380,16 @@ impl PlayerRepository {
         };
 
         Ok(Some(Equipment {
-            bag: row.bag.map(ItemId::new),
-            helmet: row.helmet.map(ItemId::new),
-            cape: row.cape.map(ItemId::new),
-            weapon: row.weapon.map(ItemId::new),
-            armor: row.armor.map(ItemId::new),
-            offhand: row.offhand.map(ItemId::new),
-            potion: row.potion.map(ItemId::new),
-            shoes: row.shoes.map(ItemId::new),
-            food: row.food.map(ItemId::new),
-            mount: row.mount.map(ItemId::new),
+            bag: decode_item_instance(row.bag, player_id, "bag"),
+            helmet: decode_item_instance(row.helmet, player_id, "helmet"),
+            cape: decode_item_instance(row.cape, player_id, "cape"),
+            weapon: decode_item_instance(row.weapon, player_id, "weapon"),
+            armor: decode_item_instance(row.armor, player_id, "armor"),
+            offhand: decode_item_instance(row.offhand, player_id, "offhand"),
+            potion: decode_item_instance(row.potion, player_id, "potion"),
+            shoes: decode_item_instance(row.shoes, player_id, "shoes"),
+            food: decode_item_instance(row.food, player_id, "food"),
+            mount: decode_item_instance(row.mount, player_id, "mount"),
         }))
     }
 
@@ -372,9 +399,7 @@ impl PlayerRepository {
         player_id: Uuid,
         equipment: &Equipment,
     ) -> PersistenceResult<()> {
-        fn col(item: &Option<ItemId>) -> Option<String> {
-            item.as_ref().map(|id| id.as_str().to_string())
-        }
+        let col = encode_item_instance;
 
         let update_result = EquipmentEntity::update_many()
             .col_expr(EquipmentColumn::Bag, col(&equipment.bag).into())
@@ -477,16 +502,22 @@ impl PlayerRepository {
 /// inventory UI has something to equip out of the box. Purely a QA/demo
 /// convenience; existing players are never touched (only used on first
 /// creation, see [`PlayerRepository::load_or_create_default_inventory`]).
+///
+/// The weapon reference is `FlameStaff`, not `IronSword`: since spells now
+/// come from equipped items instead of a global default hotbar (see
+/// `bevymmo_shared::items::SpellKit`), a brand-new player needs a
+/// spell-granting weapon in reach or their Q/W/E stay empty until they equip
+/// one themselves.
 fn starter_inventory() -> Inventory {
     use bevymmo_shared::items_impl::{
-        field_rations::FieldRations, iron_plate_armor::IronPlateArmor, iron_sword::IronSword,
+        field_rations::FieldRations, flame_staff::FlameStaff, iron_plate_armor::IronPlateArmor,
         leather_helmet::LeatherHelmet, quick_flask::QuickFlask, swift_boots::SwiftBoots,
         swift_steed::SwiftSteed, travelers_bag::TravelersBag, travelers_cape::TravelersCape,
         wooden_shield::WoodenShield,
     };
 
     let ids = [
-        IronSword::ID,
+        FlameStaff::ID,
         LeatherHelmet::ID,
         TravelersCape::ID,
         IronPlateArmor::ID,
@@ -500,7 +531,7 @@ fn starter_inventory() -> Inventory {
 
     let mut inventory = Inventory::default();
     for (slot, id) in inventory.slots.iter_mut().zip(ids) {
-        *slot = Some(ItemId::new(id));
+        *slot = Some(ItemInstance::new(ItemId::new(id)));
     }
     inventory
 }

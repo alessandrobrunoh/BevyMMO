@@ -63,9 +63,10 @@ pub struct ProjectileVisual {
 
 // Input commands
 /// Point-and-click command sent from client to server.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Reflect)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Reflect, Default)]
 pub enum Inputs {
     MoveTo(Vec3),
+    #[default]
     Stop,
 }
 
@@ -74,12 +75,6 @@ pub enum Inputs {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct MoveCommand {
     pub target: Vec3,
-}
-
-impl Default for Inputs {
-    fn default() -> Self {
-        Self::Stop
-    }
 }
 
 impl MapEntities for Inputs {

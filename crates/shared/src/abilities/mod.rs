@@ -1,0 +1,25 @@
+//! Sistema Eidolon: gesti fissi dell'equipaggiamento (`BaseAbility`) +
+//! Glifi incisi dal giocatore (`Essence`/`Modifier`/`AncientWord`) = spell
+//! finale. Mirrors `crate::spells`/`crate::items` nello stile (trait +
+//! registry + id), con quattro macro gemelle in `bevymmo-props-macro` per
+//! ridurre il boilerplate di ogni nuovo pezzo di contenuto.
+
+pub mod ancient_word;
+pub mod base_ability;
+pub mod essence;
+pub mod inscription;
+pub mod known_glyphs;
+pub mod modifier;
+pub mod resolve;
+pub mod slot;
+pub mod weapon_abilities;
+
+pub use ancient_word::{AncientWord, AncientWordEffect, AncientWordId, AncientWordRegistry, ArcAncientWord};
+pub use base_ability::{AbilityGeometry, AbilityId, AbilityParams, AbilityTag, ArcBaseAbility, BaseAbility, BaseAbilityRegistry};
+pub use essence::{ArcEssence, Essence, EssenceEffect, EssenceId, EssenceRegistry, EssenceVisualTheme};
+pub use inscription::{validate_weapon_inscriptions, Inscription, InscriptionError, RuneProfile, WeaponInscriptions};
+pub use known_glyphs::KnownGlyphs;
+pub use modifier::{ArcModifier, Modifier, ModifierEffect, ModifierId, ModifierRegistry};
+pub use resolve::{cast_inscribed_slot, CastBlockedReason};
+pub use slot::AbilitySlot;
+pub use weapon_abilities::WeaponAbilities;

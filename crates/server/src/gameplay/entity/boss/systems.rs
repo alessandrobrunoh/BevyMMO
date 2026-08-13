@@ -551,7 +551,6 @@ mod tests {
         // system must not touch it again.
         let mut entity_mut = app.world_mut().entity_mut(boss);
         *entity_mut.get_mut::<BossPhase>().unwrap() = BossPhase::Dormant;
-        drop(entity_mut);
 
         app.update();
 

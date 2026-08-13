@@ -17,9 +17,10 @@ use bevymmo_shared::entity::player::components::Player;
 use bevymmo_shared::entity::spawn::GameEntityBundle;
 use bevymmo_shared::game_state::validate_player_name;
 use bevymmo_shared::items::components::{Equipment, Inventory};
+use bevymmo_shared::items::AvailableSpellChoices;
 use bevymmo_shared::network::protocol::*;
 use bevymmo_shared::spells::{
-    SpellCastRequest, SpellCooldowns, SpellHotbar, SpellId, SpellRegistry, SpellReleaseRequest,
+    SpellCastRequest, SpellCooldowns, SpellHotbar, SpellId, SpellReleaseRequest,
 };
 use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
 
@@ -295,6 +296,7 @@ fn finish_pending_joins(
                 snapshot.inventory,
                 snapshot.equipment,
                 AppliedEquipmentBonus::default(),
+                AvailableSpellChoices::default(),
                 PlayerId(completed_join.peer_id),
                 DbPlayerId(snapshot.player.id),
                 PredictionTarget::to_clients(NetworkTarget::Single(completed_join.peer_id)),
@@ -582,27 +584,35 @@ fn handle_update_hotbar_slot_requests(
         (&mut MessageReceiver<UpdateHotbarSlotRequest>, &RemoteId),
         (With<Connected>, With<Joined>),
     >,
-    mut players: Query<(Entity, &PlayerId, &DbPlayerId, &mut SpellHotbar), With<Player>>,
-    registry: Res<SpellRegistry>,
+    mut players: Query<
+        (Entity, &PlayerId, &DbPlayerId, &mut SpellHotbar, &AvailableSpellChoices),
+        With<Player>,
+    >,
     store: Res<PlayerStore>,
     runtime: Res<PersistenceRuntime>,
 ) {
     for (mut receiver, remote_id) in receivers.iter_mut() {
-        let Some((player_entity, _, database_id, mut hotbar)) = players
+        let Some((player_entity, _, database_id, mut hotbar, choices)) = players
             .iter_mut()
-            .find(|(_, player_id, _, _)| player_id.0 == remote_id.0)
+            .find(|(_, player_id, _, _, _)| player_id.0 == remote_id.0)
         else {
             continue;
         };
 
         for request in receiver.receive() {
             let spell_id = request.spell_id.map(SpellId::new);
+            // The legal picks for a hotbar key are no longer "any registered
+            // spell" — they are whatever the player's currently equipped
+            // items offer for that key (see `AvailableSpellChoices`, built by
+            // `available_spells::recompute_available_spells` from every
+            // equipped item's `SpellKit`).
             if let Some(id) = &spell_id {
-                if !registry.contains(id) {
+                if !choices.contains(request.slot, id) {
                     bevy::log::warn!(
-                        "Player {:?} attempted to assign unknown spell {}",
+                        "Player {:?} attempted to select {} on {:?}, but it isn't offered by their equipped items",
                         player_entity,
-                        id.as_str()
+                        id.as_str(),
+                        request.slot
                     );
                     continue;
                 }

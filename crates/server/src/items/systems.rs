@@ -173,11 +173,11 @@ fn equip_item(
         return Err("invalid inventory slot index");
     }
 
-    let Some(item_id) = inventory.slots[slot_index].clone() else {
+    let Some(item_instance) = inventory.slots[slot_index].clone() else {
         return Err("slot is empty");
     };
 
-    let Some(item) = registry.get(&item_id) else {
+    let Some(item) = registry.get(&item_instance.item_id) else {
         return Err("item not in registry");
     };
 
@@ -188,7 +188,7 @@ fn equip_item(
     // The item previously occupying the target slot (if any) swaps back into
     // the inventory slot we just emptied.
     let previous = equipment.get_mut(target_slot).take();
-    *equipment.get_mut(target_slot) = Some(item_id);
+    *equipment.get_mut(target_slot) = Some(item_instance);
     inventory.slots[slot_index] = previous;
 
     Ok(())
@@ -256,6 +256,7 @@ fn persist_inventory_and_equipment(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevymmo_shared::items::instance::ItemInstance;
     use bevymmo_shared::items::registry::ItemId;
     use bevymmo_shared::items_impl::iron_sword::IronSword;
     use std::sync::Arc;
@@ -268,7 +269,7 @@ mod tests {
 
     fn inventory_with_sword_in_slot(slot: usize) -> Inventory {
         let mut inventory = Inventory::default();
-        inventory.slots[slot] = Some(ItemId::new(IronSword::ID));
+        inventory.slots[slot] = Some(ItemInstance::new(ItemId::new(IronSword::ID)));
         inventory
     }
 
@@ -280,23 +281,24 @@ mod tests {
 
         assert!(equip_item(&mut inventory, &mut equipment, &registry, 2).is_ok());
 
-        assert_eq!(equipment.weapon, Some(ItemId::new(IronSword::ID)));
+        assert_eq!(equipment.weapon.as_ref().map(|i| &i.item_id), Some(&ItemId::new(IronSword::ID)));
         assert!(inventory.slots[2].is_none());
     }
 
     #[test]
     fn equip_swaps_previously_equipped_weapon_back_into_slot() {
         let mut inventory = inventory_with_sword_in_slot(2);
+        let old_sword = ItemInstance::new(ItemId::new("old_sword"));
         let mut equipment = Equipment {
-            weapon: Some(ItemId::new("old_sword")),
+            weapon: Some(old_sword.clone()),
             ..Default::default()
         };
         let registry = registry_with_iron_sword();
 
         assert!(equip_item(&mut inventory, &mut equipment, &registry, 2).is_ok());
 
-        assert_eq!(equipment.weapon, Some(ItemId::new(IronSword::ID)));
-        assert_eq!(inventory.slots[2], Some(ItemId::new("old_sword")));
+        assert_eq!(equipment.weapon.as_ref().map(|i| &i.item_id), Some(&ItemId::new(IronSword::ID)));
+        assert_eq!(inventory.slots[2], Some(old_sword));
     }
 
     #[test]
@@ -322,7 +324,7 @@ mod tests {
     #[test]
     fn equip_rejects_unknown_item() {
         let mut inventory = Inventory::default();
-        inventory.slots[0] = Some(ItemId::new("not_registered"));
+        inventory.slots[0] = Some(ItemInstance::new(ItemId::new("not_registered")));
         let mut equipment = Equipment::default();
         let registry = registry_with_iron_sword();
 
@@ -333,9 +335,11 @@ mod tests {
     #[test]
     fn unequip_returns_weapon_to_first_free_slot() {
         let mut inventory = Inventory::default();
-        inventory.slots[3] = Some(ItemId::new("blocker"));
+        let blocker = ItemInstance::new(ItemId::new("blocker"));
+        inventory.slots[3] = Some(blocker.clone());
+        let sword = ItemInstance::new(ItemId::new(IronSword::ID));
         let mut equipment = Equipment {
-            weapon: Some(ItemId::new(IronSword::ID)),
+            weapon: Some(sword.clone()),
             ..Default::default()
         };
 
@@ -343,8 +347,8 @@ mod tests {
 
         assert!(equipment.weapon.is_none());
         // First free slot is 0: blocker stays at 3, sword lands at 0.
-        assert_eq!(inventory.slots[0], Some(ItemId::new(IronSword::ID)));
-        assert_eq!(inventory.slots[3], Some(ItemId::new("blocker")));
+        assert_eq!(inventory.slots[0], Some(sword));
+        assert_eq!(inventory.slots[3], Some(blocker));
     }
 
     #[test]
@@ -357,10 +361,11 @@ mod tests {
 
     #[test]
     fn unequip_rejects_full_inventory_and_keeps_weapon() {
+        let filler = ItemInstance::new(ItemId::new("filler"));
         let mut inventory = Inventory {
-            slots: std::array::from_fn(|_| Some(ItemId::new("filler"))),
+            slots: std::array::from_fn(|_| Some(filler.clone())),
         };
-        let sword = ItemId::new(IronSword::ID);
+        let sword = ItemInstance::new(ItemId::new(IronSword::ID));
         let mut equipment = Equipment {
             weapon: Some(sword.clone()),
             ..Default::default()
@@ -378,28 +383,31 @@ mod tests {
         registry.register(std::sync::Arc::new(LeatherHelmet::new()));
 
         let mut inventory = Inventory::default();
-        inventory.slots[0] = Some(ItemId::new(LeatherHelmet::ID));
+        let helmet = ItemInstance::new(ItemId::new(LeatherHelmet::ID));
+        inventory.slots[0] = Some(helmet.clone());
         let mut equipment = Equipment::default();
 
         assert!(equip_item(&mut inventory, &mut equipment, &registry, 0).is_ok());
-        assert_eq!(equipment.helmet, Some(ItemId::new(LeatherHelmet::ID)));
+        assert_eq!(equipment.helmet, Some(helmet.clone()));
         assert!(inventory.slots[0].is_none());
 
         assert!(unequip_item(&mut inventory, &mut equipment, EquipSlot::Helmet).is_ok());
         assert!(equipment.helmet.is_none());
-        assert_eq!(inventory.slots[0], Some(ItemId::new(LeatherHelmet::ID)));
+        assert_eq!(inventory.slots[0], Some(helmet));
     }
 
     #[test]
     fn move_swaps_slots() {
         let mut inventory = Inventory::default();
-        inventory.slots[1] = Some(ItemId::new("a"));
-        inventory.slots[5] = Some(ItemId::new("b"));
+        let a = ItemInstance::new(ItemId::new("a"));
+        let b = ItemInstance::new(ItemId::new("b"));
+        inventory.slots[1] = Some(a.clone());
+        inventory.slots[5] = Some(b.clone());
 
         assert!(move_item(&mut inventory, 1, 5).is_ok());
 
-        assert_eq!(inventory.slots[1], Some(ItemId::new("b")));
-        assert_eq!(inventory.slots[5], Some(ItemId::new("a")));
+        assert_eq!(inventory.slots[1], Some(b));
+        assert_eq!(inventory.slots[5], Some(a));
     }
 
     #[test]

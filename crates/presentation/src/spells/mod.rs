@@ -1,5 +1,6 @@
 //! Client presentation for spells: cast bars, HUD and visual effects.
 
+pub mod available_choices;
 pub mod cast_bar;
 pub mod dragon_enemy;
 pub mod effects;
@@ -23,6 +24,7 @@ impl Plugin for SpellsHudPlugin {
         app.add_systems(
             Update,
             (
+                available_choices::sync_available_spell_choices,
                 input::cast_spells_on_key,
                 dispatch_visual_effects,
                 healing_circle::visual::animate,

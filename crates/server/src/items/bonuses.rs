@@ -38,9 +38,9 @@ pub struct AppliedEquipmentBonus {
 fn compute_bonus(equipment: &Equipment, registry: &ItemRegistry) -> Vec<StatBonusEffect> {
     let mut effects: Vec<StatBonusEffect> = Vec::new();
 
-    let mut collect = |item_id: &bevymmo_shared::items::registry::ItemId| {
-        let Some(item) = registry.get(item_id) else {
-            bevy::log::warn!("equipped item {} not in registry", item_id.as_str());
+    let mut collect = |item_instance: &bevymmo_shared::items::instance::ItemInstance| {
+        let Some(item) = registry.get(&item_instance.item_id) else {
+            bevy::log::warn!("equipped item {} not in registry", item_instance.item_id.as_str());
             return;
         };
         for effect in item.effects() {
@@ -151,6 +151,7 @@ pub fn recompute_equipment_bonuses(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevymmo_shared::items::instance::ItemInstance;
     use bevymmo_shared::items::registry::ItemId;
 
     #[test]
@@ -189,7 +190,7 @@ mod tests {
             },
         };
         let applied = AppliedEquipmentBonus {
-            base: Some(snapshot.clone()),
+            base: Some(snapshot),
         };
 
         // Runtime stats are different from the snapshot: the base must win.
@@ -241,7 +242,7 @@ mod tests {
     #[test]
     fn compute_bonus_ignores_unknown_equipped_item() {
         let equipment = Equipment {
-            weapon: Some(ItemId::new("does_not_exist")),
+            weapon: Some(ItemInstance::new(ItemId::new("does_not_exist"))),
             ..Default::default()
         };
         let registry = ItemRegistry::default();

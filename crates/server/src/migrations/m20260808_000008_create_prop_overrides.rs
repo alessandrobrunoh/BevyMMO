@@ -72,14 +72,3 @@ impl MigrationTrait for Migration {
             .await
     }
 }
-
-#[derive(DeriveIden)]
-enum PropOverrides {
-    Table,
-    MapId,
-    PropId,
-    TransformJson,
-    Tint,
-    RemovedAt,
-    UpdatedAt,
-}

@@ -617,13 +617,12 @@ A complete authoring pass for a new map called `village_square`:
      failure is silent: the map still loads and looks correct
 
 10. **Load and test in-engine**
-    - `cargo run -- editor`
-    - `Ctrl+O`, pick `village_square.world.json`
-    - Walk around in `cargo run -- host-client` and verify collision,
-      walkable heights, and prop placement
+    - `cargo run -- host-client`, pick `village_square.world.json`
+    - Walk around and verify collision, walkable heights, and prop placement
 
 11. **Iterate**
-    - Edit `.blend` → re-export GLB → **re-run step 9** → reload in editor
+    - Edit `.blend` → re-export GLB → **re-run step 9** → reload in
+      `host-client`
     - Edit `.world.json` directly for surface/blocker tweaks (no Blender
       round-trip needed); hand-authored blockers survive step 9
 

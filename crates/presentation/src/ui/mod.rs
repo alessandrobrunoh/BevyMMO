@@ -18,7 +18,7 @@ pub mod player_stats;
 pub mod scoreboard;
 pub mod scrollbar;
 pub mod settings;
-pub mod spellbook;
+pub mod spell_selector;
 pub mod systems;
 pub mod target_frame;
 pub mod target_indicator;

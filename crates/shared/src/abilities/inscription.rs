@@ -11,7 +11,7 @@ use super::base_ability::{AbilityId, BaseAbilityRegistry};
 use super::essence::{EssenceId, EssenceRegistry};
 use super::modifier::{ModifierId, ModifierRegistry};
 use super::slot::AbilitySlot;
-use super::weapon_abilities::WeaponAbilities;
+use super::weapon_abilities::{resolve_active_ability, AbilitySelection, WeaponAbilities};
 
 /// L'incisione di UNO slot (Primary/Secondary/Ultimate).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -113,8 +113,9 @@ fn inscription_cost(
     essence_cost + modifiers_cost + word_cost
 }
 
-/// Valida UNO slot: ogni Glifo deve esistere nei registry e rispettare i tag
-/// richiesti dalla `BaseAbility` di quello slot. Non controlla ancora la
+/// Valida UNO slot contro il gesto EFFETTIVAMENTE attivo (dopo aver
+/// risolto `AbilitySelection` — un gesto scelto dal giocatore può avere tag
+/// diversi dall'altra opzione dello stesso slot). Non controlla ancora la
 /// Capacità totale — quella si valida sull'intera `WeaponInscriptions`
 /// (§39-41: la Capacità è condivisa fra Primary/Secondary/Ultimate).
 fn validate_slot(
@@ -156,11 +157,15 @@ fn validate_slot(
     Ok(())
 }
 
-/// Valida l'intera incisione di un'arma: compatibilità tag per ogni slot +
-/// Capacità Runica totale (condivisa fra i tre slot).
+/// Valida l'intera incisione di un'arma: compatibilità tag per ogni slot
+/// (contro il gesto EFFETTIVAMENTE selezionato, non un gesto fisso — vedi
+/// [`resolve_active_ability`]) + Capacità Runica totale (condivisa fra i tre
+/// slot).
+#[allow(clippy::too_many_arguments)]
 pub fn validate_weapon_inscriptions(
     inscriptions: &WeaponInscriptions,
     abilities: &WeaponAbilities,
+    selection: &AbilitySelection,
     profile: &RuneProfile,
     ability_registry: &BaseAbilityRegistry,
     essences: &EssenceRegistry,
@@ -170,7 +175,13 @@ pub fn validate_weapon_inscriptions(
     let mut total_cost = 0;
     for slot in AbilitySlot::ALL {
         let inscription = inscriptions.get(slot);
-        let ability_id = abilities.get(slot);
+        // `WeaponAbilities::new` guarantees Primary/Secondary are non-empty
+        // and Ultimate always has its one gesture, so this only ever comes
+        // back `None` for a malformed `WeaponAbilities` — skip rather than
+        // panic on data that shouldn't exist.
+        let Some(ability_id) = resolve_active_ability(slot, abilities, selection) else {
+            continue;
+        };
         validate_slot(inscription, ability_id, ability_registry, essences, modifiers, ancient_words)?;
         total_cost += inscription_cost(inscription, profile, essences, modifiers, ancient_words);
     }

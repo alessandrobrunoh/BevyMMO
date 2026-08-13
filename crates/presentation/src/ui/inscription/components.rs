@@ -19,5 +19,13 @@ pub struct ModifierToggleButton {
     pub modifier_id: String,
 }
 
+/// Makes `ability_id` the active gesture on `slot`. Only spawned for slots
+/// offering more than one gesture (Ultimate always offers exactly one).
+#[derive(Component)]
+pub struct AbilitySelectButton {
+    pub slot: AbilitySlot,
+    pub ability_id: String,
+}
+
 #[derive(Component)]
 pub struct CloseInscriptionButton;

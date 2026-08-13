@@ -6,7 +6,12 @@ use bevymmo_props_macro::modifier;
 
 use crate::abilities::{AbilityParams, ModifierEffect};
 
-#[modifier(id = "espandere", name = "Espandere", requires_tag = Area, rune_cost = 2)]
+#[modifier(
+    id = "espandere",
+    name = "Espandere",
+    requires_tag = Area,
+    rune_cost = 2,
+)]
 pub struct EspandereModifier;
 
 impl EspandereModifier {

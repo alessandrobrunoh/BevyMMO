@@ -8,7 +8,9 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 
 use bevymmo_client::network::types::ConnectedClient;
-use bevymmo_shared::abilities::{AbilityId, AbilitySlot, BaseAbilityRegistry, EssenceRegistry};
+use bevymmo_shared::abilities::{
+    resolve_active_ability, AbilitySlot, BaseAbilityRegistry, EssenceRegistry,
+};
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::movement::MoveTarget;
@@ -126,7 +128,7 @@ fn eidolon_hud_label(
     let weapon = equipment.weapon.as_ref()?;
     let item = item_registry.get(&weapon.item_id)?;
     let weapon_abilities = item.weapon_abilities()?;
-    let ability_id: &AbilityId = weapon_abilities.get(slot);
+    let ability_id = resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)?;
     let ability = ability_registry.get(ability_id)?;
 
     let essence_name = weapon

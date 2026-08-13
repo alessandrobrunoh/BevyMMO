@@ -9,7 +9,8 @@
 use bevy::prelude::*;
 
 use bevymmo_shared::abilities::{
-    cast_inscribed_slot, AbilityCooldowns, AncientWordRegistry, BaseAbilityRegistry,
+    cast_inscribed_slot, resolve_active_ability, AbilityCooldowns, AncientWordRegistry,
+    BaseAbilityRegistry,
     EidolonCastRequest, EssenceRegistry, KnownGlyphs, ModifierRegistry,
 };
 use bevymmo_shared::entity::boss::components::BossSpellbook;
@@ -729,7 +730,17 @@ pub fn process_eidolon_cast_requests(
             continue;
         };
         let inscriptions = weapon_instance.inscriptions.clone().unwrap_or_default();
-        let ability_id = weapon_abilities.get(request.slot).clone();
+        let selection = &weapon_instance.ability_selection;
+        let Some(ability_id) =
+            resolve_active_ability(request.slot, weapon_abilities, selection).cloned()
+        else {
+            bevy::log::debug!(
+                "Weapon {} offers no gesture for slot {:?}",
+                weapon_instance.item_id.as_str(),
+                request.slot
+            );
+            continue;
+        };
 
         if cooldowns.is_on_cooldown(&ability_id) {
             bevy::log::debug!("Ability {:?} on cooldown for caster {}", ability_id, request.caster);
@@ -775,6 +786,7 @@ pub fn process_eidolon_cast_requests(
         match cast_inscribed_slot(
             request.slot,
             weapon_abilities,
+            selection,
             &inscriptions,
             known,
             &ability_registry,

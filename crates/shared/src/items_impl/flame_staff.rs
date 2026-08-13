@@ -1,6 +1,8 @@
-//! "Flame Staff" — arma di riferimento del sistema Eidolon: 3 gesti fissi
-//! (Getto/Onda/Convergenza), 8 di Capacità Runica, Affinità Fuoco. Il
-//! giocatore incide Glifi sopra questi gesti — vedi `crate::abilities`.
+//! "Flame Staff" — arma di riferimento del sistema Eidolon: 2 opzioni di
+//! gesto per Primary (Getto/Scintilla) e per Secondary (Onda/Nova), 1 sola
+//! per Ultimate (Convergenza) — il giocatore sceglie una fra le opzioni di
+//! ogni slot, poi incide Glifi sopra il gesto scelto (vedi `crate::abilities`).
+//! 8 di Capacità Runica, Affinità Fuoco.
 //!
 //! Prima versione di questo item (menu di spell pronte via `spell_kit()`)
 //! sostituita da questa: `abilities(...)`/`rune_profile(...)` al posto di
@@ -11,6 +13,8 @@ use bevymmo_props_macro::item;
 
 use crate::base_abilities_impl::staff_bolt::StaffBolt;
 use crate::base_abilities_impl::staff_convergence::StaffConvergence;
+use crate::base_abilities_impl::staff_nova::StaffNova;
+use crate::base_abilities_impl::staff_spark::StaffSpark;
 use crate::base_abilities_impl::staff_wave::StaffWave;
 
 #[item(
@@ -22,8 +26,8 @@ use crate::base_abilities_impl::staff_wave::StaffWave;
     slot = Weapon,
     effects = [stat_bonus(field = AttackPower, op = Add, value = 25.0)],
     abilities(
-        primary = StaffBolt,
-        secondary = StaffWave,
+        primary = [StaffBolt, StaffSpark],
+        secondary = [StaffWave, StaffNova],
         ultimate = StaffConvergence,
     ),
     rune_profile(capacity = 8, stability = 0.96, affinity = fuoco),
@@ -51,12 +55,19 @@ mod tests {
     }
 
     #[test]
-    fn grants_the_three_staff_gestures() {
+    fn offers_two_options_for_primary_and_secondary_one_for_ultimate() {
         let staff = FlameStaff;
         let abilities = staff.weapon_abilities().expect("flame_staff must grant weapon abilities");
-        assert_eq!(abilities.get(AbilitySlot::Primary).as_str(), StaffBolt::ID);
-        assert_eq!(abilities.get(AbilitySlot::Secondary).as_str(), StaffWave::ID);
-        assert_eq!(abilities.get(AbilitySlot::Ultimate).as_str(), StaffConvergence::ID);
+
+        assert_eq!(
+            abilities.options_for(AbilitySlot::Primary),
+            &[StaffBolt::ID.into(), StaffSpark::ID.into()]
+        );
+        assert_eq!(
+            abilities.options_for(AbilitySlot::Secondary),
+            &[StaffWave::ID.into(), StaffNova::ID.into()]
+        );
+        assert_eq!(abilities.options_for(AbilitySlot::Ultimate), &[StaffConvergence::ID.into()]);
     }
 
     #[test]

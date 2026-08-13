@@ -181,6 +181,19 @@ pub struct UpdateInscriptionRequest {
     pub ancient_word: Option<String>,
 }
 
+/// Picks which of the weapon's offered gestures is active on `slot`.
+///
+/// Primary/Secondary offer 1+ `BaseAbility` options each (Ultimate exactly
+/// one), so the player chooses one per slot; the server rejects an
+/// `ability_id` the equipped weapon doesn't offer for that slot. Changing the
+/// gesture can invalidate the slot's Incisione (tags differ between gestures),
+/// in which case the server clears that slot's glyphs.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct UpdateAbilitySelectionRequest {
+    pub slot: AbilitySlot,
+    pub ability_id: String,
+}
+
 // Protocol Plugin
 pub struct ProtocolPlugin;
 
@@ -243,6 +256,9 @@ impl Plugin for ProtocolPlugin {
             .add_direction(NetworkDirection::ClientToServer);
 
         app.register_message::<UpdateInscriptionRequest>()
+            .add_direction(NetworkDirection::ClientToServer);
+
+        app.register_message::<UpdateAbilitySelectionRequest>()
             .add_direction(NetworkDirection::ClientToServer);
 
         // Input commands

@@ -12,7 +12,7 @@ use std::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
 use bevymmo_shared::abilities::{
-    validate_weapon_inscriptions, AbilityCooldowns, AncientWordId, AncientWordRegistry,
+    validate_weapon_inscriptions, AbilityCooldowns, AbilityId, AncientWordId, AncientWordRegistry,
     BaseAbilityRegistry, EidolonCastRequest, EssenceId, EssenceRegistry, Inscription, KnownGlyphs,
     ModifierId, ModifierRegistry,
 };
@@ -132,6 +132,7 @@ impl Plugin for ServerPlugins {
                 handle_update_hotbar_slot_requests,
                 handle_eidolon_cast_commands,
                 handle_update_inscription_requests,
+                handle_update_ability_selection_requests,
                 handle_respawn_requests,
                 send_messages,
             )
@@ -757,6 +758,7 @@ fn handle_update_inscription_requests(
             if let Err(reason) = validate_weapon_inscriptions(
                 &candidate,
                 weapon_abilities,
+                &weapon.ability_selection,
                 profile,
                 &ability_registry,
                 &essence_registry,
@@ -769,6 +771,99 @@ fn handle_update_inscription_requests(
 
             let mut updated_weapon = weapon;
             updated_weapon.inscriptions = Some(candidate);
+            equipment.weapon = Some(updated_weapon);
+
+            let repository = store.0.clone();
+            let db_id = database_id.0;
+            let current_equipment = equipment.clone();
+            runtime.0.spawn(async move {
+                if let Err(e) = repository.save_equipment(db_id, &current_equipment).await {
+                    bevy::log::error!("Failed to save equipment for {}: {}", db_id, e);
+                }
+            });
+        }
+    }
+}
+
+/// Applies an `UpdateAbilitySelectionRequest`: picks which of the equipped
+/// weapon's offered gestures is active on a slot.
+///
+/// Rejects an ability the weapon doesn't offer for that slot. When the new
+/// gesture makes the slot's existing Incisione invalid (a Modificatore that
+/// required a tag the old gesture had but the new one doesn't, say), the
+/// slot's glyphs are cleared rather than the whole request being rejected —
+/// otherwise the player could get stuck unable to switch gesture.
+#[allow(clippy::type_complexity)]
+fn handle_update_ability_selection_requests(
+    mut receivers: Query<
+        (&mut MessageReceiver<UpdateAbilitySelectionRequest>, &RemoteId),
+        (With<Connected>, With<Joined>),
+    >,
+    mut players: Query<(Entity, &PlayerId, &DbPlayerId, &mut Equipment), With<Player>>,
+    item_registry: Res<ItemRegistry>,
+    ability_registry: Res<BaseAbilityRegistry>,
+    essence_registry: Res<EssenceRegistry>,
+    modifier_registry: Res<ModifierRegistry>,
+    ancient_word_registry: Res<AncientWordRegistry>,
+    store: Res<PlayerStore>,
+    runtime: Res<PersistenceRuntime>,
+) {
+    for (mut receiver, remote_id) in receivers.iter_mut() {
+        let Some((player_entity, _, database_id, mut equipment)) = players
+            .iter_mut()
+            .find(|(_, player_id, _, _)| player_id.0 == remote_id.0)
+        else {
+            continue;
+        };
+
+        for request in receiver.receive() {
+            let Some(weapon) = equipment.weapon.clone() else {
+                continue;
+            };
+            let Some(item) = item_registry.get(&weapon.item_id) else {
+                continue;
+            };
+            let (Some(weapon_abilities), Some(profile)) =
+                (item.weapon_abilities(), item.rune_profile())
+            else {
+                continue;
+            };
+
+            let requested = AbilityId::new(request.ability_id.clone());
+            if !weapon_abilities.options_for(request.slot).contains(&requested) {
+                bevy::log::warn!(
+                    "Player {:?} picked gesture {} not offered on {:?}",
+                    player_entity,
+                    request.ability_id,
+                    request.slot
+                );
+                continue;
+            }
+
+            let mut selection = weapon.ability_selection.clone();
+            selection.assign(request.slot, Some(requested));
+
+            let mut inscriptions = weapon.inscriptions.clone().unwrap_or_default();
+            if validate_weapon_inscriptions(
+                &inscriptions,
+                weapon_abilities,
+                &selection,
+                profile,
+                &ability_registry,
+                &essence_registry,
+                &modifier_registry,
+                &ancient_word_registry,
+            )
+            .is_err()
+            {
+                // The new gesture doesn't accept the glyphs inscribed for the
+                // old one — start that slot clean instead of refusing.
+                *inscriptions.get_mut(request.slot) = Inscription::default();
+            }
+
+            let mut updated_weapon = weapon;
+            updated_weapon.ability_selection = selection;
+            updated_weapon.inscriptions = Some(inscriptions);
             equipment.weapon = Some(updated_weapon);
 
             let repository = store.0.clone();

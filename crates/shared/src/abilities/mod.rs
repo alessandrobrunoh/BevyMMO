@@ -26,4 +26,4 @@ pub use known_glyphs::KnownGlyphs;
 pub use modifier::{ArcModifier, Modifier, ModifierEffect, ModifierId, ModifierRegistry};
 pub use resolve::{cast_inscribed_slot, CastBlockedReason};
 pub use slot::AbilitySlot;
-pub use weapon_abilities::WeaponAbilities;
+pub use weapon_abilities::{resolve_active_ability, AbilitySelection, WeaponAbilities};

@@ -616,28 +616,41 @@ impl SpellsDef {
     }
 }
 
-/// Parsed `abilities(primary = X, secondary = Y, ultimate = Z)` clause —
-/// the "Eidolon" model (fixed gesti, superato dalla frase incisa dal
-/// giocatore), alternativo a `spells(...)` (menu di spell pronte). Un item
-/// usa l'uno O l'altro, mai entrambi.
+/// Parsed `abilities(primary = [X, Y], secondary = [Z], ultimate = W)`
+/// clause — the "Eidolon" model (gesti offerti dall'arma, plasmati dalla
+/// frase incisa dal giocatore), alternativo a `spells(...)` (menu di spell
+/// pronte). Un item usa l'uno O l'altro, mai entrambi. Stesso vincolo di
+/// `SpellsDef`: Primary(1+)/Secondary(1+)/Ultimate(1) — il giocatore sceglie
+/// UNA fra le opzioni di Primary e UNA fra quelle di Secondary a runtime
+/// (vedi `AbilitySelection`); Ultimate non ha scelta perché ne offre solo una.
 struct AbilitiesDef {
-    primary: Path,
-    secondary: Path,
+    primary: Vec<Path>,
+    secondary: Vec<Path>,
     ultimate: Path,
 }
 
 impl AbilitiesDef {
     fn parse_from(content: ParseStream) -> syn::Result<Self> {
-        let mut primary = None;
-        let mut secondary = None;
+        let mut primary: Option<Vec<Path>> = None;
+        let mut secondary: Option<Vec<Path>> = None;
         let mut ultimate = None;
 
         while !content.is_empty() {
             let key: Ident = content.parse()?;
             content.parse::<Token![=]>()?;
             match key.to_string().as_str() {
-                "primary" => primary = Some(content.parse::<Path>()?),
-                "secondary" => secondary = Some(content.parse::<Path>()?),
+                "primary" => {
+                    let inner;
+                    bracketed!(inner in content);
+                    let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
+                    primary = Some(list.into_iter().collect());
+                }
+                "secondary" => {
+                    let inner;
+                    bracketed!(inner in content);
+                    let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
+                    secondary = Some(list.into_iter().collect());
+                }
                 "ultimate" => ultimate = Some(content.parse::<Path>()?),
                 other => {
                     return Err(syn::Error::new_spanned(
@@ -653,11 +666,26 @@ impl AbilitiesDef {
             }
         }
 
-        Ok(Self {
-            primary: primary.ok_or_else(|| content.error("abilities(...) requires `primary = ...`"))?,
-            secondary: secondary.ok_or_else(|| content.error("abilities(...) requires `secondary = ...`"))?,
-            ultimate: ultimate.ok_or_else(|| content.error("abilities(...) requires `ultimate = ...`"))?,
-        })
+        let primary = primary.unwrap_or_default();
+        let secondary = secondary.unwrap_or_default();
+
+        if primary.is_empty() {
+            return Err(syn::Error::new(
+                content.span(),
+                "abilities(...) requires at least one gesto in `primary = [...]`",
+            ));
+        }
+        if secondary.is_empty() {
+            return Err(syn::Error::new(
+                content.span(),
+                "abilities(...) requires at least one gesto in `secondary = [...]`",
+            ));
+        }
+        let ultimate = ultimate.ok_or_else(|| {
+            syn::Error::new(content.span(), "abilities(...) requires exactly one gesto in `ultimate = ...`")
+        })?;
+
+        Ok(Self { primary, secondary, ultimate })
     }
 }
 
@@ -875,11 +903,11 @@ impl ItemDef {
             quote! {
                 fn weapon_abilities(&self) -> Option<&crate::abilities::WeaponAbilities> {
                     static ABILITIES: std::sync::OnceLock<crate::abilities::WeaponAbilities> = std::sync::OnceLock::new();
-                    Some(ABILITIES.get_or_init(|| crate::abilities::WeaponAbilities {
-                        primary: crate::abilities::AbilityId::new(#primary::ID),
-                        secondary: crate::abilities::AbilityId::new(#secondary::ID),
-                        ultimate: crate::abilities::AbilityId::new(#ultimate::ID),
-                    }))
+                    Some(ABILITIES.get_or_init(|| crate::abilities::WeaponAbilities::new(
+                        vec![#(crate::abilities::AbilityId::new(#primary::ID)),*],
+                        vec![#(crate::abilities::AbilityId::new(#secondary::ID)),*],
+                        crate::abilities::AbilityId::new(#ultimate::ID),
+                    )))
                 }
             }
         });

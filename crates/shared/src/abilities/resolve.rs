@@ -9,7 +9,7 @@ use super::inscription::WeaponInscriptions;
 use super::known_glyphs::KnownGlyphs;
 use super::modifier::ModifierRegistry;
 use super::slot::AbilitySlot;
-use super::weapon_abilities::WeaponAbilities;
+use super::weapon_abilities::{resolve_active_ability, AbilitySelection, WeaponAbilities};
 use crate::spells::context::SpellCastContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,8 +17,9 @@ pub enum CastBlockedReason {
     /// Lo slot è incisione con almeno un Glifo che il caster non conosce:
     /// blocco totale, come deciso — nessun cast, non solo "senza effetto".
     UnknownGlyph,
-    /// L'`AbilityId`/`EssenceId`/... incisi non esistono più nei registry
-    /// (dati incoerenti — non dovrebbe succedere con contenuti registrati
+    /// L'`AbilityId`/`EssenceId`/... incisi non esistono più nei registry,
+    /// o `WeaponAbilities` non offre nessun gesto per lo slot (dati
+    /// incoerenti — non dovrebbe succedere con contenuti registrati
     /// correttamente, ma viene gestito senza panic).
     MissingRegistryEntry,
 }
@@ -46,6 +47,10 @@ fn resolve_params(
 
 /// Lancia lo slot `slot` dell'arma incisa `inscriptions`.
 ///
+/// Risolve prima il gesto EFFETTIVAMENTE attivo per lo slot (per
+/// Primary/Secondary, la scelta del giocatore fra le opzioni offerte —
+/// vedi [`resolve_active_ability`]; per Ultimate, l'unico gesto disponibile).
+///
 /// Blocco totale (§ scelta di design confermata): se anche un solo Glifo
 /// incastonato in quello slot non è nel `KnownGlyphs` del caster, la
 /// funzione ritorna `Err` e non emette nessun effetto — non un fallback
@@ -55,6 +60,7 @@ fn resolve_params(
 pub fn cast_inscribed_slot(
     slot: AbilitySlot,
     abilities: &WeaponAbilities,
+    selection: &AbilitySelection,
     inscriptions: &WeaponInscriptions,
     known: &KnownGlyphs,
     ability_registry: &BaseAbilityRegistry,
@@ -68,7 +74,9 @@ pub fn cast_inscribed_slot(
         return Err(CastBlockedReason::UnknownGlyph);
     }
 
-    let ability_id = abilities.get(slot);
+    let Some(ability_id) = resolve_active_ability(slot, abilities, selection) else {
+        return Err(CastBlockedReason::MissingRegistryEntry);
+    };
     let ability = ability_registry.get(ability_id).ok_or(CastBlockedReason::MissingRegistryEntry)?;
 
     let params = resolve_params(ability.base_params(), &inscription.modifiers, modifier_registry);
@@ -110,11 +118,11 @@ mod tests {
     }
 
     fn staff_bolt_everywhere() -> WeaponAbilities {
-        WeaponAbilities {
-            primary: AbilityId::new(StaffBolt::ID),
-            secondary: AbilityId::new(StaffBolt::ID),
-            ultimate: AbilityId::new(StaffBolt::ID),
-        }
+        WeaponAbilities::new(
+            vec![AbilityId::new(StaffBolt::ID)],
+            vec![AbilityId::new(StaffBolt::ID)],
+            AbilityId::new(StaffBolt::ID),
+        )
     }
 
     #[test]
@@ -128,9 +136,14 @@ mod tests {
 
         let (abilities, essences, modifiers, words) = registries();
         let weapon = staff_bolt_everywhere();
+        let selection = AbilitySelection::default();
 
         let inscriptions = WeaponInscriptions {
-            primary: Inscription { essence: Some(EssenceId::new("fuoco")), modifiers: vec![], ancient_word: None },
+            primary: Inscription {
+                essence: Some(EssenceId::new("fuoco")),
+                modifiers: vec![],
+                ancient_word: None,
+            },
             ..Default::default()
         };
 
@@ -140,6 +153,7 @@ mod tests {
         let result = cast_inscribed_slot(
             AbilitySlot::Primary,
             &weapon,
+            &selection,
             &inscriptions,
             &known,
             &abilities,
@@ -165,9 +179,14 @@ mod tests {
 
         let (abilities, essences, modifiers, words) = registries();
         let weapon = staff_bolt_everywhere();
+        let selection = AbilitySelection::default();
 
         let inscriptions = WeaponInscriptions {
-            primary: Inscription { essence: Some(EssenceId::new("fuoco")), modifiers: vec![], ancient_word: None },
+            primary: Inscription {
+                essence: Some(EssenceId::new("fuoco")),
+                modifiers: vec![],
+                ancient_word: None,
+            },
             ..Default::default()
         };
 
@@ -177,6 +196,7 @@ mod tests {
         let result = cast_inscribed_slot(
             AbilitySlot::Primary,
             &weapon,
+            &selection,
             &inscriptions,
             &known,
             &abilities,
@@ -201,12 +221,14 @@ mod tests {
 
         let (abilities, essences, modifiers, words) = registries();
         let weapon = staff_bolt_everywhere();
+        let selection = AbilitySelection::default();
         let inscriptions = WeaponInscriptions::default(); // nessuna incisione
         let known = KnownGlyphs::default();
 
         let result = cast_inscribed_slot(
             AbilitySlot::Primary,
             &weapon,
+            &selection,
             &inscriptions,
             &known,
             &abilities,
@@ -220,5 +242,49 @@ mod tests {
         assert_eq!(ctx.pending_damage.len(), 1);
         // Nessuna Essenza incisa: potenza base, nessun moltiplicatore.
         assert_eq!(ctx.pending_damage[0].amount, StaffBolt.base_params().power);
+    }
+
+    #[test]
+    fn resolves_the_players_selected_gesture_among_multiple_primary_options() {
+        use crate::base_abilities_impl::staff_wave::StaffWave;
+
+        let mut world = World::new();
+        let caster = world.spawn_empty().id();
+        let combat = CombatStats { attack_power: 0.0, armor: 0.0 };
+        let mut ctx = SpellCastContext::new(caster, Vec3::new(5.0, 0.0, 0.0), &combat, Vec3::Z, None, None, &[]);
+
+        let (mut abilities_registry, essences, modifiers, words) = registries();
+        StaffWave::register(&mut abilities_registry);
+
+        let weapon = WeaponAbilities::new(
+            vec![AbilityId::new(StaffBolt::ID), AbilityId::new(StaffWave::ID)],
+            vec![AbilityId::new(StaffBolt::ID)],
+            AbilityId::new(StaffBolt::ID),
+        );
+        let mut selection = AbilitySelection::default();
+        selection.assign(AbilitySlot::Primary, Some(AbilityId::new(StaffWave::ID)));
+
+        let inscriptions = WeaponInscriptions::default();
+        let known = KnownGlyphs::default();
+
+        let result = cast_inscribed_slot(
+            AbilitySlot::Primary,
+            &weapon,
+            &selection,
+            &inscriptions,
+            &known,
+            &abilities_registry,
+            &essences,
+            &modifiers,
+            &words,
+            &mut ctx,
+        );
+
+        assert!(result.is_ok());
+        // StaffWave è un cono ad area: la manifestazione di default emette
+        // un'AoE, non un colpo diretto — prova che il gesto RISOLTO è
+        // davvero StaffWave (scelto), non il primo AbilityId della lista.
+        assert_eq!(ctx.pending_aoes.len(), 1);
+        assert!(ctx.pending_damage.is_empty());
     }
 }

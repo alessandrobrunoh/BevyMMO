@@ -3,12 +3,15 @@ use super::InscriptionUiState;
 use bevy::prelude::*;
 use bevymmo_client::network::types::ConnectedClient;
 use bevymmo_shared::abilities::{
-    AbilityId, AbilitySlot, BaseAbilityRegistry, EssenceId, EssenceRegistry, Inscription,
-    KnownGlyphs, ModifierId, ModifierRegistry, WeaponAbilities, WeaponInscriptions,
+    resolve_active_ability, AbilitySelection, AbilitySlot, BaseAbilityRegistry, EssenceId,
+    EssenceRegistry, Inscription, KnownGlyphs, ModifierId, ModifierRegistry, WeaponAbilities,
+    WeaponInscriptions,
 };
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
-use bevymmo_shared::network::protocol::{Channel2, UpdateInscriptionRequest};
+use bevymmo_shared::network::protocol::{
+    Channel2, UpdateAbilitySelectionRequest, UpdateInscriptionRequest,
+};
 use lightyear::prelude::{Controlled, MessageSender};
 
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
@@ -187,6 +190,7 @@ fn spawn_window(
                             theme,
                             slot,
                             weapon_abilities,
+                            &weapon.ability_selection,
                             &inscriptions,
                             known,
                             ability_registry,
@@ -248,13 +252,16 @@ fn spawn_slot_column(
     theme: &UiTheme,
     slot: AbilitySlot,
     weapon_abilities: &WeaponAbilities,
+    selection: &AbilitySelection,
     inscriptions: &WeaponInscriptions,
     known: &KnownGlyphs,
     ability_registry: &BaseAbilityRegistry,
     essence_registry: &EssenceRegistry,
     modifier_registry: &ModifierRegistry,
 ) {
-    let ability_id: &AbilityId = weapon_abilities.get(slot);
+    let Some(ability_id) = resolve_active_ability(slot, weapon_abilities, selection) else {
+        return;
+    };
     let Some(ability) = ability_registry.get(ability_id) else {
         return;
     };
@@ -276,6 +283,34 @@ fn spawn_slot_column(
                 },
                 TextColor(theme.text_color),
             ));
+
+            // Only worth a picker when the weapon actually offers a choice.
+            let options = weapon_abilities.options_for(slot);
+            if options.len() > 1 {
+                column.spawn((
+                    Text("Gesto".to_string()),
+                    TextFont {
+                        font_size: FontSize::Px(theme.button_font_size * 0.85),
+                        ..default()
+                    },
+                    TextColor(theme.muted_text_color),
+                ));
+                for option_id in options {
+                    let Some(option) = ability_registry.get(option_id) else {
+                        continue;
+                    };
+                    spawn_toggle_button(
+                        column,
+                        theme,
+                        option.display_name(),
+                        option_id == ability_id,
+                        AbilitySelectButton {
+                            slot,
+                            ability_id: option_id.as_str().to_string(),
+                        },
+                    );
+                }
+            }
 
             column.spawn((
                 Text("Essenza".to_string()),
@@ -388,9 +423,17 @@ pub fn handle_inscription_interactions(
         (&Interaction, &ModifierToggleButton),
         (Changed<Interaction>, With<Button>),
     >,
+    ability_interactions: Query<
+        (&Interaction, &AbilitySelectButton),
+        (Changed<Interaction>, With<Button>),
+    >,
     close_interactions: Query<&Interaction, (Changed<Interaction>, With<CloseInscriptionButton>)>,
     player_query: Query<&Equipment, With<Controlled>>,
     mut senders: Query<&mut MessageSender<UpdateInscriptionRequest>, With<ConnectedClient>>,
+    mut selection_senders: Query<
+        &mut MessageSender<UpdateAbilitySelectionRequest>,
+        With<ConnectedClient>,
+    >,
     mut commands: Commands,
     window_query: Query<Entity, With<InscriptionWindow>>,
 ) {
@@ -410,6 +453,24 @@ pub fn handle_inscription_interactions(
         return;
     };
     let current = weapon.inscriptions.clone().unwrap_or_default();
+
+    for (interaction, pick) in ability_interactions.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        if weapon.ability_selection.get(pick.slot).map(|id| id.as_str())
+            == Some(pick.ability_id.as_str())
+        {
+            // Already the active gesture — nothing to ask the server for.
+            continue;
+        }
+        for mut sender in selection_senders.iter_mut() {
+            sender.send::<Channel2>(UpdateAbilitySelectionRequest {
+                slot: pick.slot,
+                ability_id: pick.ability_id.clone(),
+            });
+        }
+    }
 
     for (interaction, toggle) in essence_interactions.iter() {
         if *interaction != Interaction::Pressed {

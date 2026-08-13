@@ -16,7 +16,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::abilities::WeaponInscriptions;
+use crate::abilities::{AbilitySelection, WeaponInscriptions};
 
 use super::registry::ItemId;
 
@@ -34,14 +34,24 @@ pub struct ItemInstance {
     pub instance_id: ItemInstanceId,
     pub item_id: ItemId,
     pub inscriptions: Option<WeaponInscriptions>,
+    /// Which of `Item::weapon_abilities()`'s Primary/Secondary options is
+    /// active on THIS esemplare — `Default` (nothing picked yet) resolves to
+    /// the first offered option via `abilities::resolve_active_ability`.
+    #[serde(default)]
+    pub ability_selection: AbilitySelection,
 }
 
 impl ItemInstance {
-    /// Crea un nuovo esemplare senza incisione (stato "vergine"), con un
-    /// `instance_id` fresco. Usato ovunque un item venga minted da zero
-    /// (loot, starter kit, crafting).
+    /// Crea un nuovo esemplare senza incisione né selezione (stato
+    /// "vergine"), con un `instance_id` fresco. Usato ovunque un item venga
+    /// minted da zero (loot, starter kit, crafting).
     pub fn new(item_id: ItemId) -> Self {
-        Self { instance_id: ItemInstanceId::new_random(), item_id, inscriptions: None }
+        Self {
+            instance_id: ItemInstanceId::new_random(),
+            item_id,
+            inscriptions: None,
+            ability_selection: AbilitySelection::default(),
+        }
     }
 }
 

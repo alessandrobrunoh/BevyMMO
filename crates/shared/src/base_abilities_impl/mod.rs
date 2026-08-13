@@ -3,6 +3,8 @@
 
 pub mod staff_bolt;
 pub mod staff_convergence;
+pub mod staff_nova;
+pub mod staff_spark;
 pub mod staff_wave;
 
 use bevy::prelude::ResMut;
@@ -13,7 +15,9 @@ use crate::abilities::BaseAbilityRegistry;
 /// client sia server (stesso pattern di `register_default_items`).
 pub fn register_default_base_abilities(mut registry: ResMut<BaseAbilityRegistry>) {
     staff_bolt::StaffBolt::register(&mut registry);
+    staff_spark::StaffSpark::register(&mut registry);
     staff_wave::StaffWave::register(&mut registry);
+    staff_nova::StaffNova::register(&mut registry);
     staff_convergence::StaffConvergence::register(&mut registry);
 }
 
@@ -30,6 +34,6 @@ mod tests {
         app.update();
 
         let registry = app.world().resource::<BaseAbilityRegistry>();
-        assert_eq!(registry.len(), 3);
+        assert_eq!(registry.len(), 5);
     }
 }

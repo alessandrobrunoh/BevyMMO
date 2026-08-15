@@ -21,25 +21,25 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY bins/game/Cargo.toml ./bins/game/Cargo.toml
 COPY crates/shared/Cargo.toml ./crates/shared/Cargo.toml
+COPY crates/bevymmo-props-macro/Cargo.toml ./crates/bevymmo-props-macro/Cargo.toml
 COPY crates/server/Cargo.toml ./crates/server/Cargo.toml
 COPY crates/client/Cargo.toml ./crates/client/Cargo.toml
 COPY crates/presentation/Cargo.toml ./crates/presentation/Cargo.toml
-COPY crates/editor/Cargo.toml ./crates/editor/Cargo.toml
 
 # Create stub sources for every workspace member so cargo can resolve the
 # workspace graph and compile dependencies in isolation.
 RUN mkdir -p bins/game/src \
         crates/shared/src \
+        crates/bevymmo-props-macro/src \
         crates/server/src \
         crates/client/src \
         crates/presentation/src \
-        crates/editor/src \
     && echo 'fn main() {}' > bins/game/src/main.rs \
     && touch crates/shared/src/lib.rs \
+    && touch crates/bevymmo-props-macro/src/lib.rs \
     && touch crates/server/src/lib.rs \
     && touch crates/client/src/lib.rs \
-    && touch crates/presentation/src/lib.rs \
-    && touch crates/editor/src/lib.rs
+    && touch crates/presentation/src/lib.rs
 
 # Compile only dependencies in server mode (no client, no UI, no renderer)
 RUN cargo build --release \

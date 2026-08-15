@@ -5,6 +5,7 @@ use super::systems;
 
 use bevy::prelude::*;
 
+use crate::renderer::RenderSync;
 use crate::ui::systems::in_gameplay;
 use crate::ui::{bar::spawn_bar, text::spawn_text, theme::UiTheme};
 
@@ -52,7 +53,11 @@ impl Plugin for EntityBarPlugin {
             (
                 systems::spawn_ui_for_new_entities,
                 (
-                    systems::update_floating_ui_position,
+                    // In `RenderSync::Project`: the projection needs both the
+                    // target's smoothed transform and the camera's, as written
+                    // this frame. Reading either a frame late makes the bar
+                    // drift against the character while walking.
+                    systems::update_floating_ui_position.in_set(RenderSync::Project),
                     systems::update_floating_ui_content,
                     systems::cleanup_floating_ui,
                 )

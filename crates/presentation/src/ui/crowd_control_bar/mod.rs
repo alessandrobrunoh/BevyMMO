@@ -12,7 +12,12 @@ impl Plugin for CrowdControlBarPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (systems::sync_screen_cc_bars, systems::update_screen_cc_bars)
+            (
+                systems::sync_screen_cc_bars,
+                // See `RenderSync`: the projection must see this frame's camera
+                // and target transforms, or the bar swims while the player walks.
+                systems::update_screen_cc_bars.in_set(crate::renderer::RenderSync::Project),
+            )
                 .chain()
                 .run_if(has_client)
                 .run_if(in_gameplay),

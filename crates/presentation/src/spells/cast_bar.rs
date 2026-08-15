@@ -16,7 +16,7 @@ use bevymmo_shared::network::protocol::{
 use bevymmo_shared::spells::{SpellId, SpellRegistry};
 
 use crate::game_state::{GameScreen, Screen};
-use crate::spells::ui::SpellHudCooldownStarted;
+use crate::spells::ui::{HudCooldownKey, SpellHudCooldownStarted};
 use crate::ui::bar::spawn_bar;
 use crate::ui::theme::UiTheme;
 use lightyear::prelude::MessageReceiver;
@@ -78,7 +78,9 @@ pub fn cast_bar_systems(app: &mut App) {
             read_cast_progress,
             read_cast_ended,
             sync_screen_cast_bars,
-            update_screen_cast_bars,
+            // See `RenderSync`: projecting through a frame-old camera makes the
+            // bar drift against the caster whenever the camera is moving.
+            update_screen_cast_bars.in_set(crate::renderer::RenderSync::Project),
         )
             .chain()
             .run_if(has_client)
@@ -182,7 +184,7 @@ fn start_cooldown_from_cast_end(
     }
 
     hud_cooldowns.write(SpellHudCooldownStarted {
-        spell_id,
+        key: HudCooldownKey::Spell(spell_id),
         cooldown_seconds,
     });
 }
@@ -250,8 +252,8 @@ fn sync_screen_cast_bars(
 ///
 /// # Example
 fn update_screen_cast_bars(
-    camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    caster_query: Query<(&NetworkEntityId, &Position)>,
+    camera_query: Query<(&Camera, &Transform), With<Camera3d>>,
+    caster_query: Query<(&NetworkEntityId, &Position, Option<&Transform>), Without<Camera3d>>,
     observed: Res<ObservedCasts>,
     mut bar_query: Query<(&ScreenCastBar, &mut Node, &mut CastBarParts)>,
     mut fill_query: Query<&mut Node, Without<ScreenCastBar>>,
@@ -261,6 +263,7 @@ fn update_screen_cast_bars(
     let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
+    let camera_transform = crate::renderer::camera_view(camera_transform);
 
     let scale_factor = ui_scale.0;
 
@@ -270,16 +273,20 @@ fn update_screen_cast_bars(
             continue;
         };
 
-        let Some((_, caster_position)) = caster_query
+        let Some((_, caster_position, rendered)) = caster_query
             .iter()
-            .find(|(network_id, _)| network_id.0 == bar.caster_network_id)
+            .find(|(network_id, _, _)| network_id.0 == bar.caster_network_id)
         else {
             set_bar_display(&mut node, &mut parts, Display::None);
             continue;
         };
 
-        let world_pos = caster_position.0 + BAR_OFFSET;
-        let Ok(viewport_pos) = camera.world_to_viewport(camera_transform, world_pos) else {
+        // Anchor to the rendered transform, not the fixed-step `Position`: the
+        // mesh is drawn from the former, so using the latter floats the bar a
+        // tick ahead of the caster it belongs to.
+        let anchor = rendered.map(|t| t.translation).unwrap_or(caster_position.0);
+        let world_pos = anchor + BAR_OFFSET;
+        let Ok(viewport_pos) = camera.world_to_viewport(&camera_transform, world_pos) else {
             set_bar_display(&mut node, &mut parts, Display::None);
             continue;
         };

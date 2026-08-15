@@ -30,6 +30,12 @@ pub struct FloatingUiRoot;
 #[derive(Component)]
 pub struct FloatingUiAttached;
 
+/// Distanza (in px² di viewport) sotto la quale il container non viene toccato.
+///
+/// 0.02 px: abbastanza da evitare il relayout di un bersaglio immobile, troppo
+/// poco per essere percepita come uno scatto su un bersaglio in movimento.
+const VIEWPORT_EPSILON_SQUARED: f32 = 0.0004;
+
 fn get_or_spawn_root(
     commands: &mut Commands,
     query: &Query<Entity, With<FloatingUiRoot>>,
@@ -86,24 +92,31 @@ pub fn spawn_ui_for_new_entities(
 /// proiettato: `left = viewport.x - BAR_WIDTH/2`,
 /// `top  = viewport.y - STACK_HEIGHT`.
 pub fn update_floating_ui_position(
-    camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    target_query: Query<&Position>,
+    camera_query: Query<(&Camera, &Transform), With<Camera3d>>,
+    target_query: Query<(&Position, Option<&Transform>), Without<Camera3d>>,
     ui_scale: Res<UiScale>,
     mut ui_query: Query<(&mut FloatingUi, &mut Node)>,
 ) {
     let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
+    let camera_transform = crate::renderer::camera_view(camera_transform);
 
     let scale_factor = ui_scale.0;
 
     for (mut floating_ui, mut node) in ui_query.iter_mut() {
-        let Ok(pos) = target_query.get(floating_ui.target) else {
+        let Ok((pos, rendered)) = target_query.get(floating_ui.target) else {
             continue;
         };
 
-        let world_pos = pos.0 + floating_ui.offset;
-        let Ok(viewport_pos) = camera.world_to_viewport(camera_transform, world_pos) else {
+        // Anchor to the *rendered* transform, falling back to the simulated
+        // position only before the renderer has given the entity one. The mesh
+        // is drawn from that transform, and `Position` steps on the fixed
+        // schedule: reading the latter here made the bar hop a tick ahead of
+        // the character it is supposed to sit on.
+        let anchor = rendered.map(|t| t.translation).unwrap_or(pos.0);
+        let world_pos = anchor + floating_ui.offset;
+        let Ok(viewport_pos) = camera.world_to_viewport(&camera_transform, world_pos) else {
             // Dietro la camera: nascondi senza toccare left/top.
             if node.display != Display::None {
                 node.display = Display::None;
@@ -112,10 +125,15 @@ pub fn update_floating_ui_position(
             continue;
         };
 
-        // Skip scrittura se la posizione viewport non è cambiata (tolleranza 0.5px).
+        // Skip scrittura se la posizione viewport non è cambiata.
+        //
+        // È solo una guardia contro il relayout di un target *fermo*. La
+        // tolleranza era 0.5 px, che quantizzava lo scorrimento della barra in
+        // salti di mezzo pixel ben visibili mentre il player cammina: il
+        // personaggio scorreva liscio, la barra sopra di lui no.
         if floating_ui
             .last_viewport
-            .is_some_and(|last| (last - viewport_pos).length_squared() < 0.25)
+            .is_some_and(|last| (last - viewport_pos).length_squared() < VIEWPORT_EPSILON_SQUARED)
         {
             continue;
         }

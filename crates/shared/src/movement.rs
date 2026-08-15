@@ -534,9 +534,7 @@ pub fn resolve_ray_to_ground(
                 }
 
                 let point = ray_origin + normalized_direction * high;
-                let Some(contact) = surface_query.ground_at(point.x, point.z) else {
-                    return None;
-                };
+                let contact = surface_query.ground_at(point.x, point.z)?;
                 return Some(Vec3::new(point.x, contact.height, point.z));
             }
         }

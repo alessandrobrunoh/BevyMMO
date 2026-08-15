@@ -10,29 +10,25 @@ graph TD
     server[bevymmo_server]
     client[bevymmo_client]
     presentation[bevymmo_presentation]
-    editor[bevymmo_editor]
     game[bevy_lightyear_game in bins/game]
 
     shared --> server
     shared --> client
     shared --> presentation
-    shared --> editor
     server --> game
     client --> game
     presentation --> game
-    editor --> game
 ```
 
 ## Responsibilities
 
 | Crate | Owns | Must not own |
 |---|---|---|
-| `bevymmo_shared` | Pure data and shared contracts: protocol types, replicated components, spell data, stats data, entity spawn contracts, game/application state resources, map/editor manifest types | Sockets, rendering, Bevy UI, editor chrome, DB runtime |
-| `bevymmo_server` | Authoritative runtime: server transport, persistence, migrations, gameplay simulation, spell pipeline, boss/enemy AI, CC systems | Client windows/UI, rendering, editor tooling |
+| `bevymmo_shared` | Pure data and shared contracts: protocol types, replicated components, spell data, stats data, entity spawn contracts, game/application state resources, map manifest types | Sockets, rendering, Bevy UI, DB runtime |
+| `bevymmo_server` | Authoritative runtime: server transport, persistence, migrations, gameplay simulation, spell pipeline, boss/enemy AI, CC systems | Client windows/UI, rendering |
 | `bevymmo_client` | Client-only runtime helpers: input/key mapping, targeting, client transport/lifecycle helpers | Server simulation, rendering policy |
 | `bevymmo_presentation` | Rendering, scenes, presentation-side spell HUD/cast bars, reusable UI widgets and screen state presentation | Sockets, DB, authoritative gameplay |
-| `bevymmo_editor` | Editor-mode bootstrap/plugin placeholder; future map editor runtime | Game transport, production server logic |
-| `bins/game` | Thin composition root for CLI modes (`client`, `server`, `host-client`, `editor`) | Deep domain logic |
+| `bins/game` | Thin composition root for CLI modes (`client`, `server`, `host-client`) | Deep domain logic |
 
 ## Source-of-truth rules
 
@@ -69,7 +65,6 @@ From the repository root:
 - `cargo run -- client`
 - `cargo run -- server`
 - `cargo run -- host-client`
-- `cargo run -- editor`
 
 The workspace root uses `default-members = ["bins/game"]`, so `cargo run` and `cargo build --bin game` keep targeting the game binary by default.
 

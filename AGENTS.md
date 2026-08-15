@@ -10,7 +10,6 @@ The repository is now a Cargo workspace. The runnable binary lives in `bins/game
 - **Run Client**: `cargo run -- client`
 - **Run Server**: `cargo run -- server` (Requires PostgreSQL, see Database section)
 - **Run Host-Client**: `cargo run -- host-client` (Embedded server + client)
-- **Run Editor Placeholder**: `cargo run -- editor`
 - **Build Dedicated Production Server**: 
   `cargo build --release --no-default-features --features server,netcode,udp,replication --bin game`
   *(This skips building client UI/rendering for a much smaller footprint).*
@@ -38,7 +37,6 @@ The server requires a PostgreSQL connection to run.
   - `bevymmo_server` = authoritative runtime + persistence
   - `bevymmo_client` = client-only runtime helpers
   - `bevymmo_presentation` = rendering, scenes, UI
-  - `bevymmo_editor` = editor-mode plugin placeholder / future map editor
   - `bins/game` = composition root CLI binary
 
 - **Shared means data only**: do not put sockets, rendering, or Bevy UI inside `bevymmo_shared`.

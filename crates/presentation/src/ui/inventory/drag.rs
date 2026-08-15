@@ -83,7 +83,7 @@ pub fn start_item_drag(
                 .slots
                 .get(btn.index as usize)
                 .and_then(Clone::clone)
-                .map(|item_id| (entity, ItemSlotOrigin::Inventory(btn.index), item_id))
+                .map(|instance| (entity, ItemSlotOrigin::Inventory(btn.index), instance.item_id))
         })
         .or_else(|| {
             equip_presses
@@ -93,7 +93,7 @@ pub fn start_item_drag(
                     equipment
                         .get(btn.slot)
                         .clone()
-                        .map(|item_id| (entity, ItemSlotOrigin::Equipment(btn.slot), item_id))
+                        .map(|instance| (entity, ItemSlotOrigin::Equipment(btn.slot), instance.item_id))
                 })
         });
 

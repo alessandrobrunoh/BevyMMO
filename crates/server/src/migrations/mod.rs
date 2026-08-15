@@ -13,6 +13,7 @@ mod m20260806_000006_create_player_hotbar;
 mod m20260807_000007_create_player_inventory_and_equipment;
 mod m20260808_000008_create_prop_overrides;
 mod m20260813_000009_add_equipment_slots;
+mod m20260813_000010_create_player_known_glyphs;
 
 pub struct Migrator;
 
@@ -29,6 +30,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260807_000007_create_player_inventory_and_equipment::Migration),
             Box::new(m20260808_000008_create_prop_overrides::Migration),
             Box::new(m20260813_000009_add_equipment_slots::Migration),
+            Box::new(m20260813_000010_create_player_known_glyphs::Migration),
         ]
     }
 }

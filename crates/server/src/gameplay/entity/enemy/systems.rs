@@ -274,8 +274,7 @@ mod tests {
             ))
             .id();
         app.world_mut()
-            .spawn((Player, Position(Vec3::new(0.5, 0.0, 0.0))))
-            .id();
+            .spawn((Player, Position(Vec3::new(0.5, 0.0, 0.0))));
 
         app.update();
 
@@ -300,8 +299,7 @@ mod tests {
             ))
             .id();
         app.world_mut()
-            .spawn((Player, Position(Vec3::new(1.0, 0.0, 0.0))))
-            .id();
+            .spawn((Player, Position(Vec3::new(1.0, 0.0, 0.0))));
 
         app.update();
 

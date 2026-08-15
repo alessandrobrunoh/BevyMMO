@@ -1,8 +1,13 @@
 //! Client presentation for spells: cast bars, HUD and visual effects.
 
+pub mod aim_preview;
+pub mod available_choices;
 pub mod cast_bar;
+pub mod cursor;
 pub mod dragon_enemy;
 pub mod effects;
+pub mod eidolon_effects;
+pub mod eidolon_input;
 pub mod healing_circle;
 pub mod input;
 pub mod meteorite;
@@ -20,11 +25,32 @@ impl Plugin for SpellsHudPlugin {
     fn build(&self, app: &mut App) {
         ui::spell_hud_systems(app);
         cast_bar::cast_bar_systems(app);
+        app.init_resource::<bevymmo_shared::abilities::AbilityAim>();
+
+        // `Escape` è legato sia a `TogglePause` sia a `ClearTarget`: annullare
+        // una mira deve poter rivendicare la pressione prima che quei due la
+        // vedano, altrimenti annullare un gesto aprirebbe anche la pausa e
+        // deselezionerebbe il bersaglio.
+        app.add_systems(
+            Update,
+            aim_preview::cancel_ability_aim_on_escape
+                .before(crate::ui::systems::toggle_pause)
+                .before(bevymmo_client::targeting::systems::clear_target_with_escape)
+                .run_if(bevymmo_shared::network::mode::has_client),
+        );
+
         app.add_systems(
             Update,
             (
+                available_choices::sync_available_spell_choices,
                 input::cast_spells_on_key,
+                eidolon_input::cast_eidolon_abilities_on_key,
+                // Dopo l'input, così l'anteprima disegna la mira di QUESTO
+                // frame invece di quella del precedente.
+                aim_preview::draw_ability_aim_preview
+                    .after(eidolon_input::cast_eidolon_abilities_on_key),
                 dispatch_visual_effects,
+                eidolon_effects::animate,
                 healing_circle::visual::animate,
                 meteorite::visual::animate,
                 ray_of_light::visual::animate,
@@ -46,6 +72,7 @@ fn dispatch_visual_effects(
     mut effects: MessageReader<SpellVisualEffect>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    abilities: Res<bevymmo_shared::abilities::BaseAbilityRegistry>,
 ) {
     for effect in effects.read() {
         match effect.spell_id.as_str() {
@@ -97,7 +124,22 @@ fn dispatch_visual_effects(
                 &mut materials,
                 effect,
             ),
-            unknown => debug!("No client visual registered for spell {unknown:?}"),
+            // Un gesto Eidolon manda il proprio id: il visual si costruisce
+            // rileggendo la sua `BaseAbility` (forma, raggio, preavviso), così
+            // un gesto nuovo si vede senza scrivere un visual dedicato.
+            other => {
+                let ability = abilities.get(&bevymmo_shared::abilities::AbilityId::new(other.to_string()));
+                match ability {
+                    Some(ability) => eidolon_effects::spawn_for_ability(
+                        &mut commands,
+                        &mut meshes,
+                        &mut materials,
+                        effect,
+                        &ability,
+                    ),
+                    None => eidolon_effects::spawn(&mut commands, &mut meshes, &mut materials, effect),
+                }
+            }
         }
     }
 }

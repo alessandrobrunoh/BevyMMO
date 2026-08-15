@@ -12,7 +12,6 @@ pub enum AppMode {
     Server,
     #[default]
     HostClient,
-    Editor,
 }
 
 impl AppMode {
@@ -25,7 +24,7 @@ impl AppMode {
     }
 
     pub const fn is_windowed(self) -> bool {
-        matches!(self, Self::Client | Self::HostClient | Self::Editor)
+        matches!(self, Self::Client | Self::HostClient)
     }
 }
 
@@ -49,8 +48,8 @@ mod tests {
         assert!(AppMode::Server.has_server());
         assert!(AppMode::HostClient.has_client());
         assert!(AppMode::HostClient.has_server());
-        assert!(!AppMode::Editor.has_client());
-        assert!(!AppMode::Editor.has_server());
-        assert!(AppMode::Editor.is_windowed());
+        assert!(AppMode::Client.is_windowed());
+        assert!(AppMode::HostClient.is_windowed());
+        assert!(!AppMode::Server.is_windowed());
     }
 }

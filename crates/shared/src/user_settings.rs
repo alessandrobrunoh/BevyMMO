@@ -19,21 +19,16 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Window mode selectable from the graphics panel.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowMode {
     /// OS-decorated, resizable window.
+    #[default]
     Windowed,
     /// Fullscreen borderless window covering the whole desktop.
     Borderless,
     /// Exclusive fullscreen (changes video mode).
     Exclusive,
-}
-
-impl Default for WindowMode {
-    fn default() -> Self {
-        Self::Windowed
-    }
 }
 
 impl WindowMode {
@@ -345,6 +340,36 @@ impl GameSettingsResource {
         let binding = self.0.keybinds.get(action);
         keys.pressed(binding.key) && KeyModifiers::from_pressed(keys) == binding.modifiers
     }
+
+    /// True if the configured binding for `action` was just released (this
+    /// frame).
+    ///
+    /// Deliberately **ignores modifiers**, unlike [`just_pressed`](Self::just_pressed):
+    /// a release closes an interaction that a press already opened, and the
+    /// player is free to let go of `Shift` before the main key. Requiring the
+    /// modifiers again here would swallow the release and leave the action
+    /// stuck open.
+    pub fn just_released(
+        &self,
+        action: KeyAction,
+        keys: &bevy::input::ButtonInput<KeyCode>,
+    ) -> bool {
+        keys.just_released(self.0.keybinds.get(action).key)
+    }
+
+    /// Consumes this frame's press of `action`, so systems running later see
+    /// nothing.
+    ///
+    /// Needed because a single physical key can be bound to several actions —
+    /// `Escape` is `TogglePause` *and* `ClearTarget` — and the most specific
+    /// handler must be able to claim it before the others react.
+    pub fn consume_press(
+        &self,
+        action: KeyAction,
+        keys: &mut bevy::input::ButtonInput<KeyCode>,
+    ) {
+        keys.clear_just_pressed(self.0.keybinds.get(action).key);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -500,7 +525,7 @@ mod tests {
 
         let json = serde_json::to_string(&settings).unwrap();
         let back: GameSettings = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.graphics.vsync, false);
+        assert!(!back.graphics.vsync);
         assert_eq!(back.graphics.resolution.width, 1920);
         assert_eq!(back.graphics.mode, WindowMode::Borderless);
         assert!(back.general.show_fps);
@@ -510,7 +535,7 @@ mod tests {
     #[test]
     fn malformed_json_falls_back_to_defaults() {
         let settings: GameSettings = serde_json::from_str("{ invalid }").unwrap_or_default();
-        assert_eq!(settings.graphics.vsync, true); // default
+        assert!(settings.graphics.vsync); // default
     }
 
     #[test]

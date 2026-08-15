@@ -4,6 +4,7 @@ pub mod components;
 pub mod detail;
 pub mod drag;
 pub mod systems;
+pub mod weapon_detail;
 
 use bevy::prelude::*;
 use bevymmo_shared::network::mode::has_client;

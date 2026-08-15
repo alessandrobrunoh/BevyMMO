@@ -7,7 +7,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::registry::ItemId;
+use super::instance::{ItemInstance, ItemInstanceId};
 
 /// Dedicated equipment slot.
 ///
@@ -72,38 +72,40 @@ pub const INVENTORY_CAPACITY: usize = 10;
 /// Generic inventory of a player.
 ///
 /// Decision: 1 item = 1 slot. No stack count. Each slot either holds an
-/// [`ItemId`] reference or is empty. The layout is a fixed-size array so the
-/// UI is stable (slot 7 is always slot 7) and serialization is compact.
+/// [`ItemInstance`] (an esemplare fisico — carries its own id and, for
+/// weapons, its own runic inscription) or is empty. The layout is a
+/// fixed-size array so the UI is stable (slot 7 is always slot 7) and
+/// serialization is compact.
 ///
 /// The component is replicated and predicted: the client sees server changes
 /// as soon as they arrive, and never writes here directly.
 #[derive(Component, Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Inventory {
-    pub slots: [Option<ItemId>; INVENTORY_CAPACITY],
+    pub slots: [Option<ItemInstance>; INVENTORY_CAPACITY],
 }
 
-/// Current equipment of a player: one optional item id per [`EquipSlot`].
+/// Current equipment of a player: one optional item instance per [`EquipSlot`].
 ///
 /// The component is replicated and predicted, same as [`Inventory`]. The
 /// client never writes here directly; it sends [`super::events::EquipItemCommand`]
 /// / [`super::events::UnequipItemCommand`] and reads the replicated result.
 #[derive(Component, Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Equipment {
-    pub bag: Option<ItemId>,
-    pub helmet: Option<ItemId>,
-    pub cape: Option<ItemId>,
-    pub weapon: Option<ItemId>,
-    pub armor: Option<ItemId>,
-    pub offhand: Option<ItemId>,
-    pub potion: Option<ItemId>,
-    pub shoes: Option<ItemId>,
-    pub food: Option<ItemId>,
-    pub mount: Option<ItemId>,
+    pub bag: Option<ItemInstance>,
+    pub helmet: Option<ItemInstance>,
+    pub cape: Option<ItemInstance>,
+    pub weapon: Option<ItemInstance>,
+    pub armor: Option<ItemInstance>,
+    pub offhand: Option<ItemInstance>,
+    pub potion: Option<ItemInstance>,
+    pub shoes: Option<ItemInstance>,
+    pub food: Option<ItemInstance>,
+    pub mount: Option<ItemInstance>,
 }
 
 impl Equipment {
-    /// Reads the item currently occupying `slot`, if any.
-    pub fn get(&self, slot: EquipSlot) -> &Option<ItemId> {
+    /// Reads the item instance currently occupying `slot`, if any.
+    pub fn get(&self, slot: EquipSlot) -> &Option<ItemInstance> {
         match slot {
             EquipSlot::Bag => &self.bag,
             EquipSlot::Helmet => &self.helmet,
@@ -118,8 +120,8 @@ impl Equipment {
         }
     }
 
-    /// Mutable access to the item occupying `slot`.
-    pub fn get_mut(&mut self, slot: EquipSlot) -> &mut Option<ItemId> {
+    /// Mutable access to the item instance occupying `slot`.
+    pub fn get_mut(&mut self, slot: EquipSlot) -> &mut Option<ItemInstance> {
         match slot {
             EquipSlot::Bag => &mut self.bag,
             EquipSlot::Helmet => &mut self.helmet,
@@ -134,16 +136,19 @@ impl Equipment {
         }
     }
 
-    /// Finds which slot (if any) currently holds `item_id`.
-    pub fn slot_holding(&self, item_id: &ItemId) -> Option<EquipSlot> {
+    /// Finds which slot (if any) currently holds the physical esemplare
+    /// `instance_id` — per-instance, not per-type: se il giocatore ha due
+    /// Flame Staff, questo trova quello specifico, non "un" Flame Staff.
+    pub fn slot_holding(&self, instance_id: ItemInstanceId) -> Option<EquipSlot> {
         EquipSlot::ALL
             .into_iter()
-            .find(|slot| self.get(*slot).as_ref() == Some(item_id))
+            .find(|slot| self.get(*slot).as_ref().is_some_and(|item| item.instance_id == instance_id))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::registry::ItemId;
     use super::*;
 
     #[test]
@@ -164,8 +169,8 @@ mod tests {
     #[test]
     fn inventory_roundtrips_through_serde() {
         let mut inv = Inventory::default();
-        inv.slots[0] = Some(ItemId::new("iron_sword"));
-        inv.slots[3] = Some(ItemId::new("potion"));
+        inv.slots[0] = Some(ItemInstance::new(ItemId::new("iron_sword")));
+        inv.slots[3] = Some(ItemInstance::new(ItemId::new("potion")));
 
         let json = serde_json::to_string(&inv).expect("serialize");
         let back: Inventory = serde_json::from_str(&json).expect("deserialize");
@@ -182,24 +187,30 @@ mod tests {
         for slot in EquipSlot::ALL {
             let mut eq = Equipment::default();
             assert!(eq.get(slot).is_none());
-            *eq.get_mut(slot) = Some(ItemId::new("test_item"));
-            assert_eq!(eq.get(slot), &Some(ItemId::new("test_item")));
+            let instance = ItemInstance::new(ItemId::new("test_item"));
+            *eq.get_mut(slot) = Some(instance.clone());
+            assert_eq!(eq.get(slot), &Some(instance));
         }
     }
 
     #[test]
-    fn slot_holding_finds_the_right_slot() {
+    fn slot_holding_finds_the_right_physical_instance() {
         let mut eq = Equipment::default();
-        eq.helmet = Some(ItemId::new("leather_helmet"));
-        assert_eq!(eq.slot_holding(&ItemId::new("leather_helmet")), Some(EquipSlot::Helmet));
-        assert_eq!(eq.slot_holding(&ItemId::new("nope")), None);
+        let helmet = ItemInstance::new(ItemId::new("leather_helmet"));
+        let other_helmet = ItemInstance::new(ItemId::new("leather_helmet"));
+        eq.helmet = Some(helmet.clone());
+        assert_eq!(eq.slot_holding(helmet.instance_id), Some(EquipSlot::Helmet));
+        // Stesso tipo, esemplare diverso: non deve essere trovato.
+        assert_eq!(eq.slot_holding(other_helmet.instance_id), None);
     }
 
     #[test]
     fn equipment_roundtrips_through_serde() {
-        let mut eq = Equipment::default();
-        eq.weapon = Some(ItemId::new("iron_sword"));
-        eq.mount = Some(ItemId::new("swift_steed"));
+        let eq = Equipment {
+            weapon: Some(ItemInstance::new(ItemId::new("iron_sword"))),
+            mount: Some(ItemInstance::new(ItemId::new("swift_steed"))),
+            ..Default::default()
+        };
 
         let json = serde_json::to_string(&eq).expect("serialize");
         let back: Equipment = serde_json::from_str(&json).expect("deserialize");

@@ -70,7 +70,6 @@ The default `game` binary is a combined build that can run as a client, a dedica
 │   └── local.toml.example   # Template for gitignored local overrides
 ├── crates/
 │   ├── client/             # Client-only input, targeting, movement logic
-│   ├── editor/             # Editor-mode plugin placeholder
 │   ├── presentation/       # Visual presentation, rendering, UI widgets, scenes
 │   ├── server/             # Authoritative simulation, persistence, migrations
 │   └── shared/             # Shared entities, protocol, settings, state

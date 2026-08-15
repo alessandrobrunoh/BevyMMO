@@ -85,8 +85,8 @@ pub fn sync_screen_cc_bars(
 /// app.add_systems(Update, update_screen_cc_bars);
 /// ```
 pub fn update_screen_cc_bars(
-    camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    cc_query: Query<(Entity, &CrowdControlState, &Position)>,
+    camera_query: Query<(&Camera, &Transform), With<Camera3d>>,
+    cc_query: Query<(Entity, &CrowdControlState, &Position, Option<&Transform>), Without<Camera3d>>,
     mut bar_query: Query<(&ScreenCrowdControlBar, &mut Node, &mut CrowdControlBarParts)>,
     mut fill_query: Query<&mut Node, Without<ScreenCrowdControlBar>>,
     mut text_query: Query<&mut Text>,
@@ -95,14 +95,15 @@ pub fn update_screen_cc_bars(
     let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
+    let camera_transform = crate::renderer::camera_view(camera_transform);
 
     let scale_factor = ui_scale.0;
 
     for (bar, mut node, mut parts) in bar_query.iter_mut() {
         // Get the target entity's CC state and position
-        let Some((_, cc_state, target_position)) = cc_query
+        let Some((_, cc_state, target_position, rendered)) = cc_query
             .iter()
-            .find(|(entity, _, _)| *entity == bar.target_entity)
+            .find(|(entity, _, _, _)| *entity == bar.target_entity)
         else {
             set_bar_display(&mut node, &mut parts, Display::None);
             continue;
@@ -119,9 +120,12 @@ pub fn update_screen_cc_bars(
             continue;
         };
 
-        // Project world position to screen space
-        let world_pos = target_position.0 + BAR_OFFSET;
-        let Ok(viewport_pos) = camera.world_to_viewport(camera_transform, world_pos) else {
+        // Project world position to screen space, anchored to the rendered
+        // transform so the bar tracks the mesh rather than the fixed-step
+        // `Position` a tick ahead of it.
+        let anchor = rendered.map(|t| t.translation).unwrap_or(target_position.0);
+        let world_pos = anchor + BAR_OFFSET;
+        let Ok(viewport_pos) = camera.world_to_viewport(&camera_transform, world_pos) else {
             set_bar_display(&mut node, &mut parts, Display::None);
             continue;
         };

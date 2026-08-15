@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_shared::items::components::Equipment;
+use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::movement::MoveTarget;
 use bevymmo_shared::network::protocol::{
     Channel2, LookDirection, NetworkEntityId, Position, SpellCastCommand, SpellCastRelease,
@@ -14,7 +16,8 @@ use lightyear::prelude::MessageSender;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::spells::cast_bar::ObservedCasts;
-use crate::spells::ui::{SpellHudCooldownStarted, SpellHudState};
+use crate::spells::cursor::{cursor_ground_point, flat_direction_towards};
+use crate::spells::ui::{HudCooldownKey, SpellHudCooldownStarted, SpellHudState};
 
 #[allow(clippy::too_many_arguments)]
 pub fn cast_spells_on_key(
@@ -29,6 +32,7 @@ pub fn cast_spells_on_key(
     mut controlled_players: Query<
         (
             &SpellHotbar,
+            &Equipment,
             &NetworkEntityId,
             &Position,
             &mut LookDirection,
@@ -41,6 +45,7 @@ pub fn cast_spells_on_key(
     mut release_senders: Query<&mut MessageSender<SpellCastRelease>, With<ConnectedClient>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
     registry: Res<SpellRegistry>,
+    item_registry: Res<ItemRegistry>,
 ) {
     if !matches!(screen.0, Screen::InGame | Screen::Paused) {
         return;
@@ -49,27 +54,24 @@ pub fn cast_spells_on_key(
         return;
     };
 
-    let Ok((hotbar, local_network_id, player_position, mut look_direction)) =
+    let Ok((hotbar, equipment, local_network_id, player_position, mut look_direction)) =
         controlled_players.single_mut()
     else {
         return;
     };
 
-    let mut target_position = None;
-    if let Ok(window) = windows.single() {
-        if let Some(cursor_position) = window.cursor_position() {
-            if let Some((camera, camera_transform)) = cameras.iter().next() {
-                if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
-                    if let Some(target) = ray.plane_intersection_point(
-                        Vec3::ZERO,
-                        bevy::math::primitives::InfinitePlane3d::new(Vec3::Y),
-                    ) {
-                        target_position = Some(Vec3::new(target.x, 0.0, target.z));
-                    }
-                }
-            }
-        }
+    // An Eidolon weapon (one with `weapon_abilities()`) owns Q/W/E instead —
+    // see `crate::spells::eidolon_input::cast_eidolon_abilities_on_key`.
+    let equipped_is_eidolon = equipment
+        .weapon
+        .as_ref()
+        .and_then(|weapon| item_registry.get(&weapon.item_id))
+        .is_some_and(|item| item.weapon_abilities().is_some());
+    if equipped_is_eidolon {
+        return;
     }
+
+    let target_position = cursor_ground_point(&windows, &cameras);
 
     let mut target_id = None;
     if let Some(target_entity) = current_target.entity {
@@ -81,15 +83,8 @@ pub fn cast_spells_on_key(
     // Pre-compute the desired facing once per frame: all hotbar keys that fire
     // a cast in this system share the same cursor ground point, so reusing the
     // value keeps the code DRY.
-    let cast_face_direction = target_position.and_then(|target| {
-        let offset = target - player_position.0;
-        let length = offset.length();
-        if length > 0.001 {
-            Some(offset / length)
-        } else {
-            None
-        }
-    });
+    let cast_face_direction =
+        target_position.and_then(|target| flat_direction_towards(player_position.0, target));
 
     let check_slot = |action: KeyAction, slot: HotbarSlot| {
         if settings.just_pressed(action, &keys) {
@@ -141,7 +136,7 @@ pub fn cast_spells_on_key(
                 continue;
             }
 
-            if hud_state.is_on_cooldown(&spell_id) {
+            if hud_state.spell_on_cooldown(&spell_id) {
                 continue;
             }
 
@@ -153,13 +148,13 @@ pub fn cast_spells_on_key(
                 });
             }
             hud_cooldowns.write(SpellHudCooldownStarted {
-                spell_id: spell_id.clone(),
+                key: HudCooldownKey::Spell(spell_id.clone()),
                 cooldown_seconds: spell_def.config().cooldown_seconds,
             });
             continue;
         }
 
-        if hud_state.is_on_cooldown(&spell_id) {
+        if hud_state.spell_on_cooldown(&spell_id) {
             continue;
         }
         for mut sender in cast_senders.iter_mut() {
@@ -171,7 +166,7 @@ pub fn cast_spells_on_key(
         }
         if matches!(spell_def.cast_kind(), CastKind::Instant) {
             hud_cooldowns.write(SpellHudCooldownStarted {
-                spell_id: spell_id.clone(),
+                key: HudCooldownKey::Spell(spell_id.clone()),
                 cooldown_seconds: spell_def.config().cooldown_seconds,
             });
         }

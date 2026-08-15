@@ -49,7 +49,6 @@ enum Mode {
         #[arg(long)]
         server_addr: Option<SocketAddr>,
     },
-    Editor,
 }
 
 struct AppConfig {
@@ -109,15 +108,6 @@ impl AppConfig {
                 log_filter,
                 database_url,
             },
-            Mode::Editor => Self {
-                mode: mode::AppMode::Editor,
-                client_id: None,
-                server_addr: client_server_addr,
-                client_addr,
-                tick_rate,
-                log_filter,
-                database_url,
-            },
         }
     }
 
@@ -161,19 +151,6 @@ fn build_app(config: &AppConfig) -> App {
     app.insert_resource(config.mode);
     app.add_plugins(game_state::GameStatePlugin);
 
-    if matches!(config.mode, mode::AppMode::Editor) {
-        #[cfg(feature = "editor")]
-        {
-            app.add_plugins(bevymmo_editor::EditorPlugin);
-            return app;
-        }
-
-        #[cfg(not(feature = "editor"))]
-        {
-            panic!("editor mode requires the 'editor' cargo feature to be enabled");
-        }
-    }
-
     let tick_duration = Duration::from_secs_f64(1.0 / config.tick_rate);
 
     if config.mode.has_server() {
@@ -201,6 +178,10 @@ fn build_app(config: &AppConfig) -> App {
             (
                 bevymmo_shared::spells_impl::register_default_spells,
                 bevymmo_shared::items_impl::register_default_items,
+                bevymmo_shared::base_abilities_impl::register_default_base_abilities,
+                bevymmo_shared::essences_impl::register_default_essences,
+                bevymmo_shared::modifiers_impl::register_default_modifiers,
+                bevymmo_shared::ancient_words_impl::register_default_ancient_words,
             ),
         );
     }
@@ -214,6 +195,10 @@ fn build_app(config: &AppConfig) -> App {
     app.add_message::<bevymmo_shared::network::protocol::SpellCastEnded>();
     app.init_resource::<bevymmo_shared::spells::SpellRegistry>();
     app.init_resource::<bevymmo_shared::items::registry::ItemRegistry>();
+    app.init_resource::<bevymmo_shared::abilities::BaseAbilityRegistry>();
+    app.init_resource::<bevymmo_shared::abilities::EssenceRegistry>();
+    app.init_resource::<bevymmo_shared::abilities::ModifierRegistry>();
+    app.init_resource::<bevymmo_shared::abilities::AncientWordRegistry>();
 
     #[cfg(feature = "client")]
     if config.mode.has_client() {

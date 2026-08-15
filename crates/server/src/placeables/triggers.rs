@@ -19,7 +19,7 @@ pub struct TriggerMarker {
 ///
 /// Triggers are invisible zones, so the entity carries only [`TriggerMarker`]
 /// + [`Transform`] + [`Name`]; no visual. The future `evaluate_triggers`
-/// system will query `TriggerMarker` and resolve `trigger_config()`.
+///   system will query `TriggerMarker` and resolve `trigger_config()`.
 pub fn spawn_trigger(commands: &mut Commands, kind_id: KindId, position: Vec3) -> Entity {
     commands
         .spawn((

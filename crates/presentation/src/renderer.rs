@@ -54,6 +54,39 @@ fn init_renderer_assets(
 #[derive(Component)]
 pub struct RenderedEntity;
 
+/// Ordering contract for everything that turns simulated state into pixels.
+///
+/// The three stages read each other's output within a single frame, and until
+/// they were ordered explicitly Bevy was free to interleave them: the camera
+/// followed last frame's player transform, and the screen-space UI projected
+/// through last frame's camera. Both errors are proportional to how fast the
+/// camera is moving, which is why they only showed up while walking — the
+/// character glided but the world and the nameplates shook around it.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RenderSync {
+    /// Smooths every replicated `Position` into the entity's `Transform`.
+    Transforms,
+    /// Places the game camera on the smoothed player transform.
+    Camera,
+    /// Projects world anchors into viewport space for the screen-space UI.
+    Project,
+}
+
+/// Rebuilds a camera's global transform from this frame's local `Transform`.
+///
+/// `GlobalTransform` is only recomputed in `PostUpdate`, so any system reading
+/// it during `Update` sees where the camera was *last* frame. For a camera that
+/// is glued to the player that is a full frame of player movement, and every
+/// screen-space overlay projected through it swims against the character it is
+/// anchored to.
+///
+/// The game camera is a direct child of `GameSceneRoot`, whose transform is the
+/// identity (asserted by `scene_root_transform_is_identity`), so its local
+/// transform *is* its global transform and this conversion is exact.
+pub fn camera_view(transform: &Transform) -> GlobalTransform {
+    GlobalTransform::from(*transform)
+}
+
 /// Marks the scene root of a player model whose imported root node needs to be
 /// anchored to the replicated gameplay position.
 #[derive(Component)]
@@ -82,6 +115,15 @@ impl Plugin for RendererPlugin {
         // material was leaked per entity. `spawn_entity_meshes` is the retry
         // loop that already handled the not-yet-loaded case correctly, so it is
         // the single source of truth.
+        app.configure_sets(
+            Update,
+            (
+                RenderSync::Transforms,
+                RenderSync::Camera,
+                RenderSync::Project,
+            )
+                .chain(),
+        );
         app.add_systems(
             Update,
             (
@@ -91,6 +133,7 @@ impl Plugin for RendererPlugin {
                 update_colors,
             )
                 .chain()
+                .in_set(RenderSync::Transforms)
                 .run_if(in_game_or_paused),
         )
         .add_systems(Update, cleanup_entity_render.run_if(not_in_game));
@@ -203,46 +246,164 @@ fn spawn_entity_meshes(
 /// across the map.
 const TELEPORT_SNAP_DISTANCE: f32 = 5.0;
 
-/// How quickly the rendered transform catches up to `Position`, per second.
+/// How quickly the rendered transform closes the *residual* gap to `Position`.
 ///
-/// This is an exponential follow, not an interpolation between fixed steps.
-/// The obvious approach — keep the previous and current fixed-step positions
-/// and blend with `Time<Fixed>::overstep_fraction()` — assumes Bevy's fixed
-/// schedule is what advances `Position`. It is not: Lightyear's prediction
-/// rolls back and re-simulates several ticks inside a single frame, so the
-/// recorded pair stops matching the step being blended and the result stutters
-/// worse than no smoothing at all. Chasing the current value instead makes no
-/// assumption about *when* `Position` was written.
+/// This used to be the only term, at 25/s, and it was the source of the judder.
+/// A pure exponential follow derives its whole velocity from the outstanding
+/// error, and that error is a sawtooth: `Position` advances on the fixed
+/// schedule while this runs on the render schedule, so at 60 Hz each against
+/// the other some frames step twice, some not at all. Turning that sawtooth
+/// into velocity made the character's on-screen speed swing by a third every
+/// frame — and because the camera is glued to the character, the entire world
+/// swung with it.
 ///
-/// At 25/s the transform closes ~92% of the gap in 100 ms: fast enough to feel
-/// direct, slow enough to absorb an uneven tick.
-const RENDER_FOLLOW_RATE: f32 = 25.0;
+/// With the feed-forward term below carrying the motion, this only has to bleed
+/// off leftover error (rollback corrections, a missed tick), so it is
+/// deliberately slow: a low rate filters the per-tick quantisation of
+/// `Position` out of the rendered velocity instead of amplifying it.
+const RENDER_FOLLOW_RATE: f32 = 12.0;
+
+/// How quickly the velocity estimate tracks the measured `Position` delta.
+///
+/// Fast enough to pick up a direction change within a couple of frames, slow
+/// enough that a single double-stepped frame does not spike the feed-forward.
+const VELOCITY_FOLLOW_RATE: f32 = 20.0;
+
+/// How far behind the simulation the rendered transform is deliberately held.
+///
+/// Feed-forward alone would put the render position level with the newest
+/// `Position`, which means it spends half of every tick *ahead* of a value that
+/// has not been updated yet, and gets pulled back when it is. Holding ~2 ticks
+/// of slack keeps the render position interpolating between known states
+/// instead of extrapolating past them. At 30 ms the delay is far below what is
+/// perceptible in a click-to-move game, and it is constant, so it reads as
+/// weight rather than lag.
+const RENDER_DELAY: f32 = 0.03;
+
+/// Seconds of an unchanged `Position` after which the feed-forward is dropped.
+///
+/// Must be comfortably longer than one fixed tick: at 60 Hz render and 60 Hz
+/// simulation, frames that happen to run no tick at all are routine and must
+/// not be mistaken for the entity having stopped.
+const VELOCITY_IDLE_TIMEOUT: f32 = 0.15;
+
+/// Upper bound on a single velocity sample, in world units per second.
+///
+/// A rollback that rewrites `Position` by a metre inside one frame reads as a
+/// huge instantaneous velocity. Feeding that into the extrapolation would fling
+/// the transform away from the entity, so outlier samples are dropped and left
+/// to the correction term instead.
+const MAX_ESTIMATED_SPEED: f32 = 40.0;
+
+/// How quickly the rendered facing catches up to `LookDirection`, per second.
+///
+/// Facing used to snap, so every click that changed direction spun the model
+/// within a single frame.
+const ROTATION_FOLLOW_RATE: f32 = 16.0;
+
+/// Per-entity state backing the render smoothing in [`sync_transforms`].
+#[derive(Component)]
+pub struct RenderSmoothing {
+    /// Last `Position` value observed, in world units.
+    last_target: Vec3,
+    /// Wall-clock seconds elapsed since `last_target` last changed.
+    since_change: f32,
+    /// Estimated velocity of `Position`, in world units per second.
+    velocity: Vec3,
+}
+
+impl RenderSmoothing {
+    fn new(target: Vec3) -> Self {
+        Self {
+            last_target: target,
+            since_change: 0.0,
+            velocity: Vec3::ZERO,
+        }
+    }
+}
 
 fn sync_transforms(
     time: Res<Time>,
-    mut entities: Query<(&Position, Option<&LookDirection>, &mut Transform)>,
+    mut commands: Commands,
+    mut entities: Query<(
+        Entity,
+        &Position,
+        Option<&LookDirection>,
+        &mut Transform,
+        Option<&mut RenderSmoothing>,
+    )>,
 ) {
+    let delta = time.delta_secs();
+    if delta <= 0.0 {
+        return;
+    }
+
     // Frame-rate independent exponential decay: the fraction of the remaining
     // gap closed this frame depends only on elapsed time, so the motion looks
     // identical at 60 and 240 Hz.
-    let blend = 1.0 - (-RENDER_FOLLOW_RATE * time.delta_secs()).exp();
+    let position_blend = 1.0 - (-RENDER_FOLLOW_RATE * delta).exp();
+    let velocity_blend = 1.0 - (-VELOCITY_FOLLOW_RATE * delta).exp();
+    let rotation_blend = 1.0 - (-ROTATION_FOLLOW_RATE * delta).exp();
 
-    for (position, look_direction, mut transform) in entities.iter_mut() {
+    for (entity, position, look_direction, mut transform, smoothing) in entities.iter_mut() {
         let target = position.0;
-        transform.translation = if transform.translation.distance(target) > TELEPORT_SNAP_DISTANCE {
-            target
-        } else {
-            transform.translation.lerp(target, blend.clamp(0.0, 1.0))
+
+        let Some(mut smoothing) = smoothing else {
+            // First frame for this entity: start level with the simulation
+            // rather than gliding in from wherever the mesh was spawned.
+            transform.translation = target;
+            apply_look(&mut transform, look_direction, 1.0);
+            commands.entity(entity).insert(RenderSmoothing::new(target));
+            continue;
         };
-        if let Some(look_direction) = look_direction {
-            let direction = Vec3::new(look_direction.x, 0.0, look_direction.z);
-            if direction.length_squared() > 0.001 {
-                transform.rotation = Transform::default()
-                    .looking_to(direction.normalize(), Vec3::Y)
-                    .rotation;
+
+        // Re-estimate velocity only when `Position` actually moves, dividing by
+        // the wall-clock span the delta covers rather than by one frame. That is
+        // what keeps the estimate correct on frames that ran two fixed ticks, or
+        // none.
+        smoothing.since_change += delta;
+        if target != smoothing.last_target {
+            let sample = (target - smoothing.last_target) / smoothing.since_change;
+            if sample.length_squared() <= MAX_ESTIMATED_SPEED * MAX_ESTIMATED_SPEED {
+                smoothing.velocity = smoothing.velocity.lerp(sample, velocity_blend);
             }
+            smoothing.last_target = target;
+            smoothing.since_change = 0.0;
+        } else if smoothing.since_change > VELOCITY_IDLE_TIMEOUT {
+            smoothing.velocity = Vec3::ZERO;
         }
+
+        if transform.translation.distance(target) > TELEPORT_SNAP_DISTANCE {
+            // Respawn, knockback, teleport: jump, and forget a velocity that
+            // describes a path the entity never travelled.
+            transform.translation = target;
+            smoothing.velocity = Vec3::ZERO;
+        } else {
+            // Carry the transform at the simulation's own velocity, then nudge
+            // it toward the delayed goal. The first term supplies the motion
+            // (constant, hence smooth); the second only removes drift.
+            let goal = target - smoothing.velocity * RENDER_DELAY;
+            let carried = transform.translation + smoothing.velocity * delta;
+            transform.translation = carried.lerp(goal, position_blend.clamp(0.0, 1.0));
+        }
+
+        apply_look(&mut transform, look_direction, rotation_blend);
     }
+}
+
+/// Turns the entity toward `look_direction`, blending by `blend` (1.0 = snap).
+fn apply_look(transform: &mut Transform, look_direction: Option<&LookDirection>, blend: f32) {
+    let Some(look_direction) = look_direction else {
+        return;
+    };
+    let direction = Vec3::new(look_direction.x, 0.0, look_direction.z);
+    if direction.length_squared() <= 0.001 {
+        return;
+    }
+    let facing = Transform::default()
+        .looking_to(direction.normalize(), Vec3::Y)
+        .rotation;
+    transform.rotation = transform.rotation.slerp(facing, blend.clamp(0.0, 1.0));
 }
 
 /// Removes horizontal offsets embedded in the instantiated player scene while
@@ -300,6 +461,180 @@ fn cleanup_entity_render(mut commands: Commands, entities: Query<Entity, With<Re
             .remove::<Mesh3d>()
             .remove::<MeshMaterial3d<StandardMaterial>>()
             .remove::<WorldAssetRoot>()
+            .remove::<RenderSmoothing>()
             .remove::<Transform>();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// One render frame at 60 Hz.
+    const FRAME: Duration = Duration::from_nanos(16_666_667);
+
+    /// One fixed tick of travel for a player at the default
+    /// `MovementStats::speed` (0.15 world units per tick).
+    const TICK_STEP: f32 = 0.15;
+
+    fn smoothing_app() -> (App, Entity) {
+        let mut app = App::new();
+        app.init_resource::<Time>();
+        app.add_systems(Update, sync_transforms);
+        let entity = app
+            .world_mut()
+            .spawn((Position(Vec3::ZERO), Transform::default()))
+            .id();
+        // First update snaps to the simulation and installs `RenderSmoothing`.
+        app.update();
+        (app, entity)
+    }
+
+    /// Advances one render frame during which the fixed schedule ran `ticks`
+    /// times, and returns the resulting rendered X.
+    fn frame(app: &mut App, entity: Entity, ticks: u32) -> f32 {
+        app.world_mut().resource_mut::<Time>().advance_by(FRAME);
+        app.world_mut()
+            .entity_mut(entity)
+            .get_mut::<Position>()
+            .expect("position")
+            .0
+            .x += TICK_STEP * ticks as f32;
+        app.update();
+        app.world()
+            .entity(entity)
+            .get::<Transform>()
+            .unwrap()
+            .translation
+            .x
+    }
+
+    /// The regression this smoothing exists for.
+    ///
+    /// `Position` advances on the fixed schedule while the transform is written
+    /// on the render schedule, so at 60 Hz against 60 Hz the tick lands
+    /// unevenly: some frames carry two steps, some none. The previous follow
+    /// derived its entire velocity from the outstanding error and so replayed
+    /// that pattern as on-screen speed — and because the camera is glued to the
+    /// player, the whole world juddered with it.
+    ///
+    /// What matters is not that the rendered position is accurate, but that its
+    /// *derivative* is steady, so this asserts on the spread of the per-frame
+    /// displacement.
+    #[test]
+    fn rendered_velocity_stays_steady_across_uneven_ticks() {
+        let (mut app, entity) = smoothing_app();
+        // Two ticks arriving in one frame, then a frame with none: the worst
+        // realistic phase drift between two 60 Hz schedules.
+        let pattern = [1, 2, 0, 1, 1, 2, 0, 1];
+
+        // Let the velocity estimate settle before measuring.
+        let mut previous = 0.0;
+        for step in 0..48 {
+            previous = frame(&mut app, entity, pattern[step % pattern.len()]);
+        }
+
+        let mut deltas = Vec::new();
+        for step in 48..96 {
+            let current = frame(&mut app, entity, pattern[step % pattern.len()]);
+            deltas.push(current - previous);
+            previous = current;
+        }
+
+        let mean = deltas.iter().sum::<f32>() / deltas.len() as f32;
+        assert!(
+            (mean - TICK_STEP).abs() < 0.01,
+            "rendered motion must average the simulated speed, got {mean} vs {TICK_STEP}"
+        );
+
+        let worst = deltas
+            .iter()
+            .map(|delta| (delta - mean).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            worst < mean * 0.25,
+            "per-frame displacement swung by {worst} around a mean of {mean}; \
+             that swing is the judder this smoothing exists to remove"
+        );
+    }
+
+    /// With the feed-forward carrying the motion, the transform must not settle
+    /// at a fixed distance behind the simulation the way a pure error-driven
+    /// follow does — otherwise the character visibly trails its own hitbox.
+    #[test]
+    fn rendered_position_does_not_lag_far_behind_a_steady_walk() {
+        let (mut app, entity) = smoothing_app();
+        for _ in 0..120 {
+            frame(&mut app, entity, 1);
+        }
+
+        let simulated = app.world().entity(entity).get::<Position>().unwrap().0.x;
+        let rendered = app
+            .world()
+            .entity(entity)
+            .get::<Transform>()
+            .unwrap()
+            .translation
+            .x;
+        // One tick of slack is the deliberate render delay; anything approaching
+        // the ~2 ticks the old follow settled at reads as input lag.
+        assert!(
+            simulated - rendered < TICK_STEP * 3.0,
+            "rendered {rendered} trails simulated {simulated} by more than three ticks"
+        );
+        assert!(
+            rendered <= simulated,
+            "the render must never run ahead of the simulation"
+        );
+    }
+
+    /// A stopped entity must land exactly on its simulated position: the
+    /// feed-forward has to bleed away rather than park the transform short of
+    /// the target forever.
+    #[test]
+    fn rendered_position_converges_exactly_once_movement_stops() {
+        let (mut app, entity) = smoothing_app();
+        for _ in 0..60 {
+            frame(&mut app, entity, 1);
+        }
+        for _ in 0..60 {
+            frame(&mut app, entity, 0);
+        }
+
+        let simulated = app.world().entity(entity).get::<Position>().unwrap().0.x;
+        let rendered = app
+            .world()
+            .entity(entity)
+            .get::<Transform>()
+            .unwrap()
+            .translation
+            .x;
+        assert!(
+            (simulated - rendered).abs() < 0.001,
+            "rendered {rendered} never settled onto simulated {simulated}"
+        );
+    }
+
+    /// Respawn, knockback and teleport must cut, not glide across the map.
+    #[test]
+    fn a_teleport_snaps_instead_of_gliding() {
+        let (mut app, entity) = smoothing_app();
+        app.world_mut().resource_mut::<Time>().advance_by(FRAME);
+        app.world_mut()
+            .entity_mut(entity)
+            .get_mut::<Position>()
+            .unwrap()
+            .0 = Vec3::new(TELEPORT_SNAP_DISTANCE * 4.0, 0.0, 0.0);
+        app.update();
+
+        let rendered = app
+            .world()
+            .entity(entity)
+            .get::<Transform>()
+            .unwrap()
+            .translation
+            .x;
+        assert_eq!(rendered, TELEPORT_SNAP_DISTANCE * 4.0);
     }
 }

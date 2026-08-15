@@ -80,7 +80,7 @@ impl SpellRegistry {
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        list.sort_by(|a, b| a.1.display_name().cmp(&b.1.display_name()));
+        list.sort_by(|a, b| a.1.display_name().cmp(b.1.display_name()));
         list
     }
 }

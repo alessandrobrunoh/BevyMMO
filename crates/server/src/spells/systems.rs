@@ -8,9 +8,16 @@
 
 use bevy::prelude::*;
 
+use bevymmo_shared::abilities::{
+    cast_inscribed_slot, resolve_active_ability, AbilityCooldowns, AncientWordRegistry,
+    BaseAbilityRegistry,
+    EidolonCastRequest, EssenceRegistry, KnownGlyphs, ModifierRegistry,
+};
 use bevymmo_shared::entity::boss::components::BossSpellbook;
 use bevymmo_shared::entity::components::GameEntity;
 use bevymmo_shared::entity::player::components::Player;
+use bevymmo_shared::items::components::Equipment;
+use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::network::protocol::{
     Channel1, Inputs, LookDirection, NetworkEntityId, Position, SpellCastEnded, SpellCastProgress,
     SpellVisualEffect,
@@ -658,6 +665,167 @@ fn emit_cast_ended(
 
 /// Ticks all spell cooldown timers every fixed tick.
 pub fn tick_spell_cooldowns(time: Res<Time>, mut cooldowns: Query<&mut SpellCooldowns>) {
+    let delta = time.delta();
+    for mut cooldowns in cooldowns.iter_mut() {
+        cooldowns.tick(delta);
+        cooldowns.cleanup_finished();
+    }
+}
+
+/// Processes Eidolon cast requests: resolves the equipped weapon's gesture and
+/// Incisione for `request.slot` and applies the full-lockout interpreter
+/// (`cast_inscribed_slot`), then applies the resulting effects through the
+/// same [`apply_spell_effects`] pipeline used by classic spells.
+///
+/// Unlike [`process_cast_requests`], there is no CastTime/Channeling
+/// equivalent yet — every Eidolon gesture is treated as instant.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn process_eidolon_cast_requests(
+    mut commands: Commands,
+    mut requests: MessageReader<EidolonCastRequest>,
+    ability_registry: Res<BaseAbilityRegistry>,
+    essence_registry: Res<EssenceRegistry>,
+    modifier_registry: Res<ModifierRegistry>,
+    ancient_word_registry: Res<AncientWordRegistry>,
+    item_registry: Res<ItemRegistry>,
+    mut casters: Query<(
+        &Equipment,
+        &KnownGlyphs,
+        &mut AbilityCooldowns,
+        &Position,
+        &mut LookDirection,
+        Option<&bevymmo_shared::crowd_control::CrowdControlState>,
+    )>,
+    caster_stats: Query<&CombatStats>,
+    targets_query: Query<(Entity, &Position, &VitalStats), With<GameEntity>>,
+    mut damage_events: MessageWriter<DamageEvent>,
+    mut heal_events: MessageWriter<HealEvent>,
+    mut stat_modifier_events: MessageWriter<ApplyStatModifierEvent>,
+    mut visual_sender: ServerMultiMessageSender,
+    mut local_visuals: MessageWriter<SpellVisualEffect>,
+    server: Single<&lightyear::prelude::server::Server>,
+) {
+    let server = server.into_inner();
+
+    for request in requests.read() {
+        let Ok((equipment, known, mut cooldowns, caster_position, mut look_direction, cc_state)) =
+            casters.get_mut(request.caster)
+        else {
+            bevy::log::debug!("Ignoring Eidolon cast from missing caster {}", request.caster);
+            continue;
+        };
+
+        let Some(weapon_instance) = &equipment.weapon else {
+            bevy::log::debug!("Caster {} has no weapon equipped", request.caster);
+            continue;
+        };
+        let Some(item) = item_registry.get(&weapon_instance.item_id) else {
+            continue;
+        };
+        let Some(weapon_abilities) = item.weapon_abilities() else {
+            bevy::log::debug!(
+                "Equipped weapon {} has no Eidolon gestures",
+                weapon_instance.item_id.as_str()
+            );
+            continue;
+        };
+        let inscriptions = weapon_instance.inscriptions.clone().unwrap_or_default();
+        let selection = &weapon_instance.ability_selection;
+        let Some(ability_id) =
+            resolve_active_ability(request.slot, weapon_abilities, selection).cloned()
+        else {
+            bevy::log::debug!(
+                "Weapon {} offers no gesture for slot {:?}",
+                weapon_instance.item_id.as_str(),
+                request.slot
+            );
+            continue;
+        };
+
+        if cooldowns.is_on_cooldown(&ability_id) {
+            bevy::log::debug!("Ability {:?} on cooldown for caster {}", ability_id, request.caster);
+            continue;
+        }
+        if cc_state.map(|c| c.has_blocking_cc()).unwrap_or(false) {
+            bevy::log::debug!("Caster {} is CC'd, rejecting Eidolon cast", request.caster);
+            continue;
+        }
+
+        let caster_position_value = caster_position.0;
+        let mut look_direction_value = look_direction.0;
+        if let Some(target) = request.target_position {
+            let offset = target - caster_position_value;
+            let length = offset.length();
+            if length > 0.001 {
+                let normalized = offset / length;
+                look_direction.0 = normalized;
+                look_direction_value = normalized;
+            }
+        }
+
+        let Ok(combat) = caster_stats.get(request.caster) else {
+            bevy::log::warn!("Caster {} missing CombatStats", request.caster);
+            continue;
+        };
+        let potential_targets: Vec<(Entity, Vec3)> = targets_query
+            .iter()
+            .filter(|(_, _, vital)| !vital.is_dead())
+            .map(|(entity, pos, _)| (entity, pos.0))
+            .collect();
+
+        let mut ctx = SpellCastContext::new(
+            request.caster,
+            caster_position_value,
+            combat,
+            look_direction_value,
+            request.target_position,
+            request.target_entity,
+            &potential_targets,
+        );
+
+        match cast_inscribed_slot(
+            request.slot,
+            weapon_abilities,
+            selection,
+            &inscriptions,
+            known,
+            &ability_registry,
+            &essence_registry,
+            &modifier_registry,
+            &ancient_word_registry,
+            &mut ctx,
+        ) {
+            Ok(()) => {
+                apply_spell_effects(
+                    &mut commands,
+                    &mut ctx,
+                    request.caster,
+                    caster_position_value,
+                    &mut damage_events,
+                    &mut heal_events,
+                    &mut stat_modifier_events,
+                    &mut visual_sender,
+                    &mut local_visuals,
+                    server,
+                );
+
+                if let Some(ability) = ability_registry.get(&ability_id) {
+                    cooldowns.start_cooldown(ability_id, ability.base_params().cooldown);
+                }
+            }
+            Err(reason) => {
+                bevy::log::debug!(
+                    "Eidolon cast blocked for caster {}: {:?}",
+                    request.caster,
+                    reason
+                );
+            }
+        }
+    }
+}
+
+/// Ticks all Eidolon ability cooldown timers every fixed tick.
+pub fn tick_ability_cooldowns(time: Res<Time>, mut cooldowns: Query<&mut AbilityCooldowns>) {
     let delta = time.delta();
     for mut cooldowns in cooldowns.iter_mut() {
         cooldowns.tick(delta);

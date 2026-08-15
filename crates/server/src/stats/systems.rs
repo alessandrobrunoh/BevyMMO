@@ -8,8 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use bevymmo_shared::stats::components::{CombatStats, VitalStats};
 use bevymmo_shared::stats::events::{
-    ApplyStatModifierEvent, DamageEvent, HealEvent, ModifierEffect, ModifierKind, ModifierOp,
-    StatField,
+    ApplyStatModifierEvent, DamageEvent, HealEvent, ModifierEffect, ModifierOp, StatField,
 };
 use bevymmo_shared::stats::formulas::damage_after_armor;
 use bevymmo_shared::stats::modifiers::{
@@ -27,7 +26,7 @@ pub fn apply_damage(
         let Ok((mut vital, combat)) = targets.get_mut(event.target) else {
             continue;
         };
-        let effective = damage_after_armor(event.amount, &combat);
+        let effective = damage_after_armor(event.amount, combat);
         vital.current_health = (vital.current_health - effective).max(0.0);
     }
 }
@@ -334,6 +333,9 @@ pub fn effective_value(field: StatField, base: f32, modifiers: &[StatModifierIns
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only used by these tests — kept out of the top-level import so a
+    // non-test build doesn't flag it as unused.
+    use bevymmo_shared::stats::events::ModifierKind;
 
     #[test]
     fn effective_value_applies_adds_then_multiplies() {

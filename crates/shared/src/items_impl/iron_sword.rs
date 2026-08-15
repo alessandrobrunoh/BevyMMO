@@ -3,6 +3,13 @@
 //! Grants +1000 MaxHealth while equipped, as a permanent stat bonus. This is
 //! the reference implementation for an equippable weapon and the test fixture
 //! for the inventory/equip pipeline.
+//!
+//! Also the reference implementation of a spell-granting item built *by
+//! hand* instead of through the `#[item(...)]` macro (see `magic_staff.rs`
+//! for the macro version): `spell_kit` is just a regular field, built once
+//! in `new()` and returned by overriding `Item::spell_kit`. Useful when an
+//! item's data can't be expressed as a macro literal (e.g. computed at
+//! runtime) — the macro is sugar for the common case, not a requirement.
 
 use std::borrow::Cow;
 
@@ -10,12 +17,19 @@ use crate::items::components::EquipSlot;
 use crate::items::definition::{Item, ItemCategory, ItemConfig, ItemRarity};
 use crate::items::effects::ItemEffect;
 use crate::items::registry::ItemId;
+use crate::items::spell_kit::SpellKit;
+use crate::spells::registry::SpellId;
+use crate::spells_impl::attack::AttackSpell;
+use crate::spells_impl::healing_circle::HealingCircleSpell;
+use crate::spells_impl::stun_field::StunFieldSpell;
+use crate::spells_impl::swift::SwiftSpell;
 use crate::stats::events::{ModifierOp, StatField};
 
 /// The iron sword ("Spada 1").
 pub struct IronSword {
     config: ItemConfig,
     effects: Vec<ItemEffect>,
+    spell_kit: SpellKit,
 }
 
 impl IronSword {
@@ -41,6 +55,14 @@ impl IronSword {
                 op: ModifierOp::Add,
                 value: Self::MAX_HEALTH_BONUS,
             }],
+            // Warrior/vitality flavor: a plain swing or a stunning heavy
+            // strike on Q, a charge on W, and — matching the MaxHealth bonus
+            // above — a self-sustain burst on E.
+            spell_kit: SpellKit::new(
+                vec![SpellId::new(AttackSpell::ID), SpellId::new(StunFieldSpell::ID)],
+                vec![SpellId::new(SwiftSpell::ID)],
+                SpellId::new(HealingCircleSpell::ID),
+            ),
         }
     }
 }
@@ -60,6 +82,9 @@ impl Item for IronSword {
     }
     fn effects(&self) -> &[ItemEffect] {
         &self.effects
+    }
+    fn spell_kit(&self) -> Option<&SpellKit> {
+        Some(&self.spell_kit)
     }
 }
 
@@ -107,5 +132,24 @@ mod tests {
     fn has_no_equip_requirements() {
         let sword = IronSword::new();
         assert!(sword.equip_requirements().is_empty());
+    }
+
+    #[test]
+    fn grants_two_q_options_one_w_one_e() {
+        let sword = IronSword::new();
+        let kit = sword.spell_kit().expect("iron_sword must grant a spell kit");
+
+        assert_eq!(
+            kit.candidates_for(crate::spells::components::HotbarSlot::Q),
+            &[SpellId::new(AttackSpell::ID), SpellId::new(StunFieldSpell::ID)]
+        );
+        assert_eq!(
+            kit.candidates_for(crate::spells::components::HotbarSlot::W),
+            &[SpellId::new(SwiftSpell::ID)]
+        );
+        assert_eq!(
+            kit.candidates_for(crate::spells::components::HotbarSlot::E),
+            &[SpellId::new(HealingCircleSpell::ID)]
+        );
     }
 }

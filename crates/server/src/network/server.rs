@@ -11,15 +11,22 @@ use std::sync::{mpsc, Mutex};
 
 use uuid::Uuid;
 
+use bevymmo_shared::abilities::{
+    validate_weapon_inscriptions, AbilityCooldowns, AbilityId, AncientWordId, AncientWordRegistry,
+    BaseAbilityRegistry, EidolonCastRequest, EssenceId, EssenceRegistry, Inscription, KnownGlyphs,
+    ModifierId, ModifierRegistry,
+};
 use bevymmo_shared::entity::components::{EntityKind, EntityState, PlayerName, SpawnPoint};
 use bevymmo_shared::entity::events::RespawnedEvent;
 use bevymmo_shared::entity::player::components::Player;
 use bevymmo_shared::entity::spawn::GameEntityBundle;
 use bevymmo_shared::game_state::validate_player_name;
 use bevymmo_shared::items::components::{Equipment, Inventory};
+use bevymmo_shared::items::registry::ItemRegistry;
+use bevymmo_shared::items::AvailableSpellChoices;
 use bevymmo_shared::network::protocol::*;
 use bevymmo_shared::spells::{
-    SpellCastRequest, SpellCooldowns, SpellHotbar, SpellId, SpellRegistry, SpellReleaseRequest,
+    SpellCastRequest, SpellCooldowns, SpellHotbar, SpellId, SpellReleaseRequest,
 };
 use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
 
@@ -123,6 +130,9 @@ impl Plugin for ServerPlugins {
                 handle_spell_cast_commands,
                 handle_spell_release_commands,
                 handle_update_hotbar_slot_requests,
+                handle_eidolon_cast_commands,
+                handle_update_inscription_requests,
+                handle_update_ability_selection_requests,
                 handle_respawn_requests,
                 send_messages,
             )
@@ -295,8 +305,9 @@ fn finish_pending_joins(
                 snapshot.inventory,
                 snapshot.equipment,
                 AppliedEquipmentBonus::default(),
-                PlayerId(completed_join.peer_id),
-                DbPlayerId(snapshot.player.id),
+                AvailableSpellChoices::default(),
+                (snapshot.known_glyphs, AbilityCooldowns::default()),
+                (PlayerId(completed_join.peer_id), DbPlayerId(snapshot.player.id)),
                 PredictionTarget::to_clients(NetworkTarget::Single(completed_join.peer_id)),
                 InterpolationTarget::to_clients(NetworkTarget::AllExceptSingle(
                     completed_join.peer_id,
@@ -582,27 +593,35 @@ fn handle_update_hotbar_slot_requests(
         (&mut MessageReceiver<UpdateHotbarSlotRequest>, &RemoteId),
         (With<Connected>, With<Joined>),
     >,
-    mut players: Query<(Entity, &PlayerId, &DbPlayerId, &mut SpellHotbar), With<Player>>,
-    registry: Res<SpellRegistry>,
+    mut players: Query<
+        (Entity, &PlayerId, &DbPlayerId, &mut SpellHotbar, &AvailableSpellChoices),
+        With<Player>,
+    >,
     store: Res<PlayerStore>,
     runtime: Res<PersistenceRuntime>,
 ) {
     for (mut receiver, remote_id) in receivers.iter_mut() {
-        let Some((player_entity, _, database_id, mut hotbar)) = players
+        let Some((player_entity, _, database_id, mut hotbar, choices)) = players
             .iter_mut()
-            .find(|(_, player_id, _, _)| player_id.0 == remote_id.0)
+            .find(|(_, player_id, _, _, _)| player_id.0 == remote_id.0)
         else {
             continue;
         };
 
         for request in receiver.receive() {
             let spell_id = request.spell_id.map(SpellId::new);
+            // The legal picks for a hotbar key are no longer "any registered
+            // spell" — they are whatever the player's currently equipped
+            // items offer for that key (see `AvailableSpellChoices`, built by
+            // `available_spells::recompute_available_spells` from every
+            // equipped item's `SpellKit`).
             if let Some(id) = &spell_id {
-                if !registry.contains(id) {
+                if !choices.contains(request.slot, id) {
                     bevy::log::warn!(
-                        "Player {:?} attempted to assign unknown spell {}",
+                        "Player {:?} attempted to select {} on {:?}, but it isn't offered by their equipped items",
                         player_entity,
-                        id.as_str()
+                        id.as_str(),
+                        request.slot
                     );
                     continue;
                 }
@@ -616,6 +635,243 @@ fn handle_update_hotbar_slot_requests(
             runtime.0.spawn(async move {
                 if let Err(e) = repository.save_hotbar(db_id, &current_hotbar).await {
                     bevy::log::error!("Failed to save hotbar for {}: {}", db_id, e);
+                }
+            });
+        }
+    }
+}
+
+/// Translates Eidolon cast commands arriving from the network into internal
+/// ECS requests. Mirrors `handle_spell_cast_commands`: the server resolves
+/// the caster from the connected peer, never trusts a client-specified
+/// entity, and resolves `target_id` (a stable `NetworkEntityId`) to the
+/// current `Entity` for that target, if any.
+fn handle_eidolon_cast_commands(
+    mut receivers: Query<
+        (&mut MessageReceiver<EidolonCastCommand>, &RemoteId),
+        (With<Connected>, With<Joined>),
+    >,
+    players: Query<(Entity, &PlayerId), With<Player>>,
+    targets: Query<
+        (Entity, &NetworkEntityId),
+        With<bevymmo_shared::entity::components::GameEntity>,
+    >,
+    mut eidolon_cast_requests: MessageWriter<EidolonCastRequest>,
+) {
+    for (mut receiver, remote_id) in receivers.iter_mut() {
+        let Some((player_entity, _)) = players
+            .iter()
+            .find(|(_, player_id)| player_id.0 == remote_id.0)
+        else {
+            continue;
+        };
+
+        for command in receiver.receive() {
+            let target_entity = command.target_id.and_then(|target_id| {
+                targets
+                    .iter()
+                    .find(|(_, network_id)| network_id.0 == target_id)
+                    .map(|(entity, _)| entity)
+            });
+
+            eidolon_cast_requests.write(EidolonCastRequest {
+                caster: player_entity,
+                slot: command.slot,
+                target_position: command.target_position,
+                target_entity,
+            });
+        }
+    }
+}
+
+/// Applies (or rejects) a request to inscribe one slot of the equipped
+/// weapon's Incisione.
+///
+/// Rejects wholesale — no partial application — when: no Eidolon weapon is
+/// equipped, the player doesn't know one of the requested Glifi
+/// (`KnownGlyphs`), a Modificatore/Parola Antica doesn't match the gesture's
+/// tags, or the resulting Incisione exceeds the weapon's Capacità Runica.
+/// See `bevymmo_shared::abilities::validate_weapon_inscriptions`.
+#[allow(clippy::type_complexity)]
+fn handle_update_inscription_requests(
+    mut receivers: Query<
+        (&mut MessageReceiver<UpdateInscriptionRequest>, &RemoteId),
+        (With<Connected>, With<Joined>),
+    >,
+    mut players: Query<
+        (Entity, &PlayerId, &DbPlayerId, &mut Equipment, &KnownGlyphs),
+        With<Player>,
+    >,
+    item_registry: Res<ItemRegistry>,
+    ability_registry: Res<BaseAbilityRegistry>,
+    essence_registry: Res<EssenceRegistry>,
+    modifier_registry: Res<ModifierRegistry>,
+    ancient_word_registry: Res<AncientWordRegistry>,
+    store: Res<PlayerStore>,
+    runtime: Res<PersistenceRuntime>,
+) {
+    for (mut receiver, remote_id) in receivers.iter_mut() {
+        let Some((player_entity, _, database_id, mut equipment, known)) = players
+            .iter_mut()
+            .find(|(_, player_id, _, _, _)| player_id.0 == remote_id.0)
+        else {
+            continue;
+        };
+
+        for request in receiver.receive() {
+            let Some(weapon) = equipment.weapon.clone() else {
+                bevy::log::warn!(
+                    "Player {:?} tried to inscribe with no weapon equipped",
+                    player_entity
+                );
+                continue;
+            };
+            let Some(item) = item_registry.get(&weapon.item_id) else {
+                continue;
+            };
+            let (Some(weapon_abilities), Some(profile)) = (item.weapon_abilities(), item.rune_profile())
+            else {
+                bevy::log::warn!(
+                    "Player {:?} tried to inscribe a non-Eidolon weapon",
+                    player_entity
+                );
+                continue;
+            };
+
+            let new_inscription = Inscription {
+                essence: request.essence.clone().map(EssenceId::new),
+                modifiers: request.modifiers.iter().cloned().map(ModifierId::new).collect(),
+                ancient_word: request.ancient_word.clone().map(AncientWordId::new),
+            };
+
+            if !known.fully_knows(&new_inscription) {
+                bevy::log::warn!(
+                    "Player {:?} tried to inscribe a Glifo they don't know",
+                    player_entity
+                );
+                continue;
+            }
+
+            let mut candidate = weapon.inscriptions.clone().unwrap_or_default();
+            *candidate.get_mut(request.slot) = new_inscription;
+
+            if let Err(reason) = validate_weapon_inscriptions(
+                &candidate,
+                weapon_abilities,
+                &weapon.ability_selection,
+                profile,
+                &ability_registry,
+                &essence_registry,
+                &modifier_registry,
+                &ancient_word_registry,
+            ) {
+                bevy::log::warn!("Player {:?} inscription rejected: {:?}", player_entity, reason);
+                continue;
+            }
+
+            let mut updated_weapon = weapon;
+            updated_weapon.inscriptions = Some(candidate);
+            equipment.weapon = Some(updated_weapon);
+
+            let repository = store.0.clone();
+            let db_id = database_id.0;
+            let current_equipment = equipment.clone();
+            runtime.0.spawn(async move {
+                if let Err(e) = repository.save_equipment(db_id, &current_equipment).await {
+                    bevy::log::error!("Failed to save equipment for {}: {}", db_id, e);
+                }
+            });
+        }
+    }
+}
+
+/// Applies an `UpdateAbilitySelectionRequest`: picks which of the equipped
+/// weapon's offered gestures is active on a slot.
+///
+/// Rejects an ability the weapon doesn't offer for that slot. When the new
+/// gesture makes the slot's existing Incisione invalid (a Modificatore that
+/// required a tag the old gesture had but the new one doesn't, say), the
+/// slot's glyphs are cleared rather than the whole request being rejected —
+/// otherwise the player could get stuck unable to switch gesture.
+#[allow(clippy::type_complexity)]
+fn handle_update_ability_selection_requests(
+    mut receivers: Query<
+        (&mut MessageReceiver<UpdateAbilitySelectionRequest>, &RemoteId),
+        (With<Connected>, With<Joined>),
+    >,
+    mut players: Query<(Entity, &PlayerId, &DbPlayerId, &mut Equipment), With<Player>>,
+    item_registry: Res<ItemRegistry>,
+    ability_registry: Res<BaseAbilityRegistry>,
+    essence_registry: Res<EssenceRegistry>,
+    modifier_registry: Res<ModifierRegistry>,
+    ancient_word_registry: Res<AncientWordRegistry>,
+    store: Res<PlayerStore>,
+    runtime: Res<PersistenceRuntime>,
+) {
+    for (mut receiver, remote_id) in receivers.iter_mut() {
+        let Some((player_entity, _, database_id, mut equipment)) = players
+            .iter_mut()
+            .find(|(_, player_id, _, _)| player_id.0 == remote_id.0)
+        else {
+            continue;
+        };
+
+        for request in receiver.receive() {
+            let Some(weapon) = equipment.weapon.clone() else {
+                continue;
+            };
+            let Some(item) = item_registry.get(&weapon.item_id) else {
+                continue;
+            };
+            let (Some(weapon_abilities), Some(profile)) =
+                (item.weapon_abilities(), item.rune_profile())
+            else {
+                continue;
+            };
+
+            let requested = AbilityId::new(request.ability_id.clone());
+            if !weapon_abilities.options_for(request.slot).contains(&requested) {
+                bevy::log::warn!(
+                    "Player {:?} picked gesture {} not offered on {:?}",
+                    player_entity,
+                    request.ability_id,
+                    request.slot
+                );
+                continue;
+            }
+
+            let mut selection = weapon.ability_selection.clone();
+            selection.assign(request.slot, Some(requested));
+
+            let mut inscriptions = weapon.inscriptions.clone().unwrap_or_default();
+            if validate_weapon_inscriptions(
+                &inscriptions,
+                weapon_abilities,
+                &selection,
+                profile,
+                &ability_registry,
+                &essence_registry,
+                &modifier_registry,
+                &ancient_word_registry,
+            )
+            .is_err()
+            {
+                // The new gesture doesn't accept the glyphs inscribed for the
+                // old one — start that slot clean instead of refusing.
+                *inscriptions.get_mut(request.slot) = Inscription::default();
+            }
+
+            let mut updated_weapon = weapon;
+            updated_weapon.ability_selection = selection;
+            updated_weapon.inscriptions = Some(inscriptions);
+            equipment.weapon = Some(updated_weapon);
+
+            let repository = store.0.clone();
+            let db_id = database_id.0;
+            let current_equipment = equipment.clone();
+            runtime.0.spawn(async move {
+                if let Err(e) = repository.save_equipment(db_id, &current_equipment).await {
+                    bevy::log::error!("Failed to save equipment for {}: {}", db_id, e);
                 }
             });
         }

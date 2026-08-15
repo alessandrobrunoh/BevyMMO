@@ -255,11 +255,76 @@ impl AoeEffect {
     }
 }
 
+/// Forma dell'area coperta da una regione AoE.
+///
+/// Esiste per una ragione precisa: il client disegna l'anteprima di mira con
+/// la *stessa* funzione ([`AoeShape::contains`]) che il server usa per
+/// decidere chi viene colpito, così il preview non può divergere dall'hitbox.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum AoeShape {
+    /// Disco pieno attorno al centro.
+    #[default]
+    Circle,
+    /// Settore circolare con l'apice nel centro, aperto di `angle_deg`
+    /// COMPLESSIVI (cioè ±`angle_deg / 2`) attorno a `direction`.
+    Cone {
+        /// Direzione orizzontale normalizzata dell'asse del cono.
+        direction: Vec3,
+        /// Apertura totale in gradi.
+        angle_deg: f32,
+    },
+}
+
+impl AoeShape {
+    /// `true` se `point` cade dentro la forma. Il test è orizzontale: la Y è
+    /// scartata come in tutta la matematica di gioco (vedi `flat_offset` in
+    /// [`crate::abilities::base_ability`]), perché si combatte su un piano.
+    pub fn contains(self, center: Vec3, radius: f32, point: Vec3) -> bool {
+        let offset = Vec3::new(point.x - center.x, 0.0, point.z - center.z);
+        let distance = offset.length();
+        if distance > radius {
+            return false;
+        }
+
+        match self {
+            AoeShape::Circle => true,
+            AoeShape::Cone {
+                direction,
+                angle_deg,
+            } => {
+                // Un cono di 360° è un cerchio; uno di 0° non colpisce nulla.
+                if angle_deg >= 360.0 {
+                    return true;
+                }
+                if angle_deg <= 0.0 {
+                    return false;
+                }
+                let axis = Vec3::new(direction.x, 0.0, direction.z).normalize_or_zero();
+                if axis == Vec3::ZERO {
+                    // Direzione degenere: senza un asse il cono non ha un
+                    // "davanti", quindi non colpisce (meglio del contrario:
+                    // un cono che colpisce a 360° per un bug di facing).
+                    return false;
+                }
+                // Chi sta esattamente sull'apice è sempre dentro: l'angolo
+                // non è definito e escluderlo sarebbe controintuitivo.
+                if distance <= f32::EPSILON {
+                    return true;
+                }
+                (offset / distance).dot(axis) >= (angle_deg.to_radians() / 2.0).cos()
+            }
+        }
+    }
+}
+
 /// Spawn request for a persistent Area-of-Effect (AoE) region.
 #[derive(Debug, Clone)]
 pub struct AoeSpawnRequest {
     pub center: Vec3,
     pub radius: f32,
+    /// Forma coperta attorno a `center`. Le spell classiche emettono sempre
+    /// [`AoeShape::Circle`]; i gesti Eidolon a cono usano `Cone`.
+    pub shape: AoeShape,
     /// Total duration of the region. For "delay + single impact" model
     /// (Meteorite) this equals `initial_delay_seconds` (region despawns
     /// immediately after applying effect).
@@ -394,9 +459,36 @@ impl<'a> SpellCastContext<'a> {
         spell_id: impl Into<String>,
         effect: AoeEffect,
     ) {
+        self.emit_aoe_shaped(
+            center,
+            radius,
+            AoeShape::Circle,
+            duration_seconds,
+            initial_delay_seconds,
+            spell_id,
+            effect,
+        );
+    }
+
+    /// Variante completa di [`emit_aoe_with_delay`] che sceglie anche la
+    /// [`AoeShape`]. Le due funzioni sopra le delegano passando
+    /// [`AoeShape::Circle`], così esiste un solo punto in cui una richiesta
+    /// di AoE viene costruita.
+    #[allow(clippy::too_many_arguments)]
+    pub fn emit_aoe_shaped(
+        &mut self,
+        center: Vec3,
+        radius: f32,
+        shape: AoeShape,
+        duration_seconds: f32,
+        initial_delay_seconds: f32,
+        spell_id: impl Into<String>,
+        effect: AoeEffect,
+    ) {
         self.pending_aoes.push(AoeSpawnRequest {
             center,
             radius,
+            shape,
             duration_seconds,
             initial_delay_seconds,
             spell_id: spell_id.into(),
@@ -521,4 +613,113 @@ pub trait Spell: Send + Sync + 'static {
     /// }
     /// ```
     fn cast(&self, ctx: &mut SpellCastContext);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Cono di 70° puntato lungo +Z, apice nell'origine, raggio 6.
+    fn wave() -> (Vec3, f32, AoeShape) {
+        (
+            Vec3::ZERO,
+            6.0,
+            AoeShape::Cone {
+                direction: Vec3::Z,
+                angle_deg: 70.0,
+            },
+        )
+    }
+
+    #[test]
+    fn circle_only_checks_distance() {
+        let shape = AoeShape::Circle;
+        assert!(shape.contains(Vec3::ZERO, 3.0, Vec3::new(0.0, 0.0, 2.9)));
+        // Dietro, ma dentro il raggio: un cerchio colpisce comunque.
+        assert!(shape.contains(Vec3::ZERO, 3.0, Vec3::new(0.0, 0.0, -2.9)));
+        assert!(!shape.contains(Vec3::ZERO, 3.0, Vec3::new(0.0, 0.0, 3.1)));
+    }
+
+    #[test]
+    fn circle_ignores_height() {
+        // La Y è scartata: un bersaglio "sopra" resta dentro l'area.
+        assert!(AoeShape::Circle.contains(Vec3::ZERO, 3.0, Vec3::new(1.0, 50.0, 1.0)));
+    }
+
+    #[test]
+    fn cone_hits_straight_ahead() {
+        let (center, radius, shape) = wave();
+        assert!(shape.contains(center, radius, Vec3::new(0.0, 0.0, 5.0)));
+    }
+
+    #[test]
+    fn cone_misses_behind_the_caster() {
+        let (center, radius, shape) = wave();
+        assert!(!shape.contains(center, radius, Vec3::new(0.0, 0.0, -5.0)));
+    }
+
+    #[test]
+    fn cone_misses_at_ninety_degrees() {
+        // 90° dall'asse è fuori da un cono di 70° (che copre ±35°).
+        let (center, radius, shape) = wave();
+        assert!(!shape.contains(center, radius, Vec3::new(5.0, 0.0, 0.0)));
+    }
+
+    #[test]
+    fn cone_edge_is_inside_and_just_past_it_is_not() {
+        let (center, radius, shape) = wave();
+        let inside = 34.0_f32.to_radians();
+        let outside = 36.0_f32.to_radians();
+        assert!(shape.contains(center, radius, Vec3::new(inside.sin() * 4.0, 0.0, inside.cos() * 4.0)));
+        assert!(!shape.contains(center, radius, Vec3::new(outside.sin() * 4.0, 0.0, outside.cos() * 4.0)));
+    }
+
+    #[test]
+    fn cone_respects_the_radius() {
+        let (center, radius, shape) = wave();
+        assert!(!shape.contains(center, radius, Vec3::new(0.0, 0.0, 6.5)));
+    }
+
+    #[test]
+    fn cone_with_a_degenerate_axis_hits_nothing() {
+        // Facing non risolto: meglio non colpire nulla che colpire a 360°.
+        let shape = AoeShape::Cone {
+            direction: Vec3::ZERO,
+            angle_deg: 70.0,
+        };
+        assert!(!shape.contains(Vec3::ZERO, 6.0, Vec3::new(0.0, 0.0, 1.0)));
+    }
+
+    #[test]
+    fn cone_includes_whoever_stands_on_the_apex() {
+        let (center, radius, shape) = wave();
+        assert!(shape.contains(center, radius, center));
+    }
+
+    #[test]
+    fn emit_aoe_defaults_to_a_circle() {
+        use crate::stats::components::CombatStats;
+        use bevy::prelude::Entity;
+
+        let combat = CombatStats {
+            attack_power: 0.0,
+            armor: 0.0,
+        };
+        let caster = Entity::from_bits(1);
+        let mut ctx =
+            SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
+
+        ctx.emit_aoe(
+            Vec3::ZERO,
+            3.0,
+            1.0,
+            "test",
+            AoeEffect::Damage {
+                amount: 1.0,
+                targeting: AoeTargeting::Everyone,
+            },
+        );
+
+        assert_eq!(ctx.pending_aoes[0].shape, AoeShape::Circle);
+    }
 }

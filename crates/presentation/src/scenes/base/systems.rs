@@ -249,6 +249,28 @@ mod tests {
         );
     }
 
+    /// `crate::renderer::camera_view` rebuilds the camera's global transform
+    /// from its local one to avoid projecting the floating UI through a
+    /// frame-old camera. That shortcut is only exact while every ancestor of
+    /// the camera is the identity, which today means the scene root.
+    #[test]
+    fn scene_root_transform_is_identity() {
+        let mut app = test_app();
+        set_screen(&mut app, Screen::InGame);
+        app.update();
+
+        let mut roots = app
+            .world_mut()
+            .query_filtered::<&Transform, With<GameSceneRoot>>();
+        let root = roots.single(app.world()).expect("game scene root spawned");
+        assert_eq!(
+            *root,
+            Transform::IDENTITY,
+            "camera_view() projects through the camera's local transform; a \
+             non-identity ancestor would silently offset every floating bar"
+        );
+    }
+
     #[test]
     fn camera_stays_put_without_controlled_player() {
         let mut app = test_app();

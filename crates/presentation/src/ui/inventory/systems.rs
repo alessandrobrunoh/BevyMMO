@@ -12,6 +12,9 @@ use bevymmo_shared::{
 };
 use lightyear::prelude::MessageSender;
 
+use bevymmo_shared::abilities::KnownGlyphs;
+
+use super::weapon_detail::GlyphRegistries;
 use super::{components::*, detail::*, InventoryUiState};
 use crate::ui::{
     card::{
@@ -73,7 +76,7 @@ fn equip_slot_label(equipment: &Equipment, registry: &ItemRegistry, slot: EquipS
     equipment
         .get(slot)
         .as_ref()
-        .and_then(|id| registry.get(id))
+        .and_then(|instance| registry.get(&instance.item_id))
         .map(|item| item.display_name().to_string())
         .unwrap_or_else(|| EMPTY_SLOT_PLACEHOLDER.to_string())
 }
@@ -161,7 +164,7 @@ fn spawn_inventory_window(
                 .slots
                 .get(idx)
                 .and_then(|opt| opt.as_ref())
-                .and_then(|id| registry_snapshot.get(id))
+                .and_then(|instance| registry_snapshot.get(&instance.item_id))
                 .map(|item| item.display_name().to_string())
                 .unwrap_or_else(|| format!("Slot {}", idx + 1))
         })
@@ -305,7 +308,7 @@ pub fn update_inventory_ui(
             .slots
             .get(slot_text.index as usize)
             .and_then(|opt| opt.as_ref())
-            .and_then(|id| registry.get(id))
+            .and_then(|instance| registry.get(&instance.item_id))
             .map(|item| item.display_name().to_string())
             .unwrap_or_else(|| format!("Slot {}", slot_text.index + 1));
 
@@ -372,16 +375,24 @@ pub fn handle_inventory_interactions(
     unequip_clicks: UnequipClicksQuery,
     mut equip_senders: Query<&mut MessageSender<EquipItemCommand>, With<ConnectedClient>>,
     mut unequip_senders: Query<&mut MessageSender<UnequipItemCommand>, With<ConnectedClient>>,
-    player_query: Query<(&Inventory, &Equipment), With<lightyear::prelude::Controlled>>,
+    player_query: Query<
+        (&Inventory, &Equipment, Option<&KnownGlyphs>),
+        With<lightyear::prelude::Controlled>,
+    >,
     registry: Res<ItemRegistry>,
+    glyphs: GlyphRegistries,
     theme: Res<UiTheme>,
     all_cards: Query<(Entity, &CardWindow)>,
     mut commands: Commands,
 ) {
-    let (inventory, equipment) = player_query
+    // `KnownGlyphs` decides whether an inscribed slot is castable at all, so
+    // the detail card needs it to mark a locked slot. It is replicated
+    // separately from `Inventory`/`Equipment` and may not have arrived yet —
+    // an empty Vocabulary is the correct stand-in until it does.
+    let (inventory, equipment, known) = player_query
         .iter()
         .next()
-        .map(|(i, e)| (i.clone(), e.clone()))
+        .map(|(i, e, k)| (i.clone(), e.clone(), k.cloned().unwrap_or_default()))
         .unwrap_or_default();
 
     for (interaction, slot_btn) in slot_clicks.iter() {
@@ -394,6 +405,8 @@ pub fn handle_inventory_interactions(
             &mut commands,
             &theme,
             &registry,
+            &glyphs,
+            &known,
             &inventory,
             &equipment,
             InventorySelection::Slot(slot_btn.index),
@@ -414,6 +427,8 @@ pub fn handle_inventory_interactions(
             &mut commands,
             &theme,
             &registry,
+            &glyphs,
+            &known,
             &inventory,
             &equipment,
             InventorySelection::Equipment(equip_btn.slot),

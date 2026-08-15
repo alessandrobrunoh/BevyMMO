@@ -10,6 +10,7 @@
 //!   * `removed_at` set  -> drop the matching prop from the manifest.
 //!   * `transform_json`  -> replace the prop's `TransformData`.
 //!   * `tint`            -> replace the prop's `tint`.
+//!
 //! Overrides that reference a `prop_id` absent from the manifest are skipped
 //! (override-only creations are out of scope for this starter slice).
 

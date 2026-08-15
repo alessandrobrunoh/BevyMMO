@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use lightyear::prelude::Controlled;
+use bevymmo_shared::entity::LocalPlayer;
 
 use bevymmo_client::network::types::ClientConnectionConfig;
 use bevymmo_shared::movement::effective_movement_speed;
@@ -50,7 +50,7 @@ pub fn update_player_stats(
         &CombatStats,
         &VitalStats,
         Option<&PlayerId>,
-        Has<Controlled>,
+        Has<LocalPlayer>,
         Option<&ActiveStatModifiers>,
         Option<&NetworkEntityId>,
     )>,

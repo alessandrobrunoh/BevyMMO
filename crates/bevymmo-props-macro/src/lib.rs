@@ -1405,7 +1405,7 @@ pub fn essence(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             fn visual_theme(&self) -> crate::abilities::EssenceVisualTheme {
                 crate::abilities::EssenceVisualTheme {
-                    color: bevy::prelude::Color::srgb(#r, #g, #b),
+                    color: crate::math::Rgba::opaque(#r, #g, #b),
                 }
             }
             fn manifest(

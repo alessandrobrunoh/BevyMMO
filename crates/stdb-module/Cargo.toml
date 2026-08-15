@@ -1,0 +1,49 @@
+[package]
+name = "bevymmo_module"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+# The SpacetimeDB module: the authoritative server.
+#
+# This is NOT a member of the root workspace (see `exclude` there). It compiles
+# to `wasm32-unknown-unknown` as a `cdylib`, and `spacetimedb` is the only place
+# in the repo allowed to depend on it — `spacetimedb-bindings-sys` declares its
+# WASM imports without a `#[cfg(target_arch = "wasm32")]` guard, so pulling this
+# into a natively-linked crate passes `cargo check` and only fails at link time
+# with an undefined-symbol error.
+#
+# Build with `spacetime build`/`spacetime publish`, never plain `cargo build`
+# from the workspace root.
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pinned exactly: the derives generate impls of traits re-exported from
+# `spacetimedb-lib`, and the CLI that publishes the module is itself 2.8.1.
+# A patch drift between the two produces "trait bound not satisfied" errors
+# that point nowhere useful.
+spacetimedb = "=2.8.1"
+log = "0.4"
+
+# The shared game rules. `bevymmo_domain` carries no SATS derives of its own —
+# see its `src/lib.rs` — so the row types below are declared here and converted
+# at the boundary.
+bevymmo_domain = { path = "../domain" }
+# Same pin as `bevymmo_domain`, so `Vec3` is one type across the whole repo.
+glam = "0.32"
+# Decoder for the map manifests `build.rs` compiles into `OUT_DIR`. `no_std` +
+# `alloc` only: `use-std` would be dead weight in WASM, and the default feature
+# set drags in `heapless`, which nothing here uses. See `build.rs` for why the
+# manifests are not `include_str!`-ed as JSON.
+postcard = { version = "1.1", default-features = false, features = ["alloc"] }
+
+[build-dependencies]
+# The build script runs on the host, where a filesystem and a JSON parser exist.
+# It reads `assets/maps/*.world.json` into these same domain types and re-emits
+# them in postcard form.
+bevymmo_domain = { path = "../domain" }
+serde_json = "1.0"
+postcard = { version = "1.1", features = ["use-std"] }

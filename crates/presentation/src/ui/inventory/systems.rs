@@ -1,5 +1,6 @@
 //! Systems for Inventory UI rendering, input handling, and server communication.
 
+use bevymmo_shared::entity::LocalPlayer;
 use bevy::prelude::*;
 use bevymmo_client::network::types::ConnectedClient;
 use bevymmo_shared::{
@@ -32,7 +33,11 @@ use crate::ui::{
 const INVENTORY_CARD_WIDTH: f32 = 340.0;
 const INVENTORY_CARD_HEIGHT: f32 = 560.0;
 const EQUIP_SLOT_SIZE: f32 = 46.0;
-const EMPTY_SLOT_PLACEHOLDER: &str = "—";
+/// Shown in an empty inventory / equipment cell.
+///
+/// ASCII on purpose: Bevy's built-in font is an ASCII subset, so an em dash
+/// renders as a blank box rather than a dash.
+const EMPTY_SLOT_PLACEHOLDER: &str = "-";
 
 /// Slot border color for an empty box vs. one holding an item, approximating
 /// the rune-lined boxes of the reference design.
@@ -47,7 +52,7 @@ pub fn toggle_inventory(
     window_query: Query<(Entity, &CardWindow)>,
     theme: Res<UiTheme>,
     registry: Res<ItemRegistry>,
-    player_query: Query<(&Inventory, &Equipment), With<lightyear::prelude::Controlled>>,
+    player_query: Query<(&Inventory, &Equipment), With<LocalPlayer>>,
 ) {
     if !settings.just_pressed(KeyAction::ToggleInventory, &keys) {
         return;
@@ -297,7 +302,7 @@ pub fn update_inventory_ui(
         (Without<ItemSlotButton>, Without<EquipSlotText>),
     >,
     registry: Res<ItemRegistry>,
-    player_query: Query<(&Inventory, &Equipment), With<lightyear::prelude::Controlled>>,
+    player_query: Query<(&Inventory, &Equipment), With<LocalPlayer>>,
 ) {
     let Some((inventory, equipment)) = player_query.iter().next() else {
         return;
@@ -377,7 +382,7 @@ pub fn handle_inventory_interactions(
     mut unequip_senders: Query<&mut MessageSender<UnequipItemCommand>, With<ConnectedClient>>,
     player_query: Query<
         (&Inventory, &Equipment, Option<&KnownGlyphs>),
-        With<lightyear::prelude::Controlled>,
+        With<LocalPlayer>,
     >,
     registry: Res<ItemRegistry>,
     glyphs: GlyphRegistries,

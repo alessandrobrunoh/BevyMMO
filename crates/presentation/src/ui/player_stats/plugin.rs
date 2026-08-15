@@ -27,7 +27,7 @@ mod tests {
     use crate::game_state::{GameScreen, Screen};
     use crate::ui::theme::UiTheme;
     use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
-    use lightyear::prelude::Controlled;
+    use bevymmo_shared::entity::LocalPlayer;
 
     fn test_app() -> App {
         let mut app = App::new();
@@ -56,7 +56,7 @@ mod tests {
     fn shows_local_player_stats_in_the_top_right_panel() {
         let mut app = test_app();
         app.world_mut().spawn((
-            Controlled,
+            LocalPlayer,
             MovementStats { speed: 0.15 },
             CombatStats {
                 attack_power: 10.0,
@@ -92,7 +92,7 @@ mod tests {
         let player = app
             .world_mut()
             .spawn((
-                Controlled,
+                LocalPlayer,
                 MovementStats { speed: 0.15 },
                 CombatStats {
                     attack_power: 10.0,

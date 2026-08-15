@@ -2,7 +2,7 @@
 
 use bevy::light::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
-use lightyear::prelude::Controlled;
+use bevymmo_shared::entity::LocalPlayer;
 
 use bevymmo_shared::network::protocol::Position;
 
@@ -71,7 +71,7 @@ pub fn update_game_scene_lifecycle(
     }
 }
 
-/// Moves the game camera to follow the local player (`Controlled`).
+/// Moves the game camera to follow the local player (`LocalPlayer`).
 ///
 /// By maintaining a dynamic offset based on the current zoom level relative to the local
 /// player's `Position`, a rotation-free "third-person isometric" effect is achieved:
@@ -84,7 +84,7 @@ pub fn update_game_scene_lifecycle(
 /// // Player at (10, 0, 5) -> camera at (10, zoomed_height, zoomed_depth) looking at the player.
 /// ```
 pub fn follow_controlled_player(
-    player: Query<(&Position, Option<&Transform>), (With<Controlled>, Without<GameCamera>)>,
+    player: Query<(&Position, Option<&Transform>), (With<LocalPlayer>, Without<GameCamera>)>,
     mut camera: Query<&mut Transform, With<GameCamera>>,
     zoom: Res<CameraZoom>,
 ) {
@@ -233,7 +233,7 @@ mod tests {
 
         // Local player controlled by the client.
         app.world_mut()
-            .spawn((Controlled, Position(Vec3::new(10.0, 0.0, 5.0))));
+            .spawn((LocalPlayer, Position(Vec3::new(10.0, 0.0, 5.0))));
         app.update();
 
         let mut cams = app

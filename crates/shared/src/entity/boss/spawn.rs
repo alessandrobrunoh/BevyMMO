@@ -14,25 +14,6 @@ use crate::entity::components::EntityKind;
 use crate::entity::definition::EntityDefinition;
 use crate::spells::{SpellCooldowns, SpellId};
 
-impl Boss {
-    /// Radius of the arena trigger ring centered on the boss spawn.
-    pub const ARENA_RADIUS: f32 = 12.0;
-
-    /// IDs of every boss ability. Populated as spells are implemented.
-    ///
-    /// Empty in Phase 0; Phase 2+ appends ability IDs (`dragon_claw`,
-    /// `wing_buffet`, ...). Kept as a single source of truth so the
-    /// `BossSpellbook` and the rotation scheduler stay in sync.
-    pub const SPELLS: &'static [&'static str] = &[
-        "dragon_claw",
-        "tail_sweep",
-        "searing_breath",
-        "cinder_storm",
-        "wing_buffet",
-        "molten_eruption",
-        "cataclysm",
-    ];
-}
 
 impl EntityDefinition for Boss {
     fn name() -> &'static str {

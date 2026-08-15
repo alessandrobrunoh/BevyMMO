@@ -71,7 +71,7 @@ impl RuneSummary {
         if let Some(affinity) = &self.affinity {
             parts.push(format!("{affinity} affinity"));
         }
-        parts.join("  ·  ")
+        parts.join("   |   ")
     }
 }
 
@@ -115,7 +115,7 @@ pub fn meta_line(
     if weight > 0.0 {
         parts.push(format!("{} wt", number(weight)));
     }
-    parts.join("  ·  ")
+    parts.join("   |   ")
 }
 
 /// Costruisce il riepilogo Eidolon di `instance`, o `None` se l'item non è
@@ -201,9 +201,9 @@ fn summarize_slot(
     );
     let blocked = match &preview {
         Err(CastBlockedReason::UnknownGlyph) => {
-            Some("Locked — you don't know every inscribed Glyph".to_string())
+            Some("LOCKED - you don't know every inscribed Glyph".to_string())
         }
-        Err(reason) => Some(format!("Unavailable — {reason:?}")),
+        Err(reason) => Some(format!("UNAVAILABLE - {reason:?}")),
         Ok(_) => None,
     };
     let params = match preview {
@@ -221,8 +221,8 @@ fn summarize_slot(
         .and_then(|id| glyphs.essences.get(id))
         .map(|essence| essence.display_name().to_string());
     let title = match &essence_name {
-        Some(name) => format!("{} — {name}", ability.display_name()),
-        None => format!("{} — physical", ability.display_name()),
+        Some(name) => format!("{} - {name}", ability.display_name()),
+        None => format!("{} - physical", ability.display_name()),
     };
 
     let alternatives = {
@@ -260,7 +260,7 @@ fn describe_geometry(geometry: bevymmo_shared::abilities::AbilityGeometry) -> St
     use bevymmo_shared::abilities::AbilityGeometry::*;
     match geometry {
         Cone { radius, angle_deg } => {
-            format!("Cone {} m / {}°", number(radius), number(angle_deg))
+            format!("Cone {} m / {} deg", number(radius), number(angle_deg))
         }
         Circle { radius } => format!("Circle {} m", number(radius)),
         Projectile { range, speed } => {
@@ -293,19 +293,19 @@ fn describe_params(params: &bevymmo_shared::abilities::AbilityParams) -> String 
         parts.push(format!("{} mana", number(params.energy_cost)));
     }
     if parts.is_empty() {
-        return "—".to_string();
+        return "-".to_string();
     }
-    parts.join("  ·  ")
+    parts.join("   |   ")
 }
 
 fn describe_tags(tags: &[AbilityTag]) -> String {
     if tags.is_empty() {
-        return "—".to_string();
+        return "-".to_string();
     }
     tags.iter()
         .map(|tag| format!("{tag:?}"))
         .collect::<Vec<_>>()
-        .join(" · ")
+        .join(" / ")
 }
 
 /// L'incisione dello slot, con il costo runico di ogni Glifo: è il numero che
@@ -380,22 +380,13 @@ mod tests {
     /// summary is exercised against the same data the player sees.
     fn catalog_app() -> App {
         let mut app = App::new();
-        app.init_resource::<ItemRegistry>()
-            .init_resource::<BaseAbilityRegistry>()
-            .init_resource::<EssenceRegistry>()
-            .init_resource::<ModifierRegistry>()
-            .init_resource::<AncientWordRegistry>();
-        app.add_systems(
-            Startup,
-            (
-                bevymmo_shared::items_impl::register_default_items,
-                bevymmo_shared::base_abilities_impl::register_default_base_abilities,
-                bevymmo_shared::essences_impl::register_default_essences,
-                bevymmo_shared::modifiers_impl::register_default_modifiers,
-                bevymmo_shared::ancient_words_impl::register_default_ancient_words,
-            ),
-        );
-        app.update();
+        // Registries are plain values now, so the fixture inserts them
+        // directly instead of running a `Startup` schedule to fill them.
+        app.insert_resource(bevymmo_shared::items_impl::default_items());
+        app.insert_resource(bevymmo_shared::base_abilities_impl::default_base_abilities());
+        app.insert_resource(bevymmo_shared::essences_impl::default_essences());
+        app.insert_resource(bevymmo_shared::modifiers_impl::default_modifiers());
+        app.insert_resource(bevymmo_shared::ancient_words_impl::default_ancient_words());
         app
     }
 
@@ -546,7 +537,7 @@ mod tests {
             cooldown: 0.0,
             energy_cost: 0.0,
         };
-        assert_eq!(describe_params(&empty), "—");
+        assert_eq!(describe_params(&empty), "-");
     }
 
     #[test]
@@ -567,16 +558,16 @@ mod tests {
                 radius: 8.0,
                 angle_deg: 60.0
             }),
-            "Cone 8 m / 60°"
+            "Cone 8 m / 60 deg"
         );
     }
 
     #[test]
     fn tags_fall_back_to_a_dash_when_empty() {
-        assert_eq!(describe_tags(&[]), "—");
+        assert_eq!(describe_tags(&[]), "-");
         assert_eq!(
             describe_tags(&[AbilityTag::Ranged, AbilityTag::Projectile]),
-            "Ranged · Projectile"
+            "Ranged / Projectile"
         );
     }
 
@@ -613,7 +604,7 @@ mod tests {
             None::<EquipSlot>,
             0.0,
         );
-        assert_eq!(line, "Material  ·  Common");
+        assert_eq!(line, "Material   |   Common");
     }
 
     #[test]

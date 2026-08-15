@@ -1,3 +1,4 @@
+use bevymmo_shared::entity::LocalPlayer;
 use super::components::*;
 use super::SpellSelectorUiState;
 use bevy::prelude::*;
@@ -28,7 +29,7 @@ pub fn toggle_spell_selector(
     item_registry: Res<ItemRegistry>,
     player_query: Query<
         (&SpellHotbar, &AvailableSpellChoices, &Equipment),
-        With<lightyear::prelude::Controlled>,
+        With<LocalPlayer>,
     >,
 ) {
     if !settings.just_pressed(KeyAction::ToggleSpellbook, &keys) {
@@ -56,7 +57,7 @@ pub fn toggle_spell_selector(
     }
 
     let Some((hotbar, choices, _)) = player_query.iter().next() else {
-        // Controlled entity not spawned/replicated yet (e.g. still joining).
+        // LocalPlayer entity not spawned/replicated yet (e.g. still joining).
         state.is_open = false;
         return;
     };
@@ -292,7 +293,7 @@ pub fn update_spell_selector_ui(
     mut option_buttons: Query<(Entity, &mut BackgroundColor), With<SpellOptionButton>>,
     registry: Res<SpellRegistry>,
     theme: Res<UiTheme>,
-    player_query: Query<&SpellHotbar, With<lightyear::prelude::Controlled>>,
+    player_query: Query<&SpellHotbar, With<LocalPlayer>>,
 ) {
     let Some(hotbar) = player_query.iter().next() else {
         return;
@@ -329,7 +330,7 @@ pub fn handle_spell_selector_interactions(
         (Changed<Interaction>, With<Button>),
     >,
     close_interactions: Query<&Interaction, (Changed<Interaction>, With<CloseSpellSelectorButton>)>,
-    mut player_query: Query<&mut SpellHotbar, With<lightyear::prelude::Controlled>>,
+    mut player_query: Query<&mut SpellHotbar, With<LocalPlayer>>,
     mut senders: Query<&mut MessageSender<UpdateHotbarSlotRequest>, With<ConnectedClient>>,
     mut commands: Commands,
     window_query: Query<Entity, With<SpellSelectorWindow>>,
@@ -369,7 +370,7 @@ pub fn handle_spell_selector_interactions(
 fn apply_hotbar_selection(
     slot: HotbarSlot,
     spell_id: Option<SpellId>,
-    player_query: &mut Query<&mut SpellHotbar, With<lightyear::prelude::Controlled>>,
+    player_query: &mut Query<&mut SpellHotbar, With<LocalPlayer>>,
     senders: &mut Query<&mut MessageSender<UpdateHotbarSlotRequest>, With<ConnectedClient>>,
 ) {
     if let Some(mut hotbar) = player_query.iter_mut().next() {

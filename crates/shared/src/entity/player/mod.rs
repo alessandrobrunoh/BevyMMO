@@ -1,4 +1,4 @@
 //! Player marker and spawn definition (shared data).
 
-pub mod components;
+pub use bevymmo_domain::entity::player::components;
 pub mod spawn;

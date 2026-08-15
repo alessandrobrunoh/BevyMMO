@@ -1,0 +1,288 @@
+//! Module startup, connections, and character creation.
+
+use spacetimedb::{reducer, ReducerContext, ScheduleAt, Table};
+use std::time::Duration;
+
+use crate::rows::{
+    equipment_to_rows, inventory_to_rows, known_glyphs_to_rows, HotbarRow, StatsRow, Vec3Row,
+};
+use crate::tables::{
+    aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats, equipment,
+    game_entity, grid_cell, hotbar, inventory, known_glyphs, player, player_stats, projectile,
+    stat_modifier, threat, tick_schedule, tick_stats, EntityKindRow, EntityStateRow,
+    EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownGlyphsTable, Player, PlayerStats,
+    TickSchedule,
+};
+use crate::{normalize_name, world, DEFAULT_SPEED_PER_SECOND, TICK_INTERVAL_MS};
+
+/// Runs once, when the module is first published to an empty database.
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) {
+    clear_runtime_state(ctx);
+
+    ctx.db.tick_schedule().insert(TickSchedule {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(TICK_INTERVAL_MS).into()),
+    });
+
+    world::seed(ctx);
+
+    log::info!("module initialised; tick every {TICK_INTERVAL_MS} ms");
+}
+
+/// Wipes everything that models a live session.
+///
+/// Necessary because SpacetimeDB persists every table, including the ones that
+/// only make sense while the server is up. Without this a republish inherits
+/// mid-flight projectiles, half-finished casts and stale threat tables.
+///
+/// Player *characters* are deliberately untouched — those are the persistent
+/// half, and losing them on every publish would be the opposite of the point.
+fn clear_runtime_state(ctx: &ReducerContext) {
+    for row in ctx.db.projectile().iter() {
+        ctx.db.projectile().id().delete(&row.id);
+    }
+    for row in ctx.db.aoe_region().iter() {
+        ctx.db.aoe_region().id().delete(&row.id);
+    }
+    for row in ctx.db.crowd_control().iter() {
+        ctx.db.crowd_control().id().delete(&row.id);
+    }
+    for row in ctx.db.stat_modifier().iter() {
+        ctx.db.stat_modifier().id().delete(&row.id);
+    }
+    for row in ctx.db.threat().iter() {
+        ctx.db.threat().id().delete(&row.id);
+    }
+    for row in ctx.db.cast_state().iter() {
+        ctx.db.cast_state().entity_id().delete(&row.entity_id);
+    }
+    for row in ctx.db.cooldown().iter() {
+        ctx.db.cooldown().id().delete(&row.id);
+    }
+    for row in ctx.db.boss_state().iter() {
+        ctx.db.boss_state().entity_id().delete(&row.entity_id);
+    }
+    // Non-player entities are respawned from the map manifest by `world::seed`.
+    for row in ctx.db.game_entity().iter() {
+        if row.owner.is_none() {
+            ctx.db.entity_stats().entity_id().delete(&row.entity_id);
+            ctx.db.game_entity().entity_id().delete(&row.entity_id);
+        }
+    }
+    for row in ctx.db.tick_stats().iter() {
+        ctx.db.tick_stats().id().delete(&row.id);
+    }
+}
+
+/// Marks an existing character online.
+///
+/// A connection with no character is normal: the client calls [`join`] once the
+/// player has picked a name.
+#[reducer(client_connected)]
+pub fn client_connected(ctx: &ReducerContext) {
+    let Some(player) = ctx.db.player().identity().find(&ctx.sender()) else {
+        return;
+    };
+    ctx.db.player().identity().update(Player {
+        online: true,
+        last_seen: ctx.timestamp,
+        ..player
+    });
+
+    // A returning character arrives with gear already on. `entity_stats` is
+    // derived — base plus equipment plus modifiers — and nothing has recomputed
+    // it since the equipment last changed, so it is rebuilt here rather than
+    // trusted.
+    crate::sim::combat::recalculate_effective_stats(ctx, player.entity_id);
+}
+
+/// Marks the character offline and stops it where it stands.
+///
+/// Note what is *not* here: a save. Position, stats and inventory are already
+/// rows. The Bevy server wrote its only snapshot at this point, which is why a
+/// crash lost the whole session.
+#[reducer(client_disconnected)]
+pub fn client_disconnected(ctx: &ReducerContext) {
+    let Some(player) = ctx.db.player().identity().find(&ctx.sender()) else {
+        return;
+    };
+    if let Some(entity) = ctx.db.game_entity().entity_id().find(&player.entity_id) {
+        ctx.db.game_entity().entity_id().update(GameEntity {
+            move_target: None,
+            state: EntityStateRow::Idle,
+            ..entity
+        });
+    }
+    ctx.db.player().identity().update(Player {
+        online: false,
+        last_seen: ctx.timestamp,
+        ..player
+    });
+}
+
+/// Creates the caller's character, or brings the existing one online.
+#[reducer]
+pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
+    let normalized = normalize_name(&display_name);
+    if normalized.chars().count() < 3 || normalized.chars().count() > 16 {
+        return Err(format!(
+            "name must be 3-16 characters, got {display_name:?}"
+        ));
+    }
+
+    let identity = ctx.sender();
+    if let Some(player) = ctx.db.player().identity().find(&identity) {
+        ctx.db.player().identity().update(Player {
+            online: true,
+            last_seen: ctx.timestamp,
+            ..player
+        });
+        return Ok(());
+    }
+
+    if ctx
+        .db
+        .player()
+        .normalized_name()
+        .find(&normalized)
+        .is_some()
+    {
+        return Err(format!("name {display_name:?} is taken"));
+    }
+
+    let spawn = world::player_spawn_point(ctx);
+    let (cell_x, cell_z) = grid_cell(spawn);
+    let entity = ctx.db.game_entity().insert(GameEntity {
+        entity_id: 0,
+        kind: EntityKindRow::Player,
+        owner: Some(identity),
+        display_name: display_name.clone(),
+        position: spawn,
+        look: Vec3Row {
+            x: 0.0,
+            y: 0.0,
+            z: 1.0,
+        },
+        move_target: None,
+        speed: DEFAULT_SPEED_PER_SECOND,
+        state: EntityStateRow::Idle,
+        cell_x,
+        cell_z,
+        spawn_point: spawn,
+        // Players come back when they ask to, not on a clock.
+        respawn_in_seconds: None,
+    });
+
+    let defaults = bevymmo_domain::stats::defaults::player_defaults();
+    let stats = StatsRow::from(&defaults);
+    ctx.db
+        .player_stats()
+        .insert(PlayerStats { identity, stats });
+    ctx.db.entity_stats().insert(crate::tables::EntityStats {
+        entity_id: entity.entity_id,
+        stats,
+        current_mana: stats.max_mana,
+    });
+
+    ctx.db.hotbar().insert(Hotbar {
+        identity,
+        slots: HotbarRow::from(&bevymmo_domain::spells::components::default_player_hotbar()),
+    });
+    ctx.db.inventory().insert(InventoryTable {
+        identity,
+        slots: inventory_to_rows(&Default::default()),
+    });
+    ctx.db.equipment().insert(EquipmentTable {
+        identity,
+        slots: equipment_to_rows(&Default::default()),
+    });
+    let (essences, modifiers, ancient_words) = known_glyphs_to_rows(&Default::default());
+    ctx.db.known_glyphs().insert(KnownGlyphsTable {
+        identity,
+        essences,
+        modifiers,
+        ancient_words,
+    });
+
+    ctx.db.player().insert(Player {
+        identity,
+        normalized_name: normalized,
+        display_name,
+        entity_id: entity.entity_id,
+        online: true,
+        last_seen: ctx.timestamp,
+    });
+    Ok(())
+}
+
+/// Resolves the caller's entity, or explains why there isn't one.
+pub fn caller_entity(ctx: &ReducerContext) -> Result<GameEntity, String> {
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender())
+        .ok_or_else(|| "no character for this identity; call `join` first".to_string())?;
+    ctx.db
+        .game_entity()
+        .entity_id()
+        .find(&player.entity_id)
+        .ok_or_else(|| "character has no entity".to_string())
+}
+
+/// How long a character stays "online" without hearing from its client.
+///
+/// Presence cannot be read from the database: the module has no way to
+/// enumerate live connections, and `client_disconnected` does not fire for
+/// connections that died with a previous instance of the server. So it is
+/// inferred from a heartbeat instead. Generous enough to survive a slow frame,
+/// short enough that a restarted server does not show a lobby full of ghosts.
+const PRESENCE_TIMEOUT_SECONDS: i64 = 15;
+
+/// Says the caller is still here. The client calls this every few seconds.
+#[reducer]
+pub fn heartbeat(ctx: &ReducerContext) -> Result<(), String> {
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender())
+        .ok_or_else(|| "no character for this identity".to_string())?;
+    ctx.db.player().identity().update(Player {
+        online: true,
+        last_seen: ctx.timestamp,
+        ..player
+    });
+    Ok(())
+}
+
+/// Marks characters offline once their client stops checking in.
+///
+/// Called from the tick. Note that this is what makes a server restart settle
+/// correctly: the tick resumes, but nothing refreshes `last_seen`, so every
+/// character that was online when the instance died decays within the timeout.
+pub fn expire_stale_presence(ctx: &ReducerContext) {
+    let now = ctx.timestamp;
+    let stale: Vec<_> = ctx
+        .db
+        .player()
+        .iter()
+        .filter(|player| player.online)
+        .filter(|player| {
+            now.duration_since(player.last_seen)
+                .map(|elapsed| elapsed.as_secs() as i64 >= PRESENCE_TIMEOUT_SECONDS)
+                // A `last_seen` in the future means clock weirdness, not
+                // absence; leave those alone rather than kicking them.
+                .unwrap_or(false)
+        })
+        .collect();
+
+    for player in stale {
+        log::info!("{} timed out", player.display_name);
+        ctx.db.player().identity().update(Player {
+            online: false,
+            ..player
+        });
+    }
+}

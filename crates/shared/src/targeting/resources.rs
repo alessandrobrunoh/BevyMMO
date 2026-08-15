@@ -1,7 +1,7 @@
 //! Targeting system resources.
 
-use bevy::prelude::*;
 
+use bevy::prelude::*;
 /// Target currently selected by the player.
 ///
 /// Contains the entity handle of the selected target, or `None` if no target
@@ -9,7 +9,8 @@ use bevy::prelude::*;
 /// - is despawned
 /// - loses required components (`Position` or `VitalStats`)
 /// - dies (`VitalStats::is_dead()`)
-#[derive(Resource, Default, Debug, Clone, Copy)]
+#[derive(Resource)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct CurrentTarget {
     /// Entity handle of the selected target.
     pub entity: Option<Entity>,
@@ -68,7 +69,7 @@ mod tests {
 
     #[test]
     fn current_target_with_entity() {
-        let entity = Entity::from_bits(42);
+        let entity = Entity::from_raw_u32(42).expect("valid entity index");
         let target = CurrentTarget::new(entity);
         assert!(target.is_some());
         assert_eq!(target.entity, Some(entity));
@@ -76,7 +77,7 @@ mod tests {
 
     #[test]
     fn current_target_clear() {
-        let mut target = CurrentTarget::new(Entity::from_bits(100));
+        let mut target = CurrentTarget::new(Entity::from_raw_u32(100).expect("valid entity index"));
         assert!(target.is_some());
         target.clear();
         assert!(target.is_none());
@@ -86,8 +87,8 @@ mod tests {
     fn current_target_set() {
         let mut target = CurrentTarget::none();
         assert!(target.is_none());
-        target.set(Entity::from_bits(200));
+        target.set(Entity::from_raw_u32(200).expect("valid entity index"));
         assert!(target.is_some());
-        assert_eq!(target.entity, Some(Entity::from_bits(200)));
+        assert_eq!(target.entity, Some(Entity::from_raw_u32(200).expect("valid entity index")));
     }
 }

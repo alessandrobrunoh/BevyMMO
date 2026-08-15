@@ -1,6 +1,21 @@
 use bevy::ecs::entity::MapEntities;
 use bevy::prelude::*;
 use lightyear::prelude::*;
+/// Interpolation curve lightyear needs to smooth replicated positions.
+///
+/// Stays here rather than with the component: it exists only to satisfy
+/// `add_linear_interpolation()`, and goes when lightyear does.
+impl Ease for Position {
+    fn interpolating_curve_unbounded(start: Self, end: Self) -> impl Curve<Self> {
+        FunctionCurve::new(Interval::UNIT, move |t| {
+            Position(Vec3::lerp(start.0, end.0, t))
+        })
+    }
+}
+
+pub use crate::world_components::{
+    EntityColor, LookDirection, NetworkEntityId, Position, ProjectileVisual,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::entity::components::{EntityKind, EntityState, GameEntity, SpawnPoint};
@@ -20,47 +35,10 @@ pub struct Channel2;
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct PlayerId(pub PeerId);
 
-/// Generic position of a game entity, replicated via lightyear.
-/// No longer specific to Player: any entity (Player, Enemy, NPC, ...)
-/// can use it to have a replicated position in space.
-#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Reflect, Deref, DerefMut)]
-pub struct Position(pub Vec3);
 
-impl Ease for Position {
-    fn interpolating_curve_unbounded(start: Self, end: Self) -> impl Curve<Self> {
-        FunctionCurve::new(Interval::UNIT, move |t| {
-            Position(Vec3::lerp(start.0, end.0, t))
-        })
-    }
-}
 
-/// Horizontal direction the entity is facing.
-#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Reflect, Deref, DerefMut)]
-pub struct LookDirection(pub Vec3);
 
-impl Default for LookDirection {
-    fn default() -> Self {
-        Self(Vec3::Z)
-    }
-}
 
-/// Generic color of a game entity, replicated via lightyear.
-#[derive(Component, Deserialize, Serialize, Clone, Debug, PartialEq)]
-pub struct EntityColor(pub bevy::color::Color);
-
-/// Stable gameplay identifier assigned by the server to replicated entities.
-///
-/// Unlike `Entity`, this value can be sent from the client to the
-/// server to refer to the same selected target.
-#[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
-pub struct NetworkEntityId(pub u64);
-
-/// Replicated visual marker to distinguish spell projectiles from
-/// gameplay entities rendered with generic meshes.
-#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ProjectileVisual {
-    pub spell_id: String,
-}
 
 // Input commands
 /// Point-and-click command sent from client to server.

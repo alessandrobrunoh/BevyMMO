@@ -4,5 +4,5 @@
 //! the arena ring, boss bar and phase banner. The remaining types are
 //! server-only AI state and never cross the network.
 
-pub mod components;
+pub use bevymmo_domain::entity::boss::components;
 pub mod spawn;

@@ -1,0 +1,59 @@
+[package]
+name = "bevymmo_domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Game rules and data types, with no Bevy dependency.
+#
+# This crate is compiled twice with different targets: natively, as a dependency
+# of `bevymmo_shared` (the Bevy-facing layer), and to `wasm32-unknown-unknown` as
+# a dependency of the SpacetimeDB module. Nothing in here may reach for Bevy, the
+# filesystem, threads, the clock, or the OS RNG — none of those exist inside the
+# module sandbox.
+#
+# `glam` is pulled in directly rather than through `bevy`: it is a standalone,
+# wasm-safe crate, and the version is pinned to the one Bevy 0.19 resolves to so
+# that `Vec3` stays the *same type* on the client, not a look-alike needing
+# conversion. Bumping Bevy means rechecking this pin — `grep -c 'name = "glam"'
+# Cargo.lock` must stay at 1, or `bevy::math::Vec3` and `glam::Vec3` silently
+# become two incompatible types.
+#
+# `bevy_color` deliberately did NOT get the same treatment: depending on it drags
+# in `bevy_reflect`, `bevy_math` and `bevy_platform`, i.e. most of Bevy's core,
+# into the crate whose whole purpose is not to depend on Bevy. Colour is a
+# rendering concern anyway, so `math::Rgba` carries the handful of tints that are
+# genuinely game data and the client converts them at the edge.
+#
+# There is deliberately NO dependency on `spacetimedb` or `spacetimedb-lib` here,
+# and no `SpacetimeType` derive. See `src/lib.rs` for why.
+
+# The Bevy-side derives (`Component`, `Resource`, `Reflect`) are opt-in.
+#
+# The types below are the same on both sides of the wire, but only the client
+# puts them in an ECS. `bevymmo_shared` turns this on; the SpacetimeDB module
+# does not, and so never pulls `bevy_ecs` into a WASM build.
+#
+# `bevy_ecs`/`bevy_reflect` are depended on directly rather than through the
+# `bevy` facade: the facade drags in windowing, rendering and asset crates that
+# have no business here.
+[features]
+default = []
+bevy = ["dep:bevy_ecs", "dep:bevy_reflect"]
+
+[dependencies]
+glam = { version = "0.32", features = ["serde"] }
+serde = { workspace = true }
+# Plain `log`, not `bevy::log`: the SpacetimeDB module routes it to module logs.
+log = "0.4"
+bevy_ecs = { version = "0.19", optional = true, features = ["bevy_reflect"] }
+bevy_reflect = { version = "0.19", optional = true, features = ["glam"] }
+# Re-exported by `placeables` and used by the content definitions.
+bevymmo-props-macro = { path = "../bevymmo-props-macro" }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

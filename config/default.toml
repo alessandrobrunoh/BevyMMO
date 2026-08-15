@@ -7,6 +7,12 @@ tick_rate = 60.0
 # Log filter syntax matching `RUST_LOG`.
 log_filter = "warn,bevy_lightyear_game=debug,lightyear=info"
 
+# SpacetimeDB instance the client connects to, and the module name it was
+# published under (`./scripts/stdb.sh publish`). The server runs via
+# `docker compose up -d spacetimedb`.
+spacetime_uri = "ws://127.0.0.1:3000"
+spacetime_module = "bevymmo"
+
 [server]
 # Address where the server binds the UDP socket.
 bind_addr = "0.0.0.0:5051"

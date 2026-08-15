@@ -21,7 +21,8 @@ use bevymmo_shared::network::protocol::{
 use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId};
 use bevymmo_shared::targeting::CurrentTarget;
 use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
-use lightyear::prelude::{Controlled, MessageSender};
+use bevymmo_shared::entity::LocalPlayer;
+use lightyear::prelude::MessageSender;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::spells::cursor::{cursor_ground_point, flat_direction_towards};
@@ -187,7 +188,7 @@ fn sync_spell_hud(
     registry: Res<bevymmo_shared::spells::SpellRegistry>,
     settings: Res<GameSettingsResource>,
     mut layout_state: ResMut<SpellHudLayoutState>,
-    player_query: Query<(&SpellHotbar, &Equipment), With<lightyear::prelude::Controlled>>,
+    player_query: Query<(&SpellHotbar, &Equipment), With<LocalPlayer>>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
     essence_registry: Res<EssenceRegistry>,
@@ -296,7 +297,7 @@ fn cast_spell_from_hud_click(
     target_ids: Query<&NetworkEntityId>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    mut controlled_players: Query<(&Position, &mut LookDirection), With<Controlled>>,
+    mut controlled_players: Query<(&Position, &mut LookDirection), With<LocalPlayer>>,
     mut move_target: ResMut<MoveTarget>,
     mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,

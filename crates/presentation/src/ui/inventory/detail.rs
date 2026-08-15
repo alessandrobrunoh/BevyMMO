@@ -84,6 +84,7 @@ pub fn spawn_item_detail_card(
     CardBuilder::new(CardKind::ItemDetail, config.display_name.to_string())
         .width(Val::Px(CARD_WIDTH))
         .height(Val::Px(height))
+        .scrollable()
         .draggable()
         .closeable()
         .coexist()
@@ -132,9 +133,9 @@ pub fn spawn_item_detail_card(
                                 ModifierOp::Multiply => "x",
                                 ModifierOp::Override => "=",
                             };
-                            format!("✦ {op_str}{value} {field_str}")
+                            format!("{op_str}{value} {field_str}")
                         }
-                        ItemEffect::InstantHeal { amount } => format!("✦ Instant Heal: {amount}"),
+                        ItemEffect::InstantHeal { amount } => format!("Instant Heal: {amount}"),
                     };
 
                     body.spawn((
@@ -258,7 +259,7 @@ fn spawn_slot_block(body: &mut ChildSpawnerCommands, theme: &UiTheme, slot: &Slo
     let detail_size = theme.button_font_size * 0.72;
 
     body.spawn((
-        Text::new(format!("{}  ·  {}", slot.slot, slot.title)),
+        Text::new(format!("{}   {}", slot.slot, slot.title)),
         TextFont {
             font_size: FontSize::Px(theme.button_font_size * 0.85),
             ..default()
@@ -283,7 +284,7 @@ fn spawn_slot_block(body: &mut ChildSpawnerCommands, theme: &UiTheme, slot: &Slo
 
     for (line, color) in [
         (
-            format!("{}  ·  {}", slot.shape, slot.tags),
+            format!("{}   |   {}", slot.shape, slot.tags),
             Color::srgba(0.7, 0.76, 0.86, 0.9),
         ),
         (slot.stats.clone(), Color::srgba(0.85, 0.88, 0.92, 0.95)),

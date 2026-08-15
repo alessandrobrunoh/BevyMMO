@@ -6,6 +6,7 @@
 pub mod input;
 pub mod network;
 pub mod player_movement;
+pub mod stdb;
 pub mod targeting;
 
 pub mod prelude {

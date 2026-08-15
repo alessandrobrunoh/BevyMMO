@@ -12,7 +12,8 @@ use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::network::protocol::{
     Channel2, UpdateAbilitySelectionRequest, UpdateInscriptionRequest,
 };
-use lightyear::prelude::{Controlled, MessageSender};
+use bevymmo_shared::entity::LocalPlayer;
+use lightyear::prelude::MessageSender;
 
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::UiTheme;
@@ -54,7 +55,7 @@ pub fn toggle_inscription_window(
     ability_registry: Res<BaseAbilityRegistry>,
     essence_registry: Res<EssenceRegistry>,
     modifier_registry: Res<ModifierRegistry>,
-    player_query: Query<(&Equipment, &KnownGlyphs), With<Controlled>>,
+    player_query: Query<(&Equipment, &KnownGlyphs), With<LocalPlayer>>,
 ) {
     if !settings.just_pressed(KeyAction::ToggleSpellbook, &keys) {
         return;
@@ -101,7 +102,7 @@ pub fn refresh_inscription_window_on_equipment_change(
     ability_registry: Res<BaseAbilityRegistry>,
     essence_registry: Res<EssenceRegistry>,
     modifier_registry: Res<ModifierRegistry>,
-    player_query: Query<(&Equipment, &KnownGlyphs), (With<Controlled>, Changed<Equipment>)>,
+    player_query: Query<(&Equipment, &KnownGlyphs), (With<LocalPlayer>, Changed<Equipment>)>,
 ) {
     if !state.is_open {
         return;
@@ -428,7 +429,7 @@ pub fn handle_inscription_interactions(
         (Changed<Interaction>, With<Button>),
     >,
     close_interactions: Query<&Interaction, (Changed<Interaction>, With<CloseInscriptionButton>)>,
-    player_query: Query<&Equipment, With<Controlled>>,
+    player_query: Query<&Equipment, With<LocalPlayer>>,
     mut senders: Query<&mut MessageSender<UpdateInscriptionRequest>, With<ConnectedClient>>,
     mut selection_senders: Query<
         &mut MessageSender<UpdateAbilitySelectionRequest>,

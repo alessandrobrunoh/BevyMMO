@@ -24,10 +24,14 @@ use bevymmo_shared::{
     },
     network::protocol::Channel2,
 };
-use lightyear::prelude::{Controlled, MessageSender};
+use bevymmo_shared::entity::LocalPlayer;
+use lightyear::prelude::MessageSender;
 
 use super::components::{EquipSlotButton, ItemDragGhost, ItemSlotButton, ItemSlotOrigin};
-use crate::ui::{card::components::CardWindow, inventory::detail::despawn_detail_cards, theme::UiTheme};
+use crate::ui::{
+    card::components::CardWindow, inventory::detail::despawn_detail_cards, scale::window_to_ui_px,
+    theme::UiTheme,
+};
 
 /// Size of the floating item icon that follows the cursor while dragging.
 const DRAG_GHOST_SIZE: f32 = 48.0;
@@ -56,9 +60,10 @@ pub struct ItemDragState {
 pub fn start_item_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
+    ui_scale: Res<UiScale>,
     slot_presses: Query<(Entity, &Interaction, &ItemSlotButton), Changed<Interaction>>,
     equip_presses: Query<(Entity, &Interaction, &EquipSlotButton), Changed<Interaction>>,
-    player_query: Query<(&Inventory, &Equipment), With<Controlled>>,
+    player_query: Query<(&Inventory, &Equipment), With<LocalPlayer>>,
     registry: Res<ItemRegistry>,
     theme: Res<UiTheme>,
     mut backgrounds: Query<&mut BackgroundColor>,
@@ -68,7 +73,12 @@ pub fn start_item_drag(
     if !mouse.just_pressed(MouseButton::Left) || drag_state.pending.is_some() {
         return;
     }
-    let Some(cursor) = windows.iter().next().and_then(Window::cursor_position) else {
+    let Some(cursor) = windows
+        .iter()
+        .next()
+        .and_then(Window::cursor_position)
+        .map(|cursor| window_to_ui_px(cursor, &ui_scale))
+    else {
         return;
     };
     let Some((inventory, equipment)) = player_query.iter().next() else {
@@ -162,6 +172,7 @@ pub fn start_item_drag(
 pub fn update_item_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
+    ui_scale: Res<UiScale>,
     mut drag_state: ResMut<ItemDragState>,
     mut ghost_nodes: Query<&mut Node, With<ItemDragGhost>>,
     theme: Res<UiTheme>,
@@ -171,7 +182,12 @@ pub fn update_item_drag(
     if !mouse.pressed(MouseButton::Left) {
         return;
     }
-    let Some(cursor) = windows.iter().next().and_then(Window::cursor_position) else {
+    let Some(cursor) = windows
+        .iter()
+        .next()
+        .and_then(Window::cursor_position)
+        .map(|cursor| window_to_ui_px(cursor, &ui_scale))
+    else {
         cancel_pending_drag(&mut drag_state, &theme, &mut backgrounds, &mut commands);
         return;
     };

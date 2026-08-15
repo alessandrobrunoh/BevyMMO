@@ -3,6 +3,7 @@
 //! Fire cone impact visual spawned when the spell fires.
 //! A cone primitive expands over 0.1s then fades over 0.5s, total 0.6s lifetime.
 
+use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
 
@@ -60,7 +61,7 @@ pub fn spawn(
     });
     let material = materials.add(StandardMaterial {
         base_color: Color::srgba(1.0, 0.45, 0.05, 0.85),
-        emissive: FIRE_ORANGE,
+        emissive: to_linear(FIRE_ORANGE),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()

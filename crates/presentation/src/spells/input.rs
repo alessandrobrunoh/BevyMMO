@@ -11,7 +11,7 @@ use bevymmo_shared::spells::{
 };
 use bevymmo_shared::targeting::CurrentTarget;
 use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
-use lightyear::prelude::Controlled;
+use bevymmo_shared::entity::LocalPlayer;
 use lightyear::prelude::MessageSender;
 
 use crate::game_state::{GameScreen, Screen};
@@ -37,7 +37,7 @@ pub fn cast_spells_on_key(
             &Position,
             &mut LookDirection,
         ),
-        With<Controlled>,
+        With<LocalPlayer>,
     >,
     observed_casts: Res<ObservedCasts>,
     mut move_target: ResMut<MoveTarget>,

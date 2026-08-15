@@ -46,8 +46,11 @@ mod tests {
     fn card_plugin_registers_systems_without_panicking() {
         let mut app = App::new();
         app.init_resource::<ButtonInput<KeyCode>>();
-        // `handle_card_drag` also reads the mouse.
+        // `handle_card_drag` also reads the mouse, and `UiScale` to convert
+        // cursor movement into the space `Val::Px` uses. `UiPlugin` normally
+        // provides the latter; this App is deliberately minimal.
         app.init_resource::<ButtonInput<MouseButton>>();
+        app.init_resource::<UiScale>();
         app.add_plugins(CardPlugin);
         app.update();
     }

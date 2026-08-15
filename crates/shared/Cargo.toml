@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+# The engine-agnostic half of this crate. `bevy` turns the `Component`/`Resource`
+# derives back on for the types that moved there.
+bevymmo_domain = { path = "../domain", features = ["bevy"] }
 bevy = { workspace = true, features = ["bevy_window", "serialize"] }
 lightyear = { workspace = true, features = [
     "interpolation",

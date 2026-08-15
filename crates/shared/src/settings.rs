@@ -28,6 +28,19 @@ pub struct Settings {
     #[serde(default)]
     pub database_url: Option<String>,
 
+    /// WebSocket URL of the SpacetimeDB instance.
+    ///
+    /// Set alongside `database_url` rather than replacing it: the migration to
+    /// SpacetimeDB is incremental, and the lightyear/Postgres stack has to keep
+    /// working until the gameplay reducers are ported. `database_url` goes away
+    /// with `crates/server`.
+    #[serde(default = "default_spacetime_uri")]
+    pub spacetime_uri: String,
+
+    /// Name the module is published under (`spacetime publish <name>`).
+    #[serde(default = "default_spacetime_module")]
+    pub spacetime_module: String,
+
     #[serde(default)]
     pub server: ServerSettings,
 
@@ -93,6 +106,14 @@ fn default_log_filter() -> String {
 
 fn default_tick_rate() -> f64 {
     60.0
+}
+
+fn default_spacetime_uri() -> String {
+    "ws://127.0.0.1:3000".to_string()
+}
+
+fn default_spacetime_module() -> String {
+    "bevymmo".to_string()
 }
 
 fn default_server_bind_addr() -> String {

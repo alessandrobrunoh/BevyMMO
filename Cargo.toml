@@ -1,13 +1,23 @@
 [workspace]
 members = [
+    "crates/domain",
     "crates/shared",
     "crates/bevymmo-props-macro",
-    "crates/server",
     "crates/client",
     "crates/presentation",
     "bins/game",
 ]
 default-members = ["bins/game"]
+# The SpacetimeDB module is its own build: `wasm32-unknown-unknown`, `cdylib`,
+# and the only crate allowed to depend on `spacetimedb`. Keeping it out of the
+# workspace stops a stray `cargo build` from trying to link its WASM imports
+# into a native binary. Build it with `spacetime build`/`publish` instead.
+# `crates/server` is the outgoing Bevy/lightyear/Postgres server. It is kept on
+# disk, out of the build, as the reference while its ~6300 lines of gameplay are
+# ported into `crates/stdb-module` reducers — porting from a deleted directory is
+# needlessly painful. It goes for good once the module covers combat, items,
+# abilities, AI and world seeding.
+exclude = ["crates/stdb-module", "crates/server"]
 resolver = "2"
 
 # Shared package metadata. Every member inherits these with

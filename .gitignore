@@ -1,4 +1,7 @@
 /target
+# The SpacetimeDB module is outside the workspace, so it has its own build
+# directory that the root `/target` rule does not cover.
+/crates/stdb-module/target
 
 # Local configuration and secrets
 .env

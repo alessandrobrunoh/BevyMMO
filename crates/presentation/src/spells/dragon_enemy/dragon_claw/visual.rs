@@ -5,6 +5,7 @@
 //! fan outward and shrink. No telegraph (the cast is instant), so the visual
 //! only plays the impact flash.
 
+use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
 
@@ -63,7 +64,7 @@ pub fn spawn(
     });
     let slash_material = materials.add(StandardMaterial {
         base_color: Color::srgba(1.0, 0.85, 0.25, 0.85),
-        emissive: EMBER_YELLOW,
+        emissive: to_linear(EMBER_YELLOW),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()
@@ -82,7 +83,7 @@ pub fn spawn(
     let spark_mesh = meshes.add(Sphere::new(0.08));
     let spark_material = materials.add(StandardMaterial {
         base_color: Color::srgb(1.0, 0.85, 0.25),
-        emissive: EMBER_YELLOW,
+        emissive: to_linear(EMBER_YELLOW),
         unlit: true,
         ..default()
     });

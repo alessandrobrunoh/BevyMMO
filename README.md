@@ -4,9 +4,9 @@
 [![Rust](https://img.shields.io/badge/Rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![Bevy](https://img.shields.io/badge/Bevy-0.19-blueviolet.svg)](https://bevyengine.org/)
 
-BevyMMO is an open-source multiplayer MMO prototype built with [Bevy](https://bevyengine.org/) and [Lightyear](https://github.com/cBournhonesque/lightyear). The project uses Bevy ECS for gameplay composition, Lightyear for networking, server-authoritative simulation, client-side presentation, and PostgreSQL persistence through SeaORM.
+BevyMMO is an open-source multiplayer MMO prototype built with [Bevy](https://bevyengine.org/) and [SpacetimeDB](https://spacetimedb.com/). Gameplay is composed with Bevy ECS on the client; the authoritative server is a SpacetimeDB module written in Rust and compiled to WebAssembly, where the database tables *are* the game state, the persistence and the replication.
 
-The default `game` binary is a combined build that can run as a client, a dedicated server, or a host-client process depending on the CLI mode selected at startup.
+The `game` binary is the client. The server is published into a running SpacetimeDB instance rather than launched as a process.
 
 ## Table of Contents
 
@@ -31,17 +31,17 @@ The default `game` binary is a combined build that can run as a client, a dedica
 
 ## Features
 
-- Multiplayer networking with Lightyear.
-- Dedicated server, standalone client, and embedded host-client modes.
+- Multiplayer networking with SpacetimeDB: clients subscribe to tables and call reducers.
+- Server-authoritative simulation running inside the database, with client-side prediction and reconciliation.
 - Server-authoritative gameplay systems gated by explicit application roles.
 - Client-side rendering and UI built from replicated gameplay state.
 - Replicated gameplay entities with shared health, stats, position, color, and lifecycle state.
 - Player movement with networked input and prediction/interpolation support.
 - Targeting and spell casting systems.
-- PostgreSQL-backed persistence using SeaORM.
-- Automatic SeaORM migration execution at server startup.
+- Persistence with no persistence layer: writing a row is saving it, in the same transaction.
+- Automatic schema migration on publish; no migration files to write.
 - Layered runtime configuration for development, production, local overrides, and environment variables.
-- Docker Compose setup for local PostgreSQL and production-style server deployment.
+- Docker Compose setup for a local SpacetimeDB instance.
 
 ## Technology Stack
 
@@ -49,12 +49,10 @@ The default `game` binary is a combined build that can run as a client, a dedica
 | --- | --- |
 | Language | Rust 2021 |
 | Game engine | Bevy `0.19` |
-| Networking | Lightyear `0.28` |
+| Networking | SpacetimeDB Rust SDK `2.8` (WebSocket) |
 | CLI | Clap |
 | Configuration | `config` crate with TOML and environment sources |
-| Database | PostgreSQL |
-| ORM / migrations | SeaORM and SeaORM Migration |
-| Async runtime | Tokio |
+| Server / database | SpacetimeDB 2.8 (Rust module, WebAssembly) |
 | Containers | Docker and Docker Compose |
 
 ## Repository Layout
@@ -86,9 +84,10 @@ The default `game` binary is a combined build that can run as a client, a dedica
 Install the following tools before running the project locally:
 
 - Rust stable toolchain with Cargo.
-- Docker with Docker Compose v2 for the local PostgreSQL service.
+- Docker with Docker Compose v2 for the local SpacetimeDB service.
+- The `spacetime` CLI, to build and publish the server module.
 - A GPU/graphics environment supported by Bevy when running client modes.
-- Network access to UDP port `5051` when connecting clients to a remote server.
+- Network access to TCP port `3000` when connecting to a remote SpacetimeDB instance.
 
 Recommended checks:
 
@@ -108,123 +107,67 @@ git clone https://github.com/alessandrobrunoh/BevyMMO.git
 cd BevyMMO
 ```
 
-If you are using a fork, replace the URL with your fork URL.
-
-### 2. Prepare local environment files
+### 2. Install the SpacetimeDB CLI
 
 ```sh
-cp .env.example .env
-cp config/local.toml.example config/local.toml
+curl -sSf https://install.spacetimedb.com | sh
 ```
 
-`config/local.toml` is intended for machine-specific overrides and secrets. Do not commit real credentials.
+Needed to build and publish the server module. The database itself runs in Docker, but `publish` and `generate` are CLI operations.
 
-### 3. Start PostgreSQL
+### 3. Start SpacetimeDB
 
 ```sh
-docker compose up -d postgres
+docker compose up -d spacetimedb
 ```
 
-Check that the database container is healthy:
+Listens on `:3000` and keeps its data in the `spacetime_data` volume.
+
+### 4. Publish the server module
 
 ```sh
-docker compose ps
+./scripts/stdb.sh publish
 ```
 
-### 4. Run the server
+This compiles `crates/stdb-module` to WebAssembly and uploads it. There are no migrations to run: schema changes are applied automatically, and only a change that cannot be migrated automatically needs `./scripts/stdb.sh reset` (which wipes the data).
 
-```sh
-cargo run -- server
-```
-
-The server applies pending database migrations automatically during startup.
-
-### 5. Run a client in another terminal
+### 5. Run the game
 
 ```sh
 cargo run -- client
 ```
 
-For local single-process testing, you can also run both server and client in one process:
+Pick a name and you are in. Run it twice to see two characters in the same world.
+
+### Useful module commands
 
 ```sh
-cargo run -- host-client
+./scripts/stdb.sh dev                       # watch, rebuild, republish, regenerate bindings
+./scripts/stdb.sh logs                      # module logs
+./scripts/stdb.sh sql "SELECT * FROM player"
+./scripts/stdb.sh reset                     # wipe and re-seed (destructive)
 ```
 
 ## Run Modes
 
-The `game` binary requires one of three subcommands.
-
-### Client
-
-Runs only client networking, UI, scenes, and rendering.
+There is one: the client.
 
 ```sh
 cargo run -- client
+cargo run -- client --uri ws://192.168.1.10:3000 --module bevymmo
 ```
 
-Optional arguments:
-
-```sh
-cargo run -- client --client-id 42 --server-addr 127.0.0.1:5051
-```
-
-Short form for `client_id` is also available:
-
-```sh
-cargo run -- client -c 42
-```
-
-### Server
-
-Runs a headless authoritative server. This mode requires `DATABASE_URL` to be available from configuration or environment variables.
-
-```sh
-cargo run -- server
-```
-
-Optional bind address override:
-
-```sh
-cargo run -- server --bind-addr 0.0.0.0:5051
-```
-
-### Host Client
-
-Runs server and client roles in the same process. This is useful for local gameplay testing.
-
-```sh
-cargo run -- host-client
-```
-
-Optional arguments:
-
-```sh
-cargo run -- host-client --client-id 42 --server-addr 127.0.0.1:5051
-```
+The authoritative server is the SpacetimeDB module, not a Bevy process, so the old `server` and `host-client` modes no longer exist. `--uri` and `--module` override `config/default.toml`.
 
 ## Cargo Features
 
-The default feature set builds a “fat” binary containing client and server logic:
+The binary is a client, so there is only one feature and it is on by default:
 
 ```toml
-default = [
-  "client",
-  "server",
-  "netcode",
-  "udp",
-  "interpolation",
-  "prediction",
-  "replication",
-  "input_native"
-]
+default = ["client"]
 ```
 
-For a dedicated production server without client rendering/UI dependencies, build with server-only features:
-
-```sh
-cargo build --release --no-default-features --features server,netcode,udp,replication --bin game
-```
+The old `server`, `netcode`, `udp`, `replication` and prediction/interpolation features were lightyear transport knobs. The server is now the SpacetimeDB module, built separately with `spacetime build`.
 
 ## Configuration
 
@@ -242,8 +185,7 @@ config/default.toml
 Examples:
 
 ```sh
-APP_ENV=production cargo run -- server
-DATABASE_URL=postgresql://user:password@localhost:5433/bevy_mmo cargo run -- server
+APP_ENV=production cargo run -- client
 ```
 
 Important settings:
@@ -251,83 +193,57 @@ Important settings:
 | Setting | Description | Default / Development value |
 | --- | --- | --- |
 | `tick_rate` | Fixed simulation tick rate in Hz. | `60.0` |
-| `log_filter` | Bevy/Rust log filter syntax. | `warn,bevy_lightyear_game=debug,lightyear=info` |
-| `server.bind_addr` | UDP address the server binds to. | `0.0.0.0:5051` |
-| `client.server_addr` | UDP server address the client connects to. | `127.0.0.1:5051` in development |
+| `log_filter` | Bevy/Rust log filter syntax. | `warn,bevy_lightyear_game=debug` |
+| `spacetime_uri` | SpacetimeDB instance the client connects to. | `ws://127.0.0.1:3000` |
+| `spacetime_module` | Name the module was published under. | `bevymmo` |
 | `client.client_addr` | Local client UDP bind address. | `0.0.0.0:0` |
-| `database_url` | PostgreSQL connection string. Required for server modes. | Provided by development/local/env config |
 
 Use `config/local.toml` for local overrides, for example:
 
 ```toml
-database_url = "postgresql://bevy:bevy@127.0.0.1:5433/bevy_mmo"
 
 [client]
-server_addr = "127.0.0.1:5051"
+spacetime_uri = "ws://127.0.0.1:3000"
 ```
 
 ## Database
 
-The server uses PostgreSQL through SeaORM.
-
-### Local database startup
-
-```sh
-cp .env.example .env
-docker compose up -d postgres
-```
+There is no separate database layer. SpacetimeDB tables *are* the authoritative state, the persistence and the replication, all at once — the schema in `crates/stdb-module/src/tables.rs` is the only place state is declared.
 
 ### Migrations
 
-Migrations live in `crates/server/src/migrations/` and are applied automatically when the server starts. There is no manual SeaORM CLI step required for existing migrations.
-
-Current migration responsibilities include:
-
-- Creating persisted player records.
-- Creating persisted player stats.
-- Tracking applied migrations in SeaORM’s migration history table.
-
-Start PostgreSQL before launching server modes:
+None to write. Schema changes are applied automatically on `./scripts/stdb.sh publish`. A change SpacetimeDB cannot migrate automatically needs a reset, which destroys the data:
 
 ```sh
-docker compose up -d postgres
-cargo run -- server
+./scripts/stdb.sh reset
 ```
 
-### Resetting local data
+Reset is also how you re-run `init`, which seeds the world: `init` only fires against an empty database.
 
-Stop containers while keeping the database volume:
+### Inspecting state
 
 ```sh
-docker compose down
+./scripts/stdb.sh sql "SELECT display_name, position FROM game_entity"
+./scripts/stdb.sh logs
 ```
 
-Stop containers and delete the PostgreSQL volume:
+### Persistent versus runtime tables
 
-```sh
-docker compose down -v
-```
+Everything persists, including tables that model transient state. `player`, `player_stats`, `inventory`, `equipment`, `hotbar`, `known_glyphs` and `prop_override` are meant to; `game_entity` (for non-players), `projectile`, `aoe_region`, `cast_state`, `crowd_control`, `threat` and `boss_state` are not, and `init` clears and re-seeds them. Without that, a republish would inherit yesterday's projectiles mid-flight.
 
 ## Docker
 
-`docker-compose.yml` defines:
+`docker-compose.yml` defines one service:
 
-- `postgres`: PostgreSQL 16 with a health check and persistent volume.
-- `server`: containerized dedicated server image `ghcr.io/alessandrobrunoh/bevy_mmo:latest`.
-
-Start only PostgreSQL for local development:
+- `spacetimedb`: the first-party `clockworklabs/spacetime` image, listening on `:3000`, with its storage on the `spacetime_data` volume.
 
 ```sh
-docker compose up -d postgres
+docker compose up -d spacetimedb   # start
+docker compose down                # stop, keep the data
+docker compose down -v             # stop and delete the world
 ```
 
-Start the full Compose stack:
-
-```sh
-docker compose up -d
-```
-
-The dedicated server exposes UDP port `5051`.
+The module itself is not in the image: it is published into the running instance with `./scripts/stdb.sh publish`.
 
 ## Development Workflow
 
@@ -352,10 +268,10 @@ cargo fmt
 Common local loop:
 
 ```sh
-docker compose up -d postgres
+docker compose up -d spacetimedb
 cargo test
 cargo clippy -- -D warnings
-cargo run -- host-client
+cargo run -- client
 ```
 
 ## Architecture Overview
@@ -449,41 +365,15 @@ See [`docs/create-a-new-plugin.md`](docs/create-a-new-plugin.md) for the detaile
 
 ## Troubleshooting
 
-### `DATABASE_URL is required when starting a server`
+### The client connects but no character appears
 
-Server and host-client modes require a PostgreSQL connection string. Provide it through one of these options:
+`join` is authoritative and can reject the name — too short, too long, or already taken by another account. Check `./scripts/stdb.sh logs`. Names are 3-16 characters.
 
-- `config/development.toml`
-- `config/local.toml`
-- `DATABASE_URL` environment variable
-
-Example:
-
-```sh
-DATABASE_URL=postgresql://bevy:bevy@127.0.0.1:5433/bevy_mmo cargo run -- server
-```
-
-### Client cannot connect to server
-
-Check that:
-
-- The server is running.
-- UDP port `5051` is reachable.
-- The client uses the correct `client.server_addr` or `--server-addr`.
-- Firewalls or container/network rules are not blocking UDP traffic.
-
-### Duplicate client identity issues
-
-The client automatically generates a non-zero Netcode client ID when `--client-id` is omitted. If you pass `--client-id` manually, make sure every concurrent local client uses a different non-zero value.
-
-### Client mode fails in a server-only build
-
-Client and host-client modes require the `client` Cargo feature. If you built with `--no-default-features --features server,...`, run only server mode or rebuild with client features enabled.
 
 ## Further Documentation
 
 - [`docs/architecture.md`](docs/architecture.md): deeper architecture notes and module boundaries.
-- [`docs/database.md`](docs/database.md): PostgreSQL, Docker, and migration details.
+- [`docs/database.md`](docs/database.md): SpacetimeDB tables, Docker, and the module workflow.
 - [`docs/create-a-new-plugin.md`](docs/create-a-new-plugin.md): entity plugin creation guide.
 - [`plans/`](plans/): implementation plans and design notes for upcoming or recent features.
 

@@ -6,50 +6,62 @@ This repository is now a Cargo workspace. The old single-crate layout has been s
 
 ```mermaid
 graph TD
+    domain[bevymmo_domain<br/>no Bevy, compiles to WASM]
+    module[stdb-module<br/>outside the workspace]
     shared[bevymmo_shared]
-    server[bevymmo_server]
     client[bevymmo_client]
     presentation[bevymmo_presentation]
     game[bevy_lightyear_game in bins/game]
 
-    shared --> server
+    domain --> module
+    domain --> shared
     shared --> client
     shared --> presentation
-    server --> game
     client --> game
     presentation --> game
 ```
+
+`bevymmo_domain` is the only crate both halves link. `crates/stdb-module` is **not a workspace member**: it targets `wasm32-unknown-unknown` as a `cdylib` and links host functions that do not exist natively, so a host build fails at link time. Build it with `spacetime build`.
 
 ## Responsibilities
 
 | Crate | Owns | Must not own |
 |---|---|---|
-| `bevymmo_shared` | Pure data and shared contracts: protocol types, replicated components, spell data, stats data, entity spawn contracts, game/application state resources, map manifest types | Sockets, rendering, Bevy UI, DB runtime |
-| `bevymmo_server` | Authoritative runtime: server transport, persistence, migrations, gameplay simulation, spell pipeline, boss/enemy AI, CC systems | Client windows/UI, rendering |
-| `bevymmo_client` | Client-only runtime helpers: input/key mapping, targeting, client transport/lifecycle helpers | Server simulation, rendering policy |
+| `bevymmo_domain` | The game's rules and data: stats formulas, spell/item/ability definitions and registries, movement, world manifest types. Bevy derives are behind the `bevy` feature | Bevy, filesystem, threads, the clock, the OS RNG — none exist in a WASM module |
+| `crates/stdb-module` | The authoritative server: tables, reducers, the scheduled tick, world seeding | Game rules (they belong in `bevymmo_domain`, so the client can share them) |
+| `bevymmo_shared` | The Bevy-facing layer: components and resources wrapping domain types, world loading from disk, user settings, screen state | Rules that the server also needs |
+| `bevymmo_client` | Connection to SpacetimeDB, row-to-entity mirroring, prediction, input, targeting | Server simulation, rendering policy |
 | `bevymmo_presentation` | Rendering, scenes, presentation-side spell HUD/cast bars, reusable UI widgets and screen state presentation | Sockets, DB, authoritative gameplay |
-| `bins/game` | Thin composition root for CLI modes (`client`, `server`, `host-client`) | Deep domain logic |
+| `bins/game` | Thin composition root. Client only — the server is published, not launched | Deep domain logic |
 
 ## Source-of-truth rules
 
-### `shared = data only`
+### The question to ask is "does the server need it?"
 
-Anything that both sides must agree on belongs in `bevymmo_shared`:
-- `AppMode`
-- replicated components/messages (`Position`, `SpellCastProgress`, ...)
-- gameplay DTOs (`StatsBundleData`, `SpellId`, ...)
+If a rule has to run authoritatively, it belongs in `bevymmo_domain` — the server is a WASM module and cannot link Bevy. That constraint is the whole reason the crate exists, and it is load-bearing: it is what keeps the gameplay rules from quietly growing a dependency on the engine.
+
+Belongs in `bevymmo_domain`:
+- stat formulas, damage mitigation, modifiers
+- spell, item, ability and placeable definitions and their registries
+- movement (`step_towards` is called by the server's tick *and* the client's prediction)
+- world manifest types and collision queries
+
+Belongs in `bevymmo_shared`:
+- the Bevy components and resources that wrap those types
+- anything touching the filesystem, the window, or the ECS
 - app-local resources shared across client/presentation (`GameScreen`, `ConnectionRequest`, ...)
 
-If a module needs windows, sockets, DB connections, or Bevy UI trees, it does **not** belong in `shared`.
+If a module needs windows, the filesystem, or Bevy UI trees, it does **not** belong in `bevymmo_domain`.
 
 ### Server-only features
 
-Put authoritative systems in `bevymmo_server`:
-- AI
-- damage/heal application
-- crowd control lifecycle
-- projectile/AoE runtime
-- persistence and migrations
+Authoritative behaviour goes in `crates/stdb-module`, split by concern:
+- `reducers/` — what a client may ask for (one module per area)
+- `sim/` — the per-tick simulation: movement, combat, spells, crowd control, AI
+- `tables.rs` — the schema, and the contract everything else is written against
+- `world.rs` — seeding the map
+
+Note the split: the *rules* (how much damage, what shape the AoE is) live in `bevymmo_domain`; the module owns storage, scheduling, and who is allowed to ask for what.
 
 ### Presentation-only features
 
@@ -62,23 +74,25 @@ Put rendering/UI in `bevymmo_presentation`:
 
 From the repository root:
 
-- `cargo run -- client`
-- `cargo run -- server`
-- `cargo run -- host-client`
+```sh
+docker compose up -d spacetimedb   # the server's host
+./scripts/stdb.sh publish          # build and upload the server module
+cargo run -- client                # the game
+```
 
-The workspace root uses `default-members = ["bins/game"]`, so `cargo run` and `cargo build --bin game` keep targeting the game binary by default.
+The workspace root uses `default-members = ["bins/game"]`, so `cargo run` keeps targeting the game binary. The module is not part of the workspace and is never built by `cargo`.
 
 ## Adding a new feature
 
 ### New shared type
 
-Put it in `bevymmo_shared` when:
-- server and client must serialize/replicate it, or
-- both client runtime and presentation need to read it.
+Put it in `bevymmo_domain` when the server needs it — which is most gameplay data. Give it named fields if it will be stored: the `SpacetimeType` derive panics on tuple structs, so newtypes are mirrored in `crates/stdb-module/src/rows.rs` instead.
+
+Put it in `bevymmo_shared` when only the client cares: anything about rendering, input, or the ECS.
 
 ### New authoritative gameplay system
 
-Put it in `bevymmo_server` and expose only the minimal API the binary needs.
+Rules in `bevymmo_domain`, wiring in `crates/stdb-module`: a new table if it holds state, a reducer if a client triggers it, a `sim::` step if it happens every tick. Then `./scripts/stdb.sh generate` to refresh the client bindings.
 
 ### New UI or rendering widget
 

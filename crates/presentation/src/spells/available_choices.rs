@@ -17,7 +17,7 @@
 //! a freshly spawned/replicated player entity.
 
 use bevy::prelude::*;
-use lightyear::prelude::Controlled;
+use bevymmo_shared::entity::LocalPlayer;
 
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
@@ -25,7 +25,7 @@ use bevymmo_shared::items::{compute_available_choices, AvailableSpellChoices};
 
 pub fn sync_available_spell_choices(
     mut commands: Commands,
-    mut players: Query<(Entity, &Equipment, Option<&mut AvailableSpellChoices>), With<Controlled>>,
+    mut players: Query<(Entity, &Equipment, Option<&mut AvailableSpellChoices>), With<LocalPlayer>>,
     registry: Res<ItemRegistry>,
 ) {
     for (entity, equipment, choices) in &mut players {

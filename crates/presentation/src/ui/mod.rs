@@ -16,6 +16,7 @@ pub mod inventory;
 pub mod main_menu;
 pub mod pause_menu;
 pub mod player_stats;
+pub mod scale;
 pub mod scoreboard;
 pub mod scrollbar;
 pub mod settings;

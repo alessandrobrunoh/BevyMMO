@@ -1,7 +1,8 @@
 //! Sistemi della death screen: setup UI, visibilità, invio `RespawnRequest`.
 
 use bevy::prelude::*;
-use lightyear::prelude::{Controlled, MessageSender};
+use bevymmo_shared::entity::LocalPlayer;
+use lightyear::prelude::MessageSender;
 
 use bevymmo_client::network::types::ClientConnectionConfig;
 use bevymmo_shared::entity::components::EntityState;
@@ -99,7 +100,7 @@ pub fn update_death_screen_visibility(
         &EntityState,
         Option<&VitalStats>,
         Option<&PlayerId>,
-        Has<Controlled>,
+        Has<LocalPlayer>,
     )>,
     mut roots: Query<&mut Node, With<DeathScreenRoot>>,
 ) {
@@ -165,11 +166,11 @@ fn local_player_state<'a>(
         &EntityState,
         Option<&VitalStats>,
         Option<&PlayerId>,
-        Has<Controlled>,
+        Has<LocalPlayer>,
     )>,
     local_client_id: Option<u64>,
 ) -> Option<(&'a EntityState, Option<&'a VitalStats>)> {
-    // Prima cerca per `Controlled` (player locale predetto), poi fallback su
+    // Prima cerca per `LocalPlayer` (player locale predetto), poi fallback su
     // `PlayerId == client_id` (player interpolato in single-player d'ospite).
     players
         .iter()
@@ -190,7 +191,7 @@ mod tests {
     use crate::game_state::{GameScreen, Screen};
     use crate::ui::theme::UiTheme;
     use bevymmo_shared::entity::components::EntityState;
-    use lightyear::prelude::Controlled;
+    use bevymmo_shared::entity::LocalPlayer;
 
     fn test_app() -> App {
         let mut app = App::new();
@@ -219,7 +220,7 @@ mod tests {
     fn overlay_shows_when_local_player_is_dead_in_game() {
         let mut app = test_app();
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
-        app.world_mut().spawn((Controlled, EntityState::Dead));
+        app.world_mut().spawn((LocalPlayer, EntityState::Dead));
         app.update();
 
         assert_eq!(root_visibility(&mut app), Display::Flex);
@@ -229,7 +230,7 @@ mod tests {
     fn overlay_hides_when_player_respawns() {
         let mut app = test_app();
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
-        let player = app.world_mut().spawn((Controlled, EntityState::Dead)).id();
+        let player = app.world_mut().spawn((LocalPlayer, EntityState::Dead)).id();
         app.update();
         assert_eq!(root_visibility(&mut app), Display::Flex);
 
@@ -245,7 +246,7 @@ mod tests {
     fn overlay_hides_when_leaving_gameplay() {
         let mut app = test_app();
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
-        app.world_mut().spawn((Controlled, EntityState::Dead));
+        app.world_mut().spawn((LocalPlayer, EntityState::Dead));
         app.update();
         assert_eq!(root_visibility(&mut app), Display::Flex);
 
@@ -258,7 +259,7 @@ mod tests {
     fn overlay_stays_hidden_when_local_player_is_alive() {
         let mut app = test_app();
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
-        app.world_mut().spawn((Controlled, EntityState::Idle));
+        app.world_mut().spawn((LocalPlayer, EntityState::Idle));
         app.update();
         assert_eq!(root_visibility(&mut app), Display::None);
     }

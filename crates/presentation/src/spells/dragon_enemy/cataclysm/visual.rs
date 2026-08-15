@@ -4,6 +4,7 @@
 //! A giant cylinder fades from alpha 0.5 to 0 over 0.4s, creating
 //! a pulsing red flash effect across the arena.
 
+use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
 
@@ -40,7 +41,7 @@ pub fn spawn(
     let mesh = meshes.add(Cylinder::new(CataclysmSpell::AREA_RADIUS, 0.05));
     let material = materials.add(StandardMaterial {
         base_color: Color::srgba(1.0, 0.45, 0.05, 0.5),
-        emissive: FIRE_ORANGE,
+        emissive: to_linear(FIRE_ORANGE),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()

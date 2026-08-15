@@ -1,0 +1,461 @@
+//! Every table in the module.
+//!
+//! Kept in one file on purpose: the schema is the contract the reducers and the
+//! client bindings are both written against, and splitting it across files makes
+//! it harder to see at a glance what the world is made of.
+//!
+//! # Persistent versus runtime
+//!
+//! In SpacetimeDB *everything* persists — there is no distinction the database
+//! enforces. The distinction below is one the module has to keep for itself:
+//!
+//! - **Persistent**: `player`, `player_stats`, `hotbar`, `inventory`,
+//!   `equipment`, `known_glyphs`, `prop_override`. These outlive a session and
+//!   must survive a republish.
+//! - **Runtime**: `game_entity`, `entity_stats`, `cast_state`, `cooldown`,
+//!   `projectile`, `aoe_region`, `crowd_control`, `threat`, `stat_modifier`.
+//!   Conceptually these die with the session, so `init` clears and re-seeds
+//!   them — otherwise a republish inherits yesterday's projectiles mid-flight.
+//!
+//! # Spatial queries
+//!
+//! There is no ECS to query, so "every entity near this point" is an index
+//! scan. `game_entity` carries a `cell_x`/`cell_z` grid index for exactly that:
+//! a linear scan per mob per tick does not survive contact with a populated map.
+
+use spacetimedb::{table, Identity, SpacetimeType, Timestamp};
+
+use crate::rows::{HotbarRow, ItemInstanceRow, StatsRow, Vec3Row};
+
+/// Side of a spatial grid cell, in world units.
+///
+/// Sized so that the widest AoE and the boss aggro radius each touch only a
+/// handful of cells: too small and every query walks many cells, too large and
+/// each cell degenerates into the linear scan the grid exists to avoid.
+pub const GRID_CELL_SIZE: f32 = 16.0;
+
+/// Which grid cell a world position falls in.
+pub fn grid_cell(position: Vec3Row) -> (i32, i32) {
+    (
+        (position.x / GRID_CELL_SIZE).floor() as i32,
+        (position.z / GRID_CELL_SIZE).floor() as i32,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Persistent: the character
+// ---------------------------------------------------------------------------
+
+/// A player character. Keyed by `Identity`, not by name.
+///
+/// The Bevy/Postgres server keyed characters on a normalised name, which meant
+/// anyone who knew a name could log in as that character (netcode ran with an
+/// all-zero private key, so there was nothing else to check). `Identity` is
+/// assigned and verified by SpacetimeDB, so that hole closes by construction;
+/// the name survives as a display label that happens to be unique.
+#[table(accessor = player, public)]
+pub struct Player {
+    #[primary_key]
+    pub identity: Identity,
+    #[unique]
+    pub normalized_name: String,
+    pub display_name: String,
+    /// The character's entity in `game_entity`. Combat, spells and AI all work
+    /// on entity ids, so the character has one like everything else.
+    #[unique]
+    pub entity_id: u64,
+    /// Whether a connection for this identity is currently open. Distinct from
+    /// row existence: the character outlives the session.
+    pub online: bool,
+    pub last_seen: Timestamp,
+}
+
+/// Base stats, without equipment bonuses. See [`StatsRow`].
+#[table(accessor = player_stats, public)]
+pub struct PlayerStats {
+    #[primary_key]
+    pub identity: Identity,
+    pub stats: StatsRow,
+}
+
+#[table(accessor = hotbar, public)]
+pub struct Hotbar {
+    #[primary_key]
+    pub identity: Identity,
+    pub slots: HotbarRow,
+}
+
+#[table(accessor = inventory, public)]
+pub struct InventoryTable {
+    #[primary_key]
+    pub identity: Identity,
+    pub slots: Vec<Option<ItemInstanceRow>>,
+}
+
+#[table(accessor = equipment, public)]
+pub struct EquipmentTable {
+    #[primary_key]
+    pub identity: Identity,
+    /// Ten slots in `rows::EQUIP_SLOTS` order.
+    pub slots: Vec<Option<ItemInstanceRow>>,
+}
+
+#[table(accessor = known_glyphs, public)]
+pub struct KnownGlyphsTable {
+    #[primary_key]
+    pub identity: Identity,
+    pub essences: Vec<String>,
+    pub modifiers: Vec<String>,
+    pub ancient_words: Vec<String>,
+}
+
+/// GM edits to a map's props: moved, retinted or removed.
+///
+/// Overlaid on the manifest at seed time. The Postgres version of this table had
+/// no writer at all — the upsert was dead code — so this is the first time the
+/// overrides can actually be produced as well as consumed.
+#[table(accessor = prop_override, public)]
+pub struct PropOverride {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    #[index(btree)]
+    pub map_id: String,
+    pub prop_id: String,
+    pub position: Option<Vec3Row>,
+    pub rotation_y: Option<f32>,
+    pub scale: Option<Vec3Row>,
+    pub removed: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Runtime: the simulation
+// ---------------------------------------------------------------------------
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntityKindRow {
+    Player,
+    Enemy,
+    Boss,
+    Dummy,
+    Npc,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntityStateRow {
+    Idle,
+    Moving,
+    Dead,
+}
+
+/// Anything that occupies a position and can be hit: players, enemies, bosses,
+/// training dummies.
+///
+/// One table rather than one per kind, because every query that matters —
+/// "what is near this point", "what can this spell hit" — is kind-agnostic.
+#[table(
+    accessor = game_entity,
+    public,
+    index(accessor = cell, btree(columns = [cell_x, cell_z]))
+)]
+pub struct GameEntity {
+    #[primary_key]
+    #[auto_inc]
+    pub entity_id: u64,
+    pub kind: EntityKindRow,
+    /// Set for player characters, so a reducer can map caller to entity.
+    #[index(btree)]
+    pub owner: Option<Identity>,
+    pub display_name: String,
+    pub position: Vec3Row,
+    pub look: Vec3Row,
+    pub move_target: Option<Vec3Row>,
+    /// Movement rate in units per **second**. The Bevy server stored units per
+    /// tick at a fixed 60 Hz, which only worked because the tick never varied.
+    pub speed: f32,
+    pub state: EntityStateRow,
+    /// Spatial index; kept in sync with `position` by whoever writes it.
+    pub cell_x: i32,
+    pub cell_z: i32,
+    /// Where this entity respawns, and where enemies return to when they lose
+    /// their target.
+    pub spawn_point: Vec3Row,
+    /// Seconds until this corpse gets back up, for anything that respawns on a
+    /// timer. `None` for players, who respawn when they ask to, and for
+    /// anything meant to stay dead.
+    pub respawn_in_seconds: Option<f32>,
+}
+
+/// Effective stats for anything that can fight, players included.
+///
+/// Player rows here are *derived*: base stats from `player_stats` plus
+/// equipment bonuses plus active modifiers. `player_stats` is what persists.
+#[table(accessor = entity_stats, public)]
+pub struct EntityStats {
+    #[primary_key]
+    pub entity_id: u64,
+    pub stats: StatsRow,
+    pub current_mana: f32,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CastKindRow {
+    Instant,
+    CastTime,
+    Channeling,
+}
+
+/// A cast in progress. At most one per caster: starting another cancels it.
+#[table(accessor = cast_state, public)]
+pub struct CastState {
+    #[primary_key]
+    pub entity_id: u64,
+    pub spell_id: String,
+    pub kind: CastKindRow,
+    pub elapsed_seconds: f32,
+    pub required_seconds: f32,
+    /// Caster position when the cast began, to detect movement interrupts.
+    pub start_position: Vec3Row,
+    pub target_position: Option<Vec3Row>,
+    pub target_entity: Option<u64>,
+    pub channel_tick_accumulator: f32,
+    pub tick_interval_seconds: f32,
+}
+
+/// One spell or ability on cooldown for one entity.
+#[table(
+    accessor = cooldown,
+    public,
+    index(accessor = owner_ability, btree(columns = [entity_id, ability_id]))
+)]
+pub struct Cooldown {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub entity_id: u64,
+    /// Spell id or ability id — they share a namespace here because a cooldown
+    /// is a cooldown regardless of what started it.
+    pub ability_id: String,
+    pub elapsed_seconds: f32,
+    pub duration_seconds: f32,
+}
+
+#[table(accessor = projectile, public)]
+pub struct Projectile {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub caster: u64,
+    pub spell_id: String,
+    pub position: Vec3Row,
+    /// Homing projectiles chase an entity; the rest fly to a fixed point.
+    pub target_entity: Option<u64>,
+    pub target_position: Option<Vec3Row>,
+    pub speed: f32,
+    pub damage: f32,
+    pub hit_radius: f32,
+    pub remaining_seconds: f32,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AoeShapeRow {
+    Circle,
+    Cone,
+}
+
+#[table(accessor = aoe_region, public)]
+pub struct AoeRegion {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub caster: u64,
+    pub spell_id: String,
+    pub center: Vec3Row,
+    pub direction: Vec3Row,
+    pub radius: f32,
+    pub shape: AoeShapeRow,
+    pub remaining_seconds: f32,
+    /// Time before the region starts applying its effect. Meteorite's warning
+    /// circle exists during this window without doing anything.
+    pub pending_delay_seconds: f32,
+    /// Entities already affected, for effects that apply once each.
+    pub affected: Vec<u64>,
+    pub damage: f32,
+    pub healing: f32,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrowdControlKindRow {
+    Stun,
+    Root,
+    Silence,
+    Slow,
+}
+
+#[table(
+    accessor = crowd_control,
+    public,
+    index(accessor = victim, btree(columns = [entity_id]))
+)]
+pub struct CrowdControl {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub entity_id: u64,
+    pub kind: CrowdControlKindRow,
+    pub remaining_seconds: f32,
+}
+
+/// A timed stat modifier — a buff or a debuff.
+#[table(
+    accessor = stat_modifier,
+    public,
+    index(accessor = target, btree(columns = [entity_id]))
+)]
+pub struct StatModifier {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub entity_id: u64,
+    /// `StatField` as its debug name; the field set is small and stable, and a
+    /// string keeps the table readable from `spacetime sql`.
+    pub field: String,
+    pub is_multiplicative: bool,
+    pub amount: f32,
+    /// `None` means it lasts until something removes it.
+    pub remaining_seconds: Option<f32>,
+}
+
+/// Damage or healing applied a little at a time: a poison, a regeneration.
+///
+/// Separate from `stat_modifier` rather than three more columns on it, because
+/// the two have nothing in common beyond a duration. A modifier changes what a
+/// stat *is* and is folded into the effective stats on every recompute; a
+/// periodic effect changes health on a schedule and is not part of any stat at
+/// all. Merging them meant every stat recompute walking rows it had to ignore.
+#[table(
+    accessor = periodic_effect,
+    public,
+    index(accessor = on_entity, btree(columns = [entity_id]))
+)]
+pub struct PeriodicEffect {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub entity_id: u64,
+    /// Who applied it, so the damage earns them threat like any other.
+    pub source: Option<u64>,
+    /// Positive heals, negative hurts. One field rather than a flag because
+    /// every consumer wants the signed number anyway.
+    pub amount_per_tick: f32,
+    pub tick_interval_seconds: f32,
+    /// Counts up to `tick_interval_seconds`, then fires and resets.
+    pub since_last_tick: f32,
+    pub remaining_seconds: f32,
+}
+
+/// How much a boss hates each of its attackers.
+#[table(
+    accessor = threat,
+    public,
+    index(accessor = by_boss, btree(columns = [boss_entity]))
+)]
+pub struct Threat {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub boss_entity: u64,
+    pub target_entity: u64,
+    pub amount: f32,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BossPhaseRow {
+    Idle,
+    PhaseOne,
+    PhaseTwo,
+    Enraged,
+}
+
+#[table(accessor = boss_state, public)]
+pub struct BossState {
+    #[primary_key]
+    pub entity_id: u64,
+    pub phase: BossPhaseRow,
+    pub arena_center: Vec3Row,
+    pub arena_radius: f32,
+    pub is_engaged: bool,
+    pub engaged_seconds: f32,
+    /// Index into the boss's spell rotation.
+    pub rotation_cursor: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Events: transient, broadcast, never read back
+// ---------------------------------------------------------------------------
+//
+// SpacetimeDB 2.0's event tables replace the server-to-client messages the
+// lightyear protocol carried. Rows are delivered to subscribers and not
+// retained, which is exactly the lifetime a "play this effect once" message
+// wants — and the reason global reducer callbacks were removed in 2.0.
+
+/// A one-shot visual: a bolt, a burst, an impact.
+#[table(accessor = spell_visual_effect, public, event)]
+pub struct SpellVisualEffectEvent {
+    pub spell_id: String,
+    pub start: Vec3Row,
+    pub end: Vec3Row,
+}
+
+/// Damage or healing applied, for floating combat text.
+#[table(accessor = damage_event, public, event)]
+pub struct DamageEventRow {
+    pub target: u64,
+    pub amount: f32,
+    /// Negative damage is healing; kept explicit so the client does not have to
+    /// infer it from the sign.
+    pub is_healing: bool,
+    pub killed: bool,
+}
+
+/// A cast finished or was interrupted.
+#[table(accessor = cast_ended, public, event)]
+pub struct CastEndedEvent {
+    pub entity_id: u64,
+    pub spell_id: String,
+    pub interrupted: bool,
+}
+
+/// A line of text for one player, or for everyone when `target` is `None`.
+#[table(accessor = player_message, public, event)]
+pub struct PlayerMessageEvent {
+    pub target: Option<Identity>,
+    pub text: String,
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling
+// ---------------------------------------------------------------------------
+
+/// Drives `game_tick`. One row, inserted by `init`.
+#[table(accessor = tick_schedule, scheduled(crate::tick::game_tick))]
+pub struct TickSchedule {
+    #[primary_key]
+    #[auto_inc]
+    pub scheduled_id: u64,
+    pub scheduled_at: spacetimedb::ScheduleAt,
+}
+
+/// The tick clock. One row, id 0.
+///
+/// `last_tick` is what gives the simulation a real `dt`. Assuming the nominal
+/// interval would run the world slow: the scheduler measures the gap from the
+/// *end* of the previous run, and a 50 ms nominal tick was measured at ~53-56 ms.
+#[table(accessor = tick_stats, public)]
+pub struct TickStats {
+    #[primary_key]
+    pub id: u32,
+    pub ticks: u64,
+    pub first_tick: Timestamp,
+    pub last_tick: Timestamp,
+}

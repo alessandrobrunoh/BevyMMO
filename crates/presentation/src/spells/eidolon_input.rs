@@ -28,7 +28,7 @@ use bevymmo_shared::network::protocol::{
 };
 use bevymmo_shared::targeting::CurrentTarget;
 use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
-use lightyear::prelude::Controlled;
+use bevymmo_shared::entity::LocalPlayer;
 use lightyear::prelude::MessageSender;
 
 use crate::game_state::{GameScreen, Screen};
@@ -54,7 +54,7 @@ pub fn cast_eidolon_abilities_on_key(
     target_ids: Query<&NetworkEntityId>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    mut controlled_players: Query<(&Equipment, &Position, &mut LookDirection), With<Controlled>>,
+    mut controlled_players: Query<(&Equipment, &Position, &mut LookDirection), With<LocalPlayer>>,
     mut cast_senders: Query<&mut MessageSender<EidolonCastCommand>, With<ConnectedClient>>,
     registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,

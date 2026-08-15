@@ -3,6 +3,7 @@
 //! Six staggered fire circles in a ring around the caster.
 //! Red warning cylinders pulse, then orange mini pillars erupt briefly.
 
+use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
 
@@ -48,7 +49,7 @@ pub fn spawn(
     let warning_mesh = meshes.add(Cylinder::new(MoltenEruptionSpell::CIRCLE_RADIUS, 0.05));
     let warning_material = materials.add(StandardMaterial {
         base_color: Color::srgba(0.95, 0.1, 0.1, 0.45),
-        emissive: ASH_RED,
+        emissive: to_linear(ASH_RED),
         alpha_mode: AlphaMode::Blend,
         ..default()
     });
@@ -56,7 +57,7 @@ pub fn spawn(
     let pillar_mesh = meshes.add(Cylinder::new(MoltenEruptionSpell::CIRCLE_RADIUS, 2.5));
     let pillar_material = materials.add(StandardMaterial {
         base_color: Color::srgba(1.0, 0.45, 0.05, 0.85),
-        emissive: FIRE_ORANGE,
+        emissive: to_linear(FIRE_ORANGE),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()

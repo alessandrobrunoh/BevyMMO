@@ -10,6 +10,7 @@ bevy = { workspace = true, features = ["default", "serialize"] }
 bevy_asset_loader = { version = "0.27", features = ["3d"] }
 lightyear = { workspace = true }
 bevymmo_shared = { path = "../shared" }
+bevymmo_domain = { path = "../domain", features = ["bevy"] }
 bevymmo_client = { path = "../client" }
 serde = { workspace = true }
 serde_json = { workspace = true }

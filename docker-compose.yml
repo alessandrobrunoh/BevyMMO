@@ -1,4 +1,18 @@
 services:
+  # The authoritative server, once the migration off lightyear/Postgres lands.
+  # Runs alongside them for now: the game still boots on the old stack until the
+  # gameplay reducers are ported, and killing Postgres today would just stop it
+  # working. Both `postgres` and `server` below go away at the end.
+  spacetimedb:
+    image: clockworklabs/spacetime:latest
+    container_name: bevytest2_spacetimedb
+    restart: unless-stopped
+    command: ["start", "--listen-addr", "0.0.0.0:3000"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - spacetime_data:/stdb
+
   postgres:
     image: postgres:16
     container_name: bevytest2_postgres
@@ -37,3 +51,4 @@ services:
 
 volumes:
   postgres_data:
+  spacetime_data:

@@ -4,6 +4,7 @@
 //! A flat torus expands from scale 0.5 to 10.0 with alpha fade,
 //! plus a fainter secondary ring delayed by 0.08s scaled 1.2x.
 
+use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
 
@@ -48,7 +49,7 @@ pub fn spawn(
     });
     let material = materials.add(StandardMaterial {
         base_color: Color::srgba(0.8, 0.7, 0.55, 0.7),
-        emissive: DUST_TAN,
+        emissive: to_linear(DUST_TAN),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()

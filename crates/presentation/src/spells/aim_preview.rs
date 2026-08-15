@@ -11,6 +11,7 @@
 //! dopo per applicare l'effetto. Finché resta così, l'anteprima non può
 //! mentire su dove cadrà il colpo.
 
+use bevymmo_domain::EntityId;
 use std::f32::consts::TAU;
 
 use bevy::color::palettes::css;
@@ -26,7 +27,7 @@ use bevymmo_shared::network::protocol::{LookDirection, Position};
 use bevymmo_shared::spells::context::{AoeShape, SpellCastContext};
 use bevymmo_shared::stats::components::CombatStats;
 use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
-use lightyear::prelude::Controlled;
+use bevymmo_shared::entity::LocalPlayer;
 
 use crate::spells::ui::SpellHudState;
 
@@ -52,7 +53,7 @@ const CONE_ARC_SEGMENTS: usize = 32;
 pub fn draw_ability_aim_preview(
     mut gizmos: Gizmos,
     aim: Res<AbilityAim>,
-    players: Query<(&Equipment, &KnownGlyphs, &Position, &LookDirection), With<Controlled>>,
+    players: Query<(&Equipment, &KnownGlyphs, &Position, &LookDirection), With<LocalPlayer>>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
     modifier_registry: Res<ModifierRegistry>,
@@ -109,7 +110,7 @@ pub fn draw_ability_aim_preview(
         armor: 0.0,
     };
     let ctx = SpellCastContext::new(
-        Entity::PLACEHOLDER,
+        EntityId::PLACEHOLDER,
         position.0,
         &combat,
         look_direction.0,
@@ -330,7 +331,7 @@ mod tests {
         };
         let caster_position = Vec3::new(3.0, 0.0, 1.0);
         let ctx = SpellCastContext::new(
-            Entity::PLACEHOLDER,
+            EntityId::PLACEHOLDER,
             caster_position,
             &combat,
             Vec3::Z,

@@ -27,6 +27,8 @@ pub mod settings;
 pub mod spells;
 pub mod spells_impl;
 pub mod stats;
+pub mod color;
+pub mod world_components;
 pub mod targeting;
 pub mod user_settings;
 pub mod world;

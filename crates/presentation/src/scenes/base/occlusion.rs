@@ -26,7 +26,7 @@
 use bevy::camera::primitives::Aabb;
 use bevy::prelude::*;
 use bevy::reflect::Reflect;
-use lightyear::prelude::Controlled;
+use bevymmo_shared::entity::LocalPlayer;
 
 use bevymmo_shared::network::protocol::Position;
 
@@ -192,7 +192,7 @@ fn is_descendant_of(entity: Entity, root: Entity, parents: &Query<&ChildOf>) -> 
 /// for map_02's boulders, whose 20×7×20 half-extents give a 29 m bounding
 /// radius — they would have ghosted from thirty metres off to the side.
 pub fn update_camera_occlusion(
-    player_query: Query<&Position, With<Controlled>>,
+    player_query: Query<&Position, With<LocalPlayer>>,
     camera_query: Query<&Transform, With<GameCamera>>,
     mut occluders: Query<(&GlobalTransform, Option<&Aabb>, &mut OccluderFade), With<Occludable>>,
 ) {
@@ -373,7 +373,7 @@ mod tests {
             .target
     }
 
-    /// Spawns a `GameCamera` at `camera` and a `Controlled` player at `player`,
+    /// Spawns a `GameCamera` at `camera` and a `LocalPlayer` player at `player`,
     /// then runs [`update_camera_occlusion`] once.
     fn run_occlusion(world: &mut World, camera: Vec3, player: Vec3) {
         world.spawn((
@@ -381,7 +381,7 @@ mod tests {
             Transform::from_translation(camera),
             Camera3d::default(),
         ));
-        world.spawn((Controlled, Position(player)));
+        world.spawn((LocalPlayer, Position(player)));
         world
             .run_system_once(update_camera_occlusion)
             .expect("system runs");

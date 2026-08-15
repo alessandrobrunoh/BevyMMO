@@ -340,6 +340,36 @@ impl GameSettingsResource {
         let binding = self.0.keybinds.get(action);
         keys.pressed(binding.key) && KeyModifiers::from_pressed(keys) == binding.modifiers
     }
+
+    /// True if the configured binding for `action` was just released (this
+    /// frame).
+    ///
+    /// Deliberately **ignores modifiers**, unlike [`just_pressed`](Self::just_pressed):
+    /// a release closes an interaction that a press already opened, and the
+    /// player is free to let go of `Shift` before the main key. Requiring the
+    /// modifiers again here would swallow the release and leave the action
+    /// stuck open.
+    pub fn just_released(
+        &self,
+        action: KeyAction,
+        keys: &bevy::input::ButtonInput<KeyCode>,
+    ) -> bool {
+        keys.just_released(self.0.keybinds.get(action).key)
+    }
+
+    /// Consumes this frame's press of `action`, so systems running later see
+    /// nothing.
+    ///
+    /// Needed because a single physical key can be bound to several actions —
+    /// `Escape` is `TogglePause` *and* `ClearTarget` — and the most specific
+    /// handler must be able to claim it before the others react.
+    pub fn consume_press(
+        &self,
+        action: KeyAction,
+        keys: &mut bevy::input::ButtonInput<KeyCode>,
+    ) {
+        keys.clear_just_pressed(self.0.keybinds.get(action).key);
+    }
 }
 
 // ---------------------------------------------------------------------------

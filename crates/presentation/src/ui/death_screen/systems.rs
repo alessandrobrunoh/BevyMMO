@@ -2,11 +2,11 @@
 
 use bevy::prelude::*;
 use bevymmo_shared::entity::LocalPlayer;
-use lightyear::prelude::MessageSender;
+use bevymmo_client::stdb::{commands, StdbConnection};
 
 use bevymmo_client::network::types::ClientConnectionConfig;
 use bevymmo_shared::entity::components::EntityState;
-use bevymmo_shared::network::protocol::{Channel2, PlayerId, RespawnRequest};
+use bevymmo_shared::network::protocol::PlayerId;
 use bevymmo_shared::stats::components::VitalStats;
 
 use crate::game_state::{GameScreen, Screen};
@@ -126,10 +126,7 @@ pub fn update_death_screen_visibility(
 /// multipli prima della replica vengono gestiti lato server come no-op.
 pub fn handle_respawn_button(
     buttons: Query<&Interaction, (Changed<Interaction>, With<DeathScreenButton>)>,
-    mut senders: Query<
-        &mut MessageSender<RespawnRequest>,
-        With<bevymmo_client::network::types::ConnectedClient>,
-    >,
+    conn: Option<Res<StdbConnection>>,
 ) {
     let any_pressed = buttons
         .iter()
@@ -137,8 +134,13 @@ pub fn handle_respawn_button(
     if !any_pressed {
         return;
     }
-    for mut sender in senders.iter_mut() {
-        sender.send::<Channel2>(RespawnRequest);
+    // Absent before the connection is established; the death screen cannot be
+    // on screen then, but the option keeps the system from panicking if it is.
+    let Some(conn) = conn else {
+        return;
+    };
+    if let Err(err) = commands::respawn(&conn) {
+        error!("respawn failed: {err}");
     }
 }
 

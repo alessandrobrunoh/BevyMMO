@@ -6,9 +6,8 @@ use bevymmo_client::network::types::ConnectedClient;
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::items::AvailableSpellChoices;
-use bevymmo_shared::network::protocol::{Channel2, UpdateHotbarSlotRequest};
 use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId, SpellRegistry};
-use lightyear::prelude::MessageSender;
+use bevymmo_client::stdb::{commands, StdbConnection};
 
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::UiTheme;
@@ -331,7 +330,7 @@ pub fn handle_spell_selector_interactions(
     >,
     close_interactions: Query<&Interaction, (Changed<Interaction>, With<CloseSpellSelectorButton>)>,
     mut player_query: Query<&mut SpellHotbar, With<LocalPlayer>>,
-    mut senders: Query<&mut MessageSender<UpdateHotbarSlotRequest>, With<ConnectedClient>>,
+    conn: Option<Res<StdbConnection>>,
     mut commands: Commands,
     window_query: Query<Entity, With<SpellSelectorWindow>>,
 ) {
@@ -352,7 +351,7 @@ pub fn handle_spell_selector_interactions(
             option.slot,
             Some(option.spell_id.clone()),
             &mut player_query,
-            &mut senders,
+            conn.as_deref(),
         );
     }
 
@@ -360,7 +359,7 @@ pub fn handle_spell_selector_interactions(
         if *interaction != Interaction::Pressed {
             continue;
         }
-        apply_hotbar_selection(clear_slot.slot, None, &mut player_query, &mut senders);
+        apply_hotbar_selection(clear_slot.slot, None, &mut player_query, conn.as_deref());
     }
 }
 
@@ -371,19 +370,20 @@ fn apply_hotbar_selection(
     slot: HotbarSlot,
     spell_id: Option<SpellId>,
     player_query: &mut Query<&mut SpellHotbar, With<LocalPlayer>>,
-    senders: &mut Query<&mut MessageSender<UpdateHotbarSlotRequest>, With<ConnectedClient>>,
+    conn: Option<&StdbConnection>,
 ) {
     if let Some(mut hotbar) = player_query.iter_mut().next() {
         hotbar.assign(slot, spell_id.clone());
     }
 
-    for mut sender in senders.iter_mut() {
-        sender.send::<Channel2>(UpdateHotbarSlotRequest {
-            slot,
-            spell_id: spell_id
-                .as_ref()
-                .map(|spell_id| spell_id.as_str().to_string()),
-        });
+    let Some(conn) = conn else {
+        return;
+    };
+    let spell_id = spell_id.as_ref().map(|id| id.as_str().to_string());
+    if let Err(err) = commands::set_hotbar_spell(conn, slot, spell_id) {
+        // The local assignment above stays until the server's `hotbar` row
+        // arrives and overwrites it, so a rejected pick corrects itself.
+        error!("could not set hotbar slot: {err}");
     }
 }
 

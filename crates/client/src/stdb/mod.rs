@@ -12,6 +12,7 @@
 #[allow(clippy::all)]
 pub mod module_bindings;
 
+pub mod commands;
 pub mod plugin;
 
 pub use plugin::{StdbAuthoritative, StdbConnection, StdbEntityMap, StdbPlugin};

@@ -10,7 +10,10 @@ use bevymmo_shared::{
     stats::events::{ModifierOp, StatField},
 };
 
+use bevymmo_shared::abilities::KnownGlyphs;
+
 use super::components::*;
+use super::weapon_detail::{meta_line, summarize_weapon, GlyphRegistries, SlotSummary};
 use crate::ui::{
     card::{
         builder::CardBuilder,
@@ -19,10 +22,25 @@ use crate::ui::{
     theme::UiTheme,
 };
 
+/// Card height for a plain item: description plus a couple of stat lines.
+const PLAIN_CARD_HEIGHT: f32 = 320.0;
+
+/// Card height for an Eidolon weapon.
+///
+/// Three ability blocks of five lines each do not fit the plain height, and
+/// clipping them would defeat the point of the card. Kept under the 600 px
+/// default window (`bins/game/src/main.rs`) so the whole thing stays on screen
+/// at the smallest supported resolution.
+const WEAPON_CARD_HEIGHT: f32 = 520.0;
+const CARD_WIDTH: f32 = 420.0;
+
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_item_detail_card(
     commands: &mut Commands,
     theme: &UiTheme,
     registry: &ItemRegistry,
+    glyphs: &GlyphRegistries,
+    known: &KnownGlyphs,
     inventory: &Inventory,
     equipment: &Equipment,
     selection: InventorySelection,
@@ -50,13 +68,39 @@ pub fn spawn_item_detail_card(
     let effects = item.effects().to_vec();
     let equippable_into = config.equippable_into;
 
+    let weapon = summarize_weapon(&item_instance, registry, glyphs.catalog(), known);
+    let height = if weapon.is_some() {
+        WEAPON_CARD_HEIGHT
+    } else {
+        PLAIN_CARD_HEIGHT
+    };
+    let meta = meta_line(
+        config.category,
+        config.rarity,
+        config.equippable_into,
+        config.weight,
+    );
+
     CardBuilder::new(CardKind::ItemDetail, config.display_name.to_string())
-        .width(Val::Px(380.0))
-        .height(Val::Px(320.0))
+        .width(Val::Px(CARD_WIDTH))
+        .height(Val::Px(height))
         .draggable()
         .closeable()
         .coexist()
         .with_body(move |body| {
+            body.spawn((
+                Text::new(meta),
+                TextFont {
+                    font_size: FontSize::Px(theme.button_font_size * 0.75),
+                    ..default()
+                },
+                TextColor(Color::srgba(0.62, 0.68, 0.78, 0.95)),
+                Node {
+                    margin: UiRect::bottom(Val::Px(8.0)),
+                    ..default()
+                },
+            ));
+
             body.spawn((
                 Text::new(config.description.to_string()),
                 TextFont {
@@ -71,18 +115,7 @@ pub fn spawn_item_detail_card(
             ));
 
             if !effects.is_empty() {
-                body.spawn((
-                    Text::new("EFFECTS".to_string()),
-                    TextFont {
-                        font_size: FontSize::Px(theme.button_font_size * 0.8),
-                        ..default()
-                    },
-                    TextColor(Color::srgba(0.6, 0.75, 0.95, 0.9)),
-                    Node {
-                        margin: UiRect::bottom(Val::Px(6.0)),
-                        ..default()
-                    },
-                ));
+                spawn_section_heading(body, theme, "EFFECTS");
 
                 for effect in effects {
                     let desc = match effect {
@@ -112,6 +145,33 @@ pub fn spawn_item_detail_card(
                         },
                         TextColor(Color::srgba(0.4, 0.9, 0.6, 1.0)),
                     ));
+                }
+            }
+
+            let Some(weapon) = weapon else {
+                return;
+            };
+
+            if let Some(runes) = &weapon.runes {
+                spawn_section_heading(body, theme, "RUNES");
+                body.spawn((
+                    Text::new(runes.line()),
+                    TextFont {
+                        font_size: FontSize::Px(theme.button_font_size * 0.8),
+                        ..default()
+                    },
+                    TextColor(Color::srgba(0.78, 0.7, 0.95, 1.0)),
+                    Node {
+                        margin: UiRect::bottom(Val::Px(4.0)),
+                        ..default()
+                    },
+                ));
+            }
+
+            if !weapon.slots.is_empty() {
+                spawn_section_heading(body, theme, "ABILITIES");
+                for slot in &weapon.slots {
+                    spawn_slot_block(body, theme, slot);
                 }
             }
         })
@@ -171,6 +231,94 @@ pub fn spawn_item_detail_card(
             }
         })
         .spawn(commands, theme);
+}
+
+fn spawn_section_heading(body: &mut ChildSpawnerCommands, theme: &UiTheme, label: &str) {
+    body.spawn((
+        Text::new(label.to_string()),
+        TextFont {
+            font_size: FontSize::Px(theme.button_font_size * 0.8),
+            ..default()
+        },
+        TextColor(Color::srgba(0.6, 0.75, 0.95, 0.9)),
+        Node {
+            margin: UiRect {
+                top: Val::Px(10.0),
+                bottom: Val::Px(6.0),
+                ..default()
+            },
+            ..default()
+        },
+    ));
+}
+
+/// One ability slot: which gesture is active, what it does, and what is
+/// inscribed on it.
+fn spawn_slot_block(body: &mut ChildSpawnerCommands, theme: &UiTheme, slot: &SlotSummary) {
+    let detail_size = theme.button_font_size * 0.72;
+
+    body.spawn((
+        Text::new(format!("{}  ·  {}", slot.slot, slot.title)),
+        TextFont {
+            font_size: FontSize::Px(theme.button_font_size * 0.85),
+            ..default()
+        },
+        TextColor(Color::srgba(0.95, 0.9, 0.7, 1.0)),
+        Node {
+            margin: UiRect::top(Val::Px(6.0)),
+            ..default()
+        },
+    ));
+
+    if let Some(blocked) = &slot.blocked {
+        body.spawn((
+            Text::new(blocked.clone()),
+            TextFont {
+                font_size: FontSize::Px(detail_size),
+                ..default()
+            },
+            TextColor(Color::srgba(0.95, 0.45, 0.4, 1.0)),
+        ));
+    }
+
+    for (line, color) in [
+        (
+            format!("{}  ·  {}", slot.shape, slot.tags),
+            Color::srgba(0.7, 0.76, 0.86, 0.9),
+        ),
+        (slot.stats.clone(), Color::srgba(0.85, 0.88, 0.92, 0.95)),
+    ] {
+        body.spawn((
+            Text::new(line),
+            TextFont {
+                font_size: FontSize::Px(detail_size),
+                ..default()
+            },
+            TextColor(color),
+        ));
+    }
+
+    if let Some(glyphs) = &slot.glyphs {
+        body.spawn((
+            Text::new(format!("Inscribed: {glyphs}")),
+            TextFont {
+                font_size: FontSize::Px(detail_size),
+                ..default()
+            },
+            TextColor(Color::srgba(0.78, 0.7, 0.95, 1.0)),
+        ));
+    }
+
+    if let Some(alternatives) = &slot.alternatives {
+        body.spawn((
+            Text::new(alternatives.clone()),
+            TextFont {
+                font_size: FontSize::Px(detail_size),
+                ..default()
+            },
+            TextColor(Color::srgba(0.6, 0.65, 0.72, 0.85)),
+        ));
+    }
 }
 
 pub fn despawn_detail_cards(commands: &mut Commands, cards: &Query<(Entity, &CardWindow)>) {

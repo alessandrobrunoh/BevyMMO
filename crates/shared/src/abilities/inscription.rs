@@ -75,7 +75,11 @@ pub enum InscriptionError {
 
 /// Costo in Capacità Runica di un'incisione, scontato dell'eventuale
 /// Affinità dell'arma (§44: "su quest'arma costa 1 invece di 2").
-fn inscription_cost(
+///
+/// Pubblica perché la scheda item la mostra al giocatore: se la UI
+/// ricalcolasse il costo per conto suo, lo sconto di Affinità potrebbe
+/// divergere da quello che la validazione applica davvero.
+pub fn inscription_cost(
     inscription: &Inscription,
     profile: &RuneProfile,
     essences: &EssenceRegistry,

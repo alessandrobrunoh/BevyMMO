@@ -368,7 +368,7 @@ fn parse_triple_f32(s: &str) -> Option<(f32, f32, f32)> {
 //
 // // A weapon that grants two Q options, one W option, one E spell.
 // #[item(
-//     id = "flame_staff",
+//     id = "magic_staff",
 //     name = "Flame Staff",
 //     description = "Forgiato nel cuore di un vulcano dormiente.",
 //     category = Weapon,
@@ -381,7 +381,7 @@ fn parse_triple_f32(s: &str) -> Option<(f32, f32, f32)> {
 //         e = MeteoriteSpell,
 //     ),
 // )]
-// pub struct FlameStaff;
+// pub struct MagicStaff;
 //
 // // A pure stat item — no `spells(...)` clause, `spell_kit()` stays `None`.
 // #[item(
@@ -410,7 +410,7 @@ pub fn item(attr: TokenStream, item: TokenStream) -> TokenStream {
         if !matches!(data.fields, syn::Fields::Unit) {
             return syn::Error::new_spanned(
                 &input,
-                "#[item(...)] can only be applied to a unit struct, e.g. `pub struct FlameStaff;` \
+                "#[item(...)] can only be applied to a unit struct, e.g. `pub struct MagicStaff;` \
                  (all item data comes from the macro arguments, not from struct fields)",
             )
             .to_compile_error()
@@ -1022,7 +1022,9 @@ fn require_unit_struct(input: &DeriveInput, macro_name: &str) -> Result<(), Toke
 
 enum GeometryDef {
     Cone { radius: LitFloat, angle_deg: LitFloat },
-    Circle { radius: LitFloat },
+    /// `range` è la gittata entro cui si può piazzare il cerchio: assente
+    /// (0.0) = il gesto esplode addosso a chi lo lancia.
+    Circle { radius: LitFloat, range: Option<LitFloat> },
     Projectile { range: LitFloat, speed: LitFloat },
     SelfBuff { duration_seconds: LitFloat },
 }
@@ -1042,6 +1044,7 @@ fn parse_geometry(kind: Ident, fields: Punctuated<KvPair, Token![,]>) -> syn::Re
             radius: field("radius")
                 .ok_or_else(|| syn::Error::new_spanned(&kind, "circle(...) requires `radius = ...`"))?
                 .float_value()?,
+            range: field("range").map(|pair| pair.float_value()).transpose()?,
         }),
         "projectile" => Ok(GeometryDef::Projectile {
             range: field("range")
@@ -1074,6 +1077,9 @@ struct BaseAbilityDef {
     energy_cost: LitFloat,
     animation: LitStr,
     impact_vfx: LitStr,
+    /// Opzionali: assenti = impatto immediato e nessun controllo.
+    impact_delay: Option<LitFloat>,
+    stun_seconds: Option<LitFloat>,
 }
 
 impl Parse for BaseAbilityDef {
@@ -1088,6 +1094,8 @@ impl Parse for BaseAbilityDef {
         let mut energy_cost = None;
         let mut animation = None;
         let mut impact_vfx = None;
+        let mut impact_delay = None;
+        let mut stun_seconds = None;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -1114,12 +1122,15 @@ impl Parse for BaseAbilityDef {
                 "energy_cost" => energy_cost = Some(input.parse::<LitFloat>()?),
                 "animation" => animation = Some(input.parse::<LitStr>()?),
                 "impact_vfx" => impact_vfx = Some(input.parse::<LitStr>()?),
+                "impact_delay" => impact_delay = Some(input.parse::<LitFloat>()?),
+                "stun_seconds" => stun_seconds = Some(input.parse::<LitFloat>()?),
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
                         format!(
                             "unknown key `{other}` in #[base_ability(...)] (expected id, name, tags, geometry, \
-                             power, cast_time, cooldown, energy_cost, animation, impact_vfx)"
+                             power, cast_time, cooldown, energy_cost, animation, impact_vfx, impact_delay, \
+                             stun_seconds)"
                         ),
                     ))
                 }
@@ -1144,6 +1155,8 @@ impl Parse for BaseAbilityDef {
             animation: animation.ok_or_else(|| input.error("#[base_ability(...)] requires `animation = \"...\"`"))?,
             impact_vfx: impact_vfx
                 .ok_or_else(|| input.error("#[base_ability(...)] requires `impact_vfx = \"...\"`"))?,
+            impact_delay,
+            stun_seconds,
         })
     }
 }
@@ -1176,11 +1189,17 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
             quote! { #radius },
             quote! { 0.0 },
         ),
-        GeometryDef::Circle { radius } => (
-            quote! { crate::abilities::AbilityGeometry::Circle { radius: #radius } },
-            quote! { #radius },
-            quote! { 0.0 },
-        ),
+        GeometryDef::Circle { radius, range } => {
+            let range = match range {
+                Some(range) => quote! { #range },
+                None => quote! { 0.0 },
+            };
+            (
+                quote! { crate::abilities::AbilityGeometry::Circle { radius: #radius } },
+                quote! { #radius },
+                range,
+            )
+        }
         GeometryDef::Projectile { range, speed } => (
             quote! { crate::abilities::AbilityGeometry::Projectile { range: #range, speed: #speed } },
             quote! { 0.0 },
@@ -1191,6 +1210,21 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
             quote! { 0.0 },
             quote! { 0.0 },
         ),
+    };
+
+    // Le due chiavi opzionali generano l'override solo se dichiarate: senza
+    // di esse restano i default del trait (impatto immediato, nessuno stun).
+    let impact_delay_method = match &def.impact_delay {
+        Some(delay) => quote! {
+            fn impact_delay(&self) -> f32 { #delay }
+        },
+        None => quote! {},
+    };
+    let stun_seconds_method = match &def.stun_seconds {
+        Some(seconds) => quote! {
+            fn stun_seconds(&self) -> f32 { #seconds }
+        },
+        None => quote! {},
     };
 
     let expanded = quote! {
@@ -1229,6 +1263,8 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
             fn impact_vfx(&self) -> &'static str {
                 #impact_vfx
             }
+            #impact_delay_method
+            #stun_seconds_method
         }
 
         impl #name {

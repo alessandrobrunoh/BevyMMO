@@ -11,7 +11,7 @@ use std::collections::HashSet;
 
 use bevymmo_shared::entity::components::GameEntity;
 use bevymmo_shared::network::protocol::Position;
-use bevymmo_shared::spells::context::{AoeEffect, AoeSpawnRequest};
+use bevymmo_shared::spells::context::{AoeEffect, AoeShape, AoeSpawnRequest};
 use bevymmo_shared::stats::components::VitalStats;
 use bevymmo_shared::stats::events::{ApplyStatModifierEvent, DamageEvent, HealEvent};
 
@@ -23,6 +23,10 @@ pub struct AoeRegion {
     pub caster: Entity,
     pub center: Vec3,
     pub radius: f32,
+    /// Forma coperta attorno a `center`. `Circle` per tutte le spell
+    /// classiche; i gesti Eidolon a cono portano `Cone`, ed è la stessa
+    /// forma che il client disegna in anteprima prima del lancio.
+    pub shape: AoeShape,
     /// Remaining lifetime of the region. When it reaches 0 the region
     /// despawns (after optionally applying a final effect).
     pub remaining_seconds: f32,
@@ -45,6 +49,7 @@ pub fn spawn_aoe_region(commands: &mut Commands, caster: Entity, req: AoeSpawnRe
         caster,
         center: req.center,
         radius: req.radius,
+        shape: req.shape,
         remaining_seconds: req.duration_seconds,
         pending_delay_seconds: req.initial_delay_seconds.max(0.0),
         spell_id: req.spell_id,
@@ -129,8 +134,7 @@ fn apply_aoe_effect_to_targets(
             continue;
         }
 
-        let distance = target_pos.0.distance(region.center);
-        if distance > region.radius {
+        if !region.shape.contains(region.center, region.radius, target_pos.0) {
             continue;
         }
 

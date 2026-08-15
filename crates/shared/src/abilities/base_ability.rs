@@ -16,7 +16,16 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::spells::context::{AoeEffect, AoeTargeting, SpellCastContext};
+use crate::crowd_control::CrowdControlKind;
+use crate::spells::context::{AoeEffect, AoeShape, AoeTargeting, SpellCastContext};
+
+/// Raggio d'impatto di una palla lanciata da un gesto `Projectile`.
+pub const PROJECTILE_HIT_RADIUS: f32 = 1.0;
+
+/// Semi-larghezza del "corridoio" davanti al lanciatore entro cui un gesto
+/// `Projectile` senza bersaglio selezionato aggancia la prima entità (§ "una
+/// palla davanti a sé": si mira guardando, non cliccando).
+pub const FORWARD_LANE_HALF_WIDTH: f32 = 1.5;
 
 /// Tag invisibili che determinano quali Modificatori/Parole Antiche
 /// un'abilità può accettare (es. "Espandere richiede Area").
@@ -75,6 +84,33 @@ impl From<&'static str> for AbilityId {
     }
 }
 
+/// Direzione orizzontale normalizzata (l'altezza non conta: si gioca su un
+/// piano). `Vec3::ZERO` se la direzione è degenere.
+fn flat_direction(direction: Vec3) -> Vec3 {
+    Vec3::new(direction.x, 0.0, direction.z).normalize_or_zero()
+}
+
+/// Scarto orizzontale da `origin` a `point`.
+fn flat_offset(origin: Vec3, point: Vec3) -> Vec3 {
+    Vec3::new(point.x - origin.x, 0.0, point.z - origin.z)
+}
+
+/// Riporta `target` entro `range` dal lanciatore. `range <= 0.0` = nessun
+/// limite (il gesto si piazza dove vuole il giocatore).
+fn clamp_to_range(origin: Vec3, target: Vec3, range: f32) -> Vec3 {
+    let flat_target = Vec3::new(target.x, 0.0, target.z);
+    if range <= 0.0 {
+        return flat_target;
+    }
+    let offset = flat_offset(origin, flat_target);
+    let distance = offset.length();
+    if distance <= range {
+        flat_target
+    } else {
+        Vec3::new(origin.x, 0.0, origin.z) + offset / distance * range
+    }
+}
+
 pub trait BaseAbility: Send + Sync + 'static {
     fn id(&self) -> AbilityId;
     fn display_name(&self) -> &'static str;
@@ -88,42 +124,201 @@ pub trait BaseAbility: Send + Sync + 'static {
     /// applica solo colore/tema (vedi `EssenceVisualTheme`).
     fn impact_vfx(&self) -> &'static str;
 
+    /// Ritardo fra il lancio e l'impatto. > 0 significa "cerchio di
+    /// preavviso a terra, poi lo schianto" (il Meteorite); il client legge
+    /// lo stesso valore da qui per far durare il marker esattamente quanto
+    /// l'attesa reale. Default: impatto immediato.
+    fn impact_delay(&self) -> f32 {
+        0.0
+    }
+
+    /// Stun applicato all'impatto, in secondi. Default 0.0 = il gesto non ha
+    /// componente di controllo, solo danno.
+    fn stun_seconds(&self) -> f32 {
+        0.0
+    }
+
     fn has_tag(&self, tag: AbilityTag) -> bool {
         self.tags().contains(&tag)
     }
 
-    /// Emette danno a `power` nella forma dettata dalla geometria di questa
-    /// abilità (AoE per Cone/Circle, colpo diretto per Projectile, niente
-    /// per SelfBuff). Helper condiviso: qualunque Essenza offensiva lo
-    /// riusa per non duplicare il dispatch-per-geometria, cambiando solo
-    /// `power` (es. Fuoco lo amplifica) — vedi `essences_impl/fuoco.rs`.
-    fn emit_damage_for_geometry(&self, power: f32, params: &AbilityParams, ctx: &mut SpellCastContext) {
+    /// Dove il gesto manifesta il proprio effetto.
+    ///
+    /// - `Circle`: il punto indicato dal mouse, clampato a `params.range`
+    ///   attorno al lanciatore (0.0 = nessun limite di gittata).
+    /// - `Cone`: il lanciatore stesso, che è l'APICE del settore — la forma
+    ///   vera e propria la porta [`Self::impact_shape`].
+    /// - Altro: il lanciatore stesso.
+    fn impact_center(&self, params: &AbilityParams, ctx: &SpellCastContext) -> Vec3 {
+        match self.geometry() {
+            AbilityGeometry::Circle { .. } => {
+                clamp_to_range(ctx.caster_position, ctx.effective_center(), params.range)
+            }
+            AbilityGeometry::Cone { .. }
+            | AbilityGeometry::Projectile { .. }
+            | AbilityGeometry::SelfBuff { .. } => ctx.caster_position,
+        }
+    }
+
+    /// Raggio effettivo dell'impatto ad area (0.0 per proiettili/self-buff).
+    /// Per il cono è la gittata del settore misurata dall'apice.
+    fn impact_radius(&self, params: &AbilityParams) -> f32 {
         match self.geometry() {
             AbilityGeometry::Cone { radius, .. } | AbilityGeometry::Circle { radius } => {
-                let center = ctx.effective_center();
-                let area = params.area.max(radius);
-                ctx.emit_aoe(
-                    center,
-                    area,
-                    0.0,
-                    self.id().as_str().to_string(),
-                    AoeEffect::Damage { amount: power, targeting: AoeTargeting::ExcludeCaster },
-                );
-                // No bespoke per-gesture visual exists yet — the client falls
-                // back to a generic burst for any unrecognized id (see
-                // `bevymmo_presentation::spells::dispatch_visual_effects`).
-                ctx.emit_visual(self.impact_vfx().to_string(), center, center);
+                params.area.max(radius)
             }
-            AbilityGeometry::Projectile { .. } => {
-                if let Some(target) = ctx.target_entity {
-                    ctx.emit_damage(target, power);
-                    let target_position = ctx
-                        .potential_targets
-                        .iter()
-                        .find(|(entity, _)| *entity == target)
-                        .map(|(_, position)| *position)
-                        .unwrap_or(ctx.caster_position);
-                    ctx.emit_visual(self.impact_vfx().to_string(), ctx.caster_position, target_position);
+            AbilityGeometry::Projectile { .. } | AbilityGeometry::SelfBuff { .. } => 0.0,
+        }
+    }
+
+    /// Forma coperta attorno a [`Self::impact_center`].
+    ///
+    /// È il terzo membro della terna centro/raggio/forma: chiunque debba
+    /// sapere "quale superficie tocca questo gesto" — il server per applicare
+    /// l'effetto, il client per disegnare l'anteprima di mira — la chiede qui
+    /// invece di ricostruirla dalla geometria.
+    fn impact_shape(&self, ctx: &SpellCastContext) -> AoeShape {
+        match self.geometry() {
+            AbilityGeometry::Cone { angle_deg, .. } => AoeShape::Cone {
+                direction: flat_direction(ctx.caster_look_direction),
+                angle_deg,
+            },
+            AbilityGeometry::Circle { .. }
+            | AbilityGeometry::Projectile { .. }
+            | AbilityGeometry::SelfBuff { .. } => AoeShape::Circle,
+        }
+    }
+
+    /// Chi incassa la palla di un gesto `Projectile`.
+    ///
+    /// Il bersaglio selezionato vince, ma solo se è davvero davanti e a
+    /// portata; altrimenti si aggancia la prima entità nel corridoio frontale
+    /// (nessuna selezione richiesta — si spara dove si guarda).
+    fn projectile_target(&self, ctx: &SpellCastContext) -> Option<Entity> {
+        let AbilityGeometry::Projectile { range, .. } = self.geometry() else {
+            return None;
+        };
+        let forward = flat_direction(ctx.caster_look_direction);
+        if forward == Vec3::ZERO {
+            return ctx.target_entity;
+        }
+
+        if let Some(selected) = ctx.target_entity {
+            let in_front = ctx
+                .potential_targets
+                .iter()
+                .find(|(entity, _)| *entity == selected)
+                .map(|(_, position)| {
+                    let offset = flat_offset(ctx.caster_position, *position);
+                    let along = offset.dot(forward);
+                    along > 0.0 && along <= range
+                })
+                .unwrap_or(false);
+            if in_front {
+                return Some(selected);
+            }
+        }
+
+        ctx.potential_targets
+            .iter()
+            .filter(|(entity, _)| *entity != ctx.caster)
+            .filter_map(|(entity, position)| {
+                let offset = flat_offset(ctx.caster_position, *position);
+                let along = offset.dot(forward);
+                if along <= 0.0 || along > range {
+                    return None;
+                }
+                if (offset - forward * along).length() > FORWARD_LANE_HALF_WIDTH {
+                    return None;
+                }
+                Some((*entity, along))
+            })
+            .min_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(entity, _)| entity)
+    }
+
+    /// Piazza una regione con centro, raggio, forma e ritardo DI QUESTO gesto.
+    ///
+    /// Unico punto in cui la geometria di un'abilità si traduce in una
+    /// `AoeSpawnRequest`: le Essenze che aggiungono un proprio effetto sopra
+    /// la stessa area (Gelo → rallentamento, Terra → stagger) passano di qui
+    /// invece di ricopiare centro/raggio/delay, così un cambio di forma le
+    /// segue automaticamente.
+    fn emit_area_effect(
+        &self,
+        params: &AbilityParams,
+        ctx: &mut SpellCastContext,
+        effect: AoeEffect,
+    ) {
+        let delay = self.impact_delay();
+        ctx.emit_aoe_shaped(
+            self.impact_center(params, ctx),
+            self.impact_radius(params),
+            self.impact_shape(ctx),
+            delay,
+            delay,
+            self.id().as_str().to_string(),
+            effect,
+        );
+    }
+
+    /// Piazza l'impatto ad area del gesto: danno, più lo Stun se il gesto ne
+    /// ha uno, più il visual. Entrambe le regioni condividono `impact_delay`,
+    /// così il preavviso a terra e ciò che accade quando scade coincidono.
+    fn emit_area_impact(&self, params: &AbilityParams, power: f32, ctx: &mut SpellCastContext) {
+        self.emit_area_effect(
+            params,
+            ctx,
+            AoeEffect::Damage { amount: power, targeting: AoeTargeting::ExcludeCaster },
+        );
+
+        let stun = self.stun_seconds();
+        if stun > 0.0 {
+            self.emit_area_effect(
+                params,
+                ctx,
+                AoeEffect::CrowdControl {
+                    kind: CrowdControlKind::Stun,
+                    duration_seconds: stun,
+                    once_per_entity: true,
+                    targeting: AoeTargeting::ExcludeCaster,
+                },
+            );
+        }
+
+        let center = self.impact_center(params, ctx);
+        ctx.emit_visual(self.id().as_str().to_string(), center, center);
+    }
+
+    /// Emette danno a `power` nella forma dettata dalla geometria di questa
+    /// abilità. Helper condiviso: qualunque Essenza offensiva lo riusa per
+    /// non duplicare il dispatch-per-geometria, cambiando solo `power` (es.
+    /// Fuoco lo amplifica) — vedi `essences_impl/fuoco.rs`.
+    fn emit_damage_for_geometry(&self, power: f32, params: &AbilityParams, ctx: &mut SpellCastContext) {
+        match self.geometry() {
+            AbilityGeometry::Cone { .. } | AbilityGeometry::Circle { .. } => {
+                self.emit_area_impact(params, power, ctx);
+            }
+            AbilityGeometry::Projectile { range, speed } => {
+                // La palla è un'entità replicata che vola davvero: il danno
+                // arriva quando arriva lei, non all'istante del lancio.
+                match self.projectile_target(ctx) {
+                    Some(target) => {
+                        ctx.emit_projectile(target, speed, power, PROJECTILE_HIT_RADIUS);
+                        let target_position = ctx
+                            .potential_targets
+                            .iter()
+                            .find(|(entity, _)| *entity == target)
+                            .map(|(_, position)| *position)
+                            .unwrap_or(ctx.caster_position);
+                        ctx.emit_visual(self.id().as_str().to_string(), ctx.caster_position, target_position);
+                    }
+                    None => {
+                        // Colpo a vuoto: nessuno davanti. Il gesto si vede
+                        // comunque, altrimenti il tasto sembra rotto.
+                        let end = ctx.caster_position + flat_direction(ctx.caster_look_direction) * range;
+                        ctx.emit_visual(self.id().as_str().to_string(), ctx.caster_position, end);
+                    }
                 }
             }
             AbilityGeometry::SelfBuff { .. } => {

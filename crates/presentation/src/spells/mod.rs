@@ -52,6 +52,7 @@ fn dispatch_visual_effects(
     mut effects: MessageReader<SpellVisualEffect>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    abilities: Res<bevymmo_shared::abilities::BaseAbilityRegistry>,
 ) {
     for effect in effects.read() {
         match effect.spell_id.as_str() {
@@ -103,10 +104,22 @@ fn dispatch_visual_effects(
                 &mut materials,
                 effect,
             ),
-            // Eidolon abilities emit `impact_vfx()` ids (e.g.
-            // "bolt_impact_burst") that have no bespoke visual yet — fall
-            // back to a generic burst instead of silently doing nothing.
-            _ => eidolon_effects::spawn(&mut commands, &mut meshes, &mut materials, effect),
+            // Un gesto Eidolon manda il proprio id: il visual si costruisce
+            // rileggendo la sua `BaseAbility` (forma, raggio, preavviso), così
+            // un gesto nuovo si vede senza scrivere un visual dedicato.
+            other => {
+                let ability = abilities.get(&bevymmo_shared::abilities::AbilityId::new(other.to_string()));
+                match ability {
+                    Some(ability) => eidolon_effects::spawn_for_ability(
+                        &mut commands,
+                        &mut meshes,
+                        &mut materials,
+                        effect,
+                        &ability,
+                    ),
+                    None => eidolon_effects::spawn(&mut commands, &mut meshes, &mut materials, effect),
+                }
+            }
         }
     }
 }

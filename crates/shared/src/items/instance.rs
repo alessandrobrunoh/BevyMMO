@@ -61,8 +61,8 @@ mod tests {
 
     #[test]
     fn two_freshly_minted_instances_of_the_same_item_have_different_ids() {
-        let a = ItemInstance::new(ItemId::new("flame_staff"));
-        let b = ItemInstance::new(ItemId::new("flame_staff"));
+        let a = ItemInstance::new(ItemId::new("magic_staff"));
+        let b = ItemInstance::new(ItemId::new("magic_staff"));
         assert_eq!(a.item_id, b.item_id);
         assert_ne!(a.instance_id, b.instance_id);
     }

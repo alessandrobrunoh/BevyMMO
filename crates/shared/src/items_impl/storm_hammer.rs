@@ -1,6 +1,6 @@
 //! "Storm Hammer" — a second reference spell-granting weapon.
 //!
-//! Distinct kit from `flame_staff.rs` and `iron_sword.rs` on purpose, to show
+//! Distinct kit from `magic_staff.rs` and `iron_sword.rs` on purpose, to show
 //! that spell kits are per-item data, not a fixed template: a heavy strike
 //! or a meteor smash on Q, a mobility charge on W, a holy beam finisher on E.
 

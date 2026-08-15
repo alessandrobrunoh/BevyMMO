@@ -22,35 +22,24 @@ impl EssenceEffect for TerraEssence {
     fn manifest(&self, ability: &dyn BaseAbility, params: &AbilityParams, ctx: &mut SpellCastContext) {
         let earthen_power = params.power * Self::POWER_MULTIPLIER;
 
-        match ability.geometry() {
-            AbilityGeometry::Cone { radius, .. } | AbilityGeometry::Circle { radius } => {
-                let center = ctx.effective_center();
-                let area = params.area.max(radius);
-                ctx.emit_aoe(
-                    center,
-                    area,
-                    0.0,
-                    ability.id().as_str().to_string(),
-                    AoeEffect::Damage { amount: earthen_power, targeting: AoeTargeting::ExcludeCaster },
-                );
-                ctx.emit_aoe(
-                    center,
-                    area,
-                    0.0,
-                    ability.id().as_str().to_string(),
-                    AoeEffect::CrowdControl {
-                        kind: CrowdControlKind::Stun,
-                        duration_seconds: Self::STAGGER_DURATION_SECONDS,
-                        once_per_entity: true,
-                        targeting: AoeTargeting::ExcludeCaster,
-                    },
-                );
-                ctx.emit_visual(ability.impact_vfx().to_string(), center, center);
-            }
-            AbilityGeometry::Projectile { .. } => {
-                ability.emit_damage_for_geometry(earthen_power, params, ctx);
-            }
-            AbilityGeometry::SelfBuff { .. } => {}
+        // Forma, ritardo e aggancio restano del gesto; la Terra aggiunge lo
+        // Stagger sopra la stessa area.
+        ability.emit_damage_for_geometry(earthen_power, params, ctx);
+
+        if matches!(
+            ability.geometry(),
+            AbilityGeometry::Cone { .. } | AbilityGeometry::Circle { .. }
+        ) {
+            ability.emit_area_effect(
+                params,
+                ctx,
+                AoeEffect::CrowdControl {
+                    kind: CrowdControlKind::Stun,
+                    duration_seconds: Self::STAGGER_DURATION_SECONDS,
+                    once_per_entity: true,
+                    targeting: AoeTargeting::ExcludeCaster,
+                },
+            );
         }
     }
 }

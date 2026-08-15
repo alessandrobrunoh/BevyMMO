@@ -5,7 +5,7 @@
 //! for the inventory/equip pipeline.
 //!
 //! Also the reference implementation of a spell-granting item built *by
-//! hand* instead of through the `#[item(...)]` macro (see `flame_staff.rs`
+//! hand* instead of through the `#[item(...)]` macro (see `magic_staff.rs`
 //! for the macro version): `spell_kit` is just a regular field, built once
 //! in `new()` and returned by overriding `Item::spell_kit`. Useful when an
 //! item's data can't be expressed as a macro literal (e.g. computed at

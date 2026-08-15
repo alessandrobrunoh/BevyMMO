@@ -28,22 +28,16 @@ impl EssenceEffect for GeloEssence {
     fn manifest(&self, ability: &dyn BaseAbility, params: &AbilityParams, ctx: &mut SpellCastContext) {
         let chilled_power = params.power * Self::POWER_MULTIPLIER;
 
+        // Danno e forma restano quelli del gesto (compresi ritardo d'impatto
+        // e auto-aggancio frontale del proiettile): il Gelo aggiunge solo il
+        // rallentamento sopra la stessa geometria.
+        ability.emit_damage_for_geometry(chilled_power, params, ctx);
+
         match ability.geometry() {
-            AbilityGeometry::Cone { radius, .. } | AbilityGeometry::Circle { radius } => {
-                let center = ctx.effective_center();
-                let area = params.area.max(radius);
-                ctx.emit_aoe(
-                    center,
-                    area,
-                    0.0,
-                    ability.id().as_str().to_string(),
-                    AoeEffect::Damage { amount: chilled_power, targeting: AoeTargeting::ExcludeCaster },
-                );
-                ctx.emit_aoe(
-                    center,
-                    area,
-                    0.0,
-                    ability.id().as_str().to_string(),
+            AbilityGeometry::Cone { .. } | AbilityGeometry::Circle { .. } => {
+                ability.emit_area_effect(
+                    params,
+                    ctx,
                     AoeEffect::ApplyModifier {
                         effects: Self::slow_effect(),
                         duration_seconds: Some(Self::SLOW_DURATION_SECONDS),
@@ -52,19 +46,10 @@ impl EssenceEffect for GeloEssence {
                         targeting: AoeTargeting::ExcludeCaster,
                     },
                 );
-                ctx.emit_visual(ability.impact_vfx().to_string(), center, center);
             }
             AbilityGeometry::Projectile { .. } => {
-                if let Some(target) = ctx.target_entity {
-                    ctx.emit_damage(target, chilled_power);
+                if let Some(target) = ability.projectile_target(ctx) {
                     ctx.emit_modifier(target, Self::slow_effect(), Some(Self::SLOW_DURATION_SECONDS), ModifierKind::Debuff);
-                    let target_position = ctx
-                        .potential_targets
-                        .iter()
-                        .find(|(entity, _)| *entity == target)
-                        .map(|(_, position)| *position)
-                        .unwrap_or(ctx.caster_position);
-                    ctx.emit_visual(ability.impact_vfx().to_string(), ctx.caster_position, target_position);
                 }
             }
             AbilityGeometry::SelfBuff { .. } => {}

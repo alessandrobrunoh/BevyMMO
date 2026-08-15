@@ -587,21 +587,21 @@ fn starter_known_glyphs() -> KnownGlyphs {
 /// convenience; existing players are never touched (only used on first
 /// creation, see [`PlayerRepository::load_or_create_default_inventory`]).
 ///
-/// The weapon reference is `FlameStaff`, not `IronSword`: since spells now
+/// The weapon reference is `MagicStaff`, not `IronSword`: since spells now
 /// come from equipped items instead of a global default hotbar (see
 /// `bevymmo_shared::items::SpellKit`), a brand-new player needs a
 /// spell-granting weapon in reach or their Q/W/E stay empty until they equip
 /// one themselves.
 fn starter_inventory() -> Inventory {
     use bevymmo_shared::items_impl::{
-        field_rations::FieldRations, flame_staff::FlameStaff, iron_plate_armor::IronPlateArmor,
+        field_rations::FieldRations, magic_staff::MagicStaff, iron_plate_armor::IronPlateArmor,
         leather_helmet::LeatherHelmet, quick_flask::QuickFlask, swift_boots::SwiftBoots,
         swift_steed::SwiftSteed, travelers_bag::TravelersBag, travelers_cape::TravelersCape,
         wooden_shield::WoodenShield,
     };
 
     let ids = [
-        FlameStaff::ID,
+        MagicStaff::ID,
         LeatherHelmet::ID,
         TravelersCape::ID,
         IronPlateArmor::ID,

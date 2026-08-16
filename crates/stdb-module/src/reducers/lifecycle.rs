@@ -218,20 +218,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         identity,
         slots: inventory_to_rows(&Default::default()),
     });
-    for item_id in [
-        "magic_staff",
-        "leather_helmet",
-        "travelers_cape",
-        "iron_plate_armor",
-        "wooden_shield",
-        "quick_flask",
-        "swift_boots",
-        "field_rations",
-        "swift_steed",
-        "travelers_bag",
-    ] {
-        crate::reducers::items::grant_item(ctx, identity, item_id)?;
-    }
+    crate::reducers::items::grant_item(ctx, identity, "magic_staff")?;
     ctx.db.equipment().insert(EquipmentTable {
         identity,
         slots: equipment_to_rows(&Default::default()),

@@ -314,23 +314,35 @@ impl Plugin for StdbPlugin {
     }
 }
 
-/// Where the auth token is cached between runs, so a returning player keeps
-/// their character. Without it every launch is a brand-new `Identity` — and
-/// since the character is keyed by identity, a brand-new character.
-fn credential_store() -> credentials::File {
-    credentials::File::new("bevymmo")
+/// Produces a filesystem-safe cache key per SpacetimeDB instance and module.
+/// Tokens are signed by a server's key, so reusing one across instances causes
+/// the new server to reject the connection before it can issue a new identity.
+fn credential_key(uri: &str, module: &str) -> String {
+    let server: String = uri
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    format!("bevymmo_{server}_{module}")
 }
 
 fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error::Error>> {
     let (tx, events) = unbounded();
     let reports = tx.clone();
+    let credential_key = credential_key(uri, module);
 
     let conn = DbConnection::builder()
         .with_uri(uri)
         .with_database_name(module)
-        .with_token(credential_store().load().ok().flatten())
-        .on_connect(|_ctx, _identity, token| {
-            if let Err(err) = credential_store().save(token) {
+        .with_token(credentials::File::new(&credential_key).load().ok().flatten())
+        .on_connect(move |_ctx, _identity, token| {
+            if let Err(err) = credentials::File::new(&credential_key).save(token) {
                 warn!("could not cache the SpacetimeDB token: {err}");
             }
         })

@@ -136,6 +136,11 @@ pub fn cast_spell(
                 spells::start_cooldown(ctx, caster.entity_id, &spell_id, config.cooldown_seconds);
             }
 
+            let caster = if matches!(kind, CastKind::CastTime) {
+                stop_movement(ctx, caster)
+            } else {
+                caster
+            };
             ctx.db.cast_state().insert(CastState {
                 entity_id: caster.entity_id,
                 spell_id,
@@ -316,6 +321,7 @@ pub fn eidolon_cast(
             let required_seconds = preview.params.cast_time;
             let target_position = target_position.map(Vec3::from);
 
+            let caster = stop_movement(ctx, caster);
             ctx.db.cast_state().insert(CastState {
                 entity_id: caster.entity_id,
                 spell_id: ability_id.as_str().to_string(),
@@ -404,6 +410,16 @@ fn cancel_active_cast(ctx: &ReducerContext, entity_id: u64) {
     if let Some(active) = ctx.db.cast_state().entity_id().find(&entity_id) {
         spells::end_cast(ctx, entity_id, active.spell_id, true);
     }
+}
+
+/// Cast-time spells root the caster for their wind-up rather than allowing a
+/// movement command to advance one tick and then cancel the cast.
+fn stop_movement(ctx: &ReducerContext, caster: GameEntity) -> GameEntity {
+    ctx.db.game_entity().entity_id().update(GameEntity {
+        move_target: None,
+        state: EntityStateRow::Idle,
+        ..caster
+    })
 }
 
 fn parse_slot(slot: &str) -> Result<AbilitySlot, String> {

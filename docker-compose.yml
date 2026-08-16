@@ -2,7 +2,7 @@ services:
   spacetimedb:
     image: clockworklabs/spacetime:latest
     restart: unless-stopped
-    command: ["start", "--listen-addr", "0.0.0.0:3000"]
+    command: ["start", "--listen-addr", "0.0.0.0:3000", "--data-dir", "/stdb"]
     ports:
       - "3000:3000"
     volumes:

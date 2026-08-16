@@ -54,6 +54,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevymmo_content"
+version = "0.1.0"
+dependencies = [
+ "bevymmo-props-macro",
+ "bevymmo_core",
+ "bevymmo_gameplay",
+ "bevymmo_world",
+]
+
+[[package]]
 name = "bevymmo_core"
 version = "0.1.0"
 dependencies = [
@@ -65,6 +75,7 @@ name = "bevymmo_domain"
 version = "0.1.0"
 dependencies = [
  "bevymmo-props-macro",
+ "bevymmo_content",
  "bevymmo_core",
  "bevymmo_gameplay",
  "bevymmo_world",

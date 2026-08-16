@@ -25,7 +25,7 @@
 
 use spacetimedb::{table, Identity, SpacetimeType, Timestamp};
 
-use crate::rows::{HotbarRow, ItemInstanceRow, StatsRow, Vec3Row};
+use crate::rows::{EffectPayloadRow, HotbarRow, ItemInstanceRow, StatsRow, Vec3Row};
 
 /// Side of a spatial grid cell, in world units.
 ///
@@ -107,6 +107,26 @@ pub struct KnownGlyphsTable {
     pub essences: Vec<String>,
     pub modifiers: Vec<String>,
     pub ancient_words: Vec<String>,
+}
+
+/// A player's resonance (XP and level) with an Ancient Word.
+///
+/// Keyed by auto-increment ID; the natural key `(identity, root_word_id)` is
+/// enforced unique so that a player has at most one row per word.
+#[table(
+    accessor = resonance,
+    public,
+    index(accessor = identity_root_word, btree(columns = [identity, root_word_id]))
+)]
+#[derive(Clone)]
+pub struct Resonance {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub identity: Identity,
+    pub root_word_id: String,
+    pub xp: u64,
+    pub level: u32,
 }
 
 /// GM edits to a map's props: moved, retinted or removed.
@@ -233,6 +253,9 @@ pub struct EntityStats {
 pub enum CastKindRow {
     Instant,
     CastTime,
+    /// Hold-to-charge: accumulates while held, fires on release (not auto-fire).
+    /// Only valid for Eidolon abilities with BlueprintExecution::Charge.
+    Charge,
     Channeling,
 }
 
@@ -301,7 +324,7 @@ pub struct Projectile {
     pub target_entity: Option<u64>,
     pub target_position: Option<Vec3Row>,
     pub speed: f32,
-    pub damage: f32,
+    pub effects: Vec<EffectPayloadRow>,
     pub hit_radius: f32,
     pub remaining_seconds: f32,
 }
@@ -310,6 +333,16 @@ pub struct Projectile {
 pub enum AoeShapeRow {
     Circle,
     Cone,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AoeTargetingRow {
+    /// Hits all entities in range.
+    Everyone,
+    /// Caster only (e.g. self-heal AoE).
+    CasterOnly,
+    /// Everyone except caster (e.g. Meteorite: caster is not damaged).
+    ExcludeCaster,
 }
 
 #[table(accessor = aoe_region, public)]
@@ -329,8 +362,9 @@ pub struct AoeRegion {
     pub pending_delay_seconds: f32,
     /// Entities already affected, for effects that apply once each.
     pub affected: Vec<u64>,
-    pub damage: f32,
-    pub healing: f32,
+    /// Targeting policy for this region.
+    pub targeting: AoeTargetingRow,
+    pub effects: Vec<EffectPayloadRow>,
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
@@ -360,6 +394,28 @@ pub struct CrowdControl {
     /// a fill ratio: it only ever sees the countdown, so the first frame it
     /// observes would always look like a full bar.
     pub total_seconds: f32,
+}
+
+/// Semantic status instance. Specialized runtime tables remain optimized child
+/// state; this row gives them one stable owner and gives clients a unified view.
+#[table(
+    accessor = active_status,
+    public,
+    index(accessor = on_entity, btree(columns = [entity_id]))
+)]
+pub struct ActiveStatus {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub entity_id: u64,
+    pub status_id: String,
+    pub source: Option<u64>,
+    pub stacks: u16,
+    pub potency: f32,
+    pub remaining_seconds: f32,
+    pub total_seconds: f32,
+    /// Present while the status is represented by the legacy CC table.
+    pub control_kind: Option<CrowdControlKindRow>,
 }
 
 /// Whether a modifier helps or hurts the entity carrying it.
@@ -393,6 +449,7 @@ pub struct StatModifier {
     pub is_multiplicative: bool,
     pub amount: f32,
     pub kind: ModifierKindRow,
+    pub origin_status_instance_id: Option<u64>,
     /// `None` means it lasts until something removes it.
     pub remaining_seconds: Option<f32>,
 }
@@ -420,6 +477,8 @@ pub struct PeriodicEffect {
     /// every consumer wants the signed number anyway.
     pub amount_per_tick: f32,
     pub tick_interval_seconds: f32,
+    /// Status instance that owns this periodic schedule, when applicable.
+    pub origin_status_instance_id: Option<u64>,
     /// Counts up to `tick_interval_seconds`, then fires and resets.
     pub since_last_tick: f32,
     pub remaining_seconds: f32,

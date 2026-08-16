@@ -24,7 +24,7 @@ impl EssenceEffect for FuocoEssence {
     fn manifest(&self, ability: &dyn BaseAbility, params: &AbilityParams, ctx: &mut SpellCastContext) {
         // La geometria (dove/quanto colpisce) è già del gesto; l'Essenza
         // decide solo cosa manifesta lì: danno da fuoco amplificato.
-        ability.emit_damage_for_geometry(params.power * Self::POWER_MULTIPLIER, params, ctx);
+        ability.emit_damage_for_geometry(params.potency * Self::POWER_MULTIPLIER, params, ctx);
     }
 }
 

@@ -285,6 +285,10 @@ const RENDER_DELAY: f32 = 0.03;
 /// Must be comfortably longer than one fixed tick: at 60 Hz render and 60 Hz
 /// simulation, frames that happen to run no tick at all are routine and must
 /// not be mistaken for the entity having stopped.
+///
+/// This only decides when the feed-forward is *dropped*; it is not what stops
+/// the transform overshooting an arrival. That is the clamp in
+/// [`sync_transforms`], which does not depend on detecting a stop at all.
 const VELOCITY_IDLE_TIMEOUT: f32 = 0.15;
 
 /// Upper bound on a single velocity sample, in world units per second.
@@ -383,11 +387,45 @@ fn sync_transforms(
             // it toward the delayed goal. The first term supplies the motion
             // (constant, hence smooth); the second only removes drift.
             let goal = target - smoothing.velocity * RENDER_DELAY;
-            let carried = transform.translation + smoothing.velocity * delta;
+            let carried = clamp_to_target(
+                transform.translation + smoothing.velocity * delta,
+                target,
+                smoothing.velocity,
+            );
             transform.translation = carried.lerp(goal, position_blend.clamp(0.0, 1.0));
         }
 
         apply_look(&mut transform, look_direction, rotation_blend);
+    }
+}
+
+/// Stops the feed-forward carrying `carried` past `target` along `velocity`.
+///
+/// The feed-forward has to keep moving on frames where `Position` did not
+/// change, or the character steps rather than walks — but on arrival *every*
+/// subsequent frame is such a frame, and nothing in the extrapolation itself
+/// knows the walk ended. Left alone it sails on at the last known speed until
+/// the velocity estimate times out, then gets dragged back by the correction
+/// term: the click lands, the character drifts a little past the spot, and
+/// snaps back onto it.
+///
+/// The simulation is the authority on where the character stopped, and it
+/// never overshoots its own target (see `movement::step_towards`). So the
+/// render is free to lag it, but never to lead it: this removes any component
+/// of the extrapolation that has crossed `target` in the direction of travel,
+/// leaving motion before arrival untouched — during a walk the transform is
+/// deliberately held `RENDER_DELAY` behind, so the clamp never engages.
+///
+/// Only the along-velocity component is clamped; sideways offset is left to
+/// the correction term, so a mid-walk direction change still eases round
+/// instead of cornering.
+fn clamp_to_target(carried: Vec3, target: Vec3, velocity: Vec3) -> Vec3 {
+    let direction = velocity.normalize_or_zero();
+    let overshoot = (carried - target).dot(direction);
+    if overshoot > 0.0 {
+        carried - direction * overshoot
+    } else {
+        carried
     }
 }
 
@@ -614,6 +652,73 @@ mod tests {
             (simulated - rendered).abs() < 0.001,
             "rendered {rendered} never settled onto simulated {simulated}"
         );
+    }
+
+    /// The click-to-move "recoil": the character reaches the clicked point,
+    /// drifts a little past it, then snaps back onto it.
+    ///
+    /// The feed-forward keeps extrapolating at the last known walking speed on
+    /// every frame that `Position` does not change — and once the walk ends,
+    /// that is every frame. So the transform used to sail past the arrival
+    /// point for as long as the velocity estimate survived, and the correction
+    /// term then hauled it back.
+    ///
+    /// Overshoot and reversal are asserted separately because either alone is
+    /// the visible bug: leading the simulation is what the player sees as the
+    /// character stepping past the click, reversing is the snap back.
+    #[test]
+    fn arrival_never_overshoots_or_reverses() {
+        let (mut app, entity) = smoothing_app();
+        for _ in 0..60 {
+            frame(&mut app, entity, 1);
+        }
+
+        let arrival = app.world().entity(entity).get::<Position>().unwrap().0.x;
+
+        // Long enough to cover the whole velocity-idle timeout, which is how
+        // far the stale feed-forward used to carry the transform.
+        let mut previous = f32::NEG_INFINITY;
+        for step in 0..60 {
+            let rendered = frame(&mut app, entity, 0);
+            assert!(
+                rendered <= arrival + 1e-4,
+                "frame {step}: rendered {rendered} ran past the arrival point {arrival}"
+            );
+            assert!(
+                rendered >= previous - 1e-4,
+                "frame {step}: rendered position went backwards, {previous} -> {rendered}"
+            );
+            previous = rendered;
+        }
+
+        assert!(
+            (previous - arrival).abs() < 0.001,
+            "rendered {previous} never settled onto the arrival point {arrival}"
+        );
+    }
+
+    /// The clamp must not engage mid-walk: it exists only to stop the
+    /// extrapolation leading the simulation, and a walking character is
+    /// deliberately held `RENDER_DELAY` behind, so motion must be unaffected.
+    #[test]
+    fn clamp_leaves_a_walk_in_progress_alone() {
+        let velocity = Vec3::new(9.0, 0.0, 0.0);
+        let target = Vec3::new(5.0, 0.0, 0.0);
+        // Trailing the target, as during a steady walk.
+        let carried = Vec3::new(4.8, 0.0, 0.0);
+        assert_eq!(clamp_to_target(carried, target, velocity), carried);
+    }
+
+    /// Only the along-velocity component is removed, so a character easing
+    /// back onto its path after a direction change still corners smoothly.
+    #[test]
+    fn clamp_removes_only_the_along_velocity_overshoot() {
+        let velocity = Vec3::new(9.0, 0.0, 0.0);
+        let target = Vec3::ZERO;
+        let carried = Vec3::new(0.5, 0.0, 0.3);
+        let clamped = clamp_to_target(carried, target, velocity);
+        assert!((clamped.x - 0.0).abs() < 1e-6, "overshoot not removed");
+        assert!((clamped.z - 0.3).abs() < 1e-6, "sideways offset was eaten");
     }
 
     /// Respawn, knockback and teleport must cut, not glide across the map.

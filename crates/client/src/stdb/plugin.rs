@@ -24,6 +24,7 @@
 //! prediction around slopes and blockers.
 
 use bevy::prelude::*;
+use bevy::window::WindowCloseRequested;
 use bevymmo_domain::movement::{self, Step};
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
@@ -33,6 +34,7 @@ use bevymmo_domain::stats::modifiers::{
 };
 use bevymmo_domain::EntityId;
 use bevymmo_gameplay::abilities::{AncientWordId, EssenceId, KnownGlyphs, ModifierId};
+use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
 use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
 use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
 use bevymmo_gameplay::entity::components::{EntityKind, EntityState, GameEntity, PlayerName};
@@ -52,6 +54,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use spacetimedb_sdk::{credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey};
 use std::collections::{HashMap, HashSet};
 
+use super::module_bindings::active_status_table::ActiveStatusTableAccess;
 use super::module_bindings::boss_state_table::BossStateTableAccess;
 use super::module_bindings::cast_ended_table::CastEndedTableAccess;
 use super::module_bindings::cast_state_table::CastStateTableAccess;
@@ -73,8 +76,8 @@ use super::module_bindings::projectile_table::ProjectileTableAccess;
 use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAccess;
 use super::module_bindings::stat_modifier_table::StatModifierTableAccess;
 use super::module_bindings::{
-    BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState, ColorRow, Cooldown,
-    CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow, EntityStats,
+    ActiveStatus, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState, ColorRow,
+    Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow, EntityStats,
     EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable, ItemInstanceRow,
     KnownGlyphsTable, ModifierKindRow, PeriodicEffect, Player, PlayerMessageEvent, Projectile,
     ReducerEventContext, RemoteReducers, SpellVisualEffectEvent, StatModifier, Vec3Row,
@@ -101,6 +104,17 @@ const MOVE_COMMAND_INTERVAL: f32 = 0.1;
 /// restarted server settles to "nobody online" instead of showing ghosts.
 const HEARTBEAT_INTERVAL: f32 = 5.0;
 
+/// How long a graceful shutdown waits for a queued disconnect to actually
+/// reach the socket before letting the process die anyway.
+///
+/// `disconnect()` only queues the close — [`DbConnection::frame_tick`] is what
+/// sends it — so exiting on the same frame the shutdown was requested would
+/// tear the connection down mid-send almost every time, leaving `Player.online`
+/// stuck `true` until the server's own presence timeout notices. This is a few
+/// frames' worth of margin, not a real wait: [`finish_shutdown`] exits the
+/// moment [`DbContext::is_active`] reports the disconnect went through.
+const SHUTDOWN_GRACE_SECONDS: f32 = 0.5;
+
 /// The server's last word on an entity, kept apart from the rendered
 /// [`Position`] so prediction has something to reconcile against.
 #[derive(Component, Debug, Clone, Copy)]
@@ -124,6 +138,8 @@ enum RowEvent {
     CastEnded(CastEndedEvent),
     SpellVisualEffect(SpellVisualEffectEvent),
     BossState(BossState),
+    ActiveStatus(ActiveStatus),
+    ActiveStatusRemoved(ActiveStatus),
     CrowdControl(CrowdControl),
     CrowdControlRemoved(CrowdControl),
     StatModifier(StatModifier),
@@ -155,6 +171,8 @@ struct PendingRows {
     hotbar: HashMap<Identity, Hotbar>,
     known_glyphs: HashMap<Identity, KnownGlyphsTable>,
     boss_state: HashMap<u64, BossState>,
+    /// Keyed by `active_status.id`, not by entity: one entity can carry several.
+    active_status: HashMap<u64, ActiveStatus>,
     /// Keyed by `crowd_control.id`, not by entity: one entity can carry several.
     crowd_control: HashMap<u64, CrowdControl>,
     /// Keyed by `stat_modifier.id`.
@@ -175,8 +193,10 @@ struct PendingRows {
 /// The last effect state written to one entity, for change suppression.
 #[derive(Default, PartialEq, Debug)]
 struct AppliedEffects {
+    active_status: ActiveStatuses,
     crowd_control: CrowdControlState,
     /// The contributing rows, as `(id, remaining_seconds bits)`.
+    status_signature: Vec<(u64, u32)>,
     /// `StatModifierInstance` has no `PartialEq` to compare the built component
     /// with, and the rows are what decides it anyway.
     modifier_signature: Vec<(u64, u32)>,
@@ -287,6 +307,7 @@ impl Plugin for StdbPlugin {
 
         app.init_resource::<StdbEntityMap>();
         app.init_resource::<PendingRows>();
+        app.init_resource::<ShuttingDown>();
         app.insert_resource(StdbConnectionConfig {
             uri: uri.clone(),
             module: module.clone(),
@@ -299,12 +320,19 @@ impl Plugin for StdbPlugin {
                 Err(err) => error!("SpacetimeDB connection to {uri} failed: {err}"),
             }
         });
+        // Unconditional, and ordered before the connection pump: a shutdown
+        // request must queue its disconnect before `frame_tick` runs so the
+        // very next pump has something to send, and it must be caught even if
+        // `StdbConnection` never existed (a close during a failed connection
+        // attempt).
+        app.add_systems(PreUpdate, begin_shutdown.before(pump_connection));
         app.add_systems(
             PreUpdate,
             (pump_connection, drain_events)
                 .chain()
                 .run_if(resource_exists::<StdbConnection>),
         );
+        app.add_systems(Update, finish_shutdown);
         app.add_systems(
             Update,
             (join_on_request, send_move_commands, send_heartbeat)
@@ -332,26 +360,49 @@ fn credential_key(uri: &str, module: &str) -> String {
     format!("bevymmo_{server}_{module}")
 }
 
+/// Forgets a cached token for `uri`/`module`, so the next [`connect`] mints a
+/// fresh [`Identity`](spacetimedb_sdk::Identity) instead of resuming whichever
+/// character was last attached to this machine.
+///
+/// [`credentials::File`] has no delete method, so this reconstructs its own
+/// path (`~/.spacetimedb_client_credentials/<key>`) by hand.
+fn forget_cached_credentials(uri: &str, module: &str) {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let path = home
+        .join(".spacetimedb_client_credentials")
+        .join(credential_key(uri, module));
+    match std::fs::remove_file(&path) {
+        Ok(()) => {}
+        // Nothing was cached yet — the common case on a fresh machine.
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => warn!("could not remove cached SpacetimeDB token at {path:?}: {err}"),
+    }
+}
+
 fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error::Error>> {
     let (tx, events) = unbounded();
     let reports = tx.clone();
     let credential_key = credential_key(uri, module);
 
-    let conn = DbConnection::builder()
-        .with_uri(uri)
-        .with_database_name(module)
-        .with_token(credentials::File::new(&credential_key).load().ok().flatten())
-        .on_connect(move |_ctx, _identity, token| {
-            if let Err(err) = credentials::File::new(&credential_key).save(token) {
-                warn!("could not cache the SpacetimeDB token: {err}");
-            }
-        })
-        .on_connect_error(|_ctx, err| error!("SpacetimeDB connection error: {err}"))
-        .on_disconnect(|_ctx, err| match err {
-            Some(err) => error!("disconnected from SpacetimeDB: {err}"),
-            None => info!("disconnected from SpacetimeDB"),
-        })
-        .build()?;
+    let cached_token = credentials::File::new(&credential_key).load().ok().flatten();
+    let conn = match build_connection(uri, module, &credential_key, cached_token.clone()) {
+        Ok(conn) => conn,
+        // A cached token is signed by the server that issued it. A dev server
+        // restarted with a fresh keypair (or a module recreated from scratch)
+        // rejects it at the handshake itself — a 401, not a normal
+        // `on_connect_error` — so every future launch would otherwise retry
+        // the same dead token forever. Drop it and mint a new identity
+        // instead, the same recovery `forget_cached_credentials` already does
+        // for an explicit logout.
+        Err(err) if cached_token.is_some() && looks_like_auth_rejection(&*err) => {
+            warn!("cached SpacetimeDB token was rejected ({err}); reconnecting with a fresh identity");
+            forget_cached_credentials(uri, module);
+            build_connection(uri, module, &credential_key, None)?
+        }
+        Err(err) => return Err(err),
+    };
 
     register_callbacks(&conn, tx);
 
@@ -368,6 +419,7 @@ fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error
             "SELECT * FROM known_glyphs",
             "SELECT * FROM cast_state",
             "SELECT * FROM boss_state",
+            "SELECT * FROM active_status",
             "SELECT * FROM crowd_control",
             "SELECT * FROM stat_modifier",
             "SELECT * FROM periodic_effect",
@@ -383,6 +435,42 @@ fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error
         events,
         reports,
     })
+}
+
+/// Builds and opens the actual SDK connection, with or without a token.
+/// Factored out of [`connect`] so a rejected cached token can be retried once
+/// anonymously without duplicating the callback wiring.
+fn build_connection(
+    uri: &str,
+    module: &str,
+    credential_key: &str,
+    token: Option<String>,
+) -> Result<DbConnection, Box<dyn std::error::Error>> {
+    let credential_key = credential_key.to_string();
+    let conn = DbConnection::builder()
+        .with_uri(uri)
+        .with_database_name(module)
+        .with_token(token)
+        .on_connect(move |_ctx, _identity, token| {
+            if let Err(err) = credentials::File::new(&credential_key).save(token) {
+                warn!("could not cache the SpacetimeDB token: {err}");
+            }
+        })
+        .on_connect_error(|_ctx, err| error!("SpacetimeDB connection error: {err}"))
+        .on_disconnect(|_ctx, err| match err {
+            Some(err) => error!("disconnected from SpacetimeDB: {err}"),
+            None => info!("disconnected from SpacetimeDB"),
+        })
+        .build()?;
+    Ok(conn)
+}
+
+/// Whether a failed connection attempt looks like the server refusing a
+/// specific token, as opposed to being unreachable altogether — the
+/// distinction that decides if retrying anonymously can help.
+fn looks_like_auth_rejection(err: &(dyn std::error::Error + 'static)) -> bool {
+    let message = err.to_string();
+    message.contains("401") || message.contains("Unauthorized")
 }
 
 /// Every callback does the same thing: clone the row onto the channel. They stay
@@ -411,6 +499,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(known_glyphs, KnownGlyphs);
     mirror!(cast_state, CastState);
     mirror!(boss_state, BossState);
+    mirror!(active_status, ActiveStatus);
     mirror!(crowd_control, CrowdControl);
     mirror!(stat_modifier, StatModifier);
     mirror!(periodic_effect, PeriodicEffect);
@@ -429,6 +518,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
         }};
     }
 
+    mirror_delete!(active_status, ActiveStatusRemoved);
     mirror_delete!(crowd_control, CrowdControlRemoved);
     mirror_delete!(stat_modifier, StatModifierRemoved);
     mirror_delete!(periodic_effect, PeriodicEffectRemoved);
@@ -526,6 +616,9 @@ fn drain_events(
                 pending.entities.remove(&entity_id);
                 pending.stats.remove(&entity_id);
                 pending.boss_state.remove(&entity_id);
+                pending
+                    .active_status
+                    .retain(|_, row| row.entity_id != entity_id);
                 pending.applied.remove(&entity_id);
                 pending.crowd_control.retain(|_, cc| cc.entity_id != entity_id);
                 pending
@@ -599,6 +692,15 @@ fn drain_events(
                 let entity_id = row.entity_id;
                 pending.boss_state.insert(entity_id, row);
                 replay_entity(&mut commands, &map, &mut pending, entity_id);
+            }
+            RowEvent::ActiveStatus(row) => {
+                let entity_id = row.entity_id;
+                pending.active_status.insert(row.id, row);
+                replay_entity(&mut commands, &map, &mut pending, entity_id);
+            }
+            RowEvent::ActiveStatusRemoved(row) => {
+                pending.active_status.remove(&row.id);
+                replay_entity(&mut commands, &map, &mut pending, row.entity_id);
             }
             RowEvent::CrowdControl(row) => {
                 let entity_id = row.entity_id;
@@ -705,10 +807,14 @@ fn apply_effects(
     entity_id: u64,
     pending: &mut PendingRows,
 ) {
+    let active_status = active_statuses_for(entity_id, pending);
+    let status_signature = status_signature_for(entity_id, pending);
     let crowd_control = crowd_control_state_for(entity_id, pending);
     let modifier_signature = modifier_signature_for(entity_id, pending);
     let next = AppliedEffects {
+        active_status,
         crowd_control,
+        status_signature,
         modifier_signature,
     };
 
@@ -716,9 +822,11 @@ fn apply_effects(
         return;
     }
 
-    commands
-        .entity(entity)
-        .insert((next.crowd_control.clone(), stat_modifiers_for(entity_id, pending)));
+    commands.entity(entity).insert((
+        next.active_status.clone(),
+        next.crowd_control.clone(),
+        stat_modifiers_for(entity_id, pending),
+    ));
     pending.applied.insert(entity_id, next);
 }
 
@@ -800,8 +908,10 @@ fn cast_progress_from(row: &CastState) -> SpellCastProgress {
         caster_network_id: row.entity_id,
         spell_id: row.spell_id.clone(),
         kind: match row.kind {
-            CastKindRow::Channeling => 1,
             CastKindRow::Instant | CastKindRow::CastTime => 0,
+            CastKindRow::Charge => 2,
+            // Preserve SpellCastProgress' existing public contract.
+            CastKindRow::Channeling => 1,
         },
         elapsed_seconds: row.elapsed_seconds,
         required_seconds: row.required_seconds,
@@ -828,8 +938,37 @@ fn boss_phase(phase: BossPhaseRow) -> BossPhase {
     }
 }
 
+fn active_statuses_for(entity_id: u64, pending: &PendingRows) -> ActiveStatuses {
+    let mut statuses: Vec<_> = pending
+        .active_status
+        .values()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| ActiveStatusSnapshot {
+            instance_id: row.id,
+            status_id: row.status_id.clone(),
+            source: row.source.map(EntityId::new),
+            stacks: row.stacks,
+            potency: row.potency,
+            remaining_seconds: row.remaining_seconds,
+            total_seconds: row.total_seconds,
+        })
+        .collect();
+    statuses.sort_by_key(|status| status.instance_id);
+    ActiveStatuses { statuses }
+}
+
+fn status_signature_for(entity_id: u64, pending: &PendingRows) -> Vec<(u64, u32)> {
+    let mut signature: Vec<_> = pending
+        .active_status
+        .values()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| (row.id, row.remaining_seconds.to_bits() ^ u32::from(row.stacks)))
+        .collect();
+    signature.sort_unstable();
+    signature
+}
+
 /// Collects one entity's crowd control into the component the UI queries.
-///
 /// `Root`, `Silence` and `Slow` are dropped rather than approximated: the
 /// domain's `CrowdControlKind` knows only `Stun`, and inventing a mapping here
 /// would put a bar on screen that no gating rule agrees with. Nothing emits
@@ -1125,8 +1264,11 @@ fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
     equipment
 }
 
-fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instance::ItemInstance {
-    use bevymmo_gameplay::abilities::inscription::{Inscription, WeaponInscriptions};
+	fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instance::ItemInstance {
+    use bevymmo_gameplay::abilities::inscription::{
+        Inscription, SecondaryWord, SlotInscription, WeaponInscription, WeaponInscriptions,
+    };
+    use bevymmo_gameplay::abilities::root_word::RootWordId;
     use bevymmo_gameplay::abilities::weapon_abilities::AbilitySelection;
     use bevymmo_gameplay::abilities::{AbilityId, AncientWordId, EssenceId, ModifierId};
     use bevymmo_gameplay::items::instance::{ItemInstance, ItemInstanceId};
@@ -1136,6 +1278,16 @@ fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instanc
         essence: i.essence.clone().map(EssenceId::new),
         modifiers: i.modifiers.iter().cloned().map(ModifierId::new).collect(),
         ancient_word: i.ancient_word.clone().map(AncientWordId::new),
+    };
+
+    let secondary_word = |s: &super::module_bindings::SecondaryWordRow| SecondaryWord {
+        word_id: RootWordId::new(s.word_id.clone()),
+        intensity: s.intensity,
+    };
+
+    let slot_inscription = |s: &super::module_bindings::SlotInscriptionRow| SlotInscription {
+        root_word: s.root_word.clone().map(RootWordId::new),
+        secondary_words: s.secondary_words.iter().map(secondary_word).collect(),
     };
 
     ItemInstance {
@@ -1149,7 +1301,13 @@ fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instanc
         ability_selection: AbilitySelection {
             primary: row.ability_selection.primary.clone().map(AbilityId::new),
             secondary: row.ability_selection.secondary.clone().map(AbilityId::new),
+            ultimate: row.ability_selection.ultimate.clone().map(AbilityId::new),
         },
+        root_inscription: row.root_inscription.as_ref().map(|w| WeaponInscription {
+            primary: slot_inscription(&w.primary),
+            secondary: slot_inscription(&w.secondary),
+            ultimate: slot_inscription(&w.ultimate),
+        }),
     }
 }
 
@@ -1194,10 +1352,10 @@ fn join_on_request(
             if let Err(err) = conn.conn.disconnect() {
                 warn!("could not disconnect during logout: {err}");
             }
-            // Keep the cached token: logout returns to the main menu, not to a
-            // fresh account. Clearing it here would mint a new `Identity` on
-            // reconnect, orphaning the character under the old identity and
-            // making its name unusable ("name is taken") on the next join.
+            // Forget the cached identity: logging out hands back a clean
+            // slate, not a silent resume of whatever character was last
+            // attached to this machine.
+            forget_cached_credentials(&config.uri, &config.module);
             clear_replicated_state(&mut commands, &mut map, &mut pending);
 
             match connect(&config.uri, &config.module) {
@@ -1213,6 +1371,9 @@ fn join_on_request(
             }
         }
         ConnectionIntent::Disconnect => {}
+        // Handled by `begin_shutdown`, which runs in `PreUpdate` and takes the
+        // request before this system ever sees it.
+        ConnectionIntent::Shutdown => {}
     }
 }
 
@@ -1247,6 +1408,69 @@ fn send_heartbeat(conn: Res<StdbConnection>, time: Res<Time>, mut elapsed: Local
     *elapsed = 0.0;
     // Fails harmlessly before `join`: there is no character to mark present yet.
     let _ = conn.reducers().heartbeat();
+}
+
+/// `Some` once a graceful shutdown has been requested; the value is the
+/// elapsed grace period, ticked by [`finish_shutdown`].
+#[derive(Resource, Default)]
+struct ShuttingDown(Option<f32>);
+
+/// Starts a graceful shutdown: queues a disconnect and lets [`finish_shutdown`]
+/// exit once it has actually gone out.
+///
+/// Two things ask for this, and both used to skip the disconnect entirely.
+/// The window's close button fires [`WindowCloseRequested`], which by default
+/// tears the process down with no chance to say goodbye — `bins/game`
+/// disables that default exit precisely so this system can run first. The
+/// main menu's "Exit" button used to call `AppExit` directly for the same
+/// reason. Runs regardless of whether [`StdbConnection`] exists yet, so a
+/// close during the initial connection attempt still exits promptly.
+fn begin_shutdown(
+    mut closed: MessageReader<WindowCloseRequested>,
+    mut request: ResMut<ConnectionRequest>,
+    mut shutting_down: ResMut<ShuttingDown>,
+    conn: Option<Res<StdbConnection>>,
+    config: Res<StdbConnectionConfig>,
+) {
+    let window_close_requested = closed.read().count() > 0;
+    let exit_requested = matches!(request.0, Some(ConnectionIntent::Shutdown));
+    if !window_close_requested && !exit_requested {
+        return;
+    }
+    if exit_requested {
+        request.0 = None;
+    }
+    if shutting_down.0.is_some() {
+        // Already draining (e.g. the window close button was mashed).
+        return;
+    }
+    if let Some(conn) = conn {
+        if let Err(err) = conn.conn.disconnect() {
+            warn!("could not disconnect during shutdown: {err}");
+        }
+    }
+    // Forget the cached identity: the next launch should start fresh rather
+    // than silently resuming whatever character this machine last used.
+    forget_cached_credentials(&config.uri, &config.module);
+    shutting_down.0 = Some(0.0);
+}
+
+/// Lets the disconnect queued by [`begin_shutdown`] actually reach the socket
+/// — via the normal `frame_tick` pump — before the process exits.
+fn finish_shutdown(
+    mut shutting_down: ResMut<ShuttingDown>,
+    conn: Option<Res<StdbConnection>>,
+    time: Res<Time>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let Some(elapsed) = shutting_down.0.as_mut() else {
+        return;
+    };
+    *elapsed += time.delta_secs();
+    let drained = conn.map(|c| !c.conn.is_active()).unwrap_or(true);
+    if drained || *elapsed >= SHUTDOWN_GRACE_SECONDS {
+        exit.write(AppExit::Success);
+    }
 }
 
 /// Held right mouse button sets the destination, as it always has.
@@ -1474,13 +1698,17 @@ mod tests {
             .insert(1, crowd_control_row(1, 7, CrowdControlKindRow::Stun, 1.5, 2.0));
 
         let first = AppliedEffects {
+            active_status: active_statuses_for(7, &pending),
             crowd_control: crowd_control_state_for(7, &pending),
+            status_signature: status_signature_for(7, &pending),
             modifier_signature: modifier_signature_for(7, &pending),
         };
         pending.applied.insert(7, first);
 
         let unchanged = AppliedEffects {
+            active_status: active_statuses_for(7, &pending),
             crowd_control: crowd_control_state_for(7, &pending),
+            status_signature: status_signature_for(7, &pending),
             modifier_signature: modifier_signature_for(7, &pending),
         };
         assert_eq!(pending.applied.get(&7), Some(&unchanged));
@@ -1489,7 +1717,9 @@ mod tests {
             .crowd_control
             .insert(1, crowd_control_row(1, 7, CrowdControlKindRow::Stun, 1.0, 2.0));
         let ticked = AppliedEffects {
+            active_status: active_statuses_for(7, &pending),
             crowd_control: crowd_control_state_for(7, &pending),
+            status_signature: status_signature_for(7, &pending),
             modifier_signature: modifier_signature_for(7, &pending),
         };
         assert_ne!(pending.applied.get(&7), Some(&ticked));
@@ -1506,6 +1736,7 @@ mod tests {
                 source: Some(9),
                 amount_per_tick: -4.0,
                 tick_interval_seconds: 0.5,
+                origin_status_instance_id: None,
                 since_last_tick: 0.1,
                 remaining_seconds: 6.0,
             },

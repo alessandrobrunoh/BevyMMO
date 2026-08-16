@@ -322,7 +322,7 @@ pub fn set_inscription(
     let item = item_registry()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let (Some(abilities), Some(profile)) = (item.weapon_abilities(), item.rune_profile()) else {
+    let (Some(abilities), Some(profile)) = (item.ability_loadout(), item.rune_profile()) else {
         return Err(format!(
             "{:?} is not an Eidolon weapon and cannot be inscribed",
             weapon.item_id.as_str()
@@ -372,16 +372,10 @@ pub fn set_inscription(
 /// Picks which of the equipped weapon's offered gestures is active on
 /// `"primary"` or `"secondary"`.
 ///
-/// Two deliberate differences from `handle_update_ability_selection_requests`:
-///
-/// - `"ultimate"` is rejected. `AbilitySelection::assign` ignores it (an
-///   Ultimate offers exactly one gesture, so there is nothing to choose), which
-///   meant the Bevy handler accepted the request and silently did nothing. An
-///   error is the honest answer.
-/// - The salvage rule is kept: when the new gesture makes the slot's existing
-///   Incisione invalid — a Modificatore that needed a tag the old gesture had —
-///   the slot's glyphs are cleared rather than the request refused, otherwise a
-///   player could get stuck unable to switch gesture at all.
+/// The salvage rule is kept: when the new gesture makes the slot's existing
+/// Incisione invalid — a Modificatore that needed a tag the old gesture had —
+/// the slot's glyphs are cleared rather than the request refused, otherwise a
+/// player could get stuck unable to switch gesture at all.
 #[reducer]
 pub fn set_ability_selection(
     ctx: &ReducerContext,
@@ -390,9 +384,6 @@ pub fn set_ability_selection(
 ) -> Result<(), String> {
     let identity = ctx.sender();
     let target = parse_ability_slot(&slot)?;
-    if target == AbilitySlot::Ultimate {
-        return Err("Ultimate offers a single gesture; there is nothing to select".to_string());
-    }
     let mut equipment = load_equipment(ctx, identity)?;
 
     let weapon = equipment
@@ -402,7 +393,7 @@ pub fn set_ability_selection(
     let item = item_registry()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let (Some(abilities), Some(profile)) = (item.weapon_abilities(), item.rune_profile()) else {
+    let (Some(abilities), Some(profile)) = (item.ability_loadout(), item.rune_profile()) else {
         return Err(format!(
             "{:?} offers no gestures to choose from",
             weapon.item_id.as_str()

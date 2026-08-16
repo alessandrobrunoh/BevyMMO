@@ -7,3 +7,4 @@ pub use bevymmo_content::item_definitions as items;
 pub use bevymmo_content::modifier_definitions as modifiers;
 pub use bevymmo_content::placeable_definitions as placeables;
 pub use bevymmo_content::spell_definitions as spells;
+pub use bevymmo_content::status_definitions as statuses;

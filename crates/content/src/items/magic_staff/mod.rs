@@ -16,11 +16,12 @@ use crate::items::ItemRegistry;
     category = Weapon,
     rarity = Rare,
     slot = Weapon,
+    family = Staff,
     effects = [stat_bonus(field = AttackPower, op = Add, value = 25.0)],
     abilities(
         primary = [ArcaneOrb],
         secondary = [ArcaneOrb],
-        ultimate = ArcaneOrb,
+        ultimate = [ArcaneOrb],
     ),
     rune_profile(capacity = 8, stability = 0.96, affinity = fuoco),
 )]
@@ -36,6 +37,7 @@ mod tests {
     use super::*;
     use crate::abilities::AbilitySlot;
     use crate::items::components::EquipSlot;
+    use crate::abilities::BaseAbility;
     use crate::items::definition::Item;
 
     #[test]
@@ -43,6 +45,8 @@ mod tests {
         let staff = MagicStaff;
         assert_eq!(staff.id().as_str(), "magic_staff");
         assert_eq!(staff.config().equippable_into, Some(EquipSlot::Weapon));
+        let family = staff.weapon_family();
+        assert_eq!(family.as_ref().map(|family| family.as_str()), Some("staff"));
     }
 
     #[test]
@@ -54,12 +58,22 @@ mod tests {
     #[test]
     fn offers_arcane_orb_for_every_slot() {
         let staff = MagicStaff;
-        let abilities = staff.weapon_abilities().expect("magic_staff must grant weapon abilities");
+        let abilities = staff
+                    .ability_loadout()
+                    .expect("magic_staff must grant weapon abilities");
         let expected = [ArcaneOrb::ID.into()];
 
         assert_eq!(abilities.options_for(AbilitySlot::Primary), expected);
         assert_eq!(abilities.options_for(AbilitySlot::Secondary), expected);
         assert_eq!(abilities.options_for(AbilitySlot::Ultimate), expected);
+    }
+
+    #[test]
+    fn item_blueprint_starts_from_the_base_ability() {
+        let staff = MagicStaff;
+        let direct = ArcaneOrb.blueprint();
+        let through_item = staff.ability_blueprint(&ArcaneOrb);
+        assert_eq!(through_item, direct);
     }
 
     #[test]

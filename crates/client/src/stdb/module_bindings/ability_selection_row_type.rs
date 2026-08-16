@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct AbilitySelectionRow {
     pub primary: Option<String>,
     pub secondary: Option<String>,
+    pub ultimate: Option<String>,
 }
 
 impl __sdk::InModule for AbilitySelectionRow {

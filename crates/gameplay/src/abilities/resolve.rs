@@ -4,12 +4,14 @@
 
 use super::ancient_word::AncientWordRegistry;
 use super::base_ability::{AbilityParams, ArcBaseAbility, BaseAbilityRegistry};
+use super::blueprint::AbilityBlueprint;
 use super::essence::EssenceRegistry;
 use super::inscription::WeaponInscriptions;
 use super::known_glyphs::KnownGlyphs;
 use super::modifier::ModifierRegistry;
 use super::slot::AbilitySlot;
 use super::weapon_abilities::{resolve_active_ability, AbilitySelection, WeaponAbilities};
+use crate::items::Item;
 use crate::spells::context::SpellCastContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +51,8 @@ pub fn resolve_ability_params(
 /// che serve per sapere COSA e DOVE colpirà, senza lanciarlo.
 pub struct SlotPreview {
     pub ability: ArcBaseAbility,
+    pub blueprint: AbilityBlueprint,
+    /// Compatibility view of `blueprint.params` for existing callers.
     pub params: AbilityParams,
 }
 
@@ -69,6 +73,7 @@ pub fn resolve_slot_preview(
     known: &KnownGlyphs,
     ability_registry: &BaseAbilityRegistry,
     modifier_registry: &ModifierRegistry,
+    item: Option<&dyn Item>,
 ) -> Result<SlotPreview, CastBlockedReason> {
     let inscription = inscriptions.get(slot);
     if !known.fully_knows(inscription) {
@@ -82,13 +87,24 @@ pub fn resolve_slot_preview(
         .get(ability_id)
         .ok_or(CastBlockedReason::MissingRegistryEntry)?;
 
-    let params = resolve_ability_params(
-        ability.base_params(),
+    // Item-aware resolution: use the item's blueprint transform when available
+    // (e.g., ConduitStaffT4 changes execution to Charge).
+    let mut blueprint = match item {
+        Some(i) => i.ability_blueprint(ability.as_ref()),
+        None => ability.blueprint(),
+    };
+    blueprint.params = resolve_ability_params(
+        blueprint.params,
         &inscription.modifiers,
         modifier_registry,
     );
+    let params = blueprint.params;
 
-    Ok(SlotPreview { ability, params })
+    Ok(SlotPreview {
+        ability,
+        blueprint,
+        params,
+    })
 }
 
 /// Lancia lo slot `slot` dell'arma incisa `inscriptions`.
@@ -114,8 +130,13 @@ pub fn cast_inscribed_slot(
     modifier_registry: &ModifierRegistry,
     ancient_word_registry: &AncientWordRegistry,
     ctx: &mut SpellCastContext,
+    item: Option<&dyn Item>,
 ) -> Result<(), CastBlockedReason> {
-    let SlotPreview { ability, params } = resolve_slot_preview(
+    let SlotPreview {
+        ability,
+        blueprint: _,
+        params,
+    } = resolve_slot_preview(
         slot,
         abilities,
         selection,
@@ -123,6 +144,7 @@ pub fn cast_inscribed_slot(
         known,
         ability_registry,
         modifier_registry,
+        item,
     )?;
     let inscription = inscriptions.get(slot);
 
@@ -141,4 +163,3 @@ pub fn cast_inscribed_slot(
 
     Ok(())
 }
-

@@ -13,8 +13,12 @@
 //! equipment and glyphs as JSON in `TEXT` columns, which meant the database
 //! could not see inside them. These are real columns, so `spacetime sql` can.
 
-use bevymmo_domain::abilities::inscription::{Inscription, WeaponInscriptions};
+use bevymmo_domain::abilities::inscription::{
+    AbilityInscription, Inscription, SecondaryWord, SlotInscription, WeaponInscription,
+    WeaponInscriptions,
+};
 use bevymmo_domain::abilities::known_glyphs::KnownGlyphs;
+use bevymmo_domain::abilities::root_word::RootWordId;
 use bevymmo_domain::abilities::weapon_abilities::AbilitySelection;
 use bevymmo_domain::abilities::{AbilityId, AncientWordId, EssenceId, ModifierId};
 use bevymmo_domain::items::components::{Equipment, Inventory};
@@ -23,9 +27,117 @@ use bevymmo_domain::items::registry::ItemId;
 use bevymmo_domain::items::EquipSlot;
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
+use bevymmo_domain::effects::{ApplyStatusEffect, EffectSpec};
 use bevymmo_domain::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 use glam::Vec3;
 use spacetimedb::SpacetimeType;
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectPayloadKindRow {
+    Damage,
+    Heal,
+    ApplyStatus,
+    Cleanse,
+    Purge,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectPayloadFilterRow {
+    Buffs,
+    Debuffs,
+    All,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectPayloadSelectionRow {
+    Oldest,
+    Newest,
+    ShortestRemaining,
+}
+
+#[derive(SpacetimeType, Clone, Debug, PartialEq)]
+pub struct EffectPayloadRow {
+    pub kind: EffectPayloadKindRow,
+    pub amount: f32,
+    pub status_id: Option<String>,
+    pub duration_override_seconds: Option<f32>,
+    pub potency: f32,
+    pub status_filter: Option<EffectPayloadFilterRow>,
+    pub max_statuses: Option<u16>,
+    pub selection: Option<EffectPayloadSelectionRow>,
+}
+
+impl From<&EffectSpec> for EffectPayloadRow {
+    fn from(effect: &EffectSpec) -> Self {
+        let empty = || Self {
+            kind: EffectPayloadKindRow::Damage,
+            amount: 0.0,
+            status_id: None,
+            duration_override_seconds: None,
+            potency: 0.0,
+            status_filter: None,
+            max_statuses: None,
+            selection: None,
+        };
+        match effect {
+            EffectSpec::Damage(damage) => Self {
+                kind: EffectPayloadKindRow::Damage,
+                amount: damage.amount,
+                ..empty()
+            },
+            EffectSpec::Heal(heal) => Self {
+                kind: EffectPayloadKindRow::Heal,
+                amount: heal.amount,
+                ..empty()
+            },
+            EffectSpec::ApplyStatus(ApplyStatusEffect {
+                status_id,
+                duration_override_seconds,
+                potency,
+            }) => Self {
+                kind: EffectPayloadKindRow::ApplyStatus,
+                status_id: Some(status_id.as_str().to_string()),
+                duration_override_seconds: *duration_override_seconds,
+                potency: *potency,
+                ..empty()
+            },
+            EffectSpec::Cleanse(cleanse) => Self {
+                kind: EffectPayloadKindRow::Cleanse,
+                status_filter: Some(cleanse.filter.into()),
+                max_statuses: cleanse.max_statuses,
+                selection: Some(cleanse.selection.into()),
+                ..empty()
+            },
+            EffectSpec::Purge(purge) => Self {
+                kind: EffectPayloadKindRow::Purge,
+                status_filter: Some(purge.filter.into()),
+                max_statuses: purge.max_statuses,
+                selection: Some(purge.selection.into()),
+                ..empty()
+            },
+        }
+    }
+}
+
+impl From<bevymmo_domain::effects::StatusFilter> for EffectPayloadFilterRow {
+    fn from(filter: bevymmo_domain::effects::StatusFilter) -> Self {
+        match filter {
+            bevymmo_domain::effects::StatusFilter::Buffs => Self::Buffs,
+            bevymmo_domain::effects::StatusFilter::Debuffs => Self::Debuffs,
+            bevymmo_domain::effects::StatusFilter::All => Self::All,
+        }
+    }
+}
+
+impl From<bevymmo_domain::effects::StatusSelection> for EffectPayloadSelectionRow {
+    fn from(selection: bevymmo_domain::effects::StatusSelection) -> Self {
+        match selection {
+            bevymmo_domain::effects::StatusSelection::Oldest => Self::Oldest,
+            bevymmo_domain::effects::StatusSelection::Newest => Self::Newest,
+            bevymmo_domain::effects::StatusSelection::ShortestRemaining => Self::ShortestRemaining,
+        }
+    }
+}
 
 /// A vector as a database column.
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Default)]
@@ -156,10 +268,121 @@ impl From<&WeaponInscriptionsRow> for WeaponInscriptions {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// NEW ROOTWORD-BASED INSCRIPTION ROWS (additive to legacy)
+// ══════════════════════════════════════════════════════════════════
+
+#[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
+pub struct SecondaryWordRow {
+    pub word_id: String,
+    /// Power scaling factor (0.0-1.0).
+    pub intensity: f32,
+}
+
+impl From<&SecondaryWord> for SecondaryWordRow {
+    fn from(s: &SecondaryWord) -> Self {
+        Self {
+            word_id: s.word_id.as_str().to_string(),
+            intensity: s.intensity,
+        }
+    }
+}
+
+impl From<&SecondaryWordRow> for SecondaryWord {
+    fn from(s: &SecondaryWordRow) -> Self {
+        SecondaryWord {
+            word_id: RootWordId::new(s.word_id.clone()),
+            intensity: s.intensity,
+        }
+    }
+}
+
+#[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
+pub struct SlotInscriptionRow {
+    /// Primary Root Word — defines what this inscription fundamentally *is*.
+    pub root_word: Option<String>,
+    /// Secondary words that modify or enhance the primary Root Word.
+    pub secondary_words: Vec<SecondaryWordRow>,
+}
+
+impl From<&SlotInscription> for SlotInscriptionRow {
+    fn from(s: &SlotInscription) -> Self {
+        Self {
+            root_word: s.root_word.as_ref().map(|w| w.as_str().to_string()),
+            secondary_words: s.secondary_words.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<&SlotInscriptionRow> for SlotInscription {
+    fn from(s: &SlotInscriptionRow) -> Self {
+        SlotInscription {
+            root_word: s.root_word.clone().map(RootWordId::new),
+            secondary_words: s.secondary_words.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// Complete weapon inscription using the new RootWord-based model.
+#[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
+pub struct WeaponInscriptionRow {
+    pub primary: SlotInscriptionRow,
+    pub secondary: SlotInscriptionRow,
+    pub ultimate: SlotInscriptionRow,
+}
+
+impl From<&WeaponInscription> for WeaponInscriptionRow {
+    fn from(w: &WeaponInscription) -> Self {
+        Self {
+            primary: (&w.primary).into(),
+            secondary: (&w.secondary).into(),
+            ultimate: (&w.ultimate).into(),
+        }
+    }
+}
+
+impl From<&WeaponInscriptionRow> for WeaponInscription {
+    fn from(w: &WeaponInscriptionRow) -> Self {
+        WeaponInscription {
+            primary: (&w.primary).into(),
+            secondary: (&w.secondary).into(),
+            ultimate: (&w.ultimate).into(),
+        }
+    }
+}
+
+/// Ability-level inscription for fine-grained ability customization.
+#[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
+pub struct AbilityInscriptionRow {
+    /// The primary Root Word defining this ability's core identity.
+    pub root_word: Option<String>,
+    /// Secondary words that modify the ability's behavior.
+    pub secondary_words: Vec<SecondaryWordRow>,
+}
+
+impl From<&AbilityInscription> for AbilityInscriptionRow {
+    fn from(a: &AbilityInscription) -> Self {
+        Self {
+            root_word: a.root_word.as_ref().map(|w| w.as_str().to_string()),
+            secondary_words: a.secondary_words.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<&AbilityInscriptionRow> for AbilityInscription {
+    fn from(a: &AbilityInscriptionRow) -> Self {
+        AbilityInscription {
+            root_word: a.root_word.clone().map(RootWordId::new),
+            secondary_words: a.secondary_words.iter().map(Into::into).collect(),
+        }
+    }
+}
+
 #[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
 pub struct AbilitySelectionRow {
     pub primary: Option<String>,
     pub secondary: Option<String>,
+    pub ultimate: Option<String>,
 }
 
 impl From<&AbilitySelection> for AbilitySelectionRow {
@@ -167,6 +390,7 @@ impl From<&AbilitySelection> for AbilitySelectionRow {
         Self {
             primary: a.primary.as_ref().map(|id| id.as_str().to_string()),
             secondary: a.secondary.as_ref().map(|id| id.as_str().to_string()),
+            ultimate: a.ultimate.as_ref().map(|id| id.as_str().to_string()),
         }
     }
 }
@@ -176,6 +400,7 @@ impl From<&AbilitySelectionRow> for AbilitySelection {
         AbilitySelection {
             primary: a.primary.clone().map(AbilityId::new),
             secondary: a.secondary.clone().map(AbilityId::new),
+            ultimate: a.ultimate.clone().map(AbilityId::new),
         }
     }
 }
@@ -188,6 +413,8 @@ pub struct ItemInstanceRow {
     pub item_id: String,
     pub inscriptions: Option<WeaponInscriptionsRow>,
     pub ability_selection: AbilitySelectionRow,
+    /// New RootWord-based inscription model (additive to legacy `inscriptions`).
+    pub root_inscription: Option<WeaponInscriptionRow>,
 }
 
 impl From<&ItemInstance> for ItemInstanceRow {
@@ -197,6 +424,7 @@ impl From<&ItemInstance> for ItemInstanceRow {
             item_id: i.item_id.as_str().to_string(),
             inscriptions: i.inscriptions.as_ref().map(Into::into),
             ability_selection: (&i.ability_selection).into(),
+            root_inscription: i.root_inscription.as_ref().map(Into::into),
         }
     }
 }
@@ -208,6 +436,7 @@ impl From<&ItemInstanceRow> for ItemInstance {
             item_id: ItemId::new(i.item_id.clone()),
             inscriptions: i.inscriptions.as_ref().map(Into::into),
             ability_selection: (&i.ability_selection).into(),
+            root_inscription: i.root_inscription.as_ref().map(Into::into),
         }
     }
 }
@@ -305,4 +534,17 @@ pub fn known_glyphs_from_rows(
             .map(AncientWordId::new)
             .collect(),
     }
+}
+
+/// A player's resonance with an Ancient Word.
+///
+/// Domain-independent mirror: identity and root_word_id are strings here,
+/// not the domain's newtypes, because SATS derives require named fields
+/// and the domain types use tuple structs.
+#[derive(SpacetimeType, Clone, Debug, PartialEq)]
+pub struct ResonanceRow {
+    pub identity: String,
+    pub root_word_id: String,
+    pub xp: u64,
+    pub level: u32,
 }

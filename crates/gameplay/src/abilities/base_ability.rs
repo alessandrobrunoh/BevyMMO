@@ -17,8 +17,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::crowd_control::CrowdControlKind;
-use crate::spells::context::{AoeEffect, AoeShape, AoeTargeting, SpellCastContext};
+use crate::effects::{DamageEffect, EffectSpec, StatusId};
+use crate::spells::context::{AoeShape, SpellCastContext};
 
 /// Raggio d'impatto di una palla lanciata da un gesto `Projectile`.
 pub const PROJECTILE_HIT_RADIUS: f32 = 1.0;
@@ -129,7 +129,7 @@ pub enum ChannelMovementPolicy {
 /// Prolungare agiscono su questi campi).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AbilityParams {
-    pub power: f32,
+    pub potency: f32,
     pub area: f32,
     pub range: f32,
     pub cast_time: f32,
@@ -193,6 +193,11 @@ pub trait BaseAbility: Send + Sync + 'static {
     fn tags(&self) -> &'static [AbilityTag];
     fn geometry(&self) -> AbilityGeometry;
     fn base_params(&self) -> AbilityParams;
+
+    /// Builds the derived representation consumed by preview and execution.
+    fn blueprint(&self) -> crate::abilities::AbilityBlueprint {
+        crate::abilities::AbilityBlueprint::from_base_ability(self)
+    }
 
     /// How this ability executes when activated.
     ///
@@ -334,63 +339,56 @@ pub trait BaseAbility: Send + Sync + 'static {
         &self,
         params: &AbilityParams,
         ctx: &mut SpellCastContext,
-        effect: AoeEffect,
+        effects: Vec<EffectSpec>,
     ) {
         let delay = self.impact_delay();
-        ctx.emit_aoe_shaped(
+        ctx.emit_aoe(
             self.impact_center(params, ctx),
             self.impact_radius(params),
             self.impact_shape(ctx),
             delay,
             delay,
             self.id().as_str().to_string(),
-            effect,
+            effects,
         );
     }
 
     /// Piazza l'impatto ad area del gesto: danno, più lo Stun se il gesto ne
     /// ha uno, più il visual. Entrambe le regioni condividono `impact_delay`,
     /// così il preavviso a terra e ciò che accade quando scade coincidono.
-    fn emit_area_impact(&self, params: &AbilityParams, power: f32, ctx: &mut SpellCastContext) {
-        self.emit_area_effect(
-            params,
-            ctx,
-            AoeEffect::Damage { amount: power, targeting: AoeTargeting::ExcludeCaster },
-        );
+    fn emit_area_impact(&self, params: &AbilityParams, potency: f32, ctx: &mut SpellCastContext) {
+        let mut effects = vec![EffectSpec::Damage(DamageEffect { amount: potency })];
 
         let stun = self.stun_seconds();
         if stun > 0.0 {
-            self.emit_area_effect(
-                params,
-                ctx,
-                AoeEffect::CrowdControl {
-                    kind: CrowdControlKind::Stun,
-                    duration_seconds: stun,
-                    once_per_entity: true,
-                    targeting: AoeTargeting::ExcludeCaster,
-                },
-            );
+            effects.push(EffectSpec::ApplyStatus(crate::effects::ApplyStatusEffect {
+                status_id: StatusId::new("stun"),
+                duration_override_seconds: Some(stun),
+                potency: 1.0,
+            }));
         }
+
+        self.emit_area_effect(params, ctx, effects);
 
         let center = self.impact_center(params, ctx);
         ctx.emit_visual(self.id().as_str().to_string(), center, center);
     }
 
-    /// Emette danno a `power` nella forma dettata dalla geometria di questa
+    /// Emette danno a `potency` nella forma dettata dalla geometria di questa
     /// abilità. Helper condiviso: qualunque Essenza offensiva lo riusa per
-    /// non duplicare il dispatch-per-geometria, cambiando solo `power` (es.
+    /// non duplicare il dispatch-per-geometria, cambiando solo `potency` (es.
     /// Fuoco lo amplifica) — vedi `content/essences/fuoco/`.
-    fn emit_damage_for_geometry(&self, power: f32, params: &AbilityParams, ctx: &mut SpellCastContext) {
+    fn emit_damage_for_geometry(&self, potency: f32, params: &AbilityParams, ctx: &mut SpellCastContext) {
         match self.geometry() {
             AbilityGeometry::Cone { .. } | AbilityGeometry::Circle { .. } => {
-                self.emit_area_impact(params, power, ctx);
+                self.emit_area_impact(params, potency, ctx);
             }
             AbilityGeometry::Projectile { speed } => {
                 // La palla è un'entità replicata che vola davvero: il danno
                 // arriva quando arriva lei, non all'istante del lancio.
                 match self.projectile_target(params, ctx) {
                     Some(target) => {
-                        ctx.emit_projectile(target, speed, power, PROJECTILE_HIT_RADIUS);
+                        ctx.emit_projectile(target, speed, vec![EffectSpec::Damage(DamageEffect { amount: potency })], PROJECTILE_HIT_RADIUS);
                         let target_position = ctx
                             .potential_targets
                             .iter()
@@ -420,7 +418,7 @@ pub trait BaseAbility: Send + Sync + 'static {
     /// derivato dalla geometria, per questo NON serve scrivere logica a
     /// mano per ogni `BaseAbility`.
     fn default_manifestation(&self, params: &AbilityParams, ctx: &mut SpellCastContext) {
-        self.emit_damage_for_geometry(params.power, params, ctx);
+        self.emit_damage_for_geometry(params.potency, params, ctx);
     }
 }
 
@@ -469,7 +467,7 @@ mod tests {
             AbilityGeometry::Circle { radius: 3.0 }
         }
         fn base_params(&self) -> AbilityParams {
-            AbilityParams { power: 100.0, area: 3.0, range: 0.0, cast_time: 0.5, cooldown: 5.0, energy_cost: 10.0 }
+            AbilityParams { potency: 100.0, area: 3.0, range: 0.0, cast_time: 0.5, cooldown: 5.0, energy_cost: 10.0 }
         }
         fn animation(&self) -> &'static str {
             "dummy_anim"
@@ -505,7 +503,7 @@ mod tests {
         fn tags(&self) -> &'static [AbilityTag] { &[] }
         fn geometry(&self) -> AbilityGeometry { AbilityGeometry::Circle { radius: 2.0 } }
         fn base_params(&self) -> AbilityParams {
-            AbilityParams { power: 50.0, area: 0.0, range: 2.0, cast_time: 0.0, cooldown: 1.0, energy_cost: 5.0 }
+            AbilityParams { potency: 50.0, area: 0.0, range: 2.0, cast_time: 0.0, cooldown: 1.0, energy_cost: 5.0 }
         }
         fn animation(&self) -> &'static str { "swing" }
         fn impact_vfx(&self) -> &'static str { "slash" }
@@ -518,7 +516,7 @@ mod tests {
         fn tags(&self) -> &'static [AbilityTag] { &[AbilityTag::Ranged] }
         fn geometry(&self) -> AbilityGeometry { AbilityGeometry::Projectile { speed: 30.0 } }
         fn base_params(&self) -> AbilityParams {
-            AbilityParams { power: 80.0, area: 0.0, range: 20.0, cast_time: 0.8, cooldown: 6.0, energy_cost: 15.0 }
+            AbilityParams { potency: 80.0, area: 0.0, range: 20.0, cast_time: 0.8, cooldown: 6.0, energy_cost: 15.0 }
         }
         fn animation(&self) -> &'static str { "draw" }
         fn impact_vfx(&self) -> &'static str { "bolt" }
@@ -531,7 +529,7 @@ mod tests {
         fn tags(&self) -> &'static [AbilityTag] { &[AbilityTag::Area, AbilityTag::RepeatCompatible] }
         fn geometry(&self) -> AbilityGeometry { AbilityGeometry::Circle { radius: 4.0 } }
         fn base_params(&self) -> AbilityParams {
-            AbilityParams { power: 20.0, area: 4.0, range: 0.0, cast_time: 3.0, cooldown: 10.0, energy_cost: 30.0 }
+            AbilityParams { potency: 20.0, area: 4.0, range: 0.0, cast_time: 3.0, cooldown: 10.0, energy_cost: 30.0 }
         }
         fn animation(&self) -> &'static str { "channel" }
         fn impact_vfx(&self) -> &'static str { "beam" }

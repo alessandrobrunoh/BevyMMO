@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::abilities::{AbilitySelection, WeaponInscriptions};
+use crate::abilities::{ AbilitySelection, inscription::WeaponInscription, WeaponInscriptions };
 
 use super::registry::ItemId;
 
@@ -60,6 +60,10 @@ pub struct ItemInstance {
     /// the first offered option via `abilities::resolve_active_ability`.
     #[serde(default)]
     pub ability_selection: AbilitySelection,
+    /// New RootWord-based inscription model (additive to legacy inscriptions).
+    /// `None` means no root inscription has been applied yet.
+    #[serde(default)]
+    pub root_inscription: Option<WeaponInscription>,
 }
 
 impl ItemInstance {
@@ -72,6 +76,7 @@ impl ItemInstance {
             item_id,
             inscriptions: None,
             ability_selection: AbilitySelection::default(),
+            root_inscription: None,
         }
     }
 }

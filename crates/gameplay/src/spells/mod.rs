@@ -15,7 +15,7 @@ pub use components::{
     default_player_hotbar, CastProgress, HotbarSlot, SpellCooldowns, SpellHotbar,
 };
 pub use context::{
-    AoeEffect, AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ChannelMovementPolicy,
+    AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ChannelMovementPolicy,
     ProjectileSpawnRequest, Spell, SpellCast, SpellCastContext, SpellConfig, TargetingMode,
 };
 pub use events::{SpellCastRequest, SpellReleaseRequest};

@@ -2299,6 +2299,7 @@ dependencies = [
  "bevymmo_core",
  "bevymmo_gameplay",
  "bevymmo_world",
+ "glam",
 ]
 
 [[package]]

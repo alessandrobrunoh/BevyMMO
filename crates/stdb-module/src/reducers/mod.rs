@@ -9,4 +9,5 @@ pub mod combat;
 pub mod items;
 pub mod lifecycle;
 pub mod movement;
+pub mod resonance;
 pub mod spells;

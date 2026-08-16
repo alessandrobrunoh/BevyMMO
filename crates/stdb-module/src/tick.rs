@@ -25,6 +25,7 @@ pub fn game_tick(ctx: &ReducerContext, _schedule: TickSchedule) {
         return;
     }
 
+    sim::status::step(ctx, dt);
     sim::crowd_control::step(ctx, dt);
     sim::movement::step(ctx, dt);
     sim::spells::step(ctx, dt);

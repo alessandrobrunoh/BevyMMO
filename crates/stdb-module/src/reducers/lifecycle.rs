@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::rows::{equipment_to_rows, inventory_to_rows, HotbarRow, StatsRow, Vec3Row};
 use crate::tables::{
-    aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats, equipment,
+    active_status, aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats, equipment,
     game_entity, grid_cell, hotbar, inventory, known_glyphs, player, player_stats, projectile,
     stat_modifier, threat, tick_schedule, tick_stats, ColorRow, EntityKindRow, EntityStateRow,
     EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownGlyphsTable, Player, PlayerStats,
@@ -41,6 +41,7 @@ fn clear_runtime_state(ctx: &ReducerContext) {
     let projectile_ids: Vec<_> = ctx.db.projectile().iter().map(|row| row.id).collect();
     let aoe_ids: Vec<_> = ctx.db.aoe_region().iter().map(|row| row.id).collect();
     let crowd_control_ids: Vec<_> = ctx.db.crowd_control().iter().map(|row| row.id).collect();
+        let active_status_ids: Vec<_> = ctx.db.active_status().iter().map(|row| row.id).collect();
     let modifier_ids: Vec<_> = ctx.db.stat_modifier().iter().map(|row| row.id).collect();
     let threat_ids: Vec<_> = ctx.db.threat().iter().map(|row| row.id).collect();
     let cast_entity_ids: Vec<_> = ctx
@@ -73,6 +74,9 @@ fn clear_runtime_state(ctx: &ReducerContext) {
     }
     for id in crowd_control_ids {
         ctx.db.crowd_control().id().delete(&id);
+    }
+    for id in active_status_ids {
+        ctx.db.active_status().id().delete(&id);
     }
     for id in modifier_ids {
         ctx.db.stat_modifier().id().delete(&id);

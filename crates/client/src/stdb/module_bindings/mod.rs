@@ -7,9 +7,13 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod ability_selection_row_type;
+pub mod active_status_table;
+pub mod active_status_type;
 pub mod aoe_region_table;
 pub mod aoe_region_type;
 pub mod aoe_shape_row_type;
+pub mod aoe_targeting_row_type;
+pub mod award_resonance_xp_reducer;
 pub mod boss_phase_row_type;
 pub mod boss_state_table;
 pub mod boss_state_type;
@@ -28,6 +32,10 @@ pub mod crowd_control_table;
 pub mod crowd_control_type;
 pub mod damage_event_row_type;
 pub mod damage_event_table;
+pub mod effect_payload_filter_row_type;
+pub mod effect_payload_kind_row_type;
+pub mod effect_payload_row_type;
+pub mod effect_payload_selection_row_type;
 pub mod eidolon_cast_reducer;
 pub mod entity_kind_row_type;
 pub mod entity_state_row_type;
@@ -68,10 +76,15 @@ pub mod projectile_type;
 pub mod prop_override_table;
 pub mod prop_override_type;
 pub mod release_cast_reducer;
+pub mod resonance_table;
+pub mod resonance_type;
 pub mod respawn_reducer;
+pub mod secondary_word_row_type;
 pub mod set_ability_selection_reducer;
 pub mod set_hotbar_spell_reducer;
 pub mod set_inscription_reducer;
+pub mod set_resonance_xp_reducer;
+pub mod slot_inscription_row_type;
 pub mod spell_visual_effect_event_type;
 pub mod spell_visual_effect_table;
 pub mod stat_modifier_table;
@@ -85,12 +98,17 @@ pub mod tick_stats_table;
 pub mod tick_stats_type;
 pub mod unequip_item_reducer;
 pub mod vec_3_row_type;
+pub mod weapon_inscription_row_type;
 pub mod weapon_inscriptions_row_type;
 
 pub use ability_selection_row_type::AbilitySelectionRow;
+pub use active_status_table::*;
+pub use active_status_type::ActiveStatus;
 pub use aoe_region_table::*;
 pub use aoe_region_type::AoeRegion;
 pub use aoe_shape_row_type::AoeShapeRow;
+pub use aoe_targeting_row_type::AoeTargetingRow;
+pub use award_resonance_xp_reducer::award_resonance_xp;
 pub use boss_phase_row_type::BossPhaseRow;
 pub use boss_state_table::*;
 pub use boss_state_type::BossState;
@@ -109,6 +127,10 @@ pub use crowd_control_table::*;
 pub use crowd_control_type::CrowdControl;
 pub use damage_event_row_type::DamageEventRow;
 pub use damage_event_table::*;
+pub use effect_payload_filter_row_type::EffectPayloadFilterRow;
+pub use effect_payload_kind_row_type::EffectPayloadKindRow;
+pub use effect_payload_row_type::EffectPayloadRow;
+pub use effect_payload_selection_row_type::EffectPayloadSelectionRow;
 pub use eidolon_cast_reducer::eidolon_cast;
 pub use entity_kind_row_type::EntityKindRow;
 pub use entity_state_row_type::EntityStateRow;
@@ -149,10 +171,15 @@ pub use projectile_type::Projectile;
 pub use prop_override_table::*;
 pub use prop_override_type::PropOverride;
 pub use release_cast_reducer::release_cast;
+pub use resonance_table::*;
+pub use resonance_type::Resonance;
 pub use respawn_reducer::respawn;
+pub use secondary_word_row_type::SecondaryWordRow;
 pub use set_ability_selection_reducer::set_ability_selection;
 pub use set_hotbar_spell_reducer::set_hotbar_spell;
 pub use set_inscription_reducer::set_inscription;
+pub use set_resonance_xp_reducer::set_resonance_xp;
+pub use slot_inscription_row_type::SlotInscriptionRow;
 pub use spell_visual_effect_event_type::SpellVisualEffectEvent;
 pub use spell_visual_effect_table::*;
 pub use stat_modifier_table::*;
@@ -166,6 +193,7 @@ pub use tick_stats_table::*;
 pub use tick_stats_type::TickStats;
 pub use unequip_item_reducer::unequip_item;
 pub use vec_3_row_type::Vec3Row;
+pub use weapon_inscription_row_type::WeaponInscriptionRow;
 pub use weapon_inscriptions_row_type::WeaponInscriptionsRow;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -176,6 +204,10 @@ pub use weapon_inscriptions_row_type::WeaponInscriptionsRow;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
+    AwardResonanceXp {
+        root_word_id: String,
+        xp_amount: u64,
+    },
     CastSpell {
         spell_id: String,
         target_entity: Option<u64>,
@@ -233,6 +265,11 @@ pub enum Reducer {
         modifiers: Vec<String>,
         ancient_word: Option<String>,
     },
+    SetResonanceXp {
+        root_word_id: String,
+        xp: u64,
+        level: u32,
+    },
     Stop,
     UnequipItem {
         slot: String,
@@ -246,6 +283,7 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
+            Reducer::AwardResonanceXp { .. } => "award_resonance_xp",
             Reducer::CastSpell { .. } => "cast_spell",
             Reducer::EidolonCast { .. } => "eidolon_cast",
             Reducer::EquipItem { .. } => "equip_item",
@@ -261,6 +299,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetAbilitySelection { .. } => "set_ability_selection",
             Reducer::SetHotbarSpell { .. } => "set_hotbar_spell",
             Reducer::SetInscription { .. } => "set_inscription",
+            Reducer::SetResonanceXp { .. } => "set_resonance_xp",
             Reducer::Stop => "stop",
             Reducer::UnequipItem { .. } => "unequip_item",
             _ => unreachable!(),
@@ -269,6 +308,13 @@ impl __sdk::Reducer for Reducer {
     #[allow(clippy::clone_on_copy)]
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
+            Reducer::AwardResonanceXp {
+                root_word_id,
+                xp_amount,
+            } => __sats::bsatn::to_vec(&award_resonance_xp_reducer::AwardResonanceXpArgs {
+                root_word_id: root_word_id.clone(),
+                xp_amount: xp_amount.clone(),
+            }),
             Reducer::CastSpell {
                 spell_id,
                 target_entity,
@@ -360,6 +406,15 @@ impl __sdk::Reducer for Reducer {
                 modifiers: modifiers.clone(),
                 ancient_word: ancient_word.clone(),
             }),
+            Reducer::SetResonanceXp {
+                root_word_id,
+                xp,
+                level,
+            } => __sats::bsatn::to_vec(&set_resonance_xp_reducer::SetResonanceXpArgs {
+                root_word_id: root_word_id.clone(),
+                xp: xp.clone(),
+                level: level.clone(),
+            }),
             Reducer::Stop => __sats::bsatn::to_vec(&stop_reducer::StopArgs {}),
             Reducer::UnequipItem { slot } => {
                 __sats::bsatn::to_vec(&unequip_item_reducer::UnequipItemArgs { slot: slot.clone() })
@@ -373,6 +428,7 @@ impl __sdk::Reducer for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
+    active_status: __sdk::TableUpdate<ActiveStatus>,
     aoe_region: __sdk::TableUpdate<AoeRegion>,
     boss_state: __sdk::TableUpdate<BossState>,
     cast_ended: __sdk::TableUpdate<CastEndedEvent>,
@@ -392,6 +448,7 @@ pub struct DbUpdate {
     player_stats: __sdk::TableUpdate<PlayerStats>,
     projectile: __sdk::TableUpdate<Projectile>,
     prop_override: __sdk::TableUpdate<PropOverride>,
+    resonance: __sdk::TableUpdate<Resonance>,
     spell_visual_effect: __sdk::TableUpdate<SpellVisualEffectEvent>,
     stat_modifier: __sdk::TableUpdate<StatModifier>,
     threat: __sdk::TableUpdate<Threat>,
@@ -404,6 +461,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
+                "active_status" => db_update
+                    .active_status
+                    .append(active_status_table::parse_table_update(table_update)?),
                 "aoe_region" => db_update
                     .aoe_region
                     .append(aoe_region_table::parse_table_update(table_update)?),
@@ -461,6 +521,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "prop_override" => db_update
                     .prop_override
                     .append(prop_override_table::parse_table_update(table_update)?),
+                "resonance" => db_update
+                    .resonance
+                    .append(resonance_table::parse_table_update(table_update)?),
                 "spell_visual_effect" => db_update
                     .spell_visual_effect
                     .append(spell_visual_effect_table::parse_table_update(table_update)?),
@@ -499,6 +562,9 @@ impl __sdk::DbUpdate for DbUpdate {
     ) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.active_status = cache
+            .apply_diff_to_table::<ActiveStatus>("active_status", &self.active_status)
+            .with_updates_by_pk(|row| &row.id);
         diff.aoe_region = cache
             .apply_diff_to_table::<AoeRegion>("aoe_region", &self.aoe_region)
             .with_updates_by_pk(|row| &row.id);
@@ -550,6 +616,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.prop_override = cache
             .apply_diff_to_table::<PropOverride>("prop_override", &self.prop_override)
             .with_updates_by_pk(|row| &row.id);
+        diff.resonance = cache
+            .apply_diff_to_table::<Resonance>("resonance", &self.resonance)
+            .with_updates_by_pk(|row| &row.id);
         diff.spell_visual_effect = self.spell_visual_effect.into_event_diff();
         diff.stat_modifier = cache
             .apply_diff_to_table::<StatModifier>("stat_modifier", &self.stat_modifier)
@@ -567,6 +636,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "active_status" => db_update
+                    .active_status
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "aoe_region" => db_update
                     .aoe_region
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -623,6 +695,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "prop_override" => db_update
                     .prop_override
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "resonance" => db_update
+                    .resonance
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "spell_visual_effect" => db_update
                     .spell_visual_effect
@@ -649,6 +724,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "active_status" => db_update
+                    .active_status
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "aoe_region" => db_update
                     .aoe_region
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -705,6 +783,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "prop_override" => db_update
                     .prop_override
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "resonance" => db_update
+                    .resonance
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "spell_visual_effect" => db_update
                     .spell_visual_effect
@@ -733,6 +814,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
+    active_status: __sdk::TableAppliedDiff<'r, ActiveStatus>,
     aoe_region: __sdk::TableAppliedDiff<'r, AoeRegion>,
     boss_state: __sdk::TableAppliedDiff<'r, BossState>,
     cast_ended: __sdk::TableAppliedDiff<'r, CastEndedEvent>,
@@ -752,6 +834,7 @@ pub struct AppliedDiff<'r> {
     player_stats: __sdk::TableAppliedDiff<'r, PlayerStats>,
     projectile: __sdk::TableAppliedDiff<'r, Projectile>,
     prop_override: __sdk::TableAppliedDiff<'r, PropOverride>,
+    resonance: __sdk::TableAppliedDiff<'r, Resonance>,
     spell_visual_effect: __sdk::TableAppliedDiff<'r, SpellVisualEffectEvent>,
     stat_modifier: __sdk::TableAppliedDiff<'r, StatModifier>,
     threat: __sdk::TableAppliedDiff<'r, Threat>,
@@ -769,6 +852,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         event: &EventContext,
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
+        callbacks.invoke_table_row_callbacks::<ActiveStatus>(
+            "active_status",
+            &self.active_status,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<AoeRegion>("aoe_region", &self.aoe_region, event);
         callbacks.invoke_table_row_callbacks::<BossState>("boss_state", &self.boss_state, event);
         callbacks.invoke_table_row_callbacks::<CastEndedEvent>(
@@ -824,6 +912,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.prop_override,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<Resonance>("resonance", &self.resonance, event);
         callbacks.invoke_table_row_callbacks::<SpellVisualEffectEvent>(
             "spell_visual_effect",
             &self.spell_visual_effect,
@@ -1496,6 +1585,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        active_status_table::register_table(client_cache);
         aoe_region_table::register_table(client_cache);
         boss_state_table::register_table(client_cache);
         cast_ended_table::register_table(client_cache);
@@ -1515,12 +1605,14 @@ impl __sdk::SpacetimeModule for RemoteModule {
         player_stats_table::register_table(client_cache);
         projectile_table::register_table(client_cache);
         prop_override_table::register_table(client_cache);
+        resonance_table::register_table(client_cache);
         spell_visual_effect_table::register_table(client_cache);
         stat_modifier_table::register_table(client_cache);
         threat_table::register_table(client_cache);
         tick_stats_table::register_table(client_cache);
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
+        "active_status",
         "aoe_region",
         "boss_state",
         "cast_ended",
@@ -1540,6 +1632,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "player_stats",
         "projectile",
         "prop_override",
+        "resonance",
         "spell_visual_effect",
         "stat_modifier",
         "threat",

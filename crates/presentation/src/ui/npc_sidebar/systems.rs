@@ -6,9 +6,20 @@ use bevy::window::PrimaryWindow;
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
 use bevymmo_network::network::protocol::Position;
 
-use crate::ui::card::{CardBuilder, CardExclusivityPolicy, CardKind, CardPositioning};
+use crate::ui::card::components::CardPositioning;
+use crate::ui::card::{CardBuilder, CardKind};
 use crate::ui::npc_sidebar::components::NpcSidebar;
 use crate::ui::theme::UiTheme;
+
+/// Distanza massima (in unità di mondo) dal raggio del cursore entro cui un
+/// NPC può essere selezionato.
+///
+/// Senza questa soglia, `closest_friendly_hit` sceglie sempre l'NPC più
+/// vicino alla retta del raggio, non importa quanto lontano dal cursore
+/// stesso — un click ovunque sullo schermo aprirebbe la sidebar. Stesso
+/// raggio usato da `select_target_with_right_click` per coerenza visiva tra
+/// le due selezioni.
+const NPC_SELECT_RADIUS: f32 = 1.2;
 
 /// Rappresenta un potenziale hit di un'entità durante il raycast.
 ///
@@ -66,6 +77,9 @@ pub fn npc_sidebar_on_click(
         // Distanza approssimativa: distanza dal punto più vicino sul raggio
         // all'entità (proiezione del punto sull'asse del raggio)
         let distance = point_to_ray_distance(position.0, ray.origin, *ray.direction);
+        if distance > NPC_SELECT_RADIUS {
+            continue;
+        }
         hits.push(EntityHit { entity, distance });
     }
 
@@ -83,7 +97,7 @@ pub fn npc_sidebar_on_click(
     let npc_name = name_query
         .get(target_entity)
         .map(|name| name.0.clone())
-        .unwrap_or_else(|| "NPC".to_string());
+        .unwrap_or_else(|_| "NPC".to_string());
 
     // Spawn nuova Card
     spawn_npc_sidebar(&mut commands, &theme, target_entity, &npc_name);
@@ -95,8 +109,8 @@ pub fn npc_sidebar_on_click(
 /// distanza lungo il raggio. Questo favorisce i NPC vicini alla linea di mira.
 fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> f32 {
     let to_point = point - ray_origin;
-    let projection = to_point.dot(*ray_direction);
-    let closest_on_ray = ray_origin + *ray_direction * projection.clamp(0.0, f32::MAX);
+    let projection = to_point.dot(ray_direction);
+    let closest_on_ray = ray_origin + ray_direction * projection.clamp(0.0, f32::MAX);
     point.distance(closest_on_ray)
 }
 
@@ -128,7 +142,7 @@ fn spawn_npc_sidebar(
             body.spawn((
                 Text::new("Ciaoo"),
                 TextFont {
-                    font_size: 16.0,
+                    font_size: FontSize::Px(16.0),
                     ..default()
                 },
                 TextColor(theme.text_color),
@@ -166,8 +180,8 @@ mod tests {
 
     #[test]
     fn closest_friendly_hit_returns_closest_entity() {
-        let far = Entity::from_raw(1);
-        let close = Entity::from_raw(2);
+        let far = Entity::from_raw_u32(1).expect("valid entity index");
+        let close = Entity::from_raw_u32(2).expect("valid entity index");
         let hits = vec![
             EntityHit { entity: far, distance: 100.0 },
             EntityHit { entity: close, distance: 10.0 },
@@ -177,8 +191,8 @@ mod tests {
 
     #[test]
     fn closest_friendly_hit_handles_equal_distances() {
-        let a = Entity::from_raw(1);
-        let b = Entity::from_raw(2);
+        let a = Entity::from_raw_u32(1).expect("valid entity index");
+        let b = Entity::from_raw_u32(2).expect("valid entity index");
         let hits = vec![
             EntityHit { entity: a, distance: 50.0 },
             EntityHit { entity: b, distance: 50.0 },

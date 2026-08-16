@@ -38,7 +38,7 @@ pub fn toggle_spell_selector(
             .weapon
             .as_ref()
             .and_then(|weapon| item_registry.get(&weapon.item_id))
-            .is_some_and(|item| item.weapon_abilities().is_some())
+            .is_some_and(|item| item.ability_loadout().is_some())
     });
     if equipped_is_eidolon {
         return;

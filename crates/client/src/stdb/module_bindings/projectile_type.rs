@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::effect_payload_row_type::EffectPayloadRow;
 use super::vec_3_row_type::Vec3Row;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -16,7 +17,7 @@ pub struct Projectile {
     pub target_entity: Option<u64>,
     pub target_position: Option<Vec3Row>,
     pub speed: f32,
-    pub damage: f32,
+    pub effects: Vec<EffectPayloadRow>,
     pub hit_radius: f32,
     pub remaining_seconds: f32,
 }
@@ -36,7 +37,7 @@ pub struct ProjectileCols {
     pub target_entity: __sdk::__query_builder::Col<Projectile, Option<u64>>,
     pub target_position: __sdk::__query_builder::Col<Projectile, Option<Vec3Row>>,
     pub speed: __sdk::__query_builder::Col<Projectile, f32>,
-    pub damage: __sdk::__query_builder::Col<Projectile, f32>,
+    pub effects: __sdk::__query_builder::Col<Projectile, Vec<EffectPayloadRow>>,
     pub hit_radius: __sdk::__query_builder::Col<Projectile, f32>,
     pub remaining_seconds: __sdk::__query_builder::Col<Projectile, f32>,
 }
@@ -52,7 +53,7 @@ impl __sdk::__query_builder::HasCols for Projectile {
             target_entity: __sdk::__query_builder::Col::new(table_name, "target_entity"),
             target_position: __sdk::__query_builder::Col::new(table_name, "target_position"),
             speed: __sdk::__query_builder::Col::new(table_name, "speed"),
-            damage: __sdk::__query_builder::Col::new(table_name, "damage"),
+            effects: __sdk::__query_builder::Col::new(table_name, "effects"),
             hit_radius: __sdk::__query_builder::Col::new(table_name, "hit_radius"),
             remaining_seconds: __sdk::__query_builder::Col::new(table_name, "remaining_seconds"),
         }

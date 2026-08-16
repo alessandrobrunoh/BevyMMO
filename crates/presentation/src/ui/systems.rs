@@ -4,7 +4,6 @@
 //! [`Display`] sul nodo root, non con respawn: lo spawn avviene una volta in
 //! `Startup`.
 
-use bevy::app::AppExit;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::ButtonInput;
 use bevy::input::ButtonState;
@@ -38,7 +37,6 @@ fn error_message(err: PlayerNameError) -> String {
 pub fn update_button_actions(
     mut screen: ResMut<GameScreen>,
     mut connection_request: ResMut<ConnectionRequest>,
-    mut exit: MessageWriter<AppExit>,
     buttons: Query<(&Interaction, &UiButton), Changed<Interaction>>,
     mut text_input: Query<&mut TextInput>,
 ) {
@@ -83,7 +81,11 @@ pub fn update_button_actions(
                 screen.0 = Screen::InGame;
             }
             UiButtonAction::Exit => {
-                exit.write(AppExit::Success);
+                // Goes through `stdb::plugin::begin_shutdown`/`finish_shutdown`
+                // rather than writing `AppExit` directly, so the pending
+                // disconnect actually reaches the socket before the process
+                // dies. See `ConnectionIntent::Shutdown`.
+                connection_request.0 = Some(ConnectionIntent::Shutdown);
             }
             // Handled by `settings::systems::reset_keybinds_on_button`.
             UiButtonAction::ResetKeybinds => {}

@@ -1,7 +1,7 @@
 //! Inscription UI — the Eidolon counterpart of `crate::ui::spell_selector`.
 //!
 //! Shown instead of the spell selector when the equipped weapon has Eidolon
-//! gestures (`Item::weapon_abilities()`); the two share the same toggle key,
+//! gestures (`Item::ability_loadout()`); the two share the same toggle key,
 //! each independently checking the equipped weapon before opening (mirrors
 //! `crate::spells::input`/`crate::spells::eidolon_input` splitting Q/W/E the
 //! same way).

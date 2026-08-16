@@ -40,7 +40,7 @@ fn equipped_weapon_is_eidolon(equipment: &Equipment, registry: &ItemRegistry) ->
         .weapon
         .as_ref()
         .and_then(|weapon| registry.get(&weapon.item_id))
-        .is_some_and(|item| item.weapon_abilities().is_some())
+        .is_some_and(|item| item.ability_loadout().is_some())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -147,7 +147,7 @@ fn spawn_window(
     let Some(item) = item_registry.get(&weapon.item_id) else {
         return;
     };
-    let Some(weapon_abilities) = item.weapon_abilities() else {
+    let Some(weapon_abilities) = item.ability_loadout() else {
         return;
     };
     let inscriptions = weapon.inscriptions.clone().unwrap_or_default();

@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use super::aoe_region_type::AoeRegion;
 use super::aoe_shape_row_type::AoeShapeRow;
+use super::aoe_targeting_row_type::AoeTargetingRow;
+use super::effect_payload_row_type::EffectPayloadRow;
 use super::vec_3_row_type::Vec3Row;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 

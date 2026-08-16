@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::ability_selection_row_type::AbilitySelectionRow;
+use super::weapon_inscription_row_type::WeaponInscriptionRow;
 use super::weapon_inscriptions_row_type::WeaponInscriptionsRow;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -14,6 +15,7 @@ pub struct ItemInstanceRow {
     pub item_id: String,
     pub inscriptions: Option<WeaponInscriptionsRow>,
     pub ability_selection: AbilitySelectionRow,
+    pub root_inscription: Option<WeaponInscriptionRow>,
 }
 
 impl __sdk::InModule for ItemInstanceRow {

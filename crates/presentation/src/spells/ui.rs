@@ -144,7 +144,7 @@ fn eidolon_hud_entry(
 ) -> Option<(AbilityId, String)> {
     let weapon = equipment.weapon.as_ref()?;
     let item = item_registry.get(&weapon.item_id)?;
-    let weapon_abilities = item.weapon_abilities()?;
+    let weapon_abilities = item.ability_loadout()?;
     let ability_id = resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)?;
     let ability = ability_registry.get(ability_id)?;
 

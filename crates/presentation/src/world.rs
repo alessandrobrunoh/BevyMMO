@@ -380,8 +380,10 @@ fn spawn_prop_visual(
             // The hint points at the .glb file; load its first scene as a
             // WorldAsset. Bevy's built-in scene spawner instantiates the
             // scene as children of the WorldAssetRoot entity.
+            // MapSceneVisual is required so tag_occludables recognises the
+            // spawned children and can fade this prop when it blocks the view.
             let handle = asset_server.load::<WorldAsset>(format!("{path}#Scene0"));
-            entity.insert(WorldAssetRoot(handle));
+            entity.insert((WorldAssetRoot(handle), MapSceneVisual));
         }
         AssetHint::Placeholder => {
             let color = prop

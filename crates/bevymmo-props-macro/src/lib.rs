@@ -36,7 +36,7 @@ use std::collections::HashMap;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{bracketed, parenthesized, parse_macro_input};
-use syn::{DeriveInput, Ident, LitFloat, LitInt, LitStr, Path, Token};
+use syn::{DeriveInput, Ident, LitBool, LitFloat, LitInt, LitStr, Path, Token};
 
 /// Attribute macro to define a placeable prop with minimal boilerplate.
 ///
@@ -616,24 +616,20 @@ impl SpellsDef {
     }
 }
 
-/// Parsed `abilities(primary = [X, Y], secondary = [Z], ultimate = W)`
-/// clause — the "Eidolon" model (gesti offerti dall'arma, plasmati dalla
-/// frase incisa dal giocatore), alternativo a `spells(...)` (menu di spell
-/// pronte). Un item usa l'uno O l'altro, mai entrambi. Stesso vincolo di
-/// `SpellsDef`: Primary(1+)/Secondary(1+)/Ultimate(1) — il giocatore sceglie
-/// UNA fra le opzioni di Primary e UNA fra quelle di Secondary a runtime
-/// (vedi `AbilitySelection`); Ultimate non ha scelta perché ne offre solo una.
+/// Parsed `abilities(primary = [...], secondary = [...], ultimate = [...])`
+/// clause. Ogni slot deve offrire almeno una abilità; la selezione attiva vive
+/// sull'esemplare e può includere anche l'Ultimate.
 struct AbilitiesDef {
     primary: Vec<Path>,
     secondary: Vec<Path>,
-    ultimate: Path,
+    ultimate: Vec<Path>,
 }
 
 impl AbilitiesDef {
     fn parse_from(content: ParseStream) -> syn::Result<Self> {
         let mut primary: Option<Vec<Path>> = None;
         let mut secondary: Option<Vec<Path>> = None;
-        let mut ultimate = None;
+        let mut ultimate: Option<Vec<Path>> = None;
 
         while !content.is_empty() {
             let key: Ident = content.parse()?;
@@ -651,7 +647,12 @@ impl AbilitiesDef {
                     let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
                     secondary = Some(list.into_iter().collect());
                 }
-                "ultimate" => ultimate = Some(content.parse::<Path>()?),
+                "ultimate" => {
+                    let inner;
+                    bracketed!(inner in content);
+                    let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
+                    ultimate = Some(list.into_iter().collect());
+                }
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
@@ -681,9 +682,13 @@ impl AbilitiesDef {
                 "abilities(...) requires at least one gesto in `secondary = [...]`",
             ));
         }
-        let ultimate = ultimate.ok_or_else(|| {
-            syn::Error::new(content.span(), "abilities(...) requires exactly one gesto in `ultimate = ...`")
-        })?;
+        let ultimate = ultimate.unwrap_or_default();
+        if ultimate.is_empty() {
+            return Err(syn::Error::new(
+                content.span(),
+                "abilities(...) requires at least one gesto in `ultimate = [...]`",
+            ));
+        }
 
         Ok(Self { primary, secondary, ultimate })
     }
@@ -741,6 +746,8 @@ struct ItemDef {
     category: Ident,
     rarity: Ident,
     slot: Option<Ident>,
+    family: Option<Ident>,
+    execution: Option<Ident>,
     effects: Vec<EffectDef>,
     spells: Option<SpellsDef>,
     abilities: Option<AbilitiesDef>,
@@ -755,6 +762,8 @@ impl Parse for ItemDef {
         let mut category = None;
         let mut rarity = None;
         let mut slot = None;
+        let mut family = None;
+        let mut execution = None;
         let mut effects = Vec::new();
         let mut spells = None;
         let mut abilities = None;
@@ -786,6 +795,8 @@ impl Parse for ItemDef {
                     "category" => category = Some(input.parse::<Ident>()?),
                     "rarity" => rarity = Some(input.parse::<Ident>()?),
                     "slot" => slot = Some(input.parse::<Ident>()?),
+                    "family" => family = Some(input.parse::<Ident>()?),
+                    "execution" => execution = Some(input.parse::<Ident>()?),
                     "effects" => {
                         let content;
                         bracketed!(content in input);
@@ -797,7 +808,7 @@ impl Parse for ItemDef {
                             &key,
                             format!(
                                 "unknown key `{other}` in #[item(...)] (expected id, name, description, \
-                                 category, rarity, slot, effects, spells, abilities, rune_profile)"
+                                 category, rarity, slot, family, execution, effects, spells, abilities, rune_profile)"
                             ),
                         ))
                     }
@@ -832,6 +843,8 @@ impl Parse for ItemDef {
                 input.error("#[item(...)] requires `rarity = ...` (Common | Uncommon | Rare | Epic | Legendary)")
             })?,
             slot,
+            family,
+            execution,
             effects,
             spells,
             abilities,
@@ -855,6 +868,31 @@ impl ItemDef {
             Some(slot) => quote! { Some(crate::items::EquipSlot::#slot) },
             None => quote! { None },
         };
+        let family_method = self.family.as_ref().map(|family| {
+            let family_id = family.to_string().to_lowercase();
+            quote! {
+                fn weapon_family(&self) -> Option<crate::items::WeaponFamilyId> {
+                    Some(crate::items::WeaponFamilyId::new(#family_id))
+                }
+            }
+        });
+        let execution_method = self.execution.as_ref().map(|execution| {
+            let execution = match execution.to_string().as_str() {
+                "Charge" => quote! { crate::abilities::BlueprintExecution::Charge },
+                other => {
+                    let message = format!("unknown item execution `{other}` (expected Charge)");
+                    return syn::Error::new_spanned(execution, message).to_compile_error();
+                }
+            };
+            quote! {
+                fn transform_ability_blueprint(
+                    &self,
+                    blueprint: &mut crate::abilities::AbilityBlueprint,
+                ) {
+                    blueprint.execution = #execution;
+                }
+            }
+        });
 
         let effect_tokens: Vec<TokenStream2> = self
             .effects
@@ -893,20 +931,19 @@ impl ItemDef {
             }
         });
 
-        // Only present for "Eidolon" weapons (`abilities(...)` given instead
-        // of `spells(...)`): the fixed gesti + how much runic weight they
-        // can sustain.
-        let weapon_abilities_method = self.abilities.as_ref().map(|abilities| {
+        // Items with `abilities(...)` expose a shared loadout. The same
+        // generated method is usable by weapons and armor.
+        let ability_loadout_method = self.abilities.as_ref().map(|abilities| {
             let primary = &abilities.primary;
             let secondary = &abilities.secondary;
             let ultimate = &abilities.ultimate;
             quote! {
-                fn weapon_abilities(&self) -> Option<&crate::abilities::WeaponAbilities> {
-                    static ABILITIES: std::sync::OnceLock<crate::abilities::WeaponAbilities> = std::sync::OnceLock::new();
-                    Some(ABILITIES.get_or_init(|| crate::abilities::WeaponAbilities::new(
+                fn ability_loadout(&self) -> Option<&crate::abilities::AbilityLoadout> {
+                    static ABILITIES: std::sync::OnceLock<crate::abilities::AbilityLoadout> = std::sync::OnceLock::new();
+                    Some(ABILITIES.get_or_init(|| crate::abilities::AbilityLoadout::new(
                         vec![#(crate::abilities::AbilityId::new(#primary::ID)),*],
                         vec![#(crate::abilities::AbilityId::new(#secondary::ID)),*],
-                        crate::abilities::AbilityId::new(#ultimate::ID),
+                        vec![#(crate::abilities::AbilityId::new(#ultimate::ID)),*],
                     )))
                 }
             }
@@ -967,7 +1004,9 @@ impl ItemDef {
                 }
 
                 #spell_kit_method
-                #weapon_abilities_method
+                #family_method
+                #execution_method
+                #ability_loadout_method
                 #rune_profile_method
             }
 
@@ -979,6 +1018,129 @@ impl ItemDef {
             }
         }
     }
+}
+
+struct WeaponFamilyDef {
+    id: LitStr,
+    name: LitStr,
+    primary: Option<Vec<Path>>,
+    secondary: Option<Vec<Path>>,
+    ultimate: Option<Vec<Path>>,
+}
+
+impl Parse for WeaponFamilyDef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut id = None;
+        let mut name = None;
+        let mut primary = None;
+        let mut secondary = None;
+        let mut ultimate = None;
+
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "id" => id = Some(input.parse::<LitStr>()?),
+                "name" => name = Some(input.parse::<LitStr>()?),
+                "primary" => {
+                    let inner;
+                    bracketed!(inner in input);
+                    let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
+                    primary = Some(list.into_iter().collect());
+                }
+                "secondary" => {
+                    let inner;
+                    bracketed!(inner in input);
+                    let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
+                    secondary = Some(list.into_iter().collect());
+                }
+                "ultimate" => {
+                    let inner;
+                    bracketed!(inner in input);
+                    let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
+                    ultimate = Some(list.into_iter().collect());
+                }
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!("unknown key `{other}` in #[weapon_family(...)] (expected id, name, primary, secondary, ultimate)"),
+                    ))
+                }
+            }
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(Self {
+            id: id.ok_or_else(|| input.error("#[weapon_family(...)] requires `id = \"...\"`"))?,
+            name: name.ok_or_else(|| input.error("#[weapon_family(...)] requires `name = \"...\"`"))?,
+            primary,
+            secondary,
+            ultimate,
+        })
+    }
+}
+
+#[proc_macro_attribute]
+pub fn weapon_family(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    if let Err(err) = require_unit_struct(&input, "weapon_family") {
+        return err;
+    }
+    let def = parse_macro_input!(attr as WeaponFamilyDef);
+    let name = &input.ident;
+    let id = &def.id;
+    let display_name = &def.name;
+
+    let ability_loadout = match (&def.primary, &def.secondary, &def.ultimate) {
+        (Some(primary), Some(secondary), Some(ultimate)) if !primary.is_empty() && !secondary.is_empty() && !ultimate.is_empty() => {
+            let expanded = quote! {
+                Some(crate::abilities::AbilityLoadout::new(
+                    vec![#(crate::abilities::AbilityId::new(#primary::ID)),*],
+                    vec![#(crate::abilities::AbilityId::new(#secondary::ID)),*],
+                    vec![#(crate::abilities::AbilityId::new(#ultimate::ID)),*],
+                ))
+            };
+            Some(expanded)
+        }
+        _ => None,
+    };
+
+    let metadata_ability_loadout = match &ability_loadout {
+        Some(tokens) => tokens.clone(),
+        None => quote! { None },
+    };
+
+    let expanded = quote! {
+        #input
+
+        impl #name {
+            pub const ID: &'static str = #id;
+
+            pub fn metadata() -> crate::items::WeaponFamilyMetadata {
+                <Self as crate::items::WeaponFamily>::metadata()
+            }
+
+            pub fn register(registry: &mut crate::items::WeaponFamilyRegistry) {
+                registry.register(Self::metadata());
+            }
+        }
+
+        impl crate::items::WeaponFamily for #name {
+            fn metadata() -> crate::items::WeaponFamilyMetadata {
+                crate::items::WeaponFamilyMetadata {
+                    id: crate::items::WeaponFamilyId::new(Self::ID),
+                    display_name: #display_name,
+                    ability_loadout: #metadata_ability_loadout,
+                }
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
 }
 
 /// Rejects anything but a bare unit struct — every macro in this file only
@@ -1015,7 +1177,7 @@ fn require_unit_struct(input: &DeriveInput, macro_name: &str) -> Result<(), Toke
 //     tags = [Ranged, Projectile, SingleTarget],
 //     range = 20.0,
 //     geometry = projectile(speed = 26.0),
-//     power = 260.0, cast_time = 0.35, cooldown = 4.0, energy_cost = 12.0,
+//     potency = 260.0, cast_time = 0.35, cooldown = 4.0, energy_cost = 12.0,
 //     animation = "staff_bolt_cast", impact_vfx = "bolt_impact_burst",
 // )]
 // pub struct StaffBolt;
@@ -1070,7 +1232,7 @@ struct BaseAbilityDef {
     tags: Vec<Ident>,
     range: Option<LitFloat>,
     geometry: GeometryDef,
-    power: LitFloat,
+    potency: LitFloat,
     cast_time: LitFloat,
     cooldown: LitFloat,
     energy_cost: LitFloat,
@@ -1097,7 +1259,7 @@ impl Parse for BaseAbilityDef {
         let mut tags = Vec::new();
         let mut range = None;
         let mut geometry = None;
-        let mut power = None;
+        let mut potency = None;
         let mut cast_time = None;
         let mut cooldown = None;
         let mut energy_cost = None;
@@ -1127,7 +1289,7 @@ impl Parse for BaseAbilityDef {
                     let fields: Punctuated<KvPair, Token![,]> = Punctuated::parse_terminated(&content)?;
                     geometry = Some(parse_geometry(kind, fields)?);
                 }
-                "power" => power = Some(input.parse::<LitFloat>()?),
+                "potency" => potency = Some(input.parse::<LitFloat>()?),
                 "cast_time" => cast_time = Some(input.parse::<LitFloat>()?),
                 "cooldown" => cooldown = Some(input.parse::<LitFloat>()?),
                 "energy_cost" => energy_cost = Some(input.parse::<LitFloat>()?),
@@ -1167,7 +1329,7 @@ impl Parse for BaseAbilityDef {
                         &key,
                         format!(
                             "unknown key `{other}` in #[base_ability(...)] (expected id, name, tags, range, geometry, \
-                             power, cast_time, cooldown, energy_cost, animation, impact_vfx, impact_delay, \
+                             potency, cast_time, cooldown, energy_cost, animation, impact_vfx, impact_delay, \
                              stun_seconds, channeling)"
                         )
                     ))
@@ -1186,7 +1348,7 @@ impl Parse for BaseAbilityDef {
             tags,
             range,
             geometry: geometry.ok_or_else(|| input.error("#[base_ability(...)] requires `geometry = ...`"))?,
-            power: power.ok_or_else(|| input.error("#[base_ability(...)] requires `power = ...`"))?,
+            potency: potency.ok_or_else(|| input.error("#[base_ability(...)] requires `potency = ...`"))?,
             cast_time: cast_time.ok_or_else(|| input.error("#[base_ability(...)] requires `cast_time = ...`"))?,
             cooldown: cooldown.ok_or_else(|| input.error("#[base_ability(...)] requires `cooldown = ...`"))?,
             energy_cost: energy_cost
@@ -1214,7 +1376,7 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
     let id_lit = &def.id;
     let name_lit = &def.name;
     let tags = &def.tags;
-    let power = &def.power;
+    let potency = &def.potency;
     let cast_time = &def.cast_time;
     let cooldown = &def.cooldown;
     let energy_cost = &def.energy_cost;
@@ -1325,7 +1487,7 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             fn base_params(&self) -> crate::abilities::AbilityParams {
                 crate::abilities::AbilityParams {
-                    power: #power,
+                    potency: #potency,
                     area: #area,
                     range: #range,
                     cast_time: #cast_time,
@@ -1601,6 +1763,271 @@ pub fn modifier(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+struct PeriodicDef {
+    interval: LitFloat,
+    amount: LitFloat,
+}
+
+struct StatusModifierDef {
+    stat: Ident,
+    operation: Ident,
+    value: LitFloat,
+}
+
+struct StatusDef {
+    id: LitStr,
+    name: Option<LitStr>,
+    icon: Option<LitStr>,
+    category: Ident,
+    duration: LitFloat,
+    cleanseable: bool,
+    purgeable: bool,
+    stacking: Ident,
+    stack_scope: Ident,
+    max_stacks: LitInt,
+    refresh: Ident,
+    control: Option<Ident>,
+    periodic: Option<PeriodicDef>,
+    modifier: Option<StatusModifierDef>,
+}
+
+impl Parse for StatusDef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut id = None;
+        let mut name = None;
+        let mut icon = None;
+        let mut category = None;
+        let mut duration = None;
+        let mut cleanseable = false;
+        let mut purgeable = false;
+        let mut stacking = Ident::new("None", proc_macro2::Span::call_site());
+        let mut stack_scope = Ident::new("Global", proc_macro2::Span::call_site());
+        let mut max_stacks = syn::parse_str::<LitInt>("1").expect("valid integer literal");
+        let mut refresh = Ident::new("None", proc_macro2::Span::call_site());
+        let mut control = None;
+        let mut periodic = None;
+        let mut modifier = None;
+
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            if key == "modifier" {
+                let content;
+                parenthesized!(content in input);
+                let mut stat = None;
+                let mut operation = None;
+                let mut value = None;
+                while !content.is_empty() {
+                    let nested_key: Ident = content.parse()?;
+                    content.parse::<Token![=]>()?;
+                    match nested_key.to_string().as_str() {
+                        "stat" => stat = Some(content.parse::<Ident>()?),
+                        "operation" => operation = Some(content.parse::<Ident>()?),
+                        "value" => value = Some(content.parse::<LitFloat>()?),
+                        other => {
+                            return Err(syn::Error::new_spanned(
+                                &nested_key,
+                                format!("unknown key `{other}` in modifier(...) (expected stat, operation, value)"),
+                            ))
+                        }
+                    }
+                    if content.peek(Token![,]) {
+                        content.parse::<Token![,]>()?;
+                    } else {
+                        break;
+                    }
+                }
+                modifier = Some(StatusModifierDef {
+                    stat: stat.ok_or_else(|| input.error("modifier(...) requires `stat = ...`"))?,
+                    operation: operation.ok_or_else(|| input.error("modifier(...) requires `operation = ...`"))?,
+                    value: value.ok_or_else(|| input.error("modifier(...) requires `value = ...`"))?,
+                });
+                if input.peek(Token![,]) {
+                    input.parse::<Token![,]>()?;
+                }
+                continue;
+            }
+            if key == "periodic" {
+                let content;
+                parenthesized!(content in input);
+                let mut interval = None;
+                let mut amount = None;
+                while !content.is_empty() {
+                    let nested_key: Ident = content.parse()?;
+                    content.parse::<Token![=]>()?;
+                    match nested_key.to_string().as_str() {
+                        "interval" => interval = Some(content.parse::<LitFloat>()?),
+                        "amount" => amount = Some(content.parse::<LitFloat>()?),
+                        other => {
+                            return Err(syn::Error::new_spanned(
+                                &nested_key,
+                                format!("unknown key `{other}` in periodic(...) (expected interval, amount)"),
+                            ))
+                        }
+                    }
+                    if content.peek(Token![,]) {
+                        content.parse::<Token![,]>()?;
+                    } else {
+                        break;
+                    }
+                }
+                periodic = Some(PeriodicDef {
+                    interval: interval.ok_or_else(|| input.error("periodic(...) requires `interval = ...`"))?,
+                    amount: amount.ok_or_else(|| input.error("periodic(...) requires `amount = ...`"))?,
+                });
+                if input.peek(Token![,]) {
+                    input.parse::<Token![,]>()?;
+                }
+                continue;
+            }
+            input.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "id" => id = Some(input.parse::<LitStr>()?),
+                "name" => name = Some(input.parse::<LitStr>()?),
+                "icon" => icon = Some(input.parse::<LitStr>()?),
+                "category" => category = Some(input.parse::<Ident>()?),
+                "duration" => duration = Some(input.parse::<LitFloat>()?),
+                "cleanseable" => cleanseable = input.parse::<LitBool>()?.value,
+                "purgeable" => purgeable = input.parse::<LitBool>()?.value,
+                "stacking" => stacking = input.parse::<Ident>()?,
+                "stack_scope" => stack_scope = input.parse::<Ident>()?,
+                "max_stacks" => max_stacks = input.parse::<LitInt>()?,
+                "refresh" => refresh = input.parse::<Ident>()?,
+                "control" => control = Some(input.parse::<Ident>()?),
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!("unknown key `{other}` in #[status(...)] (expected id, category, duration, cleanseable, stacking, stack_scope, max_stacks, refresh, control)"),
+                    ))
+                }
+            }
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(Self {
+            id: id.ok_or_else(|| input.error("#[status(...)] requires `id = \"...\"`"))?,
+            name,
+            icon,
+            category: category.ok_or_else(|| input.error("#[status(...)] requires `category = Buff|Debuff`"))?,
+            duration: duration.ok_or_else(|| input.error("#[status(...)] requires `duration = ...`"))?,
+            cleanseable,
+            purgeable,
+            stacking,
+            stack_scope,
+            max_stacks,
+            refresh,
+            control,
+            periodic,
+            modifier,
+        })
+    }
+}
+
+#[proc_macro_attribute]
+pub fn status(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    if let Err(err) = require_unit_struct(&input, "status") {
+        return err;
+    }
+    let def = parse_macro_input!(attr as StatusDef);
+    let type_name = &input.ident;
+    let id = &def.id;
+    let display_name = def.name.unwrap_or_else(|| id.clone());
+    let icon = def
+        .icon
+        .unwrap_or_else(|| LitStr::new("status_default", id.span()));
+    let category = &def.category;
+    let duration = &def.duration;
+    let cleanseable = def.cleanseable;
+    let purgeable = def.purgeable;
+    let stacking = &def.stacking;
+    let stack_scope = &def.stack_scope;
+    let max_stacks = &def.max_stacks;
+    let refresh = &def.refresh;
+    let periodic = match def.periodic {
+        Some(periodic) => {
+            let interval = periodic.interval;
+            let amount = periodic.amount;
+            quote!(Some(crate::effects::PeriodicSpec {
+                interval_seconds: #interval,
+                effect: crate::effects::PeriodicEffect::Damage {
+                    amount: #amount,
+                },
+            }))
+        }
+        None => quote!(None),
+    };
+    let stat_modifiers = match def.modifier {
+        Some(modifier) => {
+            let stat = modifier.stat;
+            let operation = modifier.operation;
+            let value = modifier.value;
+            quote!(&[crate::effects::StatModifierSpec {
+                field: crate::stats::events::StatField::#stat,
+                operation: crate::stats::events::ModifierOp::#operation,
+                value: #value,
+            }])
+        }
+        None => quote!(&[]),
+    };
+    let dispel = if cleanseable {
+        quote!(crate::effects::DispelPolicy::RemoveWholeStatus)
+    } else {
+        quote!(crate::effects::DispelPolicy::NotDispellable)
+    };
+    let control = match def.control {
+        Some(control) => quote!(Some(crate::effects::ControlSpec::#control)),
+        None => quote!(None),
+    };
+
+    let expanded = quote! {
+        #input
+
+        impl #type_name {
+            pub const ID: &'static str = #id;
+        }
+
+        impl crate::effects::Status for #type_name {
+            fn definition() -> crate::effects::StatusDefinition {
+                crate::effects::StatusDefinition {
+                    id: crate::effects::StatusId::new(Self::ID),
+                    category: crate::effects::StatusCategory::#category,
+                    duration_seconds: #duration,
+                    cleanseable: #cleanseable,
+                    purgeable: #purgeable,
+                    stacking: crate::effects::StackPolicy::#stacking,
+                    stack_scope: crate::effects::StackScope::#stack_scope,
+                    max_stacks: #max_stacks,
+                    refresh: crate::effects::RefreshPolicy::#refresh,
+                    dispel: #dispel,
+                    periodic: #periodic,
+                    stat_modifiers: #stat_modifiers,
+                    control: #control,
+                    presentation: crate::effects::StatusPresentation {
+                        icon: #icon,
+                        short_name: #display_name,
+                    },
+                }
+            }
+        }
+
+        impl #type_name {
+            pub fn status_id() -> crate::effects::StatusId {
+                <Self as crate::effects::Status>::status_id()
+            }
+
+            pub fn register(registry: &mut crate::effects::StatusRegistry) {
+                registry.register(<Self as crate::effects::Status>::definition());
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
 struct AncientWordDef {
     id: LitStr,
     name: LitStr,
@@ -1710,7 +2137,105 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
 // The actual cast logic is left to the user via a separate `SpellCast` trait
 // impl — same delegation used by EssenceEffect / ModifierEffect / AncientWordEffect.
 //
-// # DSL — all fields are flat, the config shape is inferred automatically:
+struct RootWordDef {
+    id: LitStr,
+    name: LitStr,
+    description: LitStr,
+    rune_cost: LitInt,
+}
+
+impl Parse for RootWordDef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut id = None;
+        let mut name = None;
+        let mut description = None;
+        let mut rune_cost = None;
+
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "id" => id = Some(input.parse::<LitStr>()?),
+                "name" => name = Some(input.parse::<LitStr>()?),
+                "description" => description = Some(input.parse::<LitStr>()?),
+                "rune_cost" => rune_cost = Some(input.parse::<LitInt>()?),
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!("unknown key `{other}` in #[root_word(...)] (expected id, name, description, rune_cost)"),
+                    ))
+                }
+            }
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(Self {
+            id: id.ok_or_else(|| input.error("#[root_word(...)] requires `id = \"...\"`"))?,
+            name: name.ok_or_else(|| input.error("#[root_word(...)] requires `name = \"...\"`"))?,
+            description: description.ok_or_else(|| input.error("#[root_word(...)] requires `description = \"...\"`"))?,
+            rune_cost: rune_cost.ok_or_else(|| input.error("#[root_word(...)] requires `rune_cost = ...`"))?,
+        })
+    }
+}
+
+#[proc_macro_attribute]
+pub fn root_word(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    if let Err(err) = require_unit_struct(&input, "root_word") {
+        return err;
+    }
+    let def = parse_macro_input!(attr as RootWordDef);
+    let name = &input.ident;
+
+    let id_lit = &def.id;
+    let name_lit = &def.name;
+    let description_lit = &def.description;
+    let rune_cost = &def.rune_cost;
+
+    let expanded = quote! {
+        #input
+
+        impl #name {
+            pub const ID: &'static str = #id_lit;
+        }
+
+        impl crate::abilities::RootWord for #name {
+            fn id(&self) -> crate::abilities::RootWordId {
+                crate::abilities::RootWordId::from(Self::ID)
+            }
+            fn metadata(&self) -> &crate::abilities::RootWordMetadata {
+                static META: crate::abilities::RootWordMetadata = crate::abilities::RootWordMetadata {
+                    display_name: #name_lit,
+                    description: #description_lit,
+                    rune_cost: #rune_cost,
+                };
+                &META
+            }
+            fn apply_to_blueprint(
+                &self,
+                blueprint: &mut crate::abilities::AbilityBlueprint,
+                params: &crate::abilities::AbilityParams,
+            ) {
+                <Self as crate::abilities::RootWordEffect>::apply_to_blueprint(self, blueprint, params)
+            }
+        }
+
+        impl #name {
+            /// Registers this Root Word in the global registry. Generated by `#[root_word(...)]`.
+            pub fn register(registry: &mut crate::abilities::RootWordRegistry) {
+                registry.register(std::sync::Arc::new(#name));
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+/// DSL — all fields are flat, the config shape is inferred automatically:
 //
 // | targeting          | required extras         | → SpellConfig shape      |
 // |--------------------|-------------------------|--------------------------|
@@ -1742,7 +2267,6 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
 //     fn cast(&self, ctx: &mut SpellCastContext) { /* ... */ }
 // }
 // ```
-
 enum SpellConfigShape {
     RangedSingleTarget { cooldown: LitFloat, range: LitFloat, targeting: Ident },
     MeleeAoe { cooldown: LitFloat, area: LitFloat },

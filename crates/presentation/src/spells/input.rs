@@ -1,7 +1,7 @@
 //! Unified player ability input for the Eidolon cast pipeline.
 //!
 //! Routes Q/W/E to `EidolonCastCommand` for **all** equipped weapons that
-//! expose `Item::weapon_abilities()`. The legacy `SpellHotbar` path is no
+//! expose `Item::ability_loadout()`. The legacy `SpellHotbar` path is no
 //! longer used for player input — it remains only for NPC/boss entities.
 //!
 //! # Cast behavior by [`AbilityCastMode`]
@@ -21,6 +21,7 @@ use bevy::prelude::*;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_gameplay::abilities::{
     resolve_active_ability, AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility, BaseAbilityRegistry,
+    BlueprintExecution,
 };
 use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_gameplay::items::components::Equipment;
@@ -99,7 +100,7 @@ pub fn cast_abilities_on_key(
         aim.clear();
         return;
     };
-    let Some(weapon_abilities) = item.weapon_abilities() else {
+    let Some(weapon_abilities) = item.ability_loadout() else {
         aim.clear();
         return;
     };
@@ -129,13 +130,34 @@ pub fn cast_abilities_on_key(
             continue;
         };
 
-        match ability.cast_mode() {
-            bevymmo_gameplay::abilities::AbilityCastMode::Instant
-            | bevymmo_gameplay::abilities::AbilityCastMode::CastTime => {
+        // Determine if this is a Charge execution (hold-to-charge, fires on release).
+        let is_charge = item
+            .ability_blueprint(ability.as_ref())
+            .execution == BlueprintExecution::Charge;
+
+        match (ability.cast_mode(), is_charge) {
+            (bevymmo_gameplay::abilities::AbilityCastMode::Instant
+            | bevymmo_gameplay::abilities::AbilityCastMode::CastTime, false) => {
                 // Open aim; the release below will confirm and send.
                 aim.begin(slot);
             }
-            bevymmo_gameplay::abilities::AbilityCastMode::Channeling { .. } => {
+            (_, true) => {
+                // Charge: start charging immediately on press (like Channeling).
+                // The server opens a Charge CastState that waits for release.
+                if hud_state.ability_on_cooldown(&ability_id) {
+                    continue;
+                }
+                if let Some(conn) = conn.as_deref() {
+                    if let Err(err) =
+                        stdb_commands::eidolon_cast(conn, slot, target_id, target_position)
+                    {
+                        error!("could not start Eidolon charge: {err}");
+                    }
+                }
+                // Don't start cooldown yet — cooldown starts on release when the
+                // ability actually fires (server handles this in release_cast).
+            }
+            (bevymmo_gameplay::abilities::AbilityCastMode::Channeling { .. }, false) => {
                 // Channeling starts immediately on press — no aim window.
                 if hud_state.ability_on_cooldown(&ability_id) {
                     continue;
@@ -186,9 +208,14 @@ pub fn cast_abilities_on_key(
             continue;
         };
 
-        match ability.cast_mode() {
-            bevymmo_gameplay::abilities::AbilityCastMode::Instant
-            | bevymmo_gameplay::abilities::AbilityCastMode::CastTime => {
+        // Determine if this is a Charge execution.
+        let is_charge = item
+            .ability_blueprint(ability.as_ref())
+            .execution == BlueprintExecution::Charge;
+
+        match (ability.cast_mode(), is_charge) {
+            (bevymmo_gameplay::abilities::AbilityCastMode::Instant
+            | bevymmo_gameplay::abilities::AbilityCastMode::CastTime, false) => {
                 if aim.slot != Some(slot) {
                     continue;
                 }
@@ -232,7 +259,29 @@ pub fn cast_abilities_on_key(
                     });
                 }
             }
-            bevymmo_gameplay::abilities::AbilityCastMode::Channeling { .. } => {
+            (_, true) => {
+                // Release fires the charged ability (server resolves in release_cast).
+                let is_charging_this = observed_casts
+                    .0
+                    .get(&local_network_id.0)
+                    .is_some_and(|cast| cast.spell_id == ability_id.as_str());
+
+                if is_charging_this {
+                    if let Some(conn) = conn.as_deref() {
+                        if let Err(err) =
+                            stdb_commands::release_cast(conn, ability_id.as_str().to_owned())
+                        {
+                            error!("could not release charge cast: {err}");
+                        }
+                    }
+                    // Cooldown starts now — server starts it in release_cast too.
+                    hud_cooldowns.write(SpellHudCooldownStarted {
+                        key: HudCooldownKey::Ability(ability_id.clone()),
+                        cooldown_seconds: ability.base_params().cooldown,
+                    });
+                }
+            }
+            (bevymmo_gameplay::abilities::AbilityCastMode::Channeling { .. }, false) => {
                 // Release ends the channel early.
                 let is_channeling_this = observed_casts
                     .0

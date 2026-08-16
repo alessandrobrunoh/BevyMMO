@@ -16,6 +16,7 @@ pub struct StatModifier {
     pub is_multiplicative: bool,
     pub amount: f32,
     pub kind: ModifierKindRow,
+    pub origin_status_instance_id: Option<u64>,
     pub remaining_seconds: Option<f32>,
 }
 
@@ -34,6 +35,7 @@ pub struct StatModifierCols {
     pub is_multiplicative: __sdk::__query_builder::Col<StatModifier, bool>,
     pub amount: __sdk::__query_builder::Col<StatModifier, f32>,
     pub kind: __sdk::__query_builder::Col<StatModifier, ModifierKindRow>,
+    pub origin_status_instance_id: __sdk::__query_builder::Col<StatModifier, Option<u64>>,
     pub remaining_seconds: __sdk::__query_builder::Col<StatModifier, Option<f32>>,
 }
 
@@ -48,6 +50,10 @@ impl __sdk::__query_builder::HasCols for StatModifier {
             is_multiplicative: __sdk::__query_builder::Col::new(table_name, "is_multiplicative"),
             amount: __sdk::__query_builder::Col::new(table_name, "amount"),
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            origin_status_instance_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "origin_status_instance_id",
+            ),
             remaining_seconds: __sdk::__query_builder::Col::new(table_name, "remaining_seconds"),
         }
     }

@@ -37,7 +37,8 @@ use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_network::network::protocol::Position;
 
 use super::systems::GameCamera;
-use crate::world::MapSceneVisual;
+use crate::world::{MapPropVisual, MapSceneVisual};
+
 
 /// Suffix marking the half of a prop that must never fade: trunks, floors,
 /// anything that would look wrong left floating.
@@ -141,19 +142,32 @@ type UnexaminedNodes<'w, 's> = Query<
 /// necessarily before this system observes it, and one missed `Added` would
 /// leave a prop permanently opaque. Every entity is marked one way or the
 /// other, so the scan settles to nothing once the scene has loaded.
+///
+/// Two kinds of map entity qualify:
+/// - mesh nodes that are **descendants** of a [`MapSceneVisual`] root (GLB
+///   scenes, either the whole-map scene or per-prop GLB scenes);
+/// - entities that carry [`MapPropVisual`] directly (placeholder cuboids
+///   spawned for props that have no authored GLB asset — these are root
+///   entities themselves, not children of anything, so the ancestry walk
+///   alone would never find them).
 pub fn tag_occludables(
     mut commands: Commands,
     unexamined: UnexaminedNodes,
     parents: Query<&ChildOf>,
     map_roots: Query<Entity, With<MapSceneVisual>>,
+    prop_visuals: Query<Entity, With<MapPropVisual>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for (entity, name, material) in &unexamined {
-        let belongs_to_map = map_roots
-            .iter()
-            .any(|root| is_descendant_of(entity, root, &parents));
+        let belongs_to_map = prop_visuals.contains(entity)
+            || map_roots
+                .iter()
+                .any(|root| is_descendant_of(entity, root, &parents));
 
         if !belongs_to_map || !is_occludable_name(name.as_str()) {
+            if !belongs_to_map {
+                debug!("Occlusion: {name:?} ({entity:?}) does NOT belong to map — marking NotOccludable");
+            }
             commands.entity(entity).insert(NotOccludable);
             continue;
         }
@@ -167,6 +181,8 @@ pub fn tag_occludables(
         let opaque_alpha = source.base_color.alpha();
         let clone = materials.add(source);
 
+        info!("Occlusion: tagged {name:?} ({entity:?}) as Occludable (alpha={opaque_alpha})");
+
         commands.entity(entity).insert((
             Occludable,
             MeshMaterial3d(clone.clone()),
@@ -179,6 +195,7 @@ pub fn tag_occludables(
         ));
     }
 }
+
 
 fn is_descendant_of(entity: Entity, root: Entity, parents: &Query<&ChildOf>) -> bool {
     let mut current = entity;

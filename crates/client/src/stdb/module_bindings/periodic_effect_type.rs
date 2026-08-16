@@ -12,6 +12,7 @@ pub struct PeriodicEffect {
     pub source: Option<u64>,
     pub amount_per_tick: f32,
     pub tick_interval_seconds: f32,
+    pub origin_status_instance_id: Option<u64>,
     pub since_last_tick: f32,
     pub remaining_seconds: f32,
 }
@@ -29,6 +30,7 @@ pub struct PeriodicEffectCols {
     pub source: __sdk::__query_builder::Col<PeriodicEffect, Option<u64>>,
     pub amount_per_tick: __sdk::__query_builder::Col<PeriodicEffect, f32>,
     pub tick_interval_seconds: __sdk::__query_builder::Col<PeriodicEffect, f32>,
+    pub origin_status_instance_id: __sdk::__query_builder::Col<PeriodicEffect, Option<u64>>,
     pub since_last_tick: __sdk::__query_builder::Col<PeriodicEffect, f32>,
     pub remaining_seconds: __sdk::__query_builder::Col<PeriodicEffect, f32>,
 }
@@ -44,6 +46,10 @@ impl __sdk::__query_builder::HasCols for PeriodicEffect {
             tick_interval_seconds: __sdk::__query_builder::Col::new(
                 table_name,
                 "tick_interval_seconds",
+            ),
+            origin_status_instance_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "origin_status_instance_id",
             ),
             since_last_tick: __sdk::__query_builder::Col::new(table_name, "since_last_tick"),
             remaining_seconds: __sdk::__query_builder::Col::new(table_name, "remaining_seconds"),

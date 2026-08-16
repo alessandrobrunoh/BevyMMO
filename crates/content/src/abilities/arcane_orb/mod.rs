@@ -14,7 +14,7 @@ use crate::abilities::BaseAbilityRegistry;
     tags = [Ranged, Projectile, SingleTarget, RepeatCompatible],
     range = 22.0,
     geometry = projectile(speed = 24.0),
-    power = 220.0,
+    potency = 220.0,
     cast_time = 0.25,
     cooldown = 2.5,
     energy_cost = 10.0,

@@ -31,12 +31,16 @@ use std::sync::OnceLock;
 use bevymmo_domain::abilities::{
     AncientWordRegistry, BaseAbilityRegistry, EssenceRegistry, ModifierRegistry,
 };
-use bevymmo_domain::crowd_control::CrowdControlKind;
+
+use bevymmo_domain::effects::{
+    ApplyStatusEffect, CleanseEffect, DamageEffect, EffectBundle, EffectContext, EffectSpec,
+    HealEffect, PurgeEffect, StatusFilter, StatusId, StatusSelection,
+};
 use bevymmo_domain::items::registry::ItemRegistry;
 use bevymmo_domain::spells::components::MOVEMENT_INTERRUPT_EPSILON;
 use bevymmo_domain::spells::context::{
-    AoeEffect, AoeShape, AoeSpawnRequest, AoeTargeting, CastKind,
-    ProjectileSpawnRequest, Spell, SpellCastContext,
+    AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ProjectileSpawnRequest, Spell,
+    SpellCastContext,
 };
 use bevymmo_domain::spells::registry::{SpellId, SpellRegistry};
 use bevymmo_domain::stats::components::{CombatStats, StatsBundleData};
@@ -47,11 +51,14 @@ use bevymmo_domain::EntityId;
 use glam::Vec3;
 use spacetimedb::{ReducerContext, Table};
 
-use crate::rows::Vec3Row;
+use crate::rows::{
+    EffectPayloadFilterRow, EffectPayloadKindRow, EffectPayloadRow, EffectPayloadSelectionRow,
+    Vec3Row,
+};
 use crate::tables::{
     aoe_region, cast_ended, cast_state, cooldown, entity_stats, game_entity,
-    grid_cell, projectile, spell_visual_effect, AoeRegion, AoeShapeRow, CastEndedEvent,
-    CastKindRow, CastSourceRow, CastState, Cooldown, CrowdControlKindRow, EntityStateRow,
+    grid_cell, projectile, spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow,
+    CastEndedEvent, CastKindRow, CastSourceRow, CastState, Cooldown, EntityStateRow,
     GameEntity, ModifierKindRow, Projectile, SpellVisualEffectEvent,
 };
 
@@ -329,7 +336,7 @@ pub fn fire_eidolon_ability(
     let equipment = equipment_from_rows(&equip_row.slots);
     let weapon = equipment.weapon.as_ref()?;
     let item = items().get(&weapon.item_id)?;
-    let weapon_abilities = item.weapon_abilities()?;
+    let weapon_abilities = item.ability_loadout()?;
 
     // Determine which slot this ability belongs to.
     let ability_id = bevymmo_domain::abilities::AbilityId::new(ability_id_str.to_string());
@@ -358,6 +365,7 @@ pub fn fire_eidolon_ability(
             &known,
             base_abilities(),
             modifiers(),
+            Some(item.as_ref()),
         )
         .ok()?
     };
@@ -389,6 +397,7 @@ pub fn fire_eidolon_ability(
         modifiers(),
         ancient_words(),
         &mut cast_ctx,
+        Some(item.as_ref()),
     )
     .ok()?;
 
@@ -409,12 +418,10 @@ pub fn apply_pending(
     spell_id: &str,
     cast: &mut SpellCastContext,
 ) {
-    for event in cast.pending_damage.drain(..) {
-        crate::sim::combat::apply_damage(ctx, event.target.get(), Some(caster), event.amount);
+    for bundle in cast.pending_effects.drain(..) {
+        crate::sim::effects::resolve_bundle(ctx, 0, bundle);
     }
-    for event in cast.pending_healing.drain(..) {
-        crate::sim::combat::apply_healing(ctx, event.target.get(), event.amount);
-    }
+
     for request in cast.pending_projectiles.drain(..) {
         spawn_projectile(ctx, caster, caster_position, spell_id, request);
     }
@@ -449,7 +456,7 @@ fn spawn_projectile(
         target_entity: Some(request.target.get()),
         target_position: None,
         speed: request.speed,
-        damage: request.damage,
+        effects: request.effects.iter().map(EffectPayloadRow::from).collect(),
         hit_radius: request.hit_radius,
         remaining_seconds: PROJECTILE_MAX_LIFETIME_SECONDS,
     });
@@ -524,17 +531,6 @@ fn apply_modifier_event(ctx: &ReducerContext, event: &ApplyStatModifierEvent) {
     }
 }
 
-/// Translates a domain crowd control kind into its row form.
-///
-/// `CrowdControlKind` currently has one variant. The row enum has four because
-/// the schema anticipates the rest; until the domain grows them, no spell can
-/// produce a Root, Silence or Slow, and that is a content gap rather than a
-/// porting one.
-fn crowd_control_row_kind(kind: CrowdControlKind) -> CrowdControlKindRow {
-    match kind {
-        CrowdControlKind::Stun => CrowdControlKindRow::Stun,
-    }
-}
 
 /// Carries the caster's own buff/debuff label into the row.
 ///
@@ -586,21 +582,16 @@ fn persistable_region(caster: u64, request: &AoeSpawnRequest) -> Option<AoeRegio
     let AoeShape::Circle = request.shape else {
         return None;
     };
-    let (damage, healing) = match &request.effect {
-        AoeEffect::Damage { amount, .. } => (*amount, 0.0),
-        AoeEffect::Heal { amount, .. } => (0.0, *amount),
-        AoeEffect::ApplyModifier { .. } | AoeEffect::CrowdControl { .. } => return None,
-    };
-    // `affected` exists to make an effect apply once per entity, which is
-    // exactly the semantics Bevy gave burst damage and healing. Seeding it with
-    // the caster is also how `AoeTargeting::ExcludeCaster` survives a schema
-    // with no targeting column: the caster is simply "already affected".
-    let affected = match request.effect.targeting() {
+    if request.effects.is_empty() {
+        // No effects to persist — take the immediate path.
+        return None;
+    }
+    // `affected` seeds the caster for ExcludeCaster so the row alone enforces
+    // the policy without a separate targeting column read at tick time.
+    let affected = match request.targeting {
         AoeTargeting::Everyone => Vec::new(),
         AoeTargeting::ExcludeCaster => vec![caster],
-        // Nothing else can be expressed by pre-seeding, so it takes the
-        // immediate path where the policy is applied in full.
-        AoeTargeting::CasterOnly => return None,
+        AoeTargeting::CasterOnly => vec![caster],
     };
 
     Some(AoeRegion {
@@ -614,14 +605,14 @@ fn persistable_region(caster: u64, request: &AoeSpawnRequest) -> Option<AoeRegio
         remaining_seconds: request.duration_seconds,
         pending_delay_seconds: request.initial_delay_seconds.max(0.0),
         affected,
-        damage,
-        healing,
+        targeting: targeting_row(request.targeting),
+        effects: request.effects.iter().map(EffectPayloadRow::from).collect(),
     })
 }
 
 /// Applies an AoE request immediately to everything currently inside it.
 fn apply_aoe_now(ctx: &ReducerContext, caster: u64, request: &AoeSpawnRequest) {
-    let targeting = request.effect.targeting();
+    let targeting = request.targeting;
     let caster_id = EntityId::new(caster);
     let inside: Vec<EntityId> = potential_targets(ctx, request.center, request.radius)
         .into_iter()
@@ -635,39 +626,13 @@ fn apply_aoe_now(ctx: &ReducerContext, caster: u64, request: &AoeSpawnRequest) {
         .collect();
 
     for target in inside {
-        match &request.effect {
-            AoeEffect::Damage { amount, .. } => {
-                crate::sim::combat::apply_damage(ctx, target.get(), Some(caster), *amount)
-            }
-            AoeEffect::Heal { amount, .. } => {
-                crate::sim::combat::apply_healing(ctx, target.get(), *amount)
-            }
-            AoeEffect::CrowdControl {
-                kind,
-                duration_seconds,
-                ..
-            } => crate::sim::crowd_control::apply(
-                ctx,
-                target.get(),
-                Some(caster),
-                crowd_control_row_kind(*kind),
-                *duration_seconds,
-            ),
-            AoeEffect::ApplyModifier {
-                effects,
-                duration_seconds,
-                kind,
-                ..
-            } => apply_modifier_event(
-                ctx,
-                &ApplyStatModifierEvent {
-                    target,
-                    source: Some(caster_id),
-                    effects: effects.clone(),
-                    duration_seconds: *duration_seconds,
-                    kind: *kind,
-                },
-            ),
+        let payloads: Vec<_> = request
+            .effects
+            .iter()
+            .map(EffectPayloadRow::from)
+            .collect();
+        if !payloads.is_empty() {
+            resolve_payloads(ctx, &payloads, target.get(), Some(caster));
         }
     }
 }
@@ -732,7 +697,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
         // which was captured from SpellConfig (legacy) or AbilityCastMode (Eidolon)
         // at cast start time.
         let movement_cancels = match cast.kind {
-            CastKindRow::CastTime => true,
+            CastKindRow::CastTime | CastKindRow::Charge => true,
             CastKindRow::Channeling => cast.channel_movement_interrupts,
             CastKindRow::Instant => false,
         };
@@ -767,6 +732,12 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                     }
                 }
                 due
+            }
+            (CastSourceRow::Spell, CastKindRow::Charge) => {
+                // Charge is an Eidolon-only execution. A legacy spell carrying
+                // this state is invalid, so close it without firing.
+                log::warn!("legacy spell {:?} entered charge state; cancelling", cast.spell_id);
+                true
             }
             (CastSourceRow::Spell, CastKindRow::Channeling) => {
                 let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
@@ -828,6 +799,13 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
+            (CastSourceRow::Eidolon, CastKindRow::Charge) => {
+                // Charge accumulates while held but does NOT auto-fire.
+                // The ability fires when the player releases (release_cast reducer).
+                // If elapsed exceeds required_seconds, the charge is "full" but
+                // we still wait for release.
+                false
+            }
 
             // Defensive: an instant spell/ability never opens a `cast_state`.
             (_, CastKindRow::Instant) => true,
@@ -856,6 +834,69 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
 
     for cast in ended {
         end_cast(ctx, cast.entity_id, cast.spell_id, cast.interrupted);
+    }
+}
+
+fn resolve_payloads(
+    ctx: &ReducerContext,
+    payloads: &[EffectPayloadRow],
+    target: u64,
+    source: Option<u64>,
+) {
+    let effects = payloads
+        .iter()
+        .filter_map(|payload| match payload.kind {
+            EffectPayloadKindRow::Damage => {
+                Some(EffectSpec::Damage(DamageEffect { amount: payload.amount }))
+            }
+            EffectPayloadKindRow::Heal => {
+                Some(EffectSpec::Heal(HealEffect { amount: payload.amount }))
+            }
+            EffectPayloadKindRow::ApplyStatus => {
+                let status_id = payload.status_id.as_deref()?.to_string();
+                Some(EffectSpec::ApplyStatus(ApplyStatusEffect {
+                    status_id: StatusId::new(status_id),
+                    duration_override_seconds: payload.duration_override_seconds,
+                    potency: payload.potency,
+                }))
+            }
+            EffectPayloadKindRow::Cleanse => Some(EffectSpec::Cleanse(CleanseEffect {
+                filter: payload.status_filter.map(status_filter).unwrap_or(StatusFilter::All),
+                max_statuses: payload.max_statuses,
+                selection: payload
+                    .selection
+                    .map(status_selection)
+                    .unwrap_or(StatusSelection::Oldest),
+            })),
+            EffectPayloadKindRow::Purge => Some(EffectSpec::Purge(PurgeEffect {
+                filter: payload.status_filter.map(status_filter).unwrap_or(StatusFilter::All),
+                max_statuses: payload.max_statuses,
+                selection: payload
+                    .selection
+                    .map(status_selection)
+                    .unwrap_or(StatusSelection::Oldest),
+            })),
+        })
+        .collect();
+
+    let mut context = EffectContext::new(EntityId::new(target));
+    context.source = source.map(EntityId::new);
+    crate::sim::effects::resolve_bundle(ctx, 0, EffectBundle::new(context, effects));
+}
+
+fn status_filter(filter: EffectPayloadFilterRow) -> StatusFilter {
+    match filter {
+        EffectPayloadFilterRow::Buffs => StatusFilter::Buffs,
+        EffectPayloadFilterRow::Debuffs => StatusFilter::Debuffs,
+        EffectPayloadFilterRow::All => StatusFilter::All,
+    }
+}
+
+fn status_selection(selection: EffectPayloadSelectionRow) -> StatusSelection {
+    match selection {
+        EffectPayloadSelectionRow::Oldest => StatusSelection::Oldest,
+        EffectPayloadSelectionRow::Newest => StatusSelection::Newest,
+        EffectPayloadSelectionRow::ShortestRemaining => StatusSelection::ShortestRemaining,
     }
 }
 
@@ -901,7 +942,7 @@ fn update_projectiles(ctx: &ReducerContext, dt: f32) {
         if distance <= proj.hit_radius {
             match proj.target_entity {
                 Some(target) => {
-                    crate::sim::combat::apply_damage(ctx, target, Some(proj.caster), proj.damage)
+                    resolve_payloads(ctx, &proj.effects, target, Some(proj.caster));
                 }
                 // A ground-targeted shot has no single victim, so it hits
                 // whatever is standing on the impact point — the caster
@@ -909,11 +950,11 @@ fn update_projectiles(ctx: &ReducerContext, dt: f32) {
                 None => {
                     for (target, _) in potential_targets(ctx, destination, proj.hit_radius) {
                         if target.get() != proj.caster {
-                            crate::sim::combat::apply_damage(
+                            resolve_payloads(
                                 ctx,
+                                &proj.effects,
                                 target.get(),
                                 Some(proj.caster),
-                                proj.damage,
                             );
                         }
                     }
@@ -960,6 +1001,8 @@ fn update_aoe_regions(ctx: &ReducerContext, dt: f32) {
                 }
             };
             let center = Vec3::from(region.center);
+            let targeting = targeting_from_row(region.targeting);
+            let caster_id = EntityId::new(region.caster);
             for (target, position) in potential_targets(ctx, center, region.radius) {
                 if region.affected.contains(&target.get()) {
                     continue;
@@ -967,17 +1010,10 @@ fn update_aoe_regions(ctx: &ReducerContext, dt: f32) {
                 if !shape.contains(center, region.radius, position) {
                     continue;
                 }
-                if region.damage > 0.0 {
-                    crate::sim::combat::apply_damage(
-                        ctx,
-                        target.get(),
-                        Some(region.caster),
-                        region.damage,
-                    );
+                if !targeting.allows(caster_id, target) {
+                    continue;
                 }
-                if region.healing > 0.0 {
-                    crate::sim::combat::apply_healing(ctx, target.get(), region.healing);
-                }
+                resolve_payloads(ctx, &region.effects, target.get(), Some(region.caster));
                 region.affected.push(target.get());
             }
         }
@@ -1019,5 +1055,23 @@ pub fn cast_kind_row(kind: CastKind) -> CastKindRow {
         CastKind::Instant => CastKindRow::Instant,
         CastKind::CastTime => CastKindRow::CastTime,
         CastKind::Channeling => CastKindRow::Channeling,
+    }
+}
+
+/// Domain [`AoeTargeting`] → row [`AoeTargetingRow`].
+fn targeting_row(targeting: AoeTargeting) -> AoeTargetingRow {
+    match targeting {
+        AoeTargeting::Everyone => AoeTargetingRow::Everyone,
+        AoeTargeting::CasterOnly => AoeTargetingRow::CasterOnly,
+        AoeTargeting::ExcludeCaster => AoeTargetingRow::ExcludeCaster,
+    }
+}
+
+/// Row [`AoeTargetingRow`] → domain [`AoeTargeting`].
+fn targeting_from_row(row: AoeTargetingRow) -> AoeTargeting {
+    match row {
+        AoeTargetingRow::Everyone => AoeTargeting::Everyone,
+        AoeTargetingRow::CasterOnly => AoeTargeting::CasterOnly,
+        AoeTargetingRow::ExcludeCaster => AoeTargeting::ExcludeCaster,
     }
 }

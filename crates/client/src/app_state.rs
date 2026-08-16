@@ -39,6 +39,10 @@ pub enum ConnectionIntent {
     Disconnect,
     /// Disconnect and discard the locally cached SpacetimeDB identity.
     Logout,
+    /// The process is exiting. Disconnect and let the app close once the
+    /// disconnect has actually reached the socket (or a short grace period
+    /// runs out), instead of tearing the connection down mid-send.
+    Shutdown,
 }
 
 #[derive(Resource, Debug, Default)]

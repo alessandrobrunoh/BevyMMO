@@ -5,6 +5,8 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::aoe_shape_row_type::AoeShapeRow;
+use super::aoe_targeting_row_type::AoeTargetingRow;
+use super::effect_payload_row_type::EffectPayloadRow;
 use super::vec_3_row_type::Vec3Row;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -20,8 +22,8 @@ pub struct AoeRegion {
     pub remaining_seconds: f32,
     pub pending_delay_seconds: f32,
     pub affected: Vec<u64>,
-    pub damage: f32,
-    pub healing: f32,
+    pub targeting: AoeTargetingRow,
+    pub effects: Vec<EffectPayloadRow>,
 }
 
 impl __sdk::InModule for AoeRegion {
@@ -42,8 +44,8 @@ pub struct AoeRegionCols {
     pub remaining_seconds: __sdk::__query_builder::Col<AoeRegion, f32>,
     pub pending_delay_seconds: __sdk::__query_builder::Col<AoeRegion, f32>,
     pub affected: __sdk::__query_builder::Col<AoeRegion, Vec<u64>>,
-    pub damage: __sdk::__query_builder::Col<AoeRegion, f32>,
-    pub healing: __sdk::__query_builder::Col<AoeRegion, f32>,
+    pub targeting: __sdk::__query_builder::Col<AoeRegion, AoeTargetingRow>,
+    pub effects: __sdk::__query_builder::Col<AoeRegion, Vec<EffectPayloadRow>>,
 }
 
 impl __sdk::__query_builder::HasCols for AoeRegion {
@@ -63,8 +65,8 @@ impl __sdk::__query_builder::HasCols for AoeRegion {
                 "pending_delay_seconds",
             ),
             affected: __sdk::__query_builder::Col::new(table_name, "affected"),
-            damage: __sdk::__query_builder::Col::new(table_name, "damage"),
-            healing: __sdk::__query_builder::Col::new(table_name, "healing"),
+            targeting: __sdk::__query_builder::Col::new(table_name, "targeting"),
+            effects: __sdk::__query_builder::Col::new(table_name, "effects"),
         }
     }
 }

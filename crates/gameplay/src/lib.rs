@@ -2,6 +2,7 @@
 
 pub mod abilities;
 pub mod crowd_control;
+pub mod effects;
 pub mod entity;
 pub mod items;
 pub mod placeables;

@@ -167,6 +167,7 @@ pub fn apply_periodic(
                 tick_interval_seconds,
                 since_last_tick: 0.0,
                 remaining_seconds: duration_seconds,
+                origin_status_instance_id: None,
             });
         }
     }
@@ -485,6 +486,7 @@ pub fn apply_modifier(
                 amount,
                 kind,
                 remaining_seconds: duration,
+                origin_status_instance_id: None,
             });
             recalculate_effective_stats(ctx, target);
         }

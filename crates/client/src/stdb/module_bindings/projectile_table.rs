@@ -2,6 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::effect_payload_row_type::EffectPayloadRow;
 use super::projectile_type::Projectile;
 use super::vec_3_row_type::Vec3Row;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};

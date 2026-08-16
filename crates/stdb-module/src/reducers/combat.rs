@@ -8,10 +8,7 @@ use spacetimedb::{reducer, ReducerContext, Table};
 
 use crate::reducers::lifecycle::caller_entity;
 use crate::sim::combat;
-use crate::tables::{
-    crowd_control, entity_stats, game_entity, grid_cell, player_message, EntityStateRow,
-    EntityStats, GameEntity, PlayerMessageEvent,
-};
+use crate::tables::{entity_stats, player_message, EntityStateRow, PlayerMessageEvent};
 
 /// Brings the caller's character back to life at its spawn point.
 ///
@@ -43,63 +40,14 @@ pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
         return Err("only dead characters respawn".to_string());
     }
 
-    // Order matters: dropping the modifiers first restores the real
-    // `max_health`, so the refill below tops up to the unbuffed pool rather
-    // than to a number a debuff had shrunk.
-    combat::clear_modifiers(ctx, entity.entity_id);
-    clear_crowd_control(ctx, entity.entity_id);
-
-    // Re-read: `clear_modifiers` rewrites this row.
-    let stats = ctx
-        .db
-        .entity_stats()
-        .entity_id()
-        .find(&entity.entity_id)
-        .ok_or_else(|| "character has no stats".to_string())?;
-    let refilled = crate::rows::StatsRow {
-        current_health: stats.stats.max_health,
-        ..stats.stats
-    };
-    ctx.db.entity_stats().entity_id().update(EntityStats {
-        stats: refilled,
-        current_mana: refilled.max_mana,
-        ..stats
-    });
-
-    let position = entity.spawn_point;
-    let (cell_x, cell_z) = grid_cell(position);
-    ctx.db.game_entity().entity_id().update(GameEntity {
-        position,
-        // Whatever the character was walking towards when it died is not where
-        // it wants to go from the graveyard.
-        move_target: None,
-        state: EntityStateRow::Idle,
-        cell_x,
-        cell_z,
-        ..entity
-    });
+    // Everything a resurrection means — dropping the debuffs, the crowd
+    // control and the poisons, refilling, and going home — lives in one place,
+    // shared with the enemy respawn timer.
+    combat::resurrect(ctx, entity);
 
     ctx.db.player_message().insert(PlayerMessageEvent {
         target: Some(ctx.sender()),
         text: "You are back on your feet.".to_string(),
     });
     Ok(())
-}
-
-/// Drops every stun, root, silence and slow on an entity.
-///
-/// Respawning out of a stun is the point: the crowd control that killed the
-/// character should not still be running when it stands back up.
-fn clear_crowd_control(ctx: &ReducerContext, entity_id: u64) {
-    // Collected first: deleting while the index iterator is live is not safe.
-    let ids: Vec<u64> = ctx
-        .db
-        .crowd_control()
-        .victim()
-        .filter(&entity_id)
-        .map(|row| row.id)
-        .collect();
-    for id in ids {
-        ctx.db.crowd_control().id().delete(&id);
-    }
 }

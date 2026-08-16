@@ -70,6 +70,14 @@ fn setup_pause_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: R
     spawn_button(
         &mut commands,
         panel,
+        "Logout",
+        UiButtonAction::Logout,
+        &theme,
+        &asset_server,
+    );
+    spawn_button(
+        &mut commands,
+        panel,
         "Return to Main Menu",
         UiButtonAction::ReturnToMainMenu,
         &theme,

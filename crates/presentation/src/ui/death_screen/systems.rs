@@ -1,8 +1,8 @@
 //! Sistemi della death screen: setup UI, visibilità, invio `RespawnRequest`.
 
 use bevy::prelude::*;
-use bevymmo_shared::entity::LocalPlayer;
 use bevymmo_client::stdb::{commands, StdbConnection};
+use bevymmo_shared::entity::LocalPlayer;
 
 use bevymmo_client::network::types::ClientConnectionConfig;
 use bevymmo_shared::entity::components::EntityState;

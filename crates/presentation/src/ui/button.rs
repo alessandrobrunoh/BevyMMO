@@ -16,6 +16,7 @@ pub enum UiButtonAction {
     BackToMenu,
     Resume,
     ReturnToMainMenu,
+    Logout,
     Exit,
     /// Settings → Keybinds → "Reset to defaults".
     ResetKeybinds,

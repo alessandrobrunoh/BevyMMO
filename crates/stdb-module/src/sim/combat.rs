@@ -24,6 +24,10 @@
 //! holds *effective* ones, and this is the only function that derives the
 //! second from the first.
 
+// How long a slain non-player entity stays a corpse. Taken from the domain
+// rather than restated, because it *was* restated — as 30 seconds, under a
+// comment claiming it matched the domain's 10.
+use bevymmo_domain::entity::enemy::components::ENEMY_RESPAWN_SECONDS;
 use bevymmo_domain::items::effects::ItemEffect;
 use bevymmo_domain::items_impl::default_items;
 use bevymmo_domain::stats::components::StatsBundleData;
@@ -34,9 +38,9 @@ use spacetimedb::{Identity, ReducerContext, Table};
 
 use crate::rows::{equipment_from_rows, StatsRow, EQUIP_SLOTS};
 use crate::tables::{
-    damage_event, entity_stats, equipment, game_entity, periodic_effect, player_stats,
-    stat_modifier, DamageEventRow, EntityKindRow, EntityStateRow, EntityStats, GameEntity,
-    PeriodicEffect, StatModifier,
+    boss_state, crowd_control, damage_event, entity_stats, equipment, game_entity, periodic_effect,
+    player_stats, stat_modifier, threat, BossPhaseRow, BossState, DamageEventRow, EntityKindRow,
+    EntityStateRow, EntityStats, GameEntity, ModifierKindRow, PeriodicEffect, StatModifier,
 };
 
 // ---------------------------------------------------------------------------
@@ -116,6 +120,14 @@ fn tick_periodic_effects(ctx: &ReducerContext, dt: f32) {
 /// Applies a heal- or damage-over-time effect to `target`.
 ///
 /// A positive `amount_per_tick` heals, a negative one hurts.
+///
+/// Refreshes rather than stacks, on the same identity rule as
+/// [`apply_modifier`]: same source, same magnitude, same interval is the same
+/// effect. Without this a channelled DoT re-applied every tick left one row per
+/// tick behind, each one still ticking — twenty poisons a second from one cast.
+/// The accumulator is deliberately *not* reset on refresh, so a refreshed DoT
+/// keeps its rhythm instead of restarting its interval and effectively skipping
+/// a tick each time.
 pub fn apply_periodic(
     ctx: &ReducerContext,
     target: u64,
@@ -127,15 +139,37 @@ pub fn apply_periodic(
     if tick_interval_seconds <= 0.0 || duration_seconds <= 0.0 || amount_per_tick == 0.0 {
         return;
     }
-    ctx.db.periodic_effect().insert(PeriodicEffect {
-        id: 0,
-        entity_id: target,
-        source,
-        amount_per_tick,
-        tick_interval_seconds,
-        since_last_tick: 0.0,
-        remaining_seconds: duration_seconds,
-    });
+
+    let existing = ctx
+        .db
+        .periodic_effect()
+        .on_entity()
+        .filter(&target)
+        .find(|row| {
+            row.source == source
+                && values_match(row.amount_per_tick, amount_per_tick)
+                && values_match(row.tick_interval_seconds, tick_interval_seconds)
+        });
+
+    match existing {
+        Some(row) => {
+            ctx.db.periodic_effect().id().update(PeriodicEffect {
+                remaining_seconds: duration_seconds,
+                ..row
+            });
+        }
+        None => {
+            ctx.db.periodic_effect().insert(PeriodicEffect {
+                id: 0,
+                entity_id: target,
+                source,
+                amount_per_tick,
+                tick_interval_seconds,
+                since_last_tick: 0.0,
+                remaining_seconds: duration_seconds,
+            });
+        }
+    }
 }
 
 /// Brings back anything whose respawn timer ran out.
@@ -169,31 +203,7 @@ fn tick_respawns(ctx: &ReducerContext, dt: f32) {
         ctx.db.game_entity().entity_id().update(entity);
     }
     for entity in due {
-        let entity_id = entity.entity_id;
-        let spawn = entity.spawn_point;
-        let (cell_x, cell_z) = crate::tables::grid_cell(spawn);
-        ctx.db.game_entity().entity_id().update(GameEntity {
-            state: EntityStateRow::Idle,
-            position: spawn,
-            move_target: None,
-            cell_x,
-            cell_z,
-            respawn_in_seconds: None,
-            ..entity
-        });
-        // Full health on return, and the effective stats rebuilt in case a
-        // debuff was still on the corpse.
-        if let Some(stats) = ctx.db.entity_stats().entity_id().find(&entity_id) {
-            ctx.db.entity_stats().entity_id().update(EntityStats {
-                stats: StatsRow {
-                    current_health: stats.stats.max_health,
-                    ..stats.stats
-                },
-                current_mana: stats.stats.max_mana,
-                ..stats
-            });
-        }
-        recalculate_effective_stats(ctx, entity_id);
+        resurrect(ctx, entity);
     }
 }
 
@@ -202,10 +212,11 @@ fn tick_respawns(ctx: &ReducerContext, dt: f32) {
 /// Returns the entities that lost at least one modifier, so the caller can
 /// rebuild their stats exactly once even if several buffs expired together.
 ///
-/// The Bevy version also drove heal-over-time and damage-over-time ticks from
-/// here. `stat_modifier` has no representation for those (no per-effect tick
-/// interval, no accumulator), so periodic effects are not ported — see the
-/// module gap notes in the port report.
+/// Only stat modifiers. The Bevy version drove heal-over-time and
+/// damage-over-time from the same loop; here they are their own table with
+/// their own interval and accumulator, ticked by [`tick_periodic_effects`],
+/// because a periodic effect never enters the effective-stat fold and walking
+/// it on every recompute was pure waste.
 fn tick_modifiers(ctx: &ReducerContext, dt: f32) -> Vec<u64> {
     // Two passes: mutating a table while iterating it is undefined here, and a
     // modifier that expires must not be observed half-deleted by the next row.
@@ -427,15 +438,18 @@ pub fn apply_healing(ctx: &ReducerContext, target: u64, amount: f32) {
 /// Re-applying an identical modifier refreshes its timer instead of stacking a
 /// second copy, which is the behaviour `refresh_or_insert_modifier` gave the
 /// Bevy server: channelled spells re-apply their buff every tick, and stacking
-/// would turn a 1.5x speed buff into a multiplicative explosion. Identity here
-/// is the tuple the row actually carries — target, field, operation, magnitude
-/// — because `stat_modifier` has no `source` or `kind` column to compare.
+/// would turn a 1.5x speed buff into a multiplicative explosion. Identity is
+/// the whole tuple the row carries — source, target, field, operation,
+/// magnitude — so two casters buffing the same stat keep two rows, and each
+/// refreshes only its own.
 pub fn apply_modifier(
     ctx: &ReducerContext,
     target: u64,
+    source: Option<u64>,
     field: &str,
     amount: f32,
     is_multiplicative: bool,
+    kind: ModifierKindRow,
     duration: Option<f32>,
 ) {
     let Some(parsed) = parse_stat_field(field) else {
@@ -445,7 +459,8 @@ pub fn apply_modifier(
     let field = stat_field_name(parsed).to_string();
 
     let existing = ctx.db.stat_modifier().target().filter(&target).find(|row| {
-        row.field == field
+        row.source == source
+            && row.field == field
             && row.is_multiplicative == is_multiplicative
             && values_match(row.amount, amount)
     });
@@ -453,6 +468,7 @@ pub fn apply_modifier(
     match existing {
         Some(row) => {
             ctx.db.stat_modifier().id().update(StatModifier {
+                kind,
                 remaining_seconds: duration,
                 ..row
             });
@@ -463,13 +479,124 @@ pub fn apply_modifier(
             ctx.db.stat_modifier().insert(StatModifier {
                 id: 0,
                 entity_id: target,
+                source,
                 field,
                 is_multiplicative,
                 amount,
+                kind,
                 remaining_seconds: duration,
             });
             recalculate_effective_stats(ctx, target);
         }
+    }
+}
+
+/// Puts one dead entity back on its feet, whole and unencumbered.
+///
+/// The single definition of "coming back to life", shared by the player's
+/// `respawn` reducer and the enemy respawn timer. They used to be two: the mob
+/// path only refilled health, so a mob that died stunned and poisoned came back
+/// stunned and poisoned, while the player path did the full cleanup. A boss got
+/// the worst of it — it returned at full health still flagged `Enraged` and
+/// `is_engaged`, with its threat table intact, so the fight resumed at its last
+/// phase against a party that had just wiped it.
+///
+/// Order matters: the modifiers go first so `max_health` is the unbuffed number
+/// before the refill tops it up.
+pub fn resurrect(ctx: &ReducerContext, entity: GameEntity) {
+    let entity_id = entity.entity_id;
+
+    clear_modifiers(ctx, entity_id);
+    clear_crowd_control(ctx, entity_id);
+    clear_periodic_effects(ctx, entity_id);
+    reset_boss_encounter(ctx, entity_id);
+
+    // Re-read: `clear_modifiers` rewrites this row.
+    if let Some(stats) = ctx.db.entity_stats().entity_id().find(&entity_id) {
+        let refilled = StatsRow {
+            current_health: stats.stats.max_health,
+            ..stats.stats
+        };
+        ctx.db.entity_stats().entity_id().update(EntityStats {
+            stats: refilled,
+            current_mana: refilled.max_mana,
+            ..stats
+        });
+    }
+
+    let position = entity.spawn_point;
+    let (cell_x, cell_z) = crate::tables::grid_cell(position);
+    ctx.db.game_entity().entity_id().update(GameEntity {
+        position,
+        // Whatever it was walking towards when it died is not where it wants to
+        // go from the graveyard.
+        move_target: None,
+        state: EntityStateRow::Idle,
+        respawn_in_seconds: None,
+        cell_x,
+        cell_z,
+        ..entity
+    });
+}
+
+/// Drops every stun, root, silence and slow on an entity.
+///
+/// Respawning out of a stun is the point: the crowd control that killed the
+/// character should not still be running when it stands back up.
+fn clear_crowd_control(ctx: &ReducerContext, entity_id: u64) {
+    // Collected first: deleting while the index iterator is live is not safe.
+    let ids: Vec<u64> = ctx
+        .db
+        .crowd_control()
+        .victim()
+        .filter(&entity_id)
+        .map(|row| row.id)
+        .collect();
+    for id in ids {
+        ctx.db.crowd_control().id().delete(&id);
+    }
+}
+
+/// Drops every poison and regeneration still running on an entity.
+fn clear_periodic_effects(ctx: &ReducerContext, entity_id: u64) {
+    let ids: Vec<u64> = ctx
+        .db
+        .periodic_effect()
+        .on_entity()
+        .filter(&entity_id)
+        .map(|row| row.id)
+        .collect();
+    for id in ids {
+        ctx.db.periodic_effect().id().delete(&id);
+    }
+}
+
+/// Rewinds a boss encounter to its dormant state.
+///
+/// A no-op for anything that is not a boss. For one that is, the phase, the
+/// engagement flag, the rotation cursor and the threat table all belong to the
+/// *fight*, not to the creature, so they die with it.
+fn reset_boss_encounter(ctx: &ReducerContext, entity_id: u64) {
+    let Some(boss) = ctx.db.boss_state().entity_id().find(&entity_id) else {
+        return;
+    };
+    ctx.db.boss_state().entity_id().update(BossState {
+        phase: BossPhaseRow::Idle,
+        is_engaged: false,
+        engaged_seconds: 0.0,
+        rotation_cursor: 0,
+        ..boss
+    });
+
+    let threat_ids: Vec<u64> = ctx
+        .db
+        .threat()
+        .by_boss()
+        .filter(&entity_id)
+        .map(|row| row.id)
+        .collect();
+    for id in threat_ids {
+        ctx.db.threat().id().delete(&id);
     }
 }
 
@@ -670,10 +797,10 @@ fn apply_modifiers(ctx: &ReducerContext, entity_id: u64, stats: &mut StatsRow) {
 
 /// Applies one `field op value` to a stats row.
 ///
-/// `StatField::Speed` addresses `movement_speed`. Note that the walking system
-/// reads `game_entity.speed`, not this field, so a Speed modifier changes the
-/// stat without changing how fast the character actually walks — see the port
-/// report.
+/// `StatField::Speed` addresses `movement_speed`. The walking system reads
+/// `game_entity.speed` rather than this field, but
+/// [`recalculate_effective_stats`] derives that column from this one at the end
+/// of every fold, so a Speed modifier does reach the legs.
 fn apply_stat_op(stats: &mut StatsRow, field: StatField, op: ModifierOp, value: f32) {
     let slot: &mut f32 = match field {
         StatField::Speed => &mut stats.movement_speed,
@@ -738,10 +865,6 @@ fn kill(ctx: &ReducerContext, entity: GameEntity) {
     });
 }
 
-/// How long a slain non-player entity stays a corpse.
-///
-/// Matches the Bevy server's `ENEMY_RESPAWN_SECONDS`.
-const ENEMY_RESPAWN_SECONDS: f32 = 30.0;
 
 /// Whether the entity is currently a corpse.
 fn is_dead(ctx: &ReducerContext, entity_id: u64) -> bool {

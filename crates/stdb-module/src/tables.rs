@@ -236,13 +236,26 @@ pub enum CastKindRow {
     Channeling,
 }
 
+/// Which system started this cast — determines how `advance_casts` resolves
+/// and fires the effect.
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CastSourceRow {
+    /// Legacy spell from the hotbar (`cast_spell` reducer).
+    Spell,
+    /// Eidolon weapon ability (`eidolon_cast` reducer).
+    Eidolon,
+}
+
 /// A cast in progress. At most one per caster: starting another cancels it.
 #[table(accessor = cast_state, public)]
 pub struct CastState {
     #[primary_key]
     pub entity_id: u64,
+    /// Spell id or ability id — namespace shared by both sources.
     pub spell_id: String,
     pub kind: CastKindRow,
+    /// Which system started this cast; determines how to resolve and fire.
+    pub source: CastSourceRow,
     pub elapsed_seconds: f32,
     pub required_seconds: f32,
     /// Caster position when the cast began, to detect movement interrupts.
@@ -251,6 +264,11 @@ pub struct CastState {
     pub target_entity: Option<u64>,
     pub channel_tick_accumulator: f32,
     pub tick_interval_seconds: f32,
+    /// For Channeling casts only: whether movement cancels the channel.
+    /// True for legacy spells with InterruptOnMove; reflects AbilityCastMode
+    /// for Eidolon abilities. Ignored for Instant/CastTime (movement always
+    /// interrupts CastTime).
+    pub channel_movement_interrupts: bool,
 }
 
 /// One spell or ability on cooldown for one entity.
@@ -333,8 +351,26 @@ pub struct CrowdControl {
     #[auto_inc]
     pub id: u64,
     pub entity_id: u64,
+    /// Who applied it. The CC bar names the source, and a future immunity rule
+    /// needs to tell two casters apart.
+    pub source: Option<u64>,
     pub kind: CrowdControlKindRow,
     pub remaining_seconds: f32,
+    /// The duration this effect started with. Without it the client cannot draw
+    /// a fill ratio: it only ever sees the countdown, so the first frame it
+    /// observes would always look like a full bar.
+    pub total_seconds: f32,
+}
+
+/// Whether a modifier helps or hurts the entity carrying it.
+///
+/// Not inferable from the sign: `-0.3` on `Armor` is a debuff, the same number
+/// on an incoming-damage field would be a buff. The caster states it, so the
+/// row records it rather than guessing.
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModifierKindRow {
+    Buff,
+    Debuff,
 }
 
 /// A timed stat modifier — a buff or a debuff.
@@ -348,11 +384,15 @@ pub struct StatModifier {
     #[auto_inc]
     pub id: u64,
     pub entity_id: u64,
+    /// Who applied it, so a buff can be attributed and a dispel can target one
+    /// caster's work.
+    pub source: Option<u64>,
     /// `StatField` as its debug name; the field set is small and stable, and a
     /// string keeps the table readable from `spacetime sql`.
     pub field: String,
     pub is_multiplicative: bool,
     pub amount: f32,
+    pub kind: ModifierKindRow,
     /// `None` means it lasts until something removes it.
     pub remaining_seconds: Option<f32>,
 }

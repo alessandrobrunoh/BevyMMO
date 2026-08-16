@@ -35,8 +35,12 @@ pub struct ConnectionRequest(pub Option<ConnectionIntent>);
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ConnectionIntent {
-    Connect { player_name: String },
+    Connect {
+        player_name: String,
+    },
     Disconnect,
+    /// Disconnect and discard the locally cached SpacetimeDB identity.
+    Logout,
 }
 
 #[derive(Resource, Debug, Default)]

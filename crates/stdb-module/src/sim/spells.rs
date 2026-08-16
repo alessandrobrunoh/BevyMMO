@@ -35,12 +35,14 @@ use bevymmo_domain::crowd_control::CrowdControlKind;
 use bevymmo_domain::items::registry::ItemRegistry;
 use bevymmo_domain::spells::components::MOVEMENT_INTERRUPT_EPSILON;
 use bevymmo_domain::spells::context::{
-    AoeEffect, AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ChannelMovementPolicy,
+    AoeEffect, AoeShape, AoeSpawnRequest, AoeTargeting, CastKind,
     ProjectileSpawnRequest, Spell, SpellCastContext,
 };
 use bevymmo_domain::spells::registry::{SpellId, SpellRegistry};
 use bevymmo_domain::stats::components::{CombatStats, StatsBundleData};
-use bevymmo_domain::stats::events::{ApplyStatModifierEvent, ModifierEffect, ModifierOp};
+use bevymmo_domain::stats::events::{
+    ApplyStatModifierEvent, ModifierEffect, ModifierKind, ModifierOp,
+};
 use bevymmo_domain::EntityId;
 use glam::Vec3;
 use spacetimedb::{ReducerContext, Table};
@@ -49,8 +51,8 @@ use crate::rows::Vec3Row;
 use crate::tables::{
     aoe_region, cast_ended, cast_state, cooldown, entity_stats, game_entity,
     grid_cell, projectile, spell_visual_effect, AoeRegion, AoeShapeRow, CastEndedEvent,
-    CastKindRow, CastState, Cooldown, CrowdControlKindRow, EntityStateRow,
-    GameEntity, Projectile, SpellVisualEffectEvent,
+    CastKindRow, CastSourceRow, CastState, Cooldown, CrowdControlKindRow, EntityStateRow,
+    GameEntity, ModifierKindRow, Projectile, SpellVisualEffectEvent,
 };
 
 /// How long a projectile may stay in the air before it gives up, in seconds.
@@ -292,6 +294,99 @@ pub fn fire_spell(
     Some(config.cooldown_seconds)
 }
 
+/// Fires an Eidolon ability by re-resolving equipment and inscriptions.
+///
+/// Used by `advance_casts` when a CastTime/Channeling Eidolon cast completes.
+/// Returns the base cooldown duration, or `None` if the caster lost their
+/// weapon/stats between starting and finishing the cast.
+pub fn fire_eidolon_ability(
+    ctx: &ReducerContext,
+    caster: &GameEntity,
+    ability_id_str: &str,
+    target_position: Option<Vec3>,
+    target_entity: Option<u64>,
+) -> Option<f32> {
+    use bevymmo_domain::abilities::{
+        cast_inscribed_slot, resolve_active_ability, AbilitySlot,
+    };
+    use crate::rows::{equipment_from_rows, known_glyphs_from_rows};
+    use crate::tables::{equipment, known_glyphs};
+
+    let combat = combat_stats(ctx, caster.entity_id)?;
+    let caster_position = Vec3::from(caster.position);
+
+    // Re-resolve equipment and weapon (must still be equipped).
+    let equip_row = ctx.db.equipment().identity().find(&ctx.sender())?;
+    let equipment = equipment_from_rows(&equip_row.slots);
+    let weapon = equipment.weapon.as_ref()?;
+    let item = items().get(&weapon.item_id)?;
+    let weapon_abilities = item.weapon_abilities()?;
+
+    // Determine which slot this ability belongs to.
+    let ability_id = bevymmo_domain::abilities::AbilityId::new(ability_id_str.to_string());
+    let slot = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate]
+        .into_iter()
+        .find(|&s| {
+            resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
+                .map_or(false, |id| id.as_str() == ability_id.as_str())
+        })?;
+
+    // Resolve inscriptions and known glyphs.
+    let known_row = ctx.db.known_glyphs().identity().find(&ctx.sender());
+    let known = known_row
+        .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
+        .unwrap_or_default();
+    let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
+
+    // Build target list.
+    let preview = {
+        use bevymmo_domain::abilities::resolve_slot_preview;
+        resolve_slot_preview(
+            slot,
+            weapon_abilities,
+            &weapon.ability_selection,
+            &inscriptions,
+            &known,
+            base_abilities(),
+            modifiers(),
+        )
+        .ok()?
+    };
+
+    let targets = potential_targets(
+        ctx,
+        caster_position,
+        preview.params.range + preview.params.area + TARGET_QUERY_MARGIN,
+    );
+
+    let mut cast_ctx = SpellCastContext::new(
+        EntityId::new(caster.entity_id),
+        caster_position,
+        &combat,
+        Vec3::from(caster.look),
+        target_position,
+        target_entity.map(EntityId::new),
+        &targets,
+    );
+
+    cast_inscribed_slot(
+        slot,
+        weapon_abilities,
+        &weapon.ability_selection,
+        &inscriptions,
+        &known,
+        base_abilities(),
+        essences(),
+        modifiers(),
+        ancient_words(),
+        &mut cast_ctx,
+    )
+    .ok()?;
+
+    apply_pending(ctx, caster.entity_id, caster_position, ability_id_str, &mut cast_ctx);
+    Some(preview.ability.base_params().cooldown)
+}
+
 /// Drains every `pending_*` list on the context into the database.
 ///
 /// Bevy's `apply_spell_effects`, with message writers replaced by table writes.
@@ -382,9 +477,11 @@ fn apply_modifier_event(ctx: &ReducerContext, event: &ApplyStatModifierEvent) {
                 crate::sim::combat::apply_modifier(
                     ctx,
                     event.target.get(),
+                    event.source.map(|s| s.get()),
                     &format!("{field:?}"),
                     *value,
                     is_multiplicative,
+                    modifier_row_kind(event.kind),
                     event.duration_seconds,
                 );
             }
@@ -427,6 +524,17 @@ fn apply_modifier_event(ctx: &ReducerContext, event: &ApplyStatModifierEvent) {
 fn crowd_control_row_kind(kind: CrowdControlKind) -> CrowdControlKindRow {
     match kind {
         CrowdControlKind::Stun => CrowdControlKindRow::Stun,
+    }
+}
+
+/// Carries the caster's own buff/debuff label into the row.
+///
+/// Inferring it from the sign would get `-0.3 Armor` right and a reduced
+/// incoming-damage modifier wrong, so the declared value is the one stored.
+fn modifier_row_kind(kind: ModifierKind) -> ModifierKindRow {
+    match kind {
+        ModifierKind::Buff => ModifierKindRow::Buff,
+        ModifierKind::Debuff => ModifierKindRow::Debuff,
     }
 }
 
@@ -532,6 +640,7 @@ fn apply_aoe_now(ctx: &ReducerContext, caster: u64, request: &AoeSpawnRequest) {
             } => crate::sim::crowd_control::apply(
                 ctx,
                 target.get(),
+                Some(caster),
                 crowd_control_row_kind(*kind),
                 *duration_seconds,
             ),
@@ -579,6 +688,8 @@ struct EndedCast {
 
 /// Bevy's `advance_cast_progress`: ticks every wind-up and channel, fires the
 /// ones that came due, and cancels the ones that were interrupted.
+///
+/// Handles both legacy [`CastSourceRow::Spell`] and [`CastSourceRow::Eidolon`] casts.
 fn advance_casts(ctx: &ReducerContext, dt: f32) {
     // Collected up front because firing writes to `entity_stats`, `projectile`,
     // `aoe_region` and `cooldown`, and a tick is one transaction: iterating a
@@ -606,25 +717,14 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
             continue;
         }
 
-        let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
-            log::warn!(
-                "cast in progress for unknown spell {:?}; cancelling",
-                cast.spell_id
-            );
-            ended.push(EndedCast {
-                entity_id: cast.entity_id,
-                spell_id: cast.spell_id,
-                interrupted: true,
-            });
-            continue;
-        };
-        let config = spell.config();
-
+        // --- Movement interrupt check (source-agnostic) ---
+        // CastTime always interrupts on movement.
+        // Channeling respects the stored channel_movement_interrupts policy,
+        // which was captured from SpellConfig (legacy) or AbilityCastMode (Eidolon)
+        // at cast start time.
         let movement_cancels = match cast.kind {
             CastKindRow::CastTime => true,
-            CastKindRow::Channeling => {
-                config.channel_movement == ChannelMovementPolicy::InterruptOnMove
-            }
+            CastKindRow::Channeling => cast.channel_movement_interrupts,
             CastKindRow::Instant => false,
         };
         let moved = flat_distance(Vec3::from(caster.position), Vec3::from(cast.start_position))
@@ -641,55 +741,100 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
         let target_position = cast.target_position.map(Vec3::from);
         let elapsed_seconds = cast.elapsed_seconds + dt;
         let mut channel_tick_accumulator = cast.channel_tick_accumulator;
+        let mut eidolon_cast_failed = false; // Tracks resolution failure for CastTime
 
-        let finished = match cast.kind {
-            CastKindRow::CastTime => {
+        let finished = match (cast.source, cast.kind) {
+            // --- Legacy Spell paths (unchanged behaviour) ---
+            (CastSourceRow::Spell, CastKindRow::CastTime) => {
+                let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
+                    log::warn!("cast in progress for unknown spell {:?}; cancelling", cast.spell_id);
+                    ended.push(EndedCast { entity_id: cast.entity_id, spell_id: cast.spell_id, interrupted: true });
+                    continue;
+                };
                 let due = elapsed_seconds >= cast.required_seconds;
                 if due {
-                    if let Some(cooldown_seconds) = fire_spell(
-                        ctx,
-                        &caster,
-                        spell.as_ref(),
-                        target_position,
-                        cast.target_entity,
-                    ) {
-                        start_cooldown(ctx, caster.entity_id, &cast.spell_id, cooldown_seconds);
+                    if let Some(cd) = fire_spell(ctx, &caster, spell.as_ref(), target_position, cast.target_entity) {
+                        start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
                     }
                 }
                 due
             }
-            CastKindRow::Channeling => {
-                channel_tick_accumulator += dt;
-                // A zero interval would spin forever. Bevy had the same hazard
-                // and got away with it because `channel_tick_interval_seconds`
-                // defaults to 0.25; here the interval is a stored column, so a
-                // bad row must not be able to hang the tick.
-                let interval = if cast.tick_interval_seconds > 0.0 {
-                    cast.tick_interval_seconds
-                } else {
-                    dt.max(f32::EPSILON)
+            (CastSourceRow::Spell, CastKindRow::Channeling) => {
+                let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
+                    log::warn!("cast in progress for unknown spell {:?}; cancelling", cast.spell_id);
+                    ended.push(EndedCast { entity_id: cast.entity_id, spell_id: cast.spell_id, interrupted: true });
+                    continue;
                 };
+                channel_tick_accumulator += dt;
+                let interval = if cast.tick_interval_seconds > 0.0 { cast.tick_interval_seconds } else { dt.max(f32::EPSILON) };
                 while channel_tick_accumulator >= interval {
                     channel_tick_accumulator -= interval;
-                    fire_spell(
-                        ctx,
-                        &caster,
-                        spell.as_ref(),
-                        target_position,
-                        cast.target_entity,
-                    );
+                    fire_spell(ctx, &caster, spell.as_ref(), target_position, cast.target_entity);
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
-            // Defensive: an instant spell never opens a `cast_state`.
-            CastKindRow::Instant => true,
+
+            // --- Eidolon ability paths ---
+            (CastSourceRow::Eidolon, CastKindRow::CastTime) => {
+                let due = elapsed_seconds >= cast.required_seconds;
+                if due {
+                    // Resolution may fail if equipment/selection changed during wind-up.
+                    // Treat as interrupted: no effect, no cooldown (client shows cancelled bar).
+                    match fire_eidolon_ability(
+                        ctx, &caster, &cast.spell_id, target_position, cast.target_entity,
+                    ) {
+                        Some(cd) => {
+                            start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
+                            true // Completed successfully
+                        }
+                        None => {
+                            // Equipment changed or weapon removed during cast.
+                            log::info!(
+                                "Eidolon cast {:?} for entity {} failed at completion; interrupting",
+                                cast.spell_id, cast.entity_id
+                            );
+                            eidolon_cast_failed = true;
+                            true // End the cast (will be marked as interrupted below)
+                        }
+                    }
+                } else {
+                    false
+                }
+            }
+            (CastSourceRow::Eidolon, CastKindRow::Channeling) => {
+                channel_tick_accumulator += dt;
+                let interval = if cast.tick_interval_seconds > 0.0 { cast.tick_interval_seconds } else { dt.max(f32::EPSILON) };
+                while channel_tick_accumulator >= interval {
+                    channel_tick_accumulator -= interval;
+                    // Re-fire each tick (same as legacy channeling).
+                    // Tick failures are logged but don't interrupt the channel:
+                    // the player may have moved out of range or the target died,
+                    // but the channel itself is still valid.
+                    if fire_eidolon_ability(ctx, &caster, &cast.spell_id, target_position, cast.target_entity).is_none() {
+                        log::debug!(
+                            "Eidolon channel tick {:?} for entity {} failed to resolve",
+                            cast.spell_id, cast.entity_id
+                        );
+                    }
+                }
+                cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
+            }
+
+            // Defensive: an instant spell/ability never opens a `cast_state`.
+            (_, CastKindRow::Instant) => true,
         };
 
         if finished {
+            // Determine if this was a true completion or an interruption.
+            // Instant casts are never interruptions. Eidolon CastTime that failed
+            // resolution is interrupted. Everything else depends on kind.
+            let interrupted = matches!(cast.kind, CastKindRow::Instant)
+                || eidolon_cast_failed;
+
             ended.push(EndedCast {
                 entity_id: cast.entity_id,
                 spell_id: cast.spell_id,
-                interrupted: matches!(cast.kind, CastKindRow::Instant),
+                interrupted,
             });
         } else {
             ctx.db.cast_state().entity_id().update(CastState {

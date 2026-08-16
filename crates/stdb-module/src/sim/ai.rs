@@ -44,6 +44,7 @@ use bevymmo_domain::entity::boss::components::{Boss, BossPhase, BossRotationStat
 use bevymmo_domain::entity::enemy::components::AggroRange;
 use bevymmo_domain::movement;
 use bevymmo_domain::spells::{CastKind, SpellId};
+use bevymmo_domain::spells::context::ChannelMovementPolicy as SpellChannelMovementPolicy;
 use bevymmo_domain::spells_impl::attack::AttackSpell;
 use glam::Vec3;
 use spacetimedb::{ReducerContext, Table};
@@ -953,6 +954,7 @@ fn request_cast(
                 entity_id: caster.entity_id,
                 spell_id: spell_id.as_str().to_string(),
                 kind: spells::cast_kind_row(kind),
+                source: crate::tables::CastSourceRow::Spell,
                 elapsed_seconds: 0.0,
                 required_seconds,
                 start_position: caster.position,
@@ -960,6 +962,11 @@ fn request_cast(
                 target_entity,
                 channel_tick_accumulator,
                 tick_interval_seconds,
+                // Boss AI always uses legacy spell path; read from SpellConfig.
+                channel_movement_interrupts: matches!(
+                    kind,
+                    CastKind::Channeling if config.channel_movement == SpellChannelMovementPolicy::InterruptOnMove
+                ),
             });
         }
     }

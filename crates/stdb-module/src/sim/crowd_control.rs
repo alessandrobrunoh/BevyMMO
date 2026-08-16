@@ -100,6 +100,7 @@ pub fn step(ctx: &ReducerContext, dt: f32) {
 pub fn apply(
     ctx: &ReducerContext,
     entity_id: u64,
+    source: Option<u64>,
     kind: CrowdControlKindRow,
     duration_seconds: f32,
 ) {
@@ -115,8 +116,13 @@ pub fn apply(
 
     match existing {
         Some(effect) => {
+            // A refresh restates the duration, so `total_seconds` moves with it:
+            // the bar the player sees belongs to the stun that is running now,
+            // not to the one it replaced.
             ctx.db.crowd_control().id().update(CrowdControl {
+                source,
                 remaining_seconds: duration_seconds,
+                total_seconds: duration_seconds,
                 ..effect
             });
         }
@@ -125,8 +131,10 @@ pub fn apply(
                 // Zero asks the sequence for an id.
                 id: 0,
                 entity_id,
+                source,
                 kind,
                 remaining_seconds: duration_seconds,
+                total_seconds: duration_seconds,
             });
         }
     }

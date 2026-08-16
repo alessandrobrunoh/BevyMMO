@@ -4,14 +4,18 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::modifier_kind_row_type::ModifierKindRow;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct StatModifier {
     pub id: u64,
     pub entity_id: u64,
+    pub source: Option<u64>,
     pub field: String,
     pub is_multiplicative: bool,
     pub amount: f32,
+    pub kind: ModifierKindRow,
     pub remaining_seconds: Option<f32>,
 }
 
@@ -25,9 +29,11 @@ impl __sdk::InModule for StatModifier {
 pub struct StatModifierCols {
     pub id: __sdk::__query_builder::Col<StatModifier, u64>,
     pub entity_id: __sdk::__query_builder::Col<StatModifier, u64>,
+    pub source: __sdk::__query_builder::Col<StatModifier, Option<u64>>,
     pub field: __sdk::__query_builder::Col<StatModifier, String>,
     pub is_multiplicative: __sdk::__query_builder::Col<StatModifier, bool>,
     pub amount: __sdk::__query_builder::Col<StatModifier, f32>,
+    pub kind: __sdk::__query_builder::Col<StatModifier, ModifierKindRow>,
     pub remaining_seconds: __sdk::__query_builder::Col<StatModifier, Option<f32>>,
 }
 
@@ -37,9 +43,11 @@ impl __sdk::__query_builder::HasCols for StatModifier {
         StatModifierCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             entity_id: __sdk::__query_builder::Col::new(table_name, "entity_id"),
+            source: __sdk::__query_builder::Col::new(table_name, "source"),
             field: __sdk::__query_builder::Col::new(table_name, "field"),
             is_multiplicative: __sdk::__query_builder::Col::new(table_name, "is_multiplicative"),
             amount: __sdk::__query_builder::Col::new(table_name, "amount"),
+            kind: __sdk::__query_builder::Col::new(table_name, "kind"),
             remaining_seconds: __sdk::__query_builder::Col::new(table_name, "remaining_seconds"),
         }
     }

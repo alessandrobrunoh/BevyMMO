@@ -9,11 +9,11 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 
 use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_shared::abilities::{AbilityId, BaseAbilityRegistry};
 use bevymmo_shared::network::mode::has_client;
 use bevymmo_shared::network::protocol::{
     NetworkEntityId, Position, SpellCastEnded, SpellCastProgress,
 };
-use bevymmo_shared::spells::{SpellId, SpellRegistry};
 
 use crate::game_state::{GameScreen, Screen};
 use crate::spells::ui::{HudCooldownKey, SpellHudCooldownStarted};
@@ -29,6 +29,8 @@ const STALE_AFTER_SECONDS: f32 = 1.0;
 /// Local mirror of an authoritative cast/channel snapshot.
 #[derive(Debug, Clone)]
 pub struct ObservedCast {
+    /// The ability or spell id — carries an `AbilityId` for Eidolon casts and a
+    /// `SpellId` string for legacy NPC/boss casts.
     pub spell_id: String,
     pub kind: u8,
     pub elapsed_seconds: f32,
@@ -106,11 +108,6 @@ fn not_in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
 ///
 /// Host-client mode writes messages locally to avoid depending on a loopback
 /// transport path. Dedicated clients still consume the Lightyear receiver.
-///
-/// # Example
-/// ```rust,ignore
-/// app.add_systems(Update, read_cast_progress);
-/// ```
 fn read_cast_progress(
     time: Res<Time>,
     mut observed: ResMut<ObservedCasts>,
@@ -137,64 +134,65 @@ fn read_cast_progress(
     }
 }
 
+/// Reads cast-end events and starts HUD cooldowns for completed **player**
+/// (Eidolon) casts.
+///
+/// Legacy NPC/boss casts are still observed visually (the bar disappears) but
+/// do **not** create local player HUD cooldowns — only `AbilityId` keys that
+/// exist in the `BaseAbilityRegistry` generate cooldowns.
 fn read_cast_ended(
     mut observed: ResMut<ObservedCasts>,
-    registry: Res<SpellRegistry>,
+    ability_registry: Res<BaseAbilityRegistry>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
     mut local_messages: MessageReader<SpellCastEnded>,
     mut receivers: Query<&mut MessageReceiver<SpellCastEnded>, With<ConnectedClient>>,
 ) {
     for message in local_messages.read() {
         observed.0.remove(&message.caster_network_id);
-        start_cooldown_from_cast_end(&registry, &mut hud_cooldowns, message);
+        start_cooldown_from_cast_end(&ability_registry, &mut hud_cooldowns, message);
     }
 
     for mut receiver in receivers.iter_mut() {
         for message in receiver.receive() {
             observed.0.remove(&message.caster_network_id);
-            start_cooldown_from_cast_end(&registry, &mut hud_cooldowns, &message);
+            start_cooldown_from_cast_end(&ability_registry, &mut hud_cooldowns, &message);
         }
     }
 }
 
-/// Starts HUD cooldown when a server-authoritative cast/channel ends successfully.
+/// Starts a HUD cooldown when a server-authoritative cast/channel ends successfully.
 ///
-/// Swift does not emit a visual effect, so relying only on visual messages would
-/// leave the HUD permanently ready even though the server started a cooldown.
-///
-/// # Example
-/// ```rust,ignore
-/// start_cooldown_from_cast_end(&registry, &mut hud_cooldowns, &message);
-/// ```
+/// Only emits a cooldown for **Eidolon abilities** found in the registry (the
+/// player's weapon gestures). Legacy spell ids from NPCs/bosses are silently
+/// skipped so they never pollute the player's HUD state.
 fn start_cooldown_from_cast_end(
-    registry: &SpellRegistry,
+    ability_registry: &BaseAbilityRegistry,
     hud_cooldowns: &mut MessageWriter<SpellHudCooldownStarted>,
     message: &SpellCastEnded,
 ) {
     if !message.completed {
         return;
     }
-    let spell_id = SpellId::new(message.spell_id.clone());
-    let Some(spell) = registry.get(&spell_id) else {
-        return;
-    };
-    let cooldown_seconds = spell.config().cooldown_seconds;
-    if cooldown_seconds <= 0.0 {
+
+    // Try Eidolon ability first — this is the player path.
+    let ability_id = AbilityId::new(message.spell_id.clone());
+    if let Some(ability) = ability_registry.get(&ability_id) {
+        let cooldown_seconds = ability.base_params().cooldown;
+        if cooldown_seconds <= 0.0 {
+            return;
+        }
+        hud_cooldowns.write(SpellHudCooldownStarted {
+            key: HudCooldownKey::Ability(ability_id),
+            cooldown_seconds,
+        });
         return;
     }
 
-    hud_cooldowns.write(SpellHudCooldownStarted {
-        key: HudCooldownKey::Spell(spell_id),
-        cooldown_seconds,
-    });
+    // Legacy spell id (NPC/boss) — do not create a player HUD cooldown.
+    // The visual bar is already removed by the caller; this is just the cooldown path.
 }
 
 /// Stores the latest authoritative cast snapshot per caster.
-///
-/// # Example
-/// ```rust,ignore
-/// observe_cast_progress(&mut observed_casts, &progress_message);
-/// ```
 fn observe_cast_progress(observed: &mut ObservedCasts, message: &SpellCastProgress) {
     observed.0.insert(
         message.caster_network_id,
@@ -213,11 +211,6 @@ fn observe_cast_progress(observed: &mut ObservedCasts, message: &SpellCastProgre
 ///
 /// The actual position and fill are updated separately so this system only
 /// reacts to lifecycle changes.
-///
-/// # Example
-/// ```rust,ignore
-/// app.add_systems(Update, sync_screen_cast_bars);
-/// ```
 fn sync_screen_cast_bars(
     mut commands: Commands,
     theme: Res<UiTheme>,
@@ -249,8 +242,6 @@ fn sync_screen_cast_bars(
 ///
 /// CastTime bars fill left-to-right. Channeling bars drain right-to-left when
 /// the channel has a finite duration.
-///
-/// # Example
 fn update_screen_cast_bars(
     camera_query: Query<(&Camera, &Transform), With<Camera3d>>,
     caster_query: Query<(&NetworkEntityId, &Position, Option<&Transform>), Without<Camera3d>>,

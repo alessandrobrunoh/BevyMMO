@@ -83,6 +83,10 @@ fn build_app(config: &AppConfig) -> App {
     app.add_message::<bevymmo_shared::network::protocol::SpellVisualEffect>();
     app.add_message::<bevymmo_shared::network::protocol::SpellCastProgress>();
     app.add_message::<bevymmo_shared::network::protocol::SpellCastEnded>();
+    // Written by the SpacetimeDB bridge, read by the presentation: the server's
+    // refusals and announcements, and the authoritative cooldown table.
+    app.add_message::<bevymmo_shared::server_feed::ServerNotice>();
+    app.add_message::<bevymmo_shared::server_feed::SpellCooldownState>();
     // Game content. These used to be empty `Resource`s filled by `Startup`
     // systems; they are plain values now, because the SpacetimeDB module needs
     // the same registries and has no ECS to build them in. Inserting them

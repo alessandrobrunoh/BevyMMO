@@ -392,7 +392,11 @@ mod tests {
         let mut world = test_world();
         let entity = occluder_entity(&mut world, Vec3::ZERO, 5.0);
 
-        run_occlusion(&mut world, Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.0, 10.0));
+        run_occlusion(
+            &mut world,
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::new(0.0, 0.0, 10.0),
+        );
 
         assert_eq!(
             target_of(&world, entity),
@@ -406,7 +410,11 @@ mod tests {
         let mut world = test_world();
         let entity = occluder_entity(&mut world, Vec3::new(50.0, 0.0, 0.0), 1.0);
 
-        run_occlusion(&mut world, Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.0, 10.0));
+        run_occlusion(
+            &mut world,
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::new(0.0, 0.0, 10.0),
+        );
 
         assert_eq!(target_of(&world, entity), 1.0);
     }
@@ -417,7 +425,11 @@ mod tests {
         // Past the player along the same axis: the segment stops short of it.
         let entity = occluder_entity(&mut world, Vec3::new(0.0, 0.0, 20.0), 1.0);
 
-        run_occlusion(&mut world, Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.0, 10.0));
+        run_occlusion(
+            &mut world,
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::new(0.0, 0.0, 10.0),
+        );
 
         assert_eq!(target_of(&world, entity), 1.0);
     }

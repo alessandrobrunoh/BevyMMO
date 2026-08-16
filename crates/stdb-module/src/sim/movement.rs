@@ -46,7 +46,16 @@ pub fn step(ctx: &ReducerContext, dt: f32) {
             TerrainStep::Moved(position) => (position, Some(target), EntityStateRow::Moving),
             // Clearing the target is what tells the client to stop predicting.
             TerrainStep::Arrived(position) => (position, None, EntityStateRow::Idle),
-            TerrainStep::Blocked | TerrainStep::NoSurface => (position, None, EntityStateRow::Idle),
+            // Blocked is *this tick*, not the journey: the stepper already tried
+            // both slide directions and none fit right now. Keeping the target
+            // is what lets a character press along a wall and round it over the
+            // following ticks, which is how the Bevy server behaved. Dropping it
+            // here made a single click into a slope stop the character dead,
+            // with nothing on screen to say why.
+            TerrainStep::Blocked => (position, Some(target), EntityStateRow::Idle),
+            // No surface under the destination, on the other hand, will not
+            // become reachable by trying again — the target is off the map.
+            TerrainStep::NoSurface => (position, None, EntityStateRow::Idle),
         };
 
         let position = Vec3Row::from(position);

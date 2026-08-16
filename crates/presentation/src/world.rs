@@ -411,15 +411,21 @@ fn spawn_prop_visual(
 #[derive(Resource, Debug, Default, Clone, Copy)]
 pub struct SteepSlopeDebug(pub bool);
 
-fn draw_steep_slopes(
-    world_map: Res<ClientWorldMap>,
-    mut gizmos: Gizmos,
-) {
-    let Some(manifest) = &world_map.manifest else { return; };
-    let global_max_slope = manifest.world_metrics.unwrap_or_default().max_walkable_slope_deg.to_radians();
+fn draw_steep_slopes(world_map: Res<ClientWorldMap>, mut gizmos: Gizmos) {
+    let Some(manifest) = &world_map.manifest else {
+        return;
+    };
+    let global_max_slope = manifest
+        .world_metrics
+        .unwrap_or_default()
+        .max_walkable_slope_deg
+        .to_radians();
 
     for surface in &manifest.surfaces {
-        let max_slope = surface.max_slope_deg.map(|d| d.to_radians()).unwrap_or(global_max_slope);
+        let max_slope = surface
+            .max_slope_deg
+            .map(|d| d.to_radians())
+            .unwrap_or(global_max_slope);
         let min_normal_y = max_slope.cos();
 
         if let Some(mesh) = &surface.walkable_mesh {
@@ -433,7 +439,7 @@ fn draw_steep_slopes(
                     let p2 = Vec3::from(v2);
 
                     let normal = (p1 - p0).cross(p2 - p0).normalize_or_zero();
-                    
+
                     // We only care about normals that are facing somewhat upward.
                     // If normal.y is less than min_normal_y, the slope is too steep.
                     if normal.y > 0.0 && normal.y < min_normal_y {
@@ -444,7 +450,7 @@ fn draw_steep_slopes(
                 }
             }
         }
-        
+
         if let Some(heightfield) = &surface.heightfield {
             let res = heightfield.resolution as usize;
             let stride = res + 1;
@@ -456,7 +462,7 @@ fn draw_steep_slopes(
                 for z in 0..res {
                     let center_x = bounds.min_x + (x as f32 + 0.5) * cell_x;
                     let center_z = bounds.min_z + (z as f32 + 0.5) * cell_z;
-                    
+
                     if let Some(normal) = heightfield.sample_normal(center_x, center_z) {
                         if normal[1] > 0.0 && normal[1] < min_normal_y {
                             let h00 = heightfield.heights[x * stride + z];

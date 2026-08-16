@@ -1,13 +1,11 @@
 //! Client presentation for spells: cast bars, HUD and visual effects.
 
 pub mod aim_preview;
-pub mod available_choices;
 pub mod cast_bar;
 pub mod cursor;
 pub mod dragon_enemy;
 pub mod effects;
 pub mod eidolon_effects;
-pub mod eidolon_input;
 pub mod healing_circle;
 pub mod input;
 pub mod meteorite;
@@ -27,10 +25,9 @@ impl Plugin for SpellsHudPlugin {
         cast_bar::cast_bar_systems(app);
         app.init_resource::<bevymmo_shared::abilities::AbilityAim>();
 
-        // `Escape` è legato sia a `TogglePause` sia a `ClearTarget`: annullare
-        // una mira deve poter rivendicare la pressione prima che quei due la
-        // vedano, altrimenti annullare un gesto aprirebbe anche la pausa e
-        // deselezionerebbe il bersaglio.
+        // `Escape` is bound to both `TogglePause` and `ClearTarget`: cancelling
+        // an aim must claim the press before those two see it, otherwise
+        // cancelling would also open the pause menu and deselect the target.
         app.add_systems(
             Update,
             aim_preview::cancel_ability_aim_on_escape
@@ -42,13 +39,10 @@ impl Plugin for SpellsHudPlugin {
         app.add_systems(
             Update,
             (
-                available_choices::sync_available_spell_choices,
-                input::cast_spells_on_key,
-                eidolon_input::cast_eidolon_abilities_on_key,
-                // Dopo l'input, così l'anteprima disegna la mira di QUESTO
-                // frame invece di quella del precedente.
-                aim_preview::draw_ability_aim_preview
-                    .after(eidolon_input::cast_eidolon_abilities_on_key),
+                input::cast_abilities_on_key,
+                // After input, so the preview draws *this* frame's aim rather
+                // than the previous frame's.
+                aim_preview::draw_ability_aim_preview.after(input::cast_abilities_on_key),
                 dispatch_visual_effects,
                 eidolon_effects::animate,
                 healing_circle::visual::animate,
@@ -124,11 +118,13 @@ fn dispatch_visual_effects(
                 &mut materials,
                 effect,
             ),
-            // Un gesto Eidolon manda il proprio id: il visual si costruisce
-            // rileggendo la sua `BaseAbility` (forma, raggio, preavviso), così
-            // un gesto nuovo si vede senza scrivere un visual dedicato.
+            // An Eidolon gesture sends its ability id: the visual is built by
+            // re-reading its `BaseAbility` (shape, radius, preview), so a new
+            // gesture shows up without writing a dedicated visual.
             other => {
-                let ability = abilities.get(&bevymmo_shared::abilities::AbilityId::new(other.to_string()));
+                let ability = abilities.get(&bevymmo_shared::abilities::AbilityId::new(
+                    other.to_string(),
+                ));
                 match ability {
                     Some(ability) => eidolon_effects::spawn_for_ability(
                         &mut commands,
@@ -137,7 +133,9 @@ fn dispatch_visual_effects(
                         effect,
                         &ability,
                     ),
-                    None => eidolon_effects::spawn(&mut commands, &mut meshes, &mut materials, effect),
+                    None => {
+                        eidolon_effects::spawn(&mut commands, &mut meshes, &mut materials, effect)
+                    }
                 }
             }
         }

@@ -11,8 +11,10 @@ use super::crowd_control_kind_row_type::CrowdControlKindRow;
 pub struct CrowdControl {
     pub id: u64,
     pub entity_id: u64,
+    pub source: Option<u64>,
     pub kind: CrowdControlKindRow,
     pub remaining_seconds: f32,
+    pub total_seconds: f32,
 }
 
 impl __sdk::InModule for CrowdControl {
@@ -25,8 +27,10 @@ impl __sdk::InModule for CrowdControl {
 pub struct CrowdControlCols {
     pub id: __sdk::__query_builder::Col<CrowdControl, u64>,
     pub entity_id: __sdk::__query_builder::Col<CrowdControl, u64>,
+    pub source: __sdk::__query_builder::Col<CrowdControl, Option<u64>>,
     pub kind: __sdk::__query_builder::Col<CrowdControl, CrowdControlKindRow>,
     pub remaining_seconds: __sdk::__query_builder::Col<CrowdControl, f32>,
+    pub total_seconds: __sdk::__query_builder::Col<CrowdControl, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for CrowdControl {
@@ -35,8 +39,10 @@ impl __sdk::__query_builder::HasCols for CrowdControl {
         CrowdControlCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             entity_id: __sdk::__query_builder::Col::new(table_name, "entity_id"),
+            source: __sdk::__query_builder::Col::new(table_name, "source"),
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
             remaining_seconds: __sdk::__query_builder::Col::new(table_name, "remaining_seconds"),
+            total_seconds: __sdk::__query_builder::Col::new(table_name, "total_seconds"),
         }
     }
 }

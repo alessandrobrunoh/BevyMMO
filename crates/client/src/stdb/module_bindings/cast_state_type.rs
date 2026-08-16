@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::cast_kind_row_type::CastKindRow;
+use super::cast_source_row_type::CastSourceRow;
 use super::vec_3_row_type::Vec3Row;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -13,6 +14,7 @@ pub struct CastState {
     pub entity_id: u64,
     pub spell_id: String,
     pub kind: CastKindRow,
+    pub source: CastSourceRow,
     pub elapsed_seconds: f32,
     pub required_seconds: f32,
     pub start_position: Vec3Row,
@@ -20,6 +22,7 @@ pub struct CastState {
     pub target_entity: Option<u64>,
     pub channel_tick_accumulator: f32,
     pub tick_interval_seconds: f32,
+    pub channel_movement_interrupts: bool,
 }
 
 impl __sdk::InModule for CastState {
@@ -33,6 +36,7 @@ pub struct CastStateCols {
     pub entity_id: __sdk::__query_builder::Col<CastState, u64>,
     pub spell_id: __sdk::__query_builder::Col<CastState, String>,
     pub kind: __sdk::__query_builder::Col<CastState, CastKindRow>,
+    pub source: __sdk::__query_builder::Col<CastState, CastSourceRow>,
     pub elapsed_seconds: __sdk::__query_builder::Col<CastState, f32>,
     pub required_seconds: __sdk::__query_builder::Col<CastState, f32>,
     pub start_position: __sdk::__query_builder::Col<CastState, Vec3Row>,
@@ -40,6 +44,7 @@ pub struct CastStateCols {
     pub target_entity: __sdk::__query_builder::Col<CastState, Option<u64>>,
     pub channel_tick_accumulator: __sdk::__query_builder::Col<CastState, f32>,
     pub tick_interval_seconds: __sdk::__query_builder::Col<CastState, f32>,
+    pub channel_movement_interrupts: __sdk::__query_builder::Col<CastState, bool>,
 }
 
 impl __sdk::__query_builder::HasCols for CastState {
@@ -49,6 +54,7 @@ impl __sdk::__query_builder::HasCols for CastState {
             entity_id: __sdk::__query_builder::Col::new(table_name, "entity_id"),
             spell_id: __sdk::__query_builder::Col::new(table_name, "spell_id"),
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
+            source: __sdk::__query_builder::Col::new(table_name, "source"),
             elapsed_seconds: __sdk::__query_builder::Col::new(table_name, "elapsed_seconds"),
             required_seconds: __sdk::__query_builder::Col::new(table_name, "required_seconds"),
             start_position: __sdk::__query_builder::Col::new(table_name, "start_position"),
@@ -61,6 +67,10 @@ impl __sdk::__query_builder::HasCols for CastState {
             tick_interval_seconds: __sdk::__query_builder::Col::new(
                 table_name,
                 "tick_interval_seconds",
+            ),
+            channel_movement_interrupts: __sdk::__query_builder::Col::new(
+                table_name,
+                "channel_movement_interrupts",
             ),
         }
     }

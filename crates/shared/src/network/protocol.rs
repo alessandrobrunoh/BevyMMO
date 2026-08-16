@@ -137,8 +137,8 @@ pub struct UpdateHotbarSlotRequest {
 /// Client -> server command to cast the equipped weapon's Eidolon gesture at
 /// `slot`. Unlike [`SpellCastCommand`], it carries no spell id: the server
 /// resolves gesture + Incisione from the caster's equipped weapon and
-/// `KnownGlyphs`. Instant-only for now (no CastTime/Channeling equivalent
-/// for Eidolon abilities yet).
+/// `KnownGlyphs`. Supports Instant, CastTime, and Channeling via the unified
+/// server pipeline (same cast bar / release flow as spell casts).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct EidolonCastCommand {
     pub slot: AbilitySlot,

@@ -3,9 +3,9 @@
 //! Fire cone impact visual spawned when the spell fires.
 //! A cone primitive expands over 0.1s then fades over 0.5s, total 0.6s lifetime.
 
-use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
+use bevymmo_shared::color::to_linear;
 
 use bevymmo_shared::network::protocol::SpellVisualEffect;
 use bevymmo_shared::spells_impl::dragon_enemy::FIRE_ORANGE;

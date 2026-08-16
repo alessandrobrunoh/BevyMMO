@@ -3,6 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::cast_kind_row_type::CastKindRow;
+use super::cast_source_row_type::CastSourceRow;
 use super::cast_state_type::CastState;
 use super::vec_3_row_type::Vec3Row;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};

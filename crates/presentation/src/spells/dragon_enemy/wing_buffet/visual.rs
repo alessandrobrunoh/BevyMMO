@@ -4,9 +4,9 @@
 //! A flat torus expands from scale 0.5 to 10.0 with alpha fade,
 //! plus a fainter secondary ring delayed by 0.08s scaled 1.2x.
 
-use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
+use bevymmo_shared::color::to_linear;
 
 use bevymmo_shared::network::protocol::SpellVisualEffect;
 use bevymmo_shared::spells_impl::dragon_enemy::DUST_TAN;

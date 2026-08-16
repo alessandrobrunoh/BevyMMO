@@ -5,9 +5,9 @@
 //! fan outward and shrink. No telegraph (the cast is instant), so the visual
 //! only plays the impact flash.
 
-use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
+use bevymmo_shared::color::to_linear;
 
 use bevymmo_shared::network::protocol::SpellVisualEffect;
 use bevymmo_shared::spells_impl::dragon_enemy::EMBER_YELLOW;

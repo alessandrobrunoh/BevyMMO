@@ -14,6 +14,7 @@ pub mod entity_bar;
 pub mod inscription;
 pub mod inventory;
 pub mod main_menu;
+pub mod notices;
 pub mod pause_menu;
 pub mod player_stats;
 pub mod scale;

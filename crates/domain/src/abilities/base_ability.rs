@@ -54,6 +54,76 @@ pub enum AbilityGeometry {
     SelfBuff { duration_seconds: f32 },
 }
 
+/// How an ability executes when activated.
+///
+/// Determines whether the ability fires immediately, has a wind-up period during
+/// which movement cancels it, or channels repeated effects while held.
+/// This is the Eidolon equivalent of [`crate::spells::context::CastKind`],
+/// but lives on the ability definition rather than a separate spell config.
+// No `Eq`: `Channeling` carries an `f32`, which has none.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AbilityCastMode {
+    /// Effect fires on press, no wind-up.
+    Instant,
+    /// Blocking wind-up: caster must remain stationary for `cast_time` seconds.
+    /// Movement always interrupts.
+    CastTime,
+    /// Repeated effect while held. Movement interrupts iff
+    /// `movement_policy` is `InterruptOnMove`.
+    Channeling {
+        /// Seconds between each channel tick (e.g. 0.25 for 4 ticks/sec).
+        tick_interval_seconds: f32,
+        /// Whether movement cancels the channel.
+        movement_policy: ChannelMovementPolicy,
+    },
+}
+
+/// Default cast mode derived from `cast_time`: positive → CastTime, zero → Instant.
+impl Default for AbilityCastMode {
+    fn default() -> Self {
+        AbilityCastMode::Instant
+    }
+}
+
+impl AbilityCastMode {
+    /// Infer cast mode from raw `cast_time` value.
+    /// Preserves existing behaviour: any positive cast_time means CastTime.
+    pub fn from_cast_time(cast_time: f32) -> Self {
+        if cast_time > 0.0 {
+            AbilityCastMode::CastTime
+        } else {
+            AbilityCastMode::Instant
+        }
+    }
+
+    /// Whether this mode requires a persisted `cast_state`.
+    pub fn is_instant(&self) -> bool {
+        matches!(self, AbilityCastMode::Instant)
+    }
+
+    /// Total duration for the progress bar (cast_time or max channel time).
+    /// For channeling this is caller-defined; for CastTime it is the ability's cast_time.
+    pub fn required_seconds(&self, cast_time: f32) -> f32 {
+        match self {
+            AbilityCastMode::Instant => 0.0,
+            AbilityCastMode::CastTime => cast_time,
+            AbilityCastMode::Channeling { .. } => cast_time.max(0.1), // minimum visible window
+        }
+    }
+}
+
+/// Channeling movement interrupt policy for Eidolon abilities.
+/// Mirrors [`crate::spells::context::ChannelMovementPolicy`] so the unified
+/// cast state can carry either source's policy without conversion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChannelMovementPolicy {
+    /// Movement cancels channeling (default for offensive abilities).
+    #[default]
+    InterruptOnMove,
+    /// Movement allowed; only release / re-press / death terminates channeling.
+    AllowMovement,
+}
+
 /// Parametri numerici, prima o dopo l'applicazione dei Modificatori
 /// (§14-24 del design: Espandere/Concentrare/Accelerare/Amplificare/
 /// Prolungare agiscono su questi campi).
@@ -118,6 +188,15 @@ pub trait BaseAbility: Send + Sync + 'static {
     fn tags(&self) -> &'static [AbilityTag];
     fn geometry(&self) -> AbilityGeometry;
     fn base_params(&self) -> AbilityParams;
+
+    /// How this ability executes when activated.
+    ///
+    /// Default implementation derives from [`AbilityParams::cast_time`]:
+    /// positive → [`AbilityCastMode::CastTime`], zero → [`AbilityCastMode::Instant`].
+    /// Override for channeling abilities.
+    fn cast_mode(&self) -> AbilityCastMode {
+        AbilityCastMode::from_cast_time(self.base_params().cast_time)
+    }
     /// Clip di animazione del personaggio — SEMPRE la stessa qualunque sia
     /// l'Essenza incisa (il gesto appartiene all'arma, non al Glifo).
     fn animation(&self) -> &'static str;
@@ -407,5 +486,139 @@ mod tests {
         registry.register(Arc::new(DummyAbility));
         assert!(registry.contains(&AbilityId::new("dummy")));
         assert_eq!(registry.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Cast mode derivation tests
+    // -----------------------------------------------------------------------
+
+    struct InstantAbility;
+    impl BaseAbility for InstantAbility {
+        fn id(&self) -> AbilityId { AbilityId::new("instant") }
+        fn display_name(&self) -> &'static str { "Instant" }
+        fn tags(&self) -> &'static [AbilityTag] { &[] }
+        fn geometry(&self) -> AbilityGeometry { AbilityGeometry::Circle { radius: 2.0 } }
+        fn base_params(&self) -> AbilityParams {
+            AbilityParams { power: 50.0, area: 0.0, range: 2.0, cast_time: 0.0, cooldown: 1.0, energy_cost: 5.0 }
+        }
+        fn animation(&self) -> &'static str { "swing" }
+        fn impact_vfx(&self) -> &'static str { "slash" }
+    }
+
+    struct CastTimeAbility;
+    impl BaseAbility for CastTimeAbility {
+        fn id(&self) -> AbilityId { AbilityId::new("cast_time") }
+        fn display_name(&self) -> &'static str { "CastTime" }
+        fn tags(&self) -> &'static [AbilityTag] { &[AbilityTag::Ranged] }
+        fn geometry(&self) -> AbilityGeometry { AbilityGeometry::Projectile { range: 20.0, speed: 30.0 } }
+        fn base_params(&self) -> AbilityParams {
+            AbilityParams { power: 80.0, area: 0.0, range: 20.0, cast_time: 0.8, cooldown: 6.0, energy_cost: 15.0 }
+        }
+        fn animation(&self) -> &'static str { "draw" }
+        fn impact_vfx(&self) -> &'static str { "bolt" }
+    }
+
+    struct ChannelingAbility;
+    impl BaseAbility for ChannelingAbility {
+        fn id(&self) -> AbilityId { AbilityId::new("channeling") }
+        fn display_name(&self) -> &'static str { "Channeling" }
+        fn tags(&self) -> &'static [AbilityTag] { &[AbilityTag::Area, AbilityTag::RepeatCompatible] }
+        fn geometry(&self) -> AbilityGeometry { AbilityGeometry::Circle { radius: 4.0 } }
+        fn base_params(&self) -> AbilityParams {
+            AbilityParams { power: 20.0, area: 4.0, range: 0.0, cast_time: 3.0, cooldown: 10.0, energy_cost: 30.0 }
+        }
+        fn animation(&self) -> &'static str { "channel" }
+        fn impact_vfx(&self) -> &'static str { "beam" }
+        fn cast_mode(&self) -> AbilityCastMode {
+            AbilityCastMode::Channeling {
+                tick_interval_seconds: 0.25,
+                movement_policy: ChannelMovementPolicy::InterruptOnMove,
+            }
+        }
+    }
+
+    #[test]
+    fn zero_cast_time_defaults_to_instant() {
+        let ability = InstantAbility;
+        assert_eq!(ability.cast_mode(), AbilityCastMode::Instant);
+        assert!(ability.cast_mode().is_instant());
+    }
+
+    #[test]
+    fn positive_cast_time_defaults_to_cast_time() {
+        let ability = CastTimeAbility;
+        assert!(matches!(ability.cast_mode(), AbilityCastMode::CastTime));
+        assert!(!ability.cast_mode().is_instant());
+    }
+
+    #[test]
+    fn explicit_channeling_overrides_cast_time_derivation() {
+        let ability = ChannelingAbility;
+        match ability.cast_mode() {
+            AbilityCastMode::Channeling { tick_interval_seconds, .. } => {
+                assert!((tick_interval_seconds - 0.25).abs() < f32::EPSILON);
+            }
+            other => panic!("expected Channeling, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn meteor_strike_has_0_8_second_cast_time() {
+        // MeteorStrike is defined with cast_time = 0.8 in meteor_strike.rs.
+        // This test verifies the default cast mode derivation gives CastTime.
+        use crate::base_abilities_impl::meteor_strike::MeteorStrike;
+        let ability = MeteorStrike;
+        let params = ability.base_params();
+        assert!((params.cast_time - 0.8).abs() < f32::EPSILON,
+            "MeteorStrike should have 0.8s cast_time, got {}", params.cast_time);
+        assert!(matches!(ability.cast_mode(), AbilityCastMode::CastTime),
+            "MeteorStrike with positive cast_time should derive CastMode::CastTime");
+        let required = ability.cast_mode().required_seconds(params.cast_time);
+        assert!((required - 0.8).abs() < f32::EPSILON,
+            "MeteorStrike required_seconds should be 0.8, got {}", required);
+    }
+
+    #[test]
+    fn channeling_required_seconds_has_minimum() {
+        let mode = AbilityCastMode::Channeling {
+            tick_interval_seconds: 0.5,
+            movement_policy: ChannelMovementPolicy::AllowMovement,
+        };
+        // Even with zero cast_time, channeling has a 0.1s minimum window.
+        let required = mode.required_seconds(0.0);
+        assert!((required - 0.1).abs() < f32::EPSILON);
+        // Positive cast_time passes through.
+        let required = mode.required_seconds(3.0);
+        assert!((required - 3.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn channeling_movement_policy_is_accessible() {
+        // Verify that the movement policy can be extracted for storage in
+        // CastState.channel_movement_interrupts, which is what the server's
+        // advance_casts reads to decide whether to interrupt on movement.
+        let interrupt_on_move = AbilityCastMode::Channeling {
+            tick_interval_seconds: 0.25,
+            movement_policy: ChannelMovementPolicy::InterruptOnMove,
+        };
+        let allow_movement = AbilityCastMode::Channeling {
+            tick_interval_seconds: 0.25,
+            movement_policy: ChannelMovementPolicy::AllowMovement,
+        };
+
+        // The server should store this as a bool.
+        fn should_interrupt_on_move(mode: &AbilityCastMode) -> bool {
+            match mode {
+                AbilityCastMode::Channeling { movement_policy, .. } => {
+                    matches!(movement_policy, ChannelMovementPolicy::InterruptOnMove)
+                }
+                _ => true, // Non-channeling modes always interrupt (CastTime) or don't check (Instant)
+            }
+        }
+
+        assert!(should_interrupt_on_move(&interrupt_on_move),
+            "InterruptOnMove should return true");
+        assert!(!should_interrupt_on_move(&allow_movement),
+            "AllowMovement should return false");
     }
 }

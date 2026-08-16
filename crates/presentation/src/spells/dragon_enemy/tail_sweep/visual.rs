@@ -4,9 +4,9 @@
 //! A flat torus half-ring expands with ease-out scaling and alpha fade,
 //! plus a fainter secondary ring delayed by 0.08s.
 
-use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
+use bevymmo_shared::color::to_linear;
 
 use bevymmo_shared::network::protocol::SpellVisualEffect;
 use bevymmo_shared::spells_impl::dragon_enemy::DUST_TAN;

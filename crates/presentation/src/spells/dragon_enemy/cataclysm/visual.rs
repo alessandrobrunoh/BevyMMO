@@ -4,9 +4,9 @@
 //! A giant cylinder fades from alpha 0.5 to 0 over 0.4s, creating
 //! a pulsing red flash effect across the arena.
 
-use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
+use bevymmo_shared::color::to_linear;
 
 use bevymmo_shared::network::protocol::SpellVisualEffect;
 use bevymmo_shared::spells_impl::dragon_enemy::cataclysm::CataclysmSpell;

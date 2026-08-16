@@ -9,15 +9,26 @@
 //! labels; passing the enum here and converting once means a rename in
 //! `EquipSlot` cannot silently start sending an unknown slot name.
 //!
-//! Every call returns `Result`, and every failure is a real one worth showing:
-//! the server rejects an equip that fails its requirements, a cast that is on
-//! cooldown, a hotbar spell the character cannot use. The old code could not
-//! report any of that — a lightyear send was fire-and-forget.
+//! # Two different failures
+//!
+//! Every call here goes through the generated `*_then` form, which takes a
+//! callback and runs it when the reducer's own result comes back. That splits
+//! the two things that can go wrong:
+//!
+//! - the returned `Result` is *transport*: the request could not be handed to
+//!   the SDK at all. The caller sees it immediately and logs it.
+//! - the callback carries the module's `Result<(), String>` — "inventory is
+//!   full", "target is out of range", "that name is taken". It arrives later, on
+//!   the SDK's thread, so it is pushed onto the same channel row changes use and
+//!   surfaces as a [`bevymmo_shared::server_feed::ServerNotice`].
+//!
+//! The plain fire-and-forget forms reported only the first kind, which is why
+//! every carefully worded refusal in the module used to vanish.
 
+use bevy::prelude::Vec3;
 use bevymmo_domain::abilities::AbilitySlot;
 use bevymmo_domain::items::EquipSlot;
 use bevymmo_domain::spells::components::HotbarSlot;
-use bevy::prelude::Vec3;
 
 use super::module_bindings::cast_spell_reducer::cast_spell as cast_spell_reducer;
 use super::module_bindings::eidolon_cast_reducer::eidolon_cast as eidolon_cast_reducer;
@@ -28,10 +39,13 @@ use super::module_bindings::respawn_reducer::respawn as respawn_reducer;
 use super::module_bindings::set_ability_selection_reducer::set_ability_selection as set_ability_selection_reducer;
 use super::module_bindings::set_hotbar_spell_reducer::set_hotbar_spell as set_hotbar_spell_reducer;
 use super::module_bindings::set_inscription_reducer::set_inscription as set_inscription_reducer;
+use super::module_bindings::stop_reducer::stop as stop_reducer;
 use super::module_bindings::unequip_item_reducer::unequip_item as unequip_item_reducer;
 use super::module_bindings::Vec3Row;
 use super::plugin::StdbConnection;
 
+/// Whether the *request* reached the SDK. The server's own answer arrives
+/// later, through the rejection callback.
 type Sent = Result<(), spacetimedb_sdk::Error>;
 
 fn to_row(v: Vec3) -> Vec3Row {
@@ -44,23 +58,31 @@ fn to_row(v: Vec3) -> Vec3Row {
 
 /// Moves an inventory item into the equipment slot its definition allows.
 pub fn equip_item(conn: &StdbConnection, slot_index: u8) -> Sent {
-    conn.reducers().equip_item(slot_index)
+    conn.reducers()
+        .equip_item_then(slot_index, conn.report_rejection("could not equip"))
 }
 
 /// Takes an equipped item off and puts it in the first free inventory slot.
 pub fn unequip_item(conn: &StdbConnection, slot: EquipSlot) -> Sent {
-    conn.reducers().unequip_item(slot.label().to_string())
+    conn.reducers().unequip_item_then(
+        slot.label().to_string(),
+        conn.report_rejection("could not unequip"),
+    )
 }
 
 /// Swaps two inventory slots.
 pub fn move_item(conn: &StdbConnection, from: u8, to: u8) -> Sent {
-    conn.reducers().move_item(from, to)
+    conn.reducers()
+        .move_item_then(from, to, conn.report_rejection("could not move that item"))
 }
 
 /// Binds a spell to a hotbar key, or clears it with `None`.
 pub fn set_hotbar_spell(conn: &StdbConnection, slot: HotbarSlot, spell_id: Option<String>) -> Sent {
-    conn.reducers()
-        .set_hotbar_spell(hotbar_label(slot).to_string(), spell_id)
+    conn.reducers().set_hotbar_spell_then(
+        hotbar_label(slot).to_string(),
+        spell_id,
+        conn.report_rejection("could not bind that spell"),
+    )
 }
 
 /// Rewrites one ability slot's inscription: an essence, some modifiers, and an
@@ -72,18 +94,22 @@ pub fn set_inscription(
     modifiers: Vec<String>,
     ancient_word: Option<String>,
 ) -> Sent {
-    conn.reducers().set_inscription(
+    conn.reducers().set_inscription_then(
         ability_label(slot).to_string(),
         essence,
         modifiers,
         ancient_word,
+        conn.report_rejection("could not write that inscription"),
     )
 }
 
 /// Chooses which of the weapon's offered abilities is active in a slot.
 pub fn set_ability_selection(conn: &StdbConnection, slot: AbilitySlot, ability_id: String) -> Sent {
-    conn.reducers()
-        .set_ability_selection(ability_label(slot).to_string(), ability_id)
+    conn.reducers().set_ability_selection_then(
+        ability_label(slot).to_string(),
+        ability_id,
+        conn.report_rejection("could not choose that ability"),
+    )
 }
 
 /// Casts a hotbar spell at an entity, a point, or neither (a self-cast).
@@ -93,14 +119,19 @@ pub fn cast_spell(
     target_entity: Option<u64>,
     target_position: Option<Vec3>,
 ) -> Sent {
-    conn.reducers()
-        .cast_spell(spell_id, target_entity, target_position.map(to_row))
+    conn.reducers().cast_spell_then(
+        spell_id,
+        target_entity,
+        target_position.map(to_row),
+        conn.report_rejection("could not cast"),
+    )
 }
 
 /// Ends a channelled cast. Naming the spell stops a stale release from
 /// cancelling a cast that started after it.
 pub fn release_cast(conn: &StdbConnection, spell_id: String) -> Sent {
-    conn.reducers().release_cast(spell_id)
+    conn.reducers()
+        .release_cast_then(spell_id, conn.report_rejection("could not end that cast"))
 }
 
 /// Casts the weapon's Eidolon gesture bound to an ability slot.
@@ -110,16 +141,27 @@ pub fn eidolon_cast(
     target_entity: Option<u64>,
     target_position: Option<Vec3>,
 ) -> Sent {
-    conn.reducers().eidolon_cast(
+    conn.reducers().eidolon_cast_then(
         ability_label(slot).to_string(),
         target_entity,
         target_position.map(to_row),
+        conn.report_rejection("could not cast that gesture"),
     )
 }
 
 /// Brings a dead character back at its spawn point.
 pub fn respawn(conn: &StdbConnection) -> Sent {
-    conn.reducers().respawn()
+    conn.reducers()
+        .respawn_then(conn.report_rejection("could not respawn"))
+}
+
+/// Drops the character's destination, leaving it where it stands.
+///
+/// The one reducer with no wrapper until now, which is why nothing in the UI
+/// could ask a character to halt — the only way to stop was to arrive.
+pub fn stop(conn: &StdbConnection) -> Sent {
+    conn.reducers()
+        .stop_then(conn.report_rejection("could not stop"))
 }
 
 fn hotbar_label(slot: HotbarSlot) -> &'static str {

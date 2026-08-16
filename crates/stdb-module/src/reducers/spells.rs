@@ -21,9 +21,11 @@
 //!   is the same function the hotbar path ends in.
 
 use bevymmo_domain::abilities::{
-    cast_inscribed_slot, resolve_active_ability, resolve_slot_preview, AbilitySlot,
-    CastBlockedReason,
+    cast_inscribed_slot, resolve_active_ability, resolve_slot_preview, AbilityCastMode,
+    AbilitySlot, CastBlockedReason, ChannelMovementPolicy as EidolonChannelMovementPolicy,
 };
+// Legacy spell channeling uses spells::context::ChannelMovementPolicy.
+use bevymmo_domain::spells::context::ChannelMovementPolicy as SpellChannelMovementPolicy;
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::context::{CastKind, SpellCastContext};
 use bevymmo_domain::spells::registry::SpellId;
@@ -35,7 +37,7 @@ use crate::reducers::lifecycle::caller_entity;
 use crate::rows::{equipment_from_rows, known_glyphs_from_rows, Vec3Row};
 use crate::sim::spells;
 use crate::tables::{
-    cast_state, equipment, game_entity, hotbar, known_glyphs, CastKindRow, CastState,
+    cast_state, equipment, game_entity, hotbar, known_glyphs, CastKindRow, CastSourceRow, CastState,
     EntityStateRow, GameEntity,
 };
 
@@ -138,6 +140,7 @@ pub fn cast_spell(
                 entity_id: caster.entity_id,
                 spell_id,
                 kind: spells::cast_kind_row(kind),
+                source: CastSourceRow::Spell,
                 elapsed_seconds: 0.0,
                 required_seconds,
                 start_position: caster.position,
@@ -145,6 +148,11 @@ pub fn cast_spell(
                 target_entity,
                 channel_tick_accumulator,
                 tick_interval_seconds,
+                // Legacy spell: read movement policy from SpellConfig.
+                channel_movement_interrupts: matches!(
+                    kind,
+                    CastKind::Channeling if config.channel_movement == SpellChannelMovementPolicy::InterruptOnMove
+                ),
             });
         }
     }
@@ -245,59 +253,119 @@ pub fn eidolon_cast(
         spells::modifiers(),
     )
     .map_err(describe_block)?;
+    let caster = face_target(ctx, caster, target_position.map(Vec3::from));
+    cancel_active_cast(ctx, caster.entity_id);
 
-    let combat = spells::combat_stats(ctx, caster.entity_id)
-        .ok_or_else(|| "caster has no stats".to_string())?;
-    let target_position = target_position.map(Vec3::from);
-    let caster = face_target(ctx, caster, target_position);
-    let caster_position = Vec3::from(caster.position);
-    let targets = spells::potential_targets(
-        ctx,
-        caster_position,
-        preview.params.range + preview.params.area + spells::TARGET_QUERY_MARGIN,
-    );
+    // Branch on the resolved ability's cast mode.
+    let cast_mode = preview.ability.cast_mode();
+    match cast_mode {
+        AbilityCastMode::Instant => {
+            // Original path: execute immediately.
+            let combat = spells::combat_stats(ctx, caster.entity_id)
+                .ok_or_else(|| "caster has no stats".to_string())?;
+            let target_position = target_position.map(Vec3::from);
+            let caster_position = Vec3::from(caster.position);
+            let targets = spells::potential_targets(
+                ctx,
+                caster_position,
+                preview.params.range + preview.params.area + spells::TARGET_QUERY_MARGIN,
+            );
 
-    let mut cast = SpellCastContext::new(
-        EntityId::new(caster.entity_id),
-        caster_position,
-        &combat,
-        Vec3::from(caster.look),
-        target_position,
-        target_entity.map(EntityId::new),
-        &targets,
-    );
+            let mut cast_ctx = SpellCastContext::new(
+                EntityId::new(caster.entity_id),
+                caster_position,
+                &combat,
+                Vec3::from(caster.look),
+                target_position,
+                target_entity.map(EntityId::new),
+                &targets,
+            );
 
-    cast_inscribed_slot(
-        slot,
-        weapon_abilities,
-        &weapon.ability_selection,
-        &inscriptions,
-        &known,
-        spells::base_abilities(),
-        spells::essences(),
-        spells::modifiers(),
-        spells::ancient_words(),
-        &mut cast,
-    )
-    .map_err(describe_block)?;
+            cast_inscribed_slot(
+                slot,
+                weapon_abilities,
+                &weapon.ability_selection,
+                &inscriptions,
+                &known,
+                spells::base_abilities(),
+                spells::essences(),
+                spells::modifiers(),
+                spells::ancient_words(),
+                &mut cast_ctx,
+            )
+            .map_err(describe_block)?;
 
-    spells::apply_pending(
-        ctx,
-        caster.entity_id,
-        caster_position,
-        ability_id.as_str(),
-        &mut cast,
-    );
-    // The *base* cooldown, as Bevy read it. `preview.params.cooldown` carries
-    // whatever the inscribed Modifiers made of it, but changing which of the two
-    // counts is a balance decision, not a porting one.
-    spells::start_cooldown(
-        ctx,
-        caster.entity_id,
-        ability_id.as_str(),
-        preview.ability.base_params().cooldown,
-    );
-    Ok(())
+            spells::apply_pending(
+                ctx,
+                caster.entity_id,
+                caster_position,
+                ability_id.as_str(),
+                &mut cast_ctx,
+            );
+            spells::start_cooldown(
+                ctx,
+                caster.entity_id,
+                ability_id.as_str(),
+                preview.ability.base_params().cooldown,
+            );
+            Ok(())
+        }
+        AbilityCastMode::CastTime => {
+            let required_seconds = preview.params.cast_time;
+            let target_position = target_position.map(Vec3::from);
+
+            ctx.db.cast_state().insert(CastState {
+                entity_id: caster.entity_id,
+                spell_id: ability_id.as_str().to_string(),
+                kind: CastKindRow::CastTime,
+                source: CastSourceRow::Eidolon,
+                elapsed_seconds: 0.0,
+                required_seconds,
+                start_position: caster.position,
+                target_position: target_position.map(Vec3Row::from),
+                target_entity,
+                channel_tick_accumulator: 0.0,
+                tick_interval_seconds: 0.0,
+                // CastTime always interrupts on movement; this field is
+                // only meaningful for Channeling.
+                channel_movement_interrupts: true,
+            });
+            Ok(())
+        }
+        AbilityCastMode::Channeling { tick_interval_seconds, movement_policy } => {
+            let required_seconds = preview.params.cast_time.max(0.1);
+            let target_position = target_position.map(Vec3::from);
+
+            // Channel cooldown starts on press (same as legacy).
+            spells::start_cooldown(
+                ctx,
+                caster.entity_id,
+                ability_id.as_str(),
+                preview.ability.base_params().cooldown,
+            );
+
+            // Store the movement policy from AbilityCastMode so advance_casts
+            // can honor it without re-resolving the ability.
+            let movement_interrupts = matches!(movement_policy, EidolonChannelMovementPolicy::InterruptOnMove);
+
+            // Channel starts armed so first tick lands on next tick.
+            ctx.db.cast_state().insert(CastState {
+                entity_id: caster.entity_id,
+                spell_id: ability_id.as_str().to_string(),
+                kind: CastKindRow::Channeling,
+                source: CastSourceRow::Eidolon,
+                elapsed_seconds: 0.0,
+                required_seconds,
+                start_position: caster.position,
+                target_position: target_position.map(Vec3Row::from),
+                target_entity,
+                channel_tick_accumulator: tick_interval_seconds,
+                tick_interval_seconds,
+                channel_movement_interrupts: movement_interrupts,
+            });
+            Ok(())
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

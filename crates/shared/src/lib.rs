@@ -23,6 +23,7 @@ pub mod network;
 pub mod paths;
 pub mod placeables;
 pub mod placeables_impl;
+pub mod server_feed;
 pub mod settings;
 pub mod spells;
 pub mod spells_impl;
@@ -55,6 +56,7 @@ pub mod prelude {
         SpellCastCommand, SpellCastEnded, SpellCastProgress, SpellCastRelease, SpellVisualEffect,
         UpdateHotbarSlotRequest,
     };
+    pub use crate::server_feed::{NoticeSeverity, ServerNotice, SpellCooldownState};
     pub use crate::settings::Settings;
     pub use crate::user_settings::{
         GameSettings, GameSettingsResource, GeneralSettings, GraphicsSettings, KeyAction,

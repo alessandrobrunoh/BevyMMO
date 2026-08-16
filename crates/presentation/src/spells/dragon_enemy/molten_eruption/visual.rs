@@ -3,9 +3,9 @@
 //! Six staggered fire circles in a ring around the caster.
 //! Red warning cylinders pulse, then orange mini pillars erupt briefly.
 
-use bevymmo_shared::color::to_linear;
 use bevy::color::Color;
 use bevy::prelude::*;
+use bevymmo_shared::color::to_linear;
 
 use bevymmo_shared::network::protocol::SpellVisualEffect;
 use bevymmo_shared::spells_impl::dragon_enemy::molten_eruption::MoltenEruptionSpell;

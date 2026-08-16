@@ -2269,6 +2269,7 @@ dependencies = [
  "bevymmo_domain",
  "bevymmo_shared",
  "crossbeam-channel",
+ "dirs",
  "lightyear",
  "spacetimedb-sdk",
 ]

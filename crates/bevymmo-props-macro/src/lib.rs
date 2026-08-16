@@ -1080,6 +1080,15 @@ struct BaseAbilityDef {
     /// Opzionali: assenti = impatto immediato e nessun controllo.
     impact_delay: Option<LitFloat>,
     stun_seconds: Option<LitFloat>,
+    /// Optional: "channeling" with tick_interval and movement_policy.
+    /// Absent → derived from cast_time (positive = CastTime, zero = Instant).
+    cast_mode: Option<CastModeDef>,
+}
+
+/// Parsed channeling configuration from the macro attributes.
+struct CastModeDef {
+    tick_interval: LitFloat,
+    movement_policy: Ident, // InterruptOnMove or AllowMovement
 }
 
 impl Parse for BaseAbilityDef {
@@ -1096,6 +1105,7 @@ impl Parse for BaseAbilityDef {
         let mut impact_vfx = None;
         let mut impact_delay = None;
         let mut stun_seconds = None;
+        let mut cast_mode = None;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -1124,14 +1134,41 @@ impl Parse for BaseAbilityDef {
                 "impact_vfx" => impact_vfx = Some(input.parse::<LitStr>()?),
                 "impact_delay" => impact_delay = Some(input.parse::<LitFloat>()?),
                 "stun_seconds" => stun_seconds = Some(input.parse::<LitFloat>()?),
+                "channeling" => {
+                    // Parse channeling(tick_interval = 0.25, movement = InterruptOnMove)
+                    let content;
+                    parenthesized!(content in input);
+                    let fields: Punctuated<KvPair, Token![,]> = Punctuated::parse_terminated(&content)?;
+                    let mut tick_interval = None;
+                    let mut movement_policy = None;
+                    for pair in fields {
+                        match pair.key.to_string().as_str() {
+                            "tick_interval" => {
+                                tick_interval = Some(pair.float_value()?);
+                            }
+                            "movement" | "movement_policy" => {
+                                movement_policy = Some(pair.ident_value()?);
+                            }
+                            _ => {} // Ignore unknown keys for forward compat.
+                        }
+                    }
+                    let tick_interval = tick_interval.ok_or_else(||
+                        syn::Error::new_spanned(&key, "channeling requires `tick_interval = ...`")
+                    )?;
+                    // Default movement policy if not specified.
+                    let movement_policy = movement_policy.unwrap_or_else(|| {
+                        syn::Ident::new("InterruptOnMove", proc_macro2::Span::call_site())
+                    });
+                    cast_mode = Some(CastModeDef { tick_interval, movement_policy });
+                }
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
                         format!(
                             "unknown key `{other}` in #[base_ability(...)] (expected id, name, tags, geometry, \
                              power, cast_time, cooldown, energy_cost, animation, impact_vfx, impact_delay, \
-                             stun_seconds)"
-                        ),
+                             stun_seconds, channeling)"
+                        )
                     ))
                 }
             }
@@ -1152,11 +1189,13 @@ impl Parse for BaseAbilityDef {
             cooldown: cooldown.ok_or_else(|| input.error("#[base_ability(...)] requires `cooldown = ...`"))?,
             energy_cost: energy_cost
                 .ok_or_else(|| input.error("#[base_ability(...)] requires `energy_cost = ...`"))?,
-            animation: animation.ok_or_else(|| input.error("#[base_ability(...)] requires `animation = \"...\"`"))?,
+            animation: animation
+                .ok_or_else(|| input.error("#[base_ability(...)] requires `animation = \"...\"`"))?,
             impact_vfx: impact_vfx
                 .ok_or_else(|| input.error("#[base_ability(...)] requires `impact_vfx = \"...\"`"))?,
             impact_delay,
             stun_seconds,
+            cast_mode,
         })
     }
 }
@@ -1227,6 +1266,32 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
         None => quote! {},
     };
 
+    // Cast mode override: if channeling is specified, generate cast_mode().
+    // Otherwise the default trait method derives from cast_time.
+    let cast_mode_method = match &def.cast_mode {
+        Some(CastModeDef { tick_interval, movement_policy }) => {
+            let policy = match movement_policy.to_string().as_str() {
+                "InterruptOnMove" => quote! { crate::abilities::ChannelMovementPolicy::InterruptOnMove },
+                "AllowMovement" => quote! { crate::abilities::ChannelMovementPolicy::AllowMovement },
+                other => {
+                    return syn::Error::new_spanned(
+                        movement_policy,
+                        format!("unknown channel movement policy `{other}`; expected InterruptOnMove or AllowMovement")
+                    ).to_compile_error().into()
+                }
+            };
+            quote! {
+                fn cast_mode(&self) -> crate::abilities::AbilityCastMode {
+                    crate::abilities::AbilityCastMode::Channeling {
+                        tick_interval_seconds: #tick_interval,
+                        movement_policy: #policy,
+                    }
+                }
+            }
+        }
+        None => quote! {}, // Use default: derived from cast_time
+    };
+
     let expanded = quote! {
         #input
 
@@ -1265,6 +1330,7 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             #impact_delay_method
             #stun_seconds_method
+            #cast_mode_method
         }
 
         impl #name {

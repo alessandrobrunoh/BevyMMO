@@ -21,7 +21,10 @@ pub use aim::AbilityAim;
 pub use ancient_word::{AncientWord, AncientWordEffect, AncientWordId, AncientWordRegistry, ArcAncientWord};
 pub use cooldowns::AbilityCooldowns;
 pub use events::EidolonCastRequest;
-pub use base_ability::{AbilityGeometry, AbilityId, AbilityParams, AbilityTag, ArcBaseAbility, BaseAbility, BaseAbilityRegistry};
+pub use base_ability::{
+    AbilityCastMode, AbilityGeometry, AbilityId, AbilityParams, AbilityTag, ArcBaseAbility, BaseAbility,
+    BaseAbilityRegistry, ChannelMovementPolicy,
+};
 pub use essence::{ArcEssence, Essence, EssenceEffect, EssenceId, EssenceRegistry, EssenceVisualTheme};
 pub use inscription::{validate_weapon_inscriptions, Inscription, InscriptionError, RuneProfile, WeaponInscriptions};
 pub use known_glyphs::KnownGlyphs;

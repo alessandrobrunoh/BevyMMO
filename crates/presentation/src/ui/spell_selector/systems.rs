@@ -1,13 +1,13 @@
-use bevymmo_shared::entity::LocalPlayer;
 use super::components::*;
 use super::SpellSelectorUiState;
 use bevy::prelude::*;
 use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_client::stdb::{commands, StdbConnection};
+use bevymmo_shared::entity::LocalPlayer;
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::items::AvailableSpellChoices;
 use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId, SpellRegistry};
-use bevymmo_client::stdb::{commands, StdbConnection};
 
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::UiTheme;
@@ -26,10 +26,7 @@ pub fn toggle_spell_selector(
     theme: Res<UiTheme>,
     registry: Res<SpellRegistry>,
     item_registry: Res<ItemRegistry>,
-    player_query: Query<
-        (&SpellHotbar, &AvailableSpellChoices, &Equipment),
-        With<LocalPlayer>,
-    >,
+    player_query: Query<(&SpellHotbar, &AvailableSpellChoices, &Equipment), With<LocalPlayer>>,
 ) {
     if !settings.just_pressed(KeyAction::ToggleSpellbook, &keys) {
         return;
@@ -201,7 +198,14 @@ fn spawn_slot_column(
                         .get(spell_id)
                         .map(|spell| spell.display_name())
                         .unwrap_or("???");
-                    spawn_option_button(column, theme, slot, spell_id.clone(), display_name, hotbar);
+                    spawn_option_button(
+                        column,
+                        theme,
+                        slot,
+                        spell_id.clone(),
+                        display_name,
+                        hotbar,
+                    );
                 }
             }
 
@@ -323,7 +327,10 @@ pub fn update_spell_selector_ui(
 #[allow(clippy::type_complexity)]
 pub fn handle_spell_selector_interactions(
     mut state: ResMut<SpellSelectorUiState>,
-    option_interactions: Query<(&Interaction, &SpellOptionButton), (Changed<Interaction>, With<Button>)>,
+    option_interactions: Query<
+        (&Interaction, &SpellOptionButton),
+        (Changed<Interaction>, With<Button>),
+    >,
     clear_interactions: Query<
         (&Interaction, &ClearHotbarSlotButton),
         (Changed<Interaction>, With<Button>),
@@ -396,7 +403,11 @@ fn despawn_spell_selector_windows(
     }
 }
 
-fn format_hotbar_slot_label(slot: HotbarSlot, hotbar: &SpellHotbar, registry: &SpellRegistry) -> String {
+fn format_hotbar_slot_label(
+    slot: HotbarSlot,
+    hotbar: &SpellHotbar,
+    registry: &SpellRegistry,
+) -> String {
     let spell_name = hotbar
         .spell_for_slot(slot)
         .and_then(|spell_id| registry.get(spell_id))

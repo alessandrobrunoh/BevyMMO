@@ -21,13 +21,13 @@ use bevymmo_shared::abilities::{
     resolve_slot_preview, AbilityAim, AbilityGeometry, BaseAbilityRegistry, KnownGlyphs,
     ModifierRegistry, SlotPreview,
 };
+use bevymmo_shared::entity::LocalPlayer;
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::network::protocol::{LookDirection, Position};
 use bevymmo_shared::spells::context::{AoeShape, SpellCastContext};
 use bevymmo_shared::stats::components::CombatStats;
 use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
-use bevymmo_shared::entity::LocalPlayer;
 
 use crate::spells::ui::SpellHudState;
 
@@ -99,7 +99,11 @@ pub fn draw_ability_aim_preview(
     };
 
     let on_cooldown = hud_state.ability_on_cooldown(&ability.id());
-    let color = if on_cooldown { BLOCKED_COLOR } else { IMPACT_COLOR };
+    let color = if on_cooldown {
+        BLOCKED_COLOR
+    } else {
+        IMPACT_COLOR
+    };
 
     // `impact_center`/`impact_shape` leggono il contesto di cast: lo si
     // costruisce identico a quello che il server costruirà, con il punto di
@@ -221,7 +225,9 @@ fn draw_flat_cone(
         apex + rotation * axis * radius
     };
 
-    let steps = (CONE_ARC_SEGMENTS as f32 * (half_angle * 2.0 / TAU)).ceil().max(2.0) as usize;
+    let steps = (CONE_ARC_SEGMENTS as f32 * (half_angle * 2.0 / TAU))
+        .ceil()
+        .max(2.0) as usize;
     let mut previous = point_at(-half_angle);
     gizmos.line(apex, previous, color);
     for step in 1..=steps {
@@ -260,9 +266,9 @@ fn draw_forward_lane(
 
 #[cfg(test)]
 mod tests {
+    use bevy::prelude::*;
     use bevymmo_shared::abilities::AbilitySlot;
     use bevymmo_shared::spells::context::AoeShape;
-    use bevy::prelude::*;
 
     use super::*;
 
@@ -345,10 +351,7 @@ mod tests {
 
         // L'apice è il lanciatore, non un centro spinto in avanti.
         assert_eq!(ability.impact_center(&params, &ctx), caster_position);
-        assert!(matches!(
-            ability.impact_shape(&ctx),
-            AoeShape::Cone { .. }
-        ));
+        assert!(matches!(ability.impact_shape(&ctx), AoeShape::Cone { .. }));
 
         // Un bersaglio davanti è dentro, uno di lato no.
         let shape = ability.impact_shape(&ctx);

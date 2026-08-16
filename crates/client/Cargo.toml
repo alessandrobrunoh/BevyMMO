@@ -19,6 +19,7 @@ spacetimedb-sdk = "=2.8.1"
 # `DbConnection` callbacks fire on the SDK's thread and must not touch the Bevy
 # `World`. They hand rows to a channel that a Bevy system drains instead.
 crossbeam-channel = "0.5"
+dirs = { workspace = true }
 
 [lints]
 workspace = true

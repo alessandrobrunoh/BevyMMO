@@ -75,6 +75,10 @@ pub fn update_button_actions(
                 connection_request.0 = Some(ConnectionIntent::Disconnect);
                 screen.0 = Screen::MainMenu;
             }
+            UiButtonAction::Logout => {
+                connection_request.0 = Some(ConnectionIntent::Logout);
+                screen.0 = Screen::MainMenu;
+            }
             UiButtonAction::Resume => {
                 screen.0 = Screen::InGame;
             }
@@ -283,5 +287,43 @@ mod tests {
         press(&mut app, KeyCode::KeyP);
         app.update();
         assert_eq!(app.world().resource::<GameScreen>().0, Screen::Paused);
+    }
+
+    #[test]
+    fn logout_sets_connection_intent_and_transitions_to_main_menu() {
+        use crate::ui::button::{UiButton, UiButtonAction};
+
+        let mut app = App::new();
+        app.init_resource::<GameScreen>();
+        app.init_resource::<ConnectionRequest>();
+        app.insert_resource(GameSettingsResource(GameSettings::default()));
+
+        // Spawn a button with Logout action
+        let button_entity = app
+            .world_mut()
+            .spawn((
+                UiButton {
+                    action: UiButtonAction::Logout,
+                },
+                Interaction::Pressed,
+            ))
+            .id();
+
+        app.add_systems(Update, update_button_actions);
+        app.update();
+
+        // Verify screen transitioned to MainMenu
+        assert_eq!(app.world().resource::<GameScreen>().0, Screen::MainMenu);
+
+        // Verify connection request was set to Logout
+        let connection_request = app.world().resource::<ConnectionRequest>();
+        assert!(connection_request.0.is_some());
+        assert!(matches!(
+            connection_request.0.as_ref().unwrap(),
+            ConnectionIntent::Logout
+        ));
+
+        // Cleanup
+        app.world_mut().despawn(button_entity);
     }
 }

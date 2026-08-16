@@ -1,7 +1,6 @@
 use super::components::*;
 use super::SpellSelectorUiState;
 use bevy::prelude::*;
-use bevymmo_client::network::types::ConnectedClient;
 use bevymmo_client::stdb::{commands, StdbConnection};
 use bevymmo_shared::entity::LocalPlayer;
 use bevymmo_shared::items::components::Equipment;

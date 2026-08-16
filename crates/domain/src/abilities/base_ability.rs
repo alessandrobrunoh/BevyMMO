@@ -166,19 +166,24 @@ fn flat_offset(origin: Vec3, point: Vec3) -> Vec3 {
     Vec3::new(point.x - origin.x, 0.0, point.z - origin.z)
 }
 
-/// Riporta `target` entro `range` dal lanciatore. `range <= 0.0` = nessun
-/// limite (il gesto si piazza dove vuole il giocatore).
+/// Riporta `target` entro `range` dal lanciatore, preservando l'altezza del target
+/// (o interpolando la quota tra lanciatore e target se clampato oltre gittata).
+/// `range <= 0.0` = nessun limite (il gesto si piazza dove vuole il giocatore).
 fn clamp_to_range(origin: Vec3, target: Vec3, range: f32) -> Vec3 {
-    let flat_target = Vec3::new(target.x, 0.0, target.z);
     if range <= 0.0 {
-        return flat_target;
+        return target;
     }
-    let offset = flat_offset(origin, flat_target);
+    let offset = flat_offset(origin, target);
     let distance = offset.length();
     if distance <= range {
-        flat_target
+        target
     } else {
-        Vec3::new(origin.x, 0.0, origin.z) + offset / distance * range
+        let direction = offset / distance;
+        Vec3::new(
+            origin.x + direction.x * range,
+            origin.y + (target.y - origin.y) * (range / distance),
+            origin.z + direction.z * range,
+        )
     }
 }
 
@@ -621,4 +626,45 @@ mod tests {
         assert!(!should_interrupt_on_move(&allow_movement),
             "AllowMovement should return false");
     }
+
+    #[test]
+    fn clamp_to_range_preserves_target_height_when_in_range() {
+        let origin = Vec3::new(0.0, 10.0, 0.0);
+        let target = Vec3::new(3.0, 15.0, 4.0); // distance = 5.0
+        let clamped = clamp_to_range(origin, target, 10.0);
+        assert_eq!(clamped, target);
+        assert_eq!(clamped.y, 15.0);
+    }
+
+    #[test]
+    fn clamp_to_range_interpolates_height_when_clamped() {
+        let origin = Vec3::new(0.0, 10.0, 0.0);
+        let target = Vec3::new(0.0, 20.0, 20.0); // distance = 20.0
+        let clamped = clamp_to_range(origin, target, 10.0); // halfway
+        assert!((clamped.x - 0.0).abs() < 1e-4);
+        assert!((clamped.y - 15.0).abs() < 1e-4);
+        assert!((clamped.z - 10.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn circle_impact_center_preserves_target_height_on_mountain() {
+        use crate::stats::components::CombatStats;
+        let ability = InstantAbility;
+        let combat = CombatStats { attack_power: 10.0, armor: 0.0 };
+        let caster_pos = Vec3::new(0.0, 12.0, 0.0);
+        let target_on_mountain = Vec3::new(1.0, 14.0, 1.0);
+        let ctx = SpellCastContext::new(
+            EntityId::new(1),
+            caster_pos,
+            &combat,
+            Vec3::Z,
+            Some(target_on_mountain),
+            None,
+            &[],
+        );
+        let center = ability.impact_center(&ability.base_params(), &ctx);
+        assert_eq!(center, target_on_mountain);
+        assert_eq!(center.y, 14.0);
+    }
 }
+

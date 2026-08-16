@@ -185,7 +185,6 @@ fn start_cooldown_from_cast_end(
             key: HudCooldownKey::Ability(ability_id),
             cooldown_seconds,
         });
-        return;
     }
 
     // Legacy spell id (NPC/boss) — do not create a player HUD cooldown.

@@ -37,6 +37,8 @@ const INNER_PADDING: f32 = 14.0;
 const HEADER_BOTTOM_GAP: f32 = 12.0;
 /// Gap between a `CardPositioning::Right` card and the right edge of the viewport.
 const RIGHT_EDGE_GAP: f32 = 40.0;
+/// Gap between a `CardPositioning::Left` card and the left edge of the viewport.
+const LEFT_EDGE_GAP: f32 = 40.0;
 
 /// Layout variant for the close button inside the header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -191,6 +193,7 @@ impl<'a> CardBuilder<'a> {
                 _ => (Val::Px(0.0), Val::Px(0.0), Val::Auto),
             },
             CardPositioning::Right => (Val::Auto, Val::Px(RIGHT_EDGE_GAP), Val::Auto),
+            CardPositioning::Left => (Val::Px(LEFT_EDGE_GAP), Val::Auto, Val::Auto),
         };
         let margin = UiRect {
             left: margin_left,
@@ -570,6 +573,28 @@ mod tests {
         let node = app.world().get::<Node>(entity).expect("card node");
         assert_eq!(node.right, Val::Px(RIGHT_EDGE_GAP));
         assert_eq!(node.left, Val::Auto);
+        // Vertically centred like any other card.
+        assert_eq!(node.top, Val::Percent(50.0));
+        assert_eq!(node.margin.top, Val::Px(-150.0));
+    }
+
+    #[test]
+    fn left_positioned_card_anchors_to_the_left_edge() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        let entity = CardBuilder::new(CardKind::Inventory, "Inventory")
+            .width(Val::Px(400.0))
+            .height(Val::Px(300.0))
+            .positioning(CardPositioning::Left)
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let node = app.world().get::<Node>(entity).expect("card node");
+        assert_eq!(node.left, Val::Px(LEFT_EDGE_GAP));
+        assert_eq!(node.right, Val::Auto);
         // Vertically centred like any other card.
         assert_eq!(node.top, Val::Percent(50.0));
         assert_eq!(node.margin.top, Val::Px(-150.0));

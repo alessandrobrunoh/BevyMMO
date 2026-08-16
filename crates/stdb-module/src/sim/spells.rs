@@ -315,8 +315,17 @@ pub fn fire_eidolon_ability(
     let combat = combat_stats(ctx, caster.entity_id)?;
     let caster_position = Vec3::from(caster.position);
 
+    // `ctx.sender()` is the *module's* identity here: this runs from
+    // `advance_casts`, inside the scheduled `game_tick` reducer, not from a
+    // call the player made directly. The caster's own identity — who started
+    // the cast — is `caster.owner`, not the sender of whatever reducer
+    // happens to be running this tick. Using `ctx.sender()` made every
+    // CastTime/Channeling Eidolon ability resolve against an identity with no
+    // rows at all, so every one of them silently failed to fire.
+    let identity = caster.owner?;
+
     // Re-resolve equipment and weapon (must still be equipped).
-    let equip_row = ctx.db.equipment().identity().find(&ctx.sender())?;
+    let equip_row = ctx.db.equipment().identity().find(&identity)?;
     let equipment = equipment_from_rows(&equip_row.slots);
     let weapon = equipment.weapon.as_ref()?;
     let item = items().get(&weapon.item_id)?;
@@ -332,7 +341,7 @@ pub fn fire_eidolon_ability(
         })?;
 
     // Resolve inscriptions and known glyphs.
-    let known_row = ctx.db.known_glyphs().identity().find(&ctx.sender());
+    let known_row = ctx.db.known_glyphs().identity().find(&identity);
     let known = known_row
         .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
         .unwrap_or_default();

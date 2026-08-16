@@ -186,8 +186,10 @@ pub fn release_cast(ctx: &ReducerContext, spell_id: String) -> Result<(), String
 /// `slot` is `"primary"`, `"secondary"` or `"ultimate"` — the gameplay role, not
 /// a keyboard key (see `bevymmo_domain::abilities::AbilitySlot`).
 ///
-/// Every gesture is instant, as it was under Bevy: there is no cast-time or
-/// channelled variant of the Eidolon path yet.
+/// Branches on the resolved ability's [`AbilityCastMode`]: `Instant` resolves
+/// and applies the effect on the spot, `CastTime` and `Channeling` open a
+/// `cast_state` row that [`crate::sim::spells::step`] advances, the same way
+/// the legacy spell path does.
 #[reducer]
 pub fn eidolon_cast(
     ctx: &ReducerContext,

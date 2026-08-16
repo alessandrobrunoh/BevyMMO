@@ -218,7 +218,10 @@ fn spawn_ground_ring(
     commands.spawn((
         Mesh3d(mesh),
         MeshMaterial3d(material),
-        Transform::from_translation(Vec3::new(center.x, 0.05, center.z)),
+        // `center.y` is the impact's real elevation (mountain, valley, or
+        // sea level) — flattening it to a fixed height drew every ground
+        // effect at world Y=0 regardless of where the caster was standing.
+        Transform::from_translation(center + Vec3::Y * 0.05),
         SpellVisual,
         EidolonGroundRing {
             elapsed_seconds: 0.0,
@@ -250,7 +253,9 @@ fn spawn_falling_rock(
         EidolonFallingRock {
             elapsed_seconds: 0.0,
             impact_at_seconds,
-            center: Vec3::new(center.x, 0.0, center.z),
+            // Same reason as `spawn_ground_ring`: keep the real elevation, or
+            // the rock lands at world Y=0 instead of the target's height.
+            center,
         },
     ));
 }

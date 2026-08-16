@@ -64,9 +64,9 @@ impl EquipSlot {
 
 /// Number of generic rectangular slots in [`Inventory`].
 ///
-/// Adding slots requires a schema migration because the value is serialized
-/// as a fixed-size array on the wire and on disk.
-pub const INVENTORY_CAPACITY: usize = 10;
+/// Adding slots changes the serialized schema because the inventory uses a
+/// fixed-size array on the wire and on disk.
+pub const INVENTORY_CAPACITY: usize = 30;
 
 /// Generic inventory of a player.
 ///

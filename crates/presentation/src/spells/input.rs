@@ -16,6 +16,7 @@
 //!   to end it early.  An optimistic HUD cooldown starts at press time (the
 //!   server does the same) so the key cannot be spammed while the channel runs.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_shared::abilities::{
@@ -24,6 +25,7 @@ use bevymmo_shared::abilities::{
 use bevymmo_shared::entity::LocalPlayer;
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
+use bevymmo_shared::movement::ClientSurfaceQuery;
 use bevymmo_shared::network::protocol::{LookDirection, NetworkEntityId, Position};
 use bevymmo_shared::targeting::CurrentTarget;
 use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
@@ -41,6 +43,14 @@ pub const SLOT_BINDINGS: [(KeyAction, AbilitySlot); 3] = [
     (KeyAction::CastSpellE, AbilitySlot::Ultimate),
 ];
 
+/// Raycast and surface query parameters bundled for aiming.
+#[derive(SystemParam)]
+pub struct AimRaycastParams<'w, 's> {
+    pub windows: Query<'w, 's, &'static Window, With<bevy::window::PrimaryWindow>>,
+    pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<Camera3d>>,
+    pub surface_query: Option<Res<'w, ClientSurfaceQuery>>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn cast_abilities_on_key(
     keys: Option<Res<ButtonInput<KeyCode>>>,
@@ -49,8 +59,7 @@ pub fn cast_abilities_on_key(
     current_target: Res<CurrentTarget>,
     mut aim: ResMut<AbilityAim>,
     target_ids: Query<&NetworkEntityId>,
-    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    aim_ray: AimRaycastParams,
     mut controlled_players: Query<
         (&Equipment, &Position, &NetworkEntityId, &mut LookDirection),
         With<LocalPlayer>,
@@ -95,7 +104,11 @@ pub fn cast_abilities_on_key(
         return;
     };
 
-    let target_position = cursor_ground_point(&windows, &cameras);
+    let target_position = cursor_ground_point(
+        &aim_ray.windows,
+        &aim_ray.cameras,
+        aim_ray.surface_query.as_deref(),
+    );
 
     let target_id = current_target
         .entity
@@ -157,14 +170,13 @@ pub fn cast_abilities_on_key(
 
     // ── Release handling ─────────────────────────────────────────────
     // Release confirms an aimed cast (Instant/CastTime) or ends a channel.
+    //
+    // Only Instant/CastTime open an aim window on press (see above), so
+    // gating this whole loop on `aim.slot == Some(slot)` made the Channeling
+    // arm below unreachable: its release never had an aim to match, and a
+    // channel could only end by moving or by the server's own timeout.
     for (action, slot) in SLOT_BINDINGS {
-        if aim.slot != Some(slot) || !settings.just_released(action, &keys) {
-            continue;
-        }
-
-        let cancelled = aim.cancelled;
-        aim.clear();
-        if cancelled {
+        if !settings.just_released(action, &keys) {
             continue;
         }
 
@@ -177,6 +189,15 @@ pub fn cast_abilities_on_key(
         match ability.cast_mode() {
             bevymmo_shared::abilities::AbilityCastMode::Instant
             | bevymmo_shared::abilities::AbilityCastMode::CastTime => {
+                if aim.slot != Some(slot) {
+                    continue;
+                }
+                let cancelled = aim.cancelled;
+                aim.clear();
+                if cancelled {
+                    continue;
+                }
+
                 // Confirm the aimed cast.
                 if hud_state.ability_on_cooldown(&ability_id) {
                     continue;

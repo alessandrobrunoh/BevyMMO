@@ -57,59 +57,6 @@ fn ray_sphere_intersection(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ray_sphere_hits_directly() {
-        let origin = Vec3::ZERO;
-        let direction = Vec3::X;
-        let center = Vec3::new(5.0, 0.0, 0.0);
-        let radius = 1.0;
-
-        let hit = ray_sphere_intersection(origin, direction, center, radius);
-        assert!(hit.is_some());
-        // Approximate distance: 5.0 - 1.0 = 4.0
-        assert!(hit.unwrap() > 3.9 && hit.unwrap() < 4.1);
-    }
-
-    #[test]
-    fn ray_sphere_misses() {
-        let origin = Vec3::ZERO;
-        let direction = Vec3::X;
-        let center = Vec3::new(5.0, 5.0, 0.0);
-        let radius = 1.0;
-
-        let hit = ray_sphere_intersection(origin, direction, center, radius);
-        assert!(hit.is_none());
-    }
-
-    #[test]
-    fn ray_sphere_origin_inside() {
-        let origin = Vec3::ZERO;
-        let direction = Vec3::X;
-        let center = Vec3::new(0.5, 0.0, 0.0);
-        let radius = 2.0;
-
-        let hit = ray_sphere_intersection(origin, direction, center, radius);
-        assert!(hit.is_some());
-        // Should be positive and relatively small
-        assert!(hit.unwrap() >= 0.0);
-    }
-
-    #[test]
-    fn ray_sphere_misses_backward() {
-        let origin = Vec3::ZERO;
-        let direction = -Vec3::X;
-        let center = Vec3::new(5.0, 0.0, 0.0);
-        let radius = 1.0;
-
-        let hit = ray_sphere_intersection(origin, direction, center, radius);
-        assert!(hit.is_none());
-    }
-}
-
 /// Target selection system with right click.
 ///
 /// Executes the following steps:
@@ -223,3 +170,57 @@ pub fn cleanup_invalid_target(
         current_target.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ray_sphere_hits_directly() {
+        let origin = Vec3::ZERO;
+        let direction = Vec3::X;
+        let center = Vec3::new(5.0, 0.0, 0.0);
+        let radius = 1.0;
+
+        let hit = ray_sphere_intersection(origin, direction, center, radius);
+        assert!(hit.is_some());
+        // Approximate distance: 5.0 - 1.0 = 4.0
+        assert!(hit.unwrap() > 3.9 && hit.unwrap() < 4.1);
+    }
+
+    #[test]
+    fn ray_sphere_misses() {
+        let origin = Vec3::ZERO;
+        let direction = Vec3::X;
+        let center = Vec3::new(5.0, 5.0, 0.0);
+        let radius = 1.0;
+
+        let hit = ray_sphere_intersection(origin, direction, center, radius);
+        assert!(hit.is_none());
+    }
+
+    #[test]
+    fn ray_sphere_origin_inside() {
+        let origin = Vec3::ZERO;
+        let direction = Vec3::X;
+        let center = Vec3::new(0.5, 0.0, 0.0);
+        let radius = 2.0;
+
+        let hit = ray_sphere_intersection(origin, direction, center, radius);
+        assert!(hit.is_some());
+        // Should be positive and relatively small
+        assert!(hit.unwrap() >= 0.0);
+    }
+
+    #[test]
+    fn ray_sphere_misses_backward() {
+        let origin = Vec3::ZERO;
+        let direction = -Vec3::X;
+        let center = Vec3::new(5.0, 0.0, 0.0);
+        let radius = 1.0;
+
+        let hit = ray_sphere_intersection(origin, direction, center, radius);
+        assert!(hit.is_none());
+    }
+}
+

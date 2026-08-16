@@ -14,15 +14,9 @@ const FADE_SECONDS: f32 = 1.0;
 const MAX_VISIBLE: usize = 6;
 
 /// Where the lines are parented. One node, spawned once.
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct NoticeLog {
     root: Option<Entity>,
-}
-
-impl Default for NoticeLog {
-    fn default() -> Self {
-        Self { root: None }
-    }
 }
 
 /// One line, with the time it has left.

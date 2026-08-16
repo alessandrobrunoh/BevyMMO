@@ -285,36 +285,39 @@ pub fn resolve_ray_to_ground(
     for step in 0..=num_steps {
         let t = (step as f32 * step_size).min(max_distance);
         let sample_point = ray_origin + normalized_direction * t;
-        let Some(ground_contact) = surface_query.ground_at(sample_point.x, sample_point.z) else {
+        let Some(ground_contact) = surface_query.surface_contact_at(sample_point.x, sample_point.z) else {
             previous = None;
             continue;
         };
 
         let signed_distance = sample_point.y - ground_contact.height;
-        if let Some((previous_t, previous_distance)) = previous {
-            if previous_distance >= 0.0 && signed_distance <= 0.0 {
-                // Refine the crossing so coarse ray steps do not move the click
-                // target noticeably on steep terrain.
-                let mut low = previous_t;
-                let mut high = t;
-                for _ in 0..8 {
-                    let middle = (low + high) * 0.5;
-                    let point = ray_origin + normalized_direction * middle;
-                    let Some(contact) = surface_query.ground_at(point.x, point.z) else {
-                        low = middle;
-                        continue;
-                    };
-                    if point.y - contact.height > 0.0 {
-                        low = middle;
-                    } else {
-                        high = middle;
-                    }
-                }
+        let is_crossing = match previous {
+            Some((_prev_t, prev_dist)) => prev_dist >= 0.0 && signed_distance <= 0.0,
+            None => signed_distance <= 0.0 && ray_origin.y >= ground_contact.height,
+        };
 
-                let point = ray_origin + normalized_direction * high;
-                let contact = surface_query.ground_at(point.x, point.z)?;
-                return Some(Vec3::new(point.x, contact.height, point.z));
+        if is_crossing {
+            // Refine the crossing so coarse ray steps do not move the click
+            // target noticeably on steep terrain.
+            let mut low = previous.map(|(pt, _)| pt).unwrap_or((t - step_size).max(0.0));
+            let mut high = t;
+            for _ in 0..8 {
+                let middle = (low + high) * 0.5;
+                let point = ray_origin + normalized_direction * middle;
+                let Some(contact) = surface_query.surface_contact_at(point.x, point.z) else {
+                    low = middle;
+                    continue;
+                };
+                if point.y - contact.height > 0.0 {
+                    low = middle;
+                } else {
+                    high = middle;
+                }
             }
+
+            let point = ray_origin + normalized_direction * high;
+            let contact = surface_query.surface_contact_at(point.x, point.z)?;
+            return Some(Vec3::new(point.x, contact.height, point.z));
         }
 
         previous = Some((t, signed_distance));
@@ -742,5 +745,71 @@ mod tests {
         assert!(result.is_some(), "Ray should find surface within tolerance");
         let ground_pos = result.unwrap();
         assert_eq!(ground_pos.y, 2.0, "Height should be resolved to surface");
+    }
+
+    #[test]
+    fn test_resolve_ray_to_ground_steep_mountain_slope() {
+        let bounds = SurfaceBounds {
+            min_x: 0.0,
+            max_x: 10.0,
+            min_z: 0.0,
+            max_z: 10.0,
+        };
+        // 2x2 heightfield: rises from 0.0 to 20.0 over 10 units in X (slope > 60 deg)
+        let heights = vec![
+            0.0, 0.0,
+            20.0, 20.0,
+        ];
+        let hf = HeightfieldData::new(1, bounds, heights);
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "steep_mountain".to_string(),
+            display_name: "Steep Mountain".to_string(),
+            bounds: MapBounds {
+                min_x: 0.0,
+                max_x: 10.0,
+                min_z: 0.0,
+                max_z: 10.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: Some(WorldMetrics {
+                max_walkable_slope_deg: 45.0,
+                ..Default::default()
+            }),
+            surfaces: vec![WalkableSurface {
+                id: "steep_cliff".to_string(),
+                kind: SurfaceKind::Mesh,
+                object: None,
+                bounds: Some(bounds),
+                height: None,
+                min_height: Some(0.0),
+                max_height: Some(20.0),
+                grid_size: None,
+                size: None,
+                purpose: None,
+                heightfield: Some(hf),
+                walkable_mesh: None,
+                layer: None,
+                max_slope_deg: Some(45.0),
+            }],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        let query = SurfaceQuery::from_manifest(&manifest);
+
+        // Camera high above at (5.0, 30.0, 5.0), aiming straight down at the steep mountain at x=5, z=5 (elevation = 10.0)
+        let camera_pos = Vec3::new(5.0, 30.0, 5.0);
+        let ray_dir = Vec3::new(0.0, -1.0, 0.0);
+
+        let result = resolve_ray_to_ground(camera_pos, ray_dir, &query, 100.0, 0.5);
+        assert!(result.is_some(), "Ray should hit steep mountain");
+        let hit = result.unwrap();
+        assert!((hit.y - 10.0).abs() < 0.1, "Hit height should be ~10.0 on the mountain, got {}", hit.y);
     }
 }

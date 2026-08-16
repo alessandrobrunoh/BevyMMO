@@ -77,7 +77,7 @@ fn select_move_target(
     let target = surface_query
         .0
         .as_ref()
-        .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, 100.0, 0.5))
+        .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, 300.0, 0.5))
         .unwrap_or_else(|| {
             let t = -ray.origin.y / ray.direction.y;
             ray.origin + *ray.direction * t

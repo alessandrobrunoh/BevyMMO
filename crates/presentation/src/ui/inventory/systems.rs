@@ -23,10 +23,14 @@ use crate::ui::{
 
 // Sized to still fit the default 800x600 dev window (see
 // `ui::card::builder`'s note on why cards use viewport-relative centring):
-// header + padding + 3x3 equip grid + mount row + divider + 5x2 item grid
-// comfortably clears 600px tall at these dimensions.
+// header + padding + 3x3 equip grid + mount row + divider + 6x5 item grid
+// fit in the scrollable body at these dimensions.
 const INVENTORY_CARD_WIDTH: f32 = 340.0;
 const INVENTORY_CARD_HEIGHT: f32 = 560.0;
+const INVENTORY_GRID_COLUMNS: u16 = 5;
+const INVENTORY_GRID_ROWS: u16 =
+    INVENTORY_CAPACITY.div_ceil(INVENTORY_GRID_COLUMNS as usize) as u16;
+const INVENTORY_SLOT_HEIGHT: f32 = 64.0;
 const EQUIP_SLOT_SIZE: f32 = 46.0;
 /// Shown in an empty inventory / equipment cell.
 ///
@@ -179,12 +183,12 @@ fn spawn_inventory_window(
         .width(Val::Px(INVENTORY_CARD_WIDTH))
         .height(Val::Px(INVENTORY_CARD_HEIGHT))
         .positioning(CardPositioning::Right)
+        .scrollable()
         .closeable()
         .exclusive()
         .with_body(move |body| {
             body.spawn((Node {
                 width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 row_gap: Val::Px(9.0),
@@ -236,12 +240,19 @@ fn spawn_inventory_window(
                         TextColor(Color::srgba(0.6, 0.75, 0.95, 0.9)),
                     ));
 
-                    // 5x2 generic inventory grid.
+                    // Generic inventory grid. The card body scrolls when all
+                    // rows exceed the available height.
                     main.spawn((Node {
                         width: Val::Percent(100.0),
                         display: Display::Grid,
-                        grid_template_columns: RepeatedGridTrack::flex(5, 1.0),
-                        grid_template_rows: RepeatedGridTrack::flex(2, 1.0),
+                        grid_template_columns: RepeatedGridTrack::flex(INVENTORY_GRID_COLUMNS, 1.0),
+                        // Item names can wrap to two lines. Fixed tracks keep
+                        // each row tall enough and make the grid expand inside
+                        // the scroll view instead of compressing its contents.
+                        grid_template_rows: RepeatedGridTrack::px(
+                            INVENTORY_GRID_ROWS,
+                            INVENTORY_SLOT_HEIGHT,
+                        ),
                         row_gap: Val::Px(8.0),
                         column_gap: Val::Px(8.0),
                         ..default()
@@ -253,7 +264,7 @@ fn spawn_inventory_window(
                                 grid.spawn((
                                     Button,
                                     Node {
-                                        height: Val::Px(44.0),
+                                        height: Val::Px(INVENTORY_SLOT_HEIGHT),
                                         justify_content: JustifyContent::Center,
                                         align_items: AlignItems::Center,
                                         padding: UiRect::all(Val::Px(4.0)),

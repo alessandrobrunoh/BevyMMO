@@ -23,6 +23,7 @@ pub struct CardWindow {
 pub enum CardPositioning {
     #[default]
     Center,
+    Left,
     Right,
 }
 

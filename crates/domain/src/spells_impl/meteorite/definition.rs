@@ -20,16 +20,20 @@ impl MeteoriteSpell {
     pub const IMPACT_DELAY_SECONDS: f32 = 2.0;
     pub const DAMAGE: f32 = 50.0;
 
-    /// Clamps the target point to `CAST_RANGE` around the caster.
+    /// Clamps the target point to `CAST_RANGE` around the caster, preserving height.
     fn clamp_target_to_range(caster_position: Vec3, target: Vec3) -> Vec3 {
         let offset = target - caster_position;
         let horizontal = Vec3::new(offset.x, 0.0, offset.z);
         let distance = horizontal.length();
         if distance <= Self::CAST_RANGE {
-            Vec3::new(target.x, 0.0, target.z)
+            target
         } else {
             let direction = horizontal / distance;
-            caster_position + direction * Self::CAST_RANGE
+            Vec3::new(
+                caster_position.x + direction.x * Self::CAST_RANGE,
+                caster_position.y + (target.y - caster_position.y) * (Self::CAST_RANGE / distance),
+                caster_position.z + direction.z * Self::CAST_RANGE,
+            )
         }
     }
 }
@@ -74,3 +78,27 @@ impl Spell for MeteoriteSpell {
         ctx.emit_visual(Self::ID, center, center);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meteorite_clamp_preserves_target_elevation() {
+        let caster = Vec3::new(0.0, 5.0, 0.0);
+        let target_on_mountain = Vec3::new(5.0, 18.0, 5.0);
+        let clamped = MeteoriteSpell::clamp_target_to_range(caster, target_on_mountain);
+        assert_eq!(clamped, target_on_mountain);
+        assert_eq!(clamped.y, 18.0);
+    }
+
+    #[test]
+    fn meteorite_clamp_interpolates_elevation_when_out_of_range() {
+        let caster = Vec3::new(0.0, 0.0, 0.0);
+        let target = Vec3::new(0.0, 28.0, 28.0); // distance = 28.0, range = 14.0 (halfway)
+        let clamped = MeteoriteSpell::clamp_target_to_range(caster, target);
+        assert!((clamped.y - 14.0).abs() < 1e-4);
+        assert!((clamped.z - 14.0).abs() < 1e-4);
+    }
+}
+

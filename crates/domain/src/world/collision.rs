@@ -174,17 +174,31 @@ impl SurfaceQuery {
     /// Resolves ground contact at the given world position using highest-wins.
     ///
     /// Returns `None` if the position is not over any walkable surface.
-    /// When multiple surfaces overlap, returns the highest one. This is the
-    /// right choice for raycasts and target resolution (e.g. click-to-move)
-    /// where we want the visible top surface. For stepping an entity that is
-    /// already standing somewhere, use [`ground_at_reachable`].
+    /// When multiple surfaces overlap, returns the highest one. For stepping an
+    /// entity that is already standing somewhere, use [`ground_at_reachable`].
+    /// For raycasts, targeting and cursor aiming on any terrain (including steep
+    /// slopes and cliffs), use [`surface_contact_at`].
     ///
     /// [`ground_at_reachable`]: SurfaceQuery::ground_at_reachable
+    /// [`surface_contact_at`]: SurfaceQuery::surface_contact_at
     pub fn ground_at(&self, x: f32, z: f32) -> Option<GroundContact> {
         self.surfaces
             .iter()
             .filter(|surface| self.surface_contains_point(surface, x, z))
-            .filter_map(|surface| self.resolve_surface(surface, x, z))
+            .filter_map(|surface| self.resolve_surface(surface, x, z, true))
+            .max_by(|left, right| left.height.total_cmp(&right.height))
+    }
+
+    /// Resolves ground contact at (x, z) without slope rejection.
+    ///
+    /// Unlike [`ground_at`], which rejects surfaces with slope steeper than the
+    /// walkable limit for entity foot movement, `surface_contact_at` returns the
+    /// physical terrain surface height for raycasts, cursor aiming, and spell targeting.
+    pub fn surface_contact_at(&self, x: f32, z: f32) -> Option<GroundContact> {
+        self.surfaces
+            .iter()
+            .filter(|surface| self.surface_contains_point(surface, x, z))
+            .filter_map(|surface| self.resolve_surface(surface, x, z, false))
             .max_by(|left, right| left.height.total_cmp(&right.height))
     }
 
@@ -217,7 +231,7 @@ impl SurfaceQuery {
         self.surfaces
             .iter()
             .filter(|surface| self.surface_contains_point(surface, x, z))
-            .filter_map(|surface| self.resolve_surface(surface, x, z))
+            .filter_map(|surface| self.resolve_surface(surface, x, z, true))
             .filter(|contact| contact.height <= ceiling)
             .max_by(|left, right| left.height.total_cmp(&right.height))
     }
@@ -279,10 +293,15 @@ impl SurfaceQuery {
         surface: &WalkableSurface,
         x: f32,
         z: f32,
+        check_slope: bool,
     ) -> Option<GroundContact> {
-        let max_slope = surface.max_slope_deg.unwrap_or(self.global_max_slope_deg);
-        let max_slope_rad = max_slope.to_radians();
-        let min_normal_y = max_slope_rad.cos() - 1e-4; // Tolerate precision errors
+        let min_normal_y = if check_slope {
+            let max_slope = surface.max_slope_deg.unwrap_or(self.global_max_slope_deg);
+            let max_slope_rad = max_slope.to_radians();
+            Some(max_slope_rad.cos() - 1e-4) // Tolerate precision errors
+        } else {
+            None
+        };
 
         let tri_count = mesh.indices.len() / 3;
         for tri_idx in 0..tri_count {
@@ -317,9 +336,11 @@ impl SurfaceQuery {
             }
             normal = [normal[0] / length, normal[1] / length, normal[2] / length];
 
-            // Check slope: normal should point up (positive Y)
-            if normal[1] < min_normal_y {
-                continue; // Too steep
+            // Check slope if requested: normal should point up (positive Y)
+            if let Some(min_y) = min_normal_y {
+                if normal[1] < min_y {
+                    continue; // Too steep
+                }
             }
 
             // Compute barycentric coordinates for height interpolation
@@ -391,13 +412,19 @@ impl SurfaceQuery {
     }
 
     /// Resolves ground contact for a specific surface.
-    fn resolve_surface(&self, surface: &WalkableSurface, x: f32, z: f32) -> Option<GroundContact> {
+    fn resolve_surface(
+        &self,
+        surface: &WalkableSurface,
+        x: f32,
+        z: f32,
+        check_slope: bool,
+    ) -> Option<GroundContact> {
         match surface.kind {
             SurfaceKind::Flat => surface.height.map(GroundContact::flat),
             SurfaceKind::FlatMesh => {
                 // For flat_mesh, try heightfield data first, then fall back to constant height
                 if let Some(ref heightfield) = surface.heightfield {
-                    self.resolve_heightfield(surface, heightfield, x, z)
+                    self.resolve_heightfield(surface, heightfield, x, z, check_slope)
                 } else {
                     surface.height.map(GroundContact::flat)
                 }
@@ -405,11 +432,11 @@ impl SurfaceQuery {
             SurfaceKind::Mesh => {
                 // For mesh surfaces with walkable_mesh data, perform exact triangle test
                 if let Some(ref mesh) = surface.walkable_mesh {
-                    return self.resolve_triangle_mesh(mesh, surface, x, z);
+                    return self.resolve_triangle_mesh(mesh, surface, x, z, check_slope);
                 }
                 // For mesh surfaces, use heightfield data if available
                 if let Some(ref heightfield) = surface.heightfield {
-                    self.resolve_heightfield(surface, heightfield, x, z)
+                    self.resolve_heightfield(surface, heightfield, x, z, check_slope)
                 } else {
                     // No heightfield data available
                     None
@@ -418,20 +445,23 @@ impl SurfaceQuery {
         }
     }
 
-    /// Resolves a heightfield-backed surface and applies the walkable slope limit.
+    /// Resolves a heightfield-backed surface and optionally applies the walkable slope limit.
     fn resolve_heightfield(
         &self,
         surface: &WalkableSurface,
         heightfield: &HeightfieldData,
         x: f32,
         z: f32,
+        check_slope: bool,
     ) -> Option<GroundContact> {
         let height = heightfield.sample_height(x, z)?;
         let normal = heightfield.sample_normal(x, z)?;
-        let max_slope = surface.max_slope_deg.unwrap_or(self.global_max_slope_deg);
-        let min_normal_y = max_slope.to_radians().cos() - 1e-4; // Tolerate precision errors
-        if normal[1] < min_normal_y {
-            return None;
+        if check_slope {
+            let max_slope = surface.max_slope_deg.unwrap_or(self.global_max_slope_deg);
+            let min_normal_y = max_slope.to_radians().cos() - 1e-4; // Tolerate precision errors
+            if normal[1] < min_normal_y {
+                return None;
+            }
         }
 
         Some(GroundContact::new(height, normal))
@@ -1649,5 +1679,76 @@ mod tests {
             !grid.is_blocked([15.0, 0.0, 15.0], 0.5),
             "No blocking should occur"
         );
+    }
+
+    #[test]
+    fn test_surface_contact_at_resolves_steep_mountain_slope() {
+        // Build a surface with a steep slope (> 45 degrees, e.g. 60 degrees)
+        let bounds = SurfaceBounds {
+            min_x: 0.0,
+            max_x: 10.0,
+            min_z: 0.0,
+            max_z: 10.0,
+        };
+        // 2x2 heightfield: rises from 0.0 to 20.0 over 10 units in X (slope > 60 deg)
+        let heights = vec![
+            0.0, 0.0,
+            20.0, 20.0,
+        ];
+        let hf = HeightfieldData::new(1, bounds, heights);
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "steep_mountain".to_string(),
+            display_name: "Steep Mountain".to_string(),
+            bounds: MapBounds {
+                min_x: 0.0,
+                max_x: 10.0,
+                min_z: 0.0,
+                max_z: 10.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: Some(WorldMetrics {
+                max_walkable_slope_deg: 45.0,
+                ..Default::default()
+            }),
+            surfaces: vec![WalkableSurface {
+                id: "steep_cliff".to_string(),
+                kind: SurfaceKind::Mesh,
+                object: None,
+                bounds: Some(bounds),
+                height: None,
+                min_height: Some(0.0),
+                max_height: Some(20.0),
+                grid_size: None,
+                size: None,
+                purpose: None,
+                heightfield: Some(hf),
+                walkable_mesh: None,
+                layer: None,
+                max_slope_deg: Some(45.0),
+            }],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+
+        let query = SurfaceQuery::from_manifest(&manifest);
+
+        // At x = 5.0, height should be 10.0.
+        // ground_at must return None because slope exceeds 45 degrees (not walkable).
+        assert!(
+            query.ground_at(5.0, 5.0).is_none(),
+            "ground_at should reject steep slopes > 45 deg"
+        );
+
+        // surface_contact_at must return Some with height 10.0 for aiming/raycasting.
+        let contact = query.surface_contact_at(5.0, 5.0);
+        assert!(contact.is_some(), "surface_contact_at should resolve steep mountain height");
+        let contact = contact.unwrap();
+        assert!((contact.height - 10.0).abs() < 1e-3, "Height should be 10.0 on the slope");
     }
 }

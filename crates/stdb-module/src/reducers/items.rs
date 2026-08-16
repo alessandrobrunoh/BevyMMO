@@ -77,28 +77,28 @@ use crate::tables::{
 /// Every item this build ships.
 fn item_registry() -> &'static ItemRegistry {
     static REGISTRY: OnceLock<ItemRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::items_impl::default_items)
+    REGISTRY.get_or_init(bevymmo_domain::content::items::default_items)
 }
 
 /// The Eidolon gestures (`BaseAbility`) items can offer.
 fn ability_registry() -> &'static BaseAbilityRegistry {
     static REGISTRY: OnceLock<BaseAbilityRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::base_abilities_impl::default_base_abilities)
+    REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
 }
 
 fn essence_registry() -> &'static EssenceRegistry {
     static REGISTRY: OnceLock<EssenceRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::essences_impl::default_essences)
+    REGISTRY.get_or_init(bevymmo_domain::content::essences::default_essences)
 }
 
 fn modifier_registry() -> &'static ModifierRegistry {
     static REGISTRY: OnceLock<ModifierRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::modifiers_impl::default_modifiers)
+    REGISTRY.get_or_init(bevymmo_domain::content::modifiers::default_modifiers)
 }
 
 fn ancient_word_registry() -> &'static AncientWordRegistry {
     static REGISTRY: OnceLock<AncientWordRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::ancient_words_impl::default_ancient_words)
+    REGISTRY.get_or_init(bevymmo_domain::content::ancient_words::default_ancient_words)
 }
 
 // ---------------------------------------------------------------------------

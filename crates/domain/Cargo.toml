@@ -40,9 +40,13 @@ repository.workspace = true
 # have no business here.
 [features]
 default = []
-bevy = ["dep:bevy_ecs", "dep:bevy_reflect"]
+bevy = ["bevymmo_gameplay/bevy"]
 
 [dependencies]
+bevymmo_core = { path = "../core" }
+bevymmo_world = { path = "../world" }
+bevymmo_gameplay = { path = "../gameplay" }
+bevymmo_content = { path = "../content" }
 glam = { version = "0.32", features = ["serde"] }
 serde = { workspace = true }
 # Plain `log`, not `bevy::log`: the SpacetimeDB module routes it to module logs.

@@ -1,0 +1,15 @@
+[package]
+name = "bevymmo_content"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bevymmo_core = { path = "../core" }
+bevymmo_world = { path = "../world" }
+bevymmo_gameplay = { path = "../gameplay" }
+bevymmo-props-macro = { path = "../bevymmo-props-macro" }
+
+[lints]
+workspace = true

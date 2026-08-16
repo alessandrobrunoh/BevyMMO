@@ -43,9 +43,9 @@
 use bevymmo_domain::entity::boss::components::{Boss, BossPhase, BossRotationState, BossSpellbook};
 use bevymmo_domain::entity::enemy::components::AggroRange;
 use bevymmo_domain::movement;
-use bevymmo_domain::spells::{CastKind, SpellId};
+use bevymmo_domain::content::spells::fireball::FireballSpell;
+use bevymmo_domain::spells::{CastKind, Spell, SpellId};
 use bevymmo_domain::spells::context::ChannelMovementPolicy as SpellChannelMovementPolicy;
-use bevymmo_domain::spells_impl::attack::AttackSpell;
 use glam::Vec3;
 use spacetimedb::{ReducerContext, Table};
 
@@ -210,19 +210,19 @@ fn step_enemy(ctx: &ReducerContext, enemy: GameEntity) {
 /// spell's own radius.
 fn try_attack(ctx: &ReducerContext, enemy: &GameEntity, target: &PlayerRef) {
     let position = Vec3::from(enemy.position);
-    if position.distance(target.position) > AttackSpell::AREA_RADIUS {
+    if position.distance(target.position) > FireballSpell.config().cast_range {
         return;
     }
     if !can_start_cast(ctx, enemy.entity_id) {
         return;
     }
-    if spells::is_on_cooldown(ctx, enemy.entity_id, AttackSpell::ID) {
+    if spells::is_on_cooldown(ctx, enemy.entity_id, FireballSpell::ID) {
         return;
     }
     request_cast(
         ctx,
         enemy,
-        &SpellId::new(AttackSpell::ID),
+        &SpellId::new(FireballSpell::ID),
         Some(target.entity),
         Some(target.position),
     );

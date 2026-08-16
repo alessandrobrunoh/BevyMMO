@@ -1,0 +1,26 @@
+[package]
+name = "bevymmo_gameplay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+bevy = ["dep:bevy_ecs", "dep:bevy_reflect"]
+
+[dependencies]
+bevymmo_core = { path = "../core" }
+bevymmo_world = { path = "../world" }
+bevymmo-props-macro = { path = "../bevymmo-props-macro" }
+glam = { version = "0.32", features = ["serde"] }
+serde = { workspace = true }
+log = "0.4"
+bevy_ecs = { version = "0.19", optional = true, features = ["bevy_reflect"] }
+bevy_reflect = { version = "0.19", optional = true, features = ["glam"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

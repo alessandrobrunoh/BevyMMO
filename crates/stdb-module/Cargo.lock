@@ -54,10 +54,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevymmo_core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bevymmo_domain"
 version = "0.1.0"
 dependencies = [
  "bevymmo-props-macro",
+ "bevymmo_core",
+ "bevymmo_gameplay",
+ "bevymmo_world",
+ "glam",
+ "log",
+ "serde",
+]
+
+[[package]]
+name = "bevymmo_gameplay"
+version = "0.1.0"
+dependencies = [
+ "bevymmo-props-macro",
+ "bevymmo_core",
+ "bevymmo_world",
  "glam",
  "log",
  "serde",
@@ -73,6 +95,15 @@ dependencies = [
  "postcard",
  "serde_json",
  "spacetimedb",
+]
+
+[[package]]
+name = "bevymmo_world"
+version = "0.1.0"
+dependencies = [
+ "bevymmo_core",
+ "glam",
+ "serde",
 ]
 
 [[package]]

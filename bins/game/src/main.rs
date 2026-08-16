@@ -93,12 +93,12 @@ fn build_app(config: &AppConfig) -> App {
     // directly also removes a startup-ordering hazard: nothing can read a
     // registry before the system that populates it has run, because there is no
     // such system.
-    app.insert_resource(bevymmo_shared::spells_impl::default_spells());
-    app.insert_resource(bevymmo_shared::items_impl::default_items());
-    app.insert_resource(bevymmo_shared::base_abilities_impl::default_base_abilities());
-    app.insert_resource(bevymmo_shared::essences_impl::default_essences());
-    app.insert_resource(bevymmo_shared::modifiers_impl::default_modifiers());
-    app.insert_resource(bevymmo_shared::ancient_words_impl::default_ancient_words());
+    app.insert_resource(bevymmo_shared::content::spells::default_spells());
+    app.insert_resource(bevymmo_shared::content::items::default_items());
+    app.insert_resource(bevymmo_shared::content::abilities::default_base_abilities());
+    app.insert_resource(bevymmo_shared::content::essences::default_essences());
+    app.insert_resource(bevymmo_shared::content::modifiers::default_modifiers());
+    app.insert_resource(bevymmo_shared::content::ancient_words::default_ancient_words());
 
     #[cfg(feature = "client")]
     if config.mode.has_client() {
@@ -167,5 +167,3 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
         app.insert_resource(Time::<Fixed>::from_duration(tick_duration));
     }
 }
-
-

@@ -145,8 +145,8 @@ pub fn draw_ability_aim_preview(
                 draw_flat_cone(&mut gizmos, center, radius, direction, angle_deg, color);
             }
         }
-        AbilityGeometry::Projectile { range, .. } => {
-            draw_forward_lane(&mut gizmos, position.0, look_direction.0, range, color);
+        AbilityGeometry::Projectile { .. } => {
+            draw_forward_lane(&mut gizmos, position.0, look_direction.0, params.range, color);
         }
         AbilityGeometry::SelfBuff { .. } => {
             draw_flat_circle(&mut gizmos, position.0, 1.0, color);
@@ -268,7 +268,7 @@ fn draw_forward_lane(
 mod tests {
     use bevy::prelude::*;
     use bevymmo_shared::abilities::AbilitySlot;
-    use bevymmo_shared::spells::context::AoeShape;
+
 
     use super::*;
 
@@ -323,40 +323,5 @@ mod tests {
             .just_pressed(KeyCode::Escape));
     }
 
-    /// Il preview di un cono va disegnato dai valori che il server userà per
-    /// colpire: questo test blocca la terna centro/raggio/forma di ArcaneGale.
-    #[test]
-    fn the_cone_preview_reads_the_same_geometry_the_server_hits_with() {
-        use bevymmo_shared::abilities::BaseAbility;
-        use bevymmo_shared::base_abilities_impl::arcane_gale::ArcaneGale;
-        use bevymmo_shared::stats::components::CombatStats;
 
-        let combat = CombatStats {
-            attack_power: 0.0,
-            armor: 0.0,
-        };
-        let caster_position = Vec3::new(3.0, 0.0, 1.0);
-        let ctx = SpellCastContext::new(
-            EntityId::PLACEHOLDER,
-            caster_position,
-            &combat,
-            Vec3::Z,
-            Some(Vec3::new(3.0, 0.0, 20.0)),
-            None,
-            &[],
-        );
-
-        let ability = ArcaneGale;
-        let params = ability.base_params();
-
-        // L'apice è il lanciatore, non un centro spinto in avanti.
-        assert_eq!(ability.impact_center(&params, &ctx), caster_position);
-        assert!(matches!(ability.impact_shape(&ctx), AoeShape::Cone { .. }));
-
-        // Un bersaglio davanti è dentro, uno di lato no.
-        let shape = ability.impact_shape(&ctx);
-        let radius = ability.impact_radius(&params);
-        assert!(shape.contains(caster_position, radius, caster_position + Vec3::Z * 4.0));
-        assert!(!shape.contains(caster_position, radius, caster_position + Vec3::X * 4.0));
-    }
 }

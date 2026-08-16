@@ -559,59 +559,26 @@ impl PlayerRepository {
     }
 }
 
-/// Vocabolario seeded for a brand-new player: every Essenza/Modificatore
-/// implemented so far, per QA/demo convenience (§46-47 of the Eidolon
-/// design: the Vocabolario is permanent and independent of equipment, so
-/// this is a one-time head start, not something re-granted on every join —
-/// a "real" progression server would gate most of these behind exploration).
+/// Vocabolario seeded for a brand-new player with the single available
+/// Essenza and Modificatore.
 fn starter_known_glyphs() -> KnownGlyphs {
     use bevymmo_shared::abilities::{EssenceId, ModifierId};
-    use bevymmo_shared::essences_impl::{fuoco::FuocoEssence, gelo::GeloEssence, terra::TerraEssence};
-    use bevymmo_shared::modifiers_impl::{
-        amplificare::AmplificareModifier, concentrare::ConcentrareModifier, espandere::EspandereModifier,
-    };
+    use bevymmo_shared::essences_impl::fuoco::FuocoEssence;
+    use bevymmo_shared::modifiers_impl::espandere::EspandereModifier;
 
     let mut known = KnownGlyphs::default();
     known.essences.insert(EssenceId::new(FuocoEssence::ID));
-    known.essences.insert(EssenceId::new(GeloEssence::ID));
-    known.essences.insert(EssenceId::new(TerraEssence::ID));
     known.modifiers.insert(ModifierId::new(EspandereModifier::ID));
-    known.modifiers.insert(ModifierId::new(AmplificareModifier::ID));
-    known.modifiers.insert(ModifierId::new(ConcentrareModifier::ID));
     known
 }
 
-/// Inventory seeded for a brand-new player: one reference item per
-/// [`bevymmo_shared::items::components::EquipSlot`], so every slot in the
-/// inventory UI has something to equip out of the box. Purely a QA/demo
-/// convenience; existing players are never touched (only used on first
-/// creation, see [`PlayerRepository::load_or_create_default_inventory`]).
-///
-/// The weapon reference is `MagicStaff`, not `IronSword`: since spells now
-/// come from equipped items instead of a global default hotbar (see
-/// `bevymmo_shared::items::SpellKit`), a brand-new player needs a
-/// spell-granting weapon in reach or their Q/W/E stay empty until they equip
-/// one themselves.
+/// Inventory seeded for a brand-new player with the only available item.
+/// Existing players are never touched (only used on first creation, see
+/// [`PlayerRepository::load_or_create_default_inventory`]).
 fn starter_inventory() -> Inventory {
-    use bevymmo_shared::items_impl::{
-        field_rations::FieldRations, magic_staff::MagicStaff, iron_plate_armor::IronPlateArmor,
-        leather_helmet::LeatherHelmet, quick_flask::QuickFlask, swift_boots::SwiftBoots,
-        swift_steed::SwiftSteed, travelers_bag::TravelersBag, travelers_cape::TravelersCape,
-        wooden_shield::WoodenShield,
-    };
+    use bevymmo_shared::items_impl::magic_staff::MagicStaff;
 
-    let ids = [
-        MagicStaff::ID,
-        LeatherHelmet::ID,
-        TravelersCape::ID,
-        IronPlateArmor::ID,
-        WoodenShield::ID,
-        QuickFlask::ID,
-        SwiftBoots::ID,
-        FieldRations::ID,
-        SwiftSteed::ID,
-        TravelersBag::ID,
-    ];
+    let ids = [MagicStaff::ID];
 
     let mut inventory = Inventory::default();
     for (slot, id) in inventory.slots.iter_mut().zip(ids) {

@@ -1013,7 +1013,8 @@ fn require_unit_struct(input: &DeriveInput, macro_name: &str) -> Result<(), Toke
 // #[base_ability(
 //     id = "staff_bolt", name = "Getto",
 //     tags = [Ranged, Projectile, SingleTarget],
-//     geometry = projectile(range = 20.0, speed = 26.0),
+//     range = 20.0,
+//     geometry = projectile(speed = 26.0),
 //     power = 260.0, cast_time = 0.35, cooldown = 4.0, energy_cost = 12.0,
 //     animation = "staff_bolt_cast", impact_vfx = "bolt_impact_burst",
 // )]
@@ -1022,10 +1023,9 @@ fn require_unit_struct(input: &DeriveInput, macro_name: &str) -> Result<(), Toke
 
 enum GeometryDef {
     Cone { radius: LitFloat, angle_deg: LitFloat },
-    /// `range` è la gittata entro cui si può piazzare il cerchio: assente
-    /// (0.0) = il gesto esplode addosso a chi lo lancia.
+    /// `range` è la gittata entro cui si può piazzare il cerchio (se non specificata a livello radice).
     Circle { radius: LitFloat, range: Option<LitFloat> },
-    Projectile { range: LitFloat, speed: LitFloat },
+    Projectile { speed: LitFloat, range: Option<LitFloat> },
     SelfBuff { duration_seconds: LitFloat },
 }
 
@@ -1047,12 +1047,10 @@ fn parse_geometry(kind: Ident, fields: Punctuated<KvPair, Token![,]>) -> syn::Re
             range: field("range").map(|pair| pair.float_value()).transpose()?,
         }),
         "projectile" => Ok(GeometryDef::Projectile {
-            range: field("range")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "projectile(...) requires `range = ...`"))?
-                .float_value()?,
             speed: field("speed")
                 .ok_or_else(|| syn::Error::new_spanned(&kind, "projectile(...) requires `speed = ...`"))?
                 .float_value()?,
+            range: field("range").map(|pair| pair.float_value()).transpose()?,
         }),
         "self_buff" => Ok(GeometryDef::SelfBuff {
             duration_seconds: field("duration_seconds")
@@ -1070,6 +1068,7 @@ struct BaseAbilityDef {
     id: LitStr,
     name: LitStr,
     tags: Vec<Ident>,
+    range: Option<LitFloat>,
     geometry: GeometryDef,
     power: LitFloat,
     cast_time: LitFloat,
@@ -1096,6 +1095,7 @@ impl Parse for BaseAbilityDef {
         let mut id = None;
         let mut name = None;
         let mut tags = Vec::new();
+        let mut range = None;
         let mut geometry = None;
         let mut power = None;
         let mut cast_time = None;
@@ -1119,6 +1119,7 @@ impl Parse for BaseAbilityDef {
                     let list: Punctuated<Ident, Token![,]> = Punctuated::parse_terminated(&content)?;
                     tags = list.into_iter().collect();
                 }
+                "range" => range = Some(input.parse::<LitFloat>()?),
                 "geometry" => {
                     let kind: Ident = input.parse()?;
                     let content;
@@ -1165,7 +1166,7 @@ impl Parse for BaseAbilityDef {
                     return Err(syn::Error::new_spanned(
                         &key,
                         format!(
-                            "unknown key `{other}` in #[base_ability(...)] (expected id, name, tags, geometry, \
+                            "unknown key `{other}` in #[base_ability(...)] (expected id, name, tags, range, geometry, \
                              power, cast_time, cooldown, energy_cost, animation, impact_vfx, impact_delay, \
                              stun_seconds, channeling)"
                         )
@@ -1183,6 +1184,7 @@ impl Parse for BaseAbilityDef {
             id: id.ok_or_else(|| input.error("#[base_ability(...)] requires `id = \"...\"`"))?,
             name: name.ok_or_else(|| input.error("#[base_ability(...)] requires `name = \"...\"`"))?,
             tags,
+            range,
             geometry: geometry.ok_or_else(|| input.error("#[base_ability(...)] requires `geometry = ...`"))?,
             power: power.ok_or_else(|| input.error("#[base_ability(...)] requires `power = ...`"))?,
             cast_time: cast_time.ok_or_else(|| input.error("#[base_ability(...)] requires `cast_time = ...`"))?,
@@ -1219,10 +1221,8 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
     let animation = &def.animation;
     let impact_vfx = &def.impact_vfx;
 
-    // `area`/`range` are derived from the geometry instead of being
-    // separate clauses: the radius you already gave `cone`/`circle` IS the
-    // area, so there is nothing left to restate.
-    let (geometry_tokens, area, range) = match &def.geometry {
+    // `area`/`range` are derived from the geometry if not explicitly given.
+    let (geometry_tokens, area, default_range) = match &def.geometry {
         GeometryDef::Cone { radius, angle_deg } => (
             quote! { crate::abilities::AbilityGeometry::Cone { radius: #radius, angle_deg: #angle_deg } },
             quote! { #radius },
@@ -1239,16 +1239,27 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
                 range,
             )
         }
-        GeometryDef::Projectile { range, speed } => (
-            quote! { crate::abilities::AbilityGeometry::Projectile { range: #range, speed: #speed } },
-            quote! { 0.0 },
-            quote! { #range },
-        ),
+        GeometryDef::Projectile { speed, range } => {
+            let range = match range {
+                Some(range) => quote! { #range },
+                None => quote! { 0.0 },
+            };
+            (
+                quote! { crate::abilities::AbilityGeometry::Projectile { speed: #speed } },
+                quote! { 0.0 },
+                range,
+            )
+        }
         GeometryDef::SelfBuff { duration_seconds } => (
             quote! { crate::abilities::AbilityGeometry::SelfBuff { duration_seconds: #duration_seconds } },
             quote! { 0.0 },
             quote! { 0.0 },
         ),
+    };
+
+    let range = match &def.range {
+        Some(r) => quote! { #r },
+        None => default_range,
     };
 
     // Le due chiavi opzionali generano l'override solo se dichiarate: senza
@@ -1684,6 +1695,394 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
         impl #name {
             /// Registers this Parola Antica in the global registry. Generated by `#[ancient_word(...)]`.
             pub fn register(registry: &mut crate::abilities::AncientWordRegistry) {
+                registry.register(std::sync::Arc::new(#name));
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+// ============================================================================
+// #[spell(...)] — declares a `bevymmo_domain::spells::Spell`.
+// ============================================================================
+//
+// Generates the static metadata (id/display_name/config/register) following
+// the same pattern as #[base_ability], #[essence], and #[modifier].
+// The actual cast logic is left to the user via a separate `SpellCast` trait
+// impl — same delegation used by EssenceEffect / ModifierEffect / AncientWordEffect.
+//
+// # DSL — all fields are flat, the config shape is inferred automatically:
+//
+// | targeting          | required extras         | → SpellConfig shape      |
+// |--------------------|-------------------------|--------------------------|
+// | SelfCentered       | area = f32              | melee_aoe                |
+// | SingleEntity       | range = f32             | ranged_single_target     |
+// | DirectionalLine    | range = f32             | ranged_single_target     |
+// | GroundAoe          | range = f32, area = f32 | ranged_aoe               |
+//
+// Optional modifiers:
+//   cast_time = 0.5
+//   channeling(movement = AllowMovement)
+//   channeling(movement = InterruptOnMove, duration = 3.0)
+//
+// # Example
+//
+// ```ignore
+// use bevymmo_props_macro::spell;
+//
+// #[spell(
+//     id = "fireball",
+//     name = "Fireball",
+//     cooldown = 10.0,
+//     range = 15.0,
+//     targeting = SingleEntity,
+// )]
+// pub struct FireballSpell;
+//
+// impl SpellCast for FireballSpell {
+//     fn cast(&self, ctx: &mut SpellCastContext) { /* ... */ }
+// }
+// ```
+
+enum SpellConfigShape {
+    RangedSingleTarget { cooldown: LitFloat, range: LitFloat, targeting: Ident },
+    MeleeAoe { cooldown: LitFloat, area: LitFloat },
+    RangedAoe { cooldown: LitFloat, range: LitFloat, area: LitFloat },
+}
+
+fn parse_spell_config(kind: Ident, fields: Punctuated<KvPair, Token![,]>) -> syn::Result<SpellConfigShape> {
+    let field = |name: &str| fields.iter().find(|p| p.key == name);
+    match kind.to_string().as_str() {
+        "ranged_single_target" => Ok(SpellConfigShape::RangedSingleTarget {
+            cooldown: field("cooldown")
+                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_single_target(...) requires `cooldown = ...`"))?
+                .float_value()?,
+            range: field("range")
+                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_single_target(...) requires `range = ...`"))?
+                .float_value()?,
+            targeting: field("targeting")
+                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_single_target(...) requires `targeting = ...`"))?
+                .ident_value()?,
+        }),
+        "melee_aoe" => Ok(SpellConfigShape::MeleeAoe {
+            cooldown: field("cooldown")
+                .ok_or_else(|| syn::Error::new_spanned(&kind, "melee_aoe(...) requires `cooldown = ...`"))?
+                .float_value()?,
+            area: field("area")
+                .ok_or_else(|| syn::Error::new_spanned(&kind, "melee_aoe(...) requires `area = ...`"))?
+                .float_value()?,
+        }),
+        "ranged_aoe" => Ok(SpellConfigShape::RangedAoe {
+            cooldown: field("cooldown")
+                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_aoe(...) requires `cooldown = ...`"))?
+                .float_value()?,
+            range: field("range")
+                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_aoe(...) requires `range = ...`"))?
+                .float_value()?,
+            area: field("area")
+                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_aoe(...) requires `area = ...`"))?
+                .float_value()?,
+        }),
+        other => Err(syn::Error::new_spanned(
+            &kind,
+            format!("unknown spell config shape `{other}` (expected ranged_single_target, melee_aoe, ranged_aoe)"),
+        )),
+    }
+}
+
+enum SpellConfigDef {
+    Explicit(SpellConfigShape),
+    Inferred {
+        cooldown: LitFloat,
+        targeting: Ident,
+        range: Option<LitFloat>,
+        area: Option<LitFloat>,
+    },
+}
+
+struct SpellChannelingDef {
+    movement: Ident,
+    duration: Option<LitFloat>,
+}
+
+struct SpellDef {
+    id: LitStr,
+    name: LitStr,
+    config: SpellConfigDef,
+    cast_time: Option<LitFloat>,
+    channeling: Option<SpellChannelingDef>,
+}
+
+impl Parse for SpellDef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut id = None;
+        let mut name = None;
+        let mut config = None;
+        let mut cooldown = None;
+        let mut targeting = None;
+        let mut range = None;
+        let mut area = None;
+        let mut cast_time = None;
+        let mut channeling = None;
+
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            let key_str = key.to_string();
+
+            if key_str == "channeling" {
+                // channeling(movement = AllowMovement) — no `=` before it.
+                let content;
+                parenthesized!(content in input);
+                let fields: Punctuated<KvPair, Token![,]> = Punctuated::parse_terminated(&content)?;
+                let mut movement = None;
+                let mut duration = None;
+                for pair in &fields {
+                    match pair.key.to_string().as_str() {
+                        "movement" => movement = Some(pair.ident_value()?),
+                        "duration" => duration = Some(pair.float_value()?),
+                        other => {
+                            return Err(syn::Error::new_spanned(
+                                &pair.key,
+                                format!("unknown key `{other}` in channeling(...) (expected movement, duration)"),
+                            ))
+                        }
+                    }
+                }
+                let movement = movement.unwrap_or_else(|| {
+                    syn::Ident::new("InterruptOnMove", proc_macro2::Span::call_site())
+                });
+                channeling = Some(SpellChannelingDef { movement, duration });
+            } else {
+                input.parse::<Token![=]>()?;
+                match key_str.as_str() {
+                    "id" => id = Some(input.parse::<LitStr>()?),
+                    "name" => name = Some(input.parse::<LitStr>()?),
+                    "config" => {
+                        let kind: Ident = input.parse()?;
+                        let content;
+                        parenthesized!(content in input);
+                        let fields: Punctuated<KvPair, Token![,]> = Punctuated::parse_terminated(&content)?;
+                        config = Some(SpellConfigDef::Explicit(parse_spell_config(kind, fields)?));
+                    }
+                    "cooldown" => cooldown = Some(input.parse::<LitFloat>()?),
+                    "targeting" => targeting = Some(input.parse::<Ident>()?),
+                    "range" => range = Some(input.parse::<LitFloat>()?),
+                    "area" => area = Some(input.parse::<LitFloat>()?),
+                    "cast_time" => cast_time = Some(input.parse::<LitFloat>()?),
+                    other => {
+                        return Err(syn::Error::new_spanned(
+                            &key,
+                            format!(
+                                "unknown key `{other}` in #[spell(...)] (expected \
+                                 id, name, config, cooldown, targeting, range, area, cast_time, channeling)"
+                            ),
+                        ))
+                    }
+                }
+            }
+
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+
+        let config = if let Some(cfg) = config {
+            cfg
+        } else if let (Some(cooldown), Some(targeting)) = (cooldown, targeting) {
+            SpellConfigDef::Inferred {
+                cooldown,
+                targeting,
+                range,
+                area,
+            }
+        } else {
+            return Err(input.error(
+                "#[spell(...)] requires either `config = ...` or `cooldown = ..., targeting = ...`",
+            ));
+        };
+
+        Ok(Self {
+            id: id.ok_or_else(|| input.error("#[spell(...)] requires `id = \"...\"`"))?,
+            name: name.ok_or_else(|| input.error("#[spell(...)] requires `name = \"...\"`"))?,
+            config,
+            cast_time,
+            channeling,
+        })
+    }
+}
+
+#[proc_macro_attribute]
+pub fn spell(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    if let Err(err) = require_unit_struct(&input, "spell") {
+        return err;
+    }
+    let def = parse_macro_input!(attr as SpellDef);
+    let name = &input.ident;
+
+    let id_lit = &def.id;
+    let name_lit = &def.name;
+
+    // Build the base config from the config shape.
+    let base_config = match &def.config {
+        SpellConfigDef::Explicit(SpellConfigShape::MeleeAoe { cooldown, area }) => {
+            quote! { crate::spells::SpellConfig::melee_aoe(#cooldown, #area) }
+        }
+        SpellConfigDef::Explicit(SpellConfigShape::RangedSingleTarget { cooldown, range, targeting }) => {
+            quote! {
+                crate::spells::SpellConfig::ranged_single_target(
+                    #cooldown, #range,
+                    crate::spells::TargetingMode::#targeting,
+                )
+            }
+        }
+        SpellConfigDef::Explicit(SpellConfigShape::RangedAoe { cooldown, range, area }) => {
+            quote! { crate::spells::SpellConfig::ranged_aoe(#cooldown, #range, #area) }
+        }
+        SpellConfigDef::Inferred { cooldown, targeting, range, area } => {
+            match targeting.to_string().as_str() {
+                "SelfCentered" => {
+                    let area = match area {
+                        Some(a) => a.clone(),
+                        None => {
+                            return syn::Error::new_spanned(
+                                targeting,
+                                "#[spell(...)] with `targeting = SelfCentered` requires `area = ...`",
+                            )
+                            .to_compile_error()
+                            .into();
+                        }
+                    };
+                    quote! { crate::spells::SpellConfig::melee_aoe(#cooldown, #area) }
+                }
+                "SingleEntity" | "DirectionalLine" => {
+                    let range = match range {
+                        Some(r) => r.clone(),
+                        None => {
+                            return syn::Error::new_spanned(
+                                targeting,
+                                "#[spell(...)] with `targeting = SingleEntity | DirectionalLine` requires `range = ...`",
+                            )
+                            .to_compile_error()
+                            .into();
+                        }
+                    };
+                    quote! {
+                        crate::spells::SpellConfig::ranged_single_target(
+                            #cooldown, #range,
+                            crate::spells::TargetingMode::#targeting,
+                        )
+                    }
+                }
+                "GroundAoe" => {
+                    let range = match range {
+                        Some(r) => r.clone(),
+                        None => {
+                            return syn::Error::new_spanned(
+                                targeting,
+                                "#[spell(...)] with `targeting = GroundAoe` requires `range = ...`",
+                            )
+                            .to_compile_error()
+                            .into();
+                        }
+                    };
+                    let area = match area {
+                        Some(a) => a.clone(),
+                        None => {
+                            return syn::Error::new_spanned(
+                                targeting,
+                                "#[spell(...)] with `targeting = GroundAoe` requires `area = ...`",
+                            )
+                            .to_compile_error()
+                            .into();
+                        }
+                    };
+                    quote! { crate::spells::SpellConfig::ranged_aoe(#cooldown, #range, #area) }
+                }
+                other => {
+                    return syn::Error::new_spanned(
+                        targeting,
+                        format!(
+                            "unknown targeting `{other}` (expected \
+                             SelfCentered | SingleEntity | DirectionalLine | GroundAoe)"
+                        ),
+                    )
+                    .to_compile_error()
+                    .into();
+                }
+            }
+        }
+    };
+
+    // Optional cast_time builder.
+    let config_with_cast_time = match &def.cast_time {
+        Some(ct) => quote! { .with_cast_time(#ct) },
+        None => quote! {},
+    };
+
+    // Optional channeling builder.
+    let config_with_channel = match &def.channeling {
+        Some(ch) => {
+            let movement = &ch.movement;
+            let policy = match movement.to_string().as_str() {
+                "InterruptOnMove" => {
+                    quote! { crate::spells::context::ChannelMovementPolicy::InterruptOnMove }
+                }
+                "AllowMovement" => {
+                    quote! { crate::spells::context::ChannelMovementPolicy::AllowMovement }
+                }
+                other => {
+                    return syn::Error::new_spanned(
+                        movement,
+                        format!(
+                            "unknown channeling movement `{other}` \
+                             (expected InterruptOnMove or AllowMovement)"
+                        ),
+                    )
+                    .to_compile_error()
+                    .into();
+                }
+            };
+            let duration_builder = match &ch.duration {
+                Some(d) => quote! { .with_channel_duration(#d) },
+                None => quote! {},
+            };
+            quote! { .with_channel(#policy) #duration_builder }
+        }
+        None => quote! {},
+    };
+
+    let expanded = quote! {
+        #input
+
+        impl #name {
+            pub const ID: &'static str = #id_lit;
+        }
+
+        impl crate::spells::Spell for #name {
+            fn id(&self) -> crate::spells::SpellId {
+                crate::spells::SpellId::new(Self::ID)
+            }
+
+            fn display_name(&self) -> &'static str {
+                #name_lit
+            }
+
+            fn config(&self) -> crate::spells::SpellConfig {
+                #base_config #config_with_cast_time #config_with_channel
+            }
+
+            fn cast(&self, ctx: &mut crate::spells::context::SpellCastContext) {
+                <Self as crate::spells::SpellCast>::cast(self, ctx)
+            }
+        }
+
+        impl #name {
+            /// Registers this spell in the global registry. Generated by `#[spell(...)]`.
+            pub fn register(registry: &mut crate::spells::SpellRegistry) {
                 registry.register(std::sync::Arc::new(#name));
             }
         }

@@ -263,8 +263,8 @@ fn describe_geometry(geometry: bevymmo_shared::abilities::AbilityGeometry) -> St
             format!("Cone {} m / {} deg", number(radius), number(angle_deg))
         }
         Circle { radius } => format!("Circle {} m", number(radius)),
-        Projectile { range, speed } => {
-            format!("Projectile {} m @ {} m/s", number(range), number(speed))
+        Projectile { speed } => {
+            format!("Projectile @ {} m/s", number(speed))
         }
         SelfBuff { duration_seconds } => format!("Self buff {} s", number(duration_seconds)),
     }
@@ -382,11 +382,11 @@ mod tests {
         let mut app = App::new();
         // Registries are plain values now, so the fixture inserts them
         // directly instead of running a `Startup` schedule to fill them.
-        app.insert_resource(bevymmo_shared::items_impl::default_items());
-        app.insert_resource(bevymmo_shared::base_abilities_impl::default_base_abilities());
-        app.insert_resource(bevymmo_shared::essences_impl::default_essences());
-        app.insert_resource(bevymmo_shared::modifiers_impl::default_modifiers());
-        app.insert_resource(bevymmo_shared::ancient_words_impl::default_ancient_words());
+        app.insert_resource(bevymmo_shared::content::items::default_items());
+        app.insert_resource(bevymmo_shared::content::abilities::default_base_abilities());
+        app.insert_resource(bevymmo_shared::content::essences::default_essences());
+        app.insert_resource(bevymmo_shared::content::modifiers::default_modifiers());
+        app.insert_resource(bevymmo_shared::content::ancient_words::default_ancient_words());
         app
     }
 
@@ -423,26 +423,12 @@ mod tests {
         assert_eq!(runes.affinity.as_deref(), Some("Fuoco"));
     }
 
-    /// Primary offers two gestures, so the card must name the one that is not
-    /// active — that is how the player learns the weapon can be re-selected.
     #[test]
-    fn slots_with_a_choice_list_the_other_option() {
+    fn slots_with_one_gesture_have_no_alternatives() {
         let app = catalog_app();
         let summary = summarize(&app, &magic_staff(), &KnownGlyphs::default());
 
-        let primary = &summary.slots[0];
-        let alternatives = primary
-            .alternatives
-            .as_ref()
-            .expect("Primary offers two gestures");
-        assert!(
-            alternatives.starts_with("Also offers: "),
-            "got: {alternatives}"
-        );
-        assert!(!alternatives.contains(&primary.title));
-
-        // Ultimate has exactly one gesture: nothing to offer.
-        assert!(summary.slots[2].alternatives.is_none());
+        assert!(summary.slots.iter().all(|slot| slot.alternatives.is_none()));
     }
 
     /// The rune line is the shared budget across all three slots, discounted by
@@ -454,7 +440,7 @@ mod tests {
         instance.inscriptions = Some(WeaponInscriptions {
             primary: Inscription {
                 essence: Some(bevymmo_shared::abilities::EssenceId::new("fuoco")),
-                modifiers: vec![bevymmo_shared::abilities::ModifierId::new("amplificare")],
+                modifiers: vec![],
                 ancient_word: None,
             },
             ..Default::default()
@@ -464,9 +450,7 @@ mod tests {
         known
             .essences
             .insert(bevymmo_shared::abilities::EssenceId::new("fuoco"));
-        known
-            .modifiers
-            .insert(bevymmo_shared::abilities::ModifierId::new("amplificare"));
+
 
         let summary = summarize(&app, &instance, &known);
         let primary = &summary.slots[0];
@@ -475,11 +459,10 @@ mod tests {
         assert!(primary.title.contains("Fuoco"), "got: {}", primary.title);
         let glyphs = primary.glyphs.as_ref().expect("primary is inscribed");
         assert!(glyphs.contains("Fuoco (2)"), "got: {glyphs}");
-        assert!(glyphs.contains("Amplificare (3)"), "got: {glyphs}");
 
-        // Fuoco (2) discounted to 1 by the staff's Fuoco affinity, + 3.
+        // Fuoco (2) is discounted to 1 by the staff's Fuoco affinity.
         let runes = summary.runes.expect("rune profile");
-        assert_eq!(runes.used, 4);
+        assert_eq!(runes.used, 1);
     }
 
     /// The regression this guards: a weapon found already inscribed by someone
@@ -544,10 +527,9 @@ mod tests {
     fn geometry_is_described_per_shape() {
         assert_eq!(
             describe_geometry(AbilityGeometry::Projectile {
-                range: 22.0,
                 speed: 24.0
             }),
-            "Projectile 22 m @ 24 m/s"
+            "Projectile @ 24 m/s"
         );
         assert_eq!(
             describe_geometry(AbilityGeometry::Circle { radius: 4.5 }),

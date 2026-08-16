@@ -57,7 +57,7 @@ impl Plugin for PresentationPlugin {
 fn register_presentation_placeables(
     mut registry: ResMut<bevymmo_shared::placeables::PlaceableRegistry>,
 ) {
-    bevymmo_shared::placeables_impl::register_default_placeables(&mut registry);
+    bevymmo_shared::content::placeables::register_all(&mut registry);
 }
 
 pub mod prelude {

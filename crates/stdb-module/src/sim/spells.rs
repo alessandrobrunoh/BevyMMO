@@ -90,27 +90,27 @@ pub const CAST_RANGE_TOLERANCE: f32 = 1.0;
 
 pub fn spells() -> &'static SpellRegistry {
     static REGISTRY: OnceLock<SpellRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::spells_impl::default_spells)
+    REGISTRY.get_or_init(bevymmo_domain::content::spells::default_spells)
 }
 
 pub fn base_abilities() -> &'static BaseAbilityRegistry {
     static REGISTRY: OnceLock<BaseAbilityRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::base_abilities_impl::default_base_abilities)
+    REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
 }
 
 pub fn essences() -> &'static EssenceRegistry {
     static REGISTRY: OnceLock<EssenceRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::essences_impl::default_essences)
+    REGISTRY.get_or_init(bevymmo_domain::content::essences::default_essences)
 }
 
 pub fn modifiers() -> &'static ModifierRegistry {
     static REGISTRY: OnceLock<ModifierRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::modifiers_impl::default_modifiers)
+    REGISTRY.get_or_init(bevymmo_domain::content::modifiers::default_modifiers)
 }
 
 pub fn ancient_words() -> &'static AncientWordRegistry {
     static REGISTRY: OnceLock<AncientWordRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::ancient_words_impl::default_ancient_words)
+    REGISTRY.get_or_init(bevymmo_domain::content::ancient_words::default_ancient_words)
 }
 
 /// The item catalogue, needed to read the equipped weapon's Eidolon gestures.
@@ -119,7 +119,7 @@ pub fn ancient_words() -> &'static AncientWordRegistry {
 /// only consumer today; move it if the inventory reducers grow one.
 pub fn items() -> &'static ItemRegistry {
     static REGISTRY: OnceLock<ItemRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::items_impl::default_items)
+    REGISTRY.get_or_init(bevymmo_domain::content::items::default_items)
 }
 
 // ---------------------------------------------------------------------------

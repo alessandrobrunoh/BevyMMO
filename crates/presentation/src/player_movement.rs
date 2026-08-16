@@ -3,8 +3,8 @@
 //! Mirrors the server-authoritative movement stepping on the locally predicted
 //! `Player` so the client reacts immediately to clicks. Lives in the
 //! presentation crate because it consumes `ObservedCasts` (the local mirror of
-//! authoritative cast/channel state) to keep the Swift speed boost responsive
-//! during prediction without rubber-banding.
+//! authoritative cast/channel state) to prevent movement during casts without
+//! rubber-banding.
 
 use bevy::prelude::*;
 use lightyear::prelude::input::native::ActionState;
@@ -19,7 +19,7 @@ use bevymmo_shared::movement::{
 use bevymmo_shared::network::mode;
 use bevymmo_shared::network::protocol::{Inputs, LookDirection, NetworkEntityId, Position};
 use bevymmo_shared::spells::{ChannelMovementPolicy, SpellId, SpellRegistry};
-use bevymmo_shared::spells_impl::swift::SwiftSpell;
+
 use bevymmo_shared::stats::components::{MovementStats, VitalStats};
 use bevymmo_shared::stats::modifiers::ActiveStatModifiers;
 
@@ -90,12 +90,7 @@ fn predict_move_to_target(
             continue;
         }
 
-        let effective_speed = predicted_effective_speed(
-            stats.speed,
-            modifiers,
-            network_id,
-            observed_casts.as_deref(),
-        );
+        let effective_speed = effective_movement_speed(stats.speed, modifiers);
 
         if let Some(surface_query) = world_map.surface_query.as_ref() {
             if !surface_query.is_empty() {
@@ -201,29 +196,4 @@ fn observed_cast_blocks_movement(cast: &ObservedCast, registry: &SpellRegistry) 
         return false;
     };
     spell.config().channel_movement == ChannelMovementPolicy::InterruptOnMove
-}
-
-/// Mirrors the server-authoritative Swift speed boost for predicted movement.
-///
-/// The canonical buff still lives on the server as a stat modifier. The client
-/// uses observed channel progress only to keep local prediction responsive while
-/// holding `F`, avoiding visible rubber-banding.
-fn predicted_effective_speed(
-    base_speed: f32,
-    modifiers: Option<&ActiveStatModifiers>,
-    network_id: &NetworkEntityId,
-    observed_casts: Option<&ObservedCasts>,
-) -> f32 {
-    let server_speed = effective_movement_speed(base_speed, modifiers);
-    let Some(observed_casts) = observed_casts else {
-        return server_speed;
-    };
-    let Some(cast) = observed_casts.0.get(&network_id.0) else {
-        return server_speed;
-    };
-    if cast.spell_id != SwiftSpell::ID {
-        return server_speed;
-    }
-
-    server_speed * SwiftSpell::SPEED_MULTIPLIER
 }

@@ -29,7 +29,7 @@
 // comment claiming it matched the domain's 10.
 use bevymmo_domain::entity::enemy::components::ENEMY_RESPAWN_SECONDS;
 use bevymmo_domain::items::effects::ItemEffect;
-use bevymmo_domain::items_impl::default_items;
+use bevymmo_domain::content::items::default_items;
 use bevymmo_domain::stats::components::StatsBundleData;
 use bevymmo_domain::stats::defaults;
 use bevymmo_domain::stats::events::{ModifierOp, StatField};

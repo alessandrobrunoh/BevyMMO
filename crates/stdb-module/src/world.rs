@@ -37,7 +37,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use bevymmo_domain::placeables::PlaceableRegistry;
-use bevymmo_domain::placeables_impl::register_default_placeables;
+use bevymmo_domain::content::placeables::register_all;
 use bevymmo_domain::world::{CollisionGrid, GroundContact, MapManifest, Prop, SurfaceQuery};
 use spacetimedb::{reducer, ReducerContext, Table};
 
@@ -128,7 +128,7 @@ fn maps() -> &'static HashMap<String, MapData> {
 fn placeables() -> &'static PlaceableRegistry {
     PLACEABLES.get_or_init(|| {
         let mut registry = PlaceableRegistry::default();
-        register_default_placeables(&mut registry);
+        register_all(&mut registry);
         registry
     })
 }

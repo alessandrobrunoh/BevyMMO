@@ -5,10 +5,16 @@
 //! player keeps reading what is actually in front of them.
 //!
 //! **What can fade.** Every mesh node instantiated from the map GLB, except:
-//! - reserved world-format nodes (`WALKABLE_*`, `BLOCKING_*`, …) — the terrain
-//!   must never go translucent;
+//! - reserved world-format nodes (`WALKABLE_*`, `TRAVERSAL_*`, `__bevymmo`) —
+//!   the terrain must never go translucent;
 //! - nodes whose name ends in `_Base` — the trunk/floor half of a prop, which
 //!   stays put while its `_Top` fades.
+//!
+//! Visible `BLOCKING_*` nodes **do** fade: blocker meshes are the arena's
+//! walls, pillars and cover, and an opaque wall between the camera and the
+//! player is exactly what the fade exists for. When blockers were purely
+//! invisible collision volumes excluding them was harmless; on the arena map
+//! it made every wall read as solid.
 //!
 //! Scoping by scene ancestry rather than by name is what keeps the player's own
 //! model and the generated terrain mesh out of the set: both are spawned
@@ -37,9 +43,11 @@ use crate::world::MapSceneVisual;
 /// anything that would look wrong left floating.
 pub const OCCLUDER_BASE_SUFFIX: &str = "_Base";
 
-/// Node-name prefixes owned by the world format. Gameplay volumes and the
-/// terrain itself, never props to fade.
-const RESERVED_NODE_PREFIXES: [&str; 4] = ["WALKABLE_", "BLOCKING_", "TRAVERSAL_", "__bevymmo"];
+/// Node-name prefixes owned by the world format that must never fade: the
+/// terrain surface and metadata scaffolding. `BLOCKING_*` is deliberately
+/// absent — visible blocker meshes (arena walls, cover, pillars) are props
+/// like any other and ghost when they block the view.
+const RESERVED_NODE_PREFIXES: [&str; 3] = ["WALKABLE_", "TRAVERSAL_", "__bevymmo"];
 
 /// Alpha an occluder fades down to.
 ///
@@ -493,7 +501,9 @@ mod tests {
             "Template_Tree_Pine_Large_Tree_Pine_Large_Base.018"
         ));
         assert!(!is_occludable_name("WALKABLE_map_02"));
-        assert!(!is_occludable_name("BLOCKING_Ridge"));
+        // Visible blocker walls (arena walls, cover) fade; only the invisible
+        // world-format scaffolding above stays reserved.
+        assert!(is_occludable_name("BLOCKING_Arena_Wall_North"));
         assert!(!is_occludable_name("__bevymmo_map_meta"));
         // A dotted tail that is not a duplicate index must not be stripped.
         assert!(is_occludable_name("Tree_Base.old"));

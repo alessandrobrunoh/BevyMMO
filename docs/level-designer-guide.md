@@ -694,7 +694,7 @@ building. All live in `assets/maps/` as a `{blend, glb, world.json}` triple.
 
 | Map | Use it as a reference for |
 |---|---|
-| `map_02` | **The default map** (`paths::DEFAULT_MAP_ID`) and the most complete example: large bounds, a high-resolution `"mesh"` surface with a heightfield, and a full set of auto-generated decor blockers (§8.3). Start here. |
+| `map_02` | **The default map** (`paths::DEFAULT_MAP_ID`): a symmetric PvP arena (120 × 80 bounds) — flat ring floor, big elevated podium with two E/W ramps, parapets, corner daises, team-coloured cover. Shows hand-authored `BLOCKING_*` blocker meshes (visible + collision in one object), blocker Empties for invisible volumes, and multi-surface layouts resolved by highest-reachable-surface. |
 | `map_01`, `map_03`, `map_04` | Small test maps with `±22` bounds and a coarse 32-cell heightfield. Good for reading the format without scrolling through a large heightfield array. |
 | `map_template` | Empty starting point — copy this to begin a new map. |
 

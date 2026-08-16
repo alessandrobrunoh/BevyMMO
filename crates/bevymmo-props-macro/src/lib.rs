@@ -1509,7 +1509,7 @@ pub fn essence(attr: TokenStream, item: TokenStream) -> TokenStream {
 struct ModifierDef {
     id: LitStr,
     name: LitStr,
-    requires_tag: Ident,
+    tag: Ident,
     rune_cost: LitInt,
 }
 
@@ -1517,7 +1517,7 @@ impl Parse for ModifierDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut id = None;
         let mut name = None;
-        let mut requires_tag = None;
+        let mut tag = None;
         let mut rune_cost = None;
 
         while !input.is_empty() {
@@ -1526,12 +1526,12 @@ impl Parse for ModifierDef {
             match key.to_string().as_str() {
                 "id" => id = Some(input.parse::<LitStr>()?),
                 "name" => name = Some(input.parse::<LitStr>()?),
-                "requires_tag" => requires_tag = Some(input.parse::<Ident>()?),
+                "tag" => tag = Some(input.parse::<Ident>()?),
                 "rune_cost" => rune_cost = Some(input.parse::<LitInt>()?),
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in #[modifier(...)] (expected id, name, requires_tag, rune_cost)"),
+                        format!("unknown key `{other}` in #[modifier(...)] (expected id, name, tag, rune_cost)"),
                     ))
                 }
             }
@@ -1545,8 +1545,7 @@ impl Parse for ModifierDef {
         Ok(Self {
             id: id.ok_or_else(|| input.error("#[modifier(...)] requires `id = \"...\"`"))?,
             name: name.ok_or_else(|| input.error("#[modifier(...)] requires `name = \"...\"`"))?,
-            requires_tag: requires_tag
-                .ok_or_else(|| input.error("#[modifier(...)] requires `requires_tag = ...` (an AbilityTag)"))?,
+            tag: tag.ok_or_else(|| input.error("#[modifier(...)] requires `tag = ...` (an AbilityTag)"))?,
             rune_cost: rune_cost.ok_or_else(|| input.error("#[modifier(...)] requires `rune_cost = ...`"))?,
         })
     }
@@ -1563,7 +1562,7 @@ pub fn modifier(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let id_lit = &def.id;
     let name_lit = &def.name;
-    let requires_tag = &def.requires_tag;
+    let tag = &def.tag;
     let rune_cost = &def.rune_cost;
 
     let expanded = quote! {
@@ -1581,7 +1580,7 @@ pub fn modifier(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #name_lit
             }
             fn required_tag(&self) -> crate::abilities::AbilityTag {
-                crate::abilities::AbilityTag::#requires_tag
+                crate::abilities::AbilityTag::#tag
             }
             fn rune_cost(&self) -> u32 {
                 #rune_cost
@@ -1605,7 +1604,7 @@ pub fn modifier(attr: TokenStream, item: TokenStream) -> TokenStream {
 struct AncientWordDef {
     id: LitStr,
     name: LitStr,
-    requires_tag: Ident,
+    tag: Ident,
     rune_cost: LitInt,
 }
 
@@ -1613,7 +1612,7 @@ impl Parse for AncientWordDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut id = None;
         let mut name = None;
-        let mut requires_tag = None;
+        let mut tag = None;
         let mut rune_cost = None;
 
         while !input.is_empty() {
@@ -1622,12 +1621,12 @@ impl Parse for AncientWordDef {
             match key.to_string().as_str() {
                 "id" => id = Some(input.parse::<LitStr>()?),
                 "name" => name = Some(input.parse::<LitStr>()?),
-                "requires_tag" => requires_tag = Some(input.parse::<Ident>()?),
+                "tag" => tag = Some(input.parse::<Ident>()?),
                 "rune_cost" => rune_cost = Some(input.parse::<LitInt>()?),
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in #[ancient_word(...)] (expected id, name, requires_tag, rune_cost)"),
+                        format!("unknown key `{other}` in #[ancient_word(...)] (expected id, name, tag, rune_cost)"),
                     ))
                 }
             }
@@ -1641,8 +1640,7 @@ impl Parse for AncientWordDef {
         Ok(Self {
             id: id.ok_or_else(|| input.error("#[ancient_word(...)] requires `id = \"...\"`"))?,
             name: name.ok_or_else(|| input.error("#[ancient_word(...)] requires `name = \"...\"`"))?,
-            requires_tag: requires_tag
-                .ok_or_else(|| input.error("#[ancient_word(...)] requires `requires_tag = ...` (an AbilityTag)"))?,
+            tag: tag.ok_or_else(|| input.error("#[ancient_word(...)] requires `tag = ...` (an AbilityTag)"))?,
             rune_cost: rune_cost.ok_or_else(|| input.error("#[ancient_word(...)] requires `rune_cost = ...`"))?,
         })
     }
@@ -1659,7 +1657,7 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let id_lit = &def.id;
     let name_lit = &def.name;
-    let requires_tag = &def.requires_tag;
+    let tag = &def.tag;
     let rune_cost = &def.rune_cost;
 
     let expanded = quote! {
@@ -1677,7 +1675,7 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #name_lit
             }
             fn required_tag(&self) -> crate::abilities::AbilityTag {
-                crate::abilities::AbilityTag::#requires_tag
+                crate::abilities::AbilityTag::#tag
             }
             fn rune_cost(&self) -> u32 {
                 #rune_cost

@@ -9,7 +9,7 @@ use crate::abilities::{AbilityParams, ModifierEffect, ModifierRegistry};
 #[modifier(
     id = "espandere",
     name = "Espandere",
-    requires_tag = Area,
+    tag = Area,
     rune_cost = 2,
 )]
 pub struct EspandereModifier;

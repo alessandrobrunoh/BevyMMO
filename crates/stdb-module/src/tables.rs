@@ -148,6 +148,36 @@ pub enum EntityStateRow {
     Dead,
 }
 
+/// RGBA tint stored independently of Bevy so it can cross the database boundary.
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq)]
+pub struct ColorRow {
+    pub red: f32,
+    pub green: f32,
+    pub blue: f32,
+    pub alpha: f32,
+}
+
+impl ColorRow {
+    pub const fn for_kind(kind: EntityKindRow) -> Self {
+        match kind {
+            EntityKindRow::Player => Self::srgb(0.2, 0.8, 0.2),
+            EntityKindRow::Enemy => Self::srgb(0.8, 0.2, 0.2),
+            EntityKindRow::Boss => Self::srgb(0.55, 0.05, 0.05),
+            EntityKindRow::Dummy => Self::srgb(0.7, 0.1, 0.1),
+            EntityKindRow::Npc => Self::srgb(0.5, 0.5, 0.5),
+        }
+    }
+
+    const fn srgb(red: f32, green: f32, blue: f32) -> Self {
+        Self {
+            red,
+            green,
+            blue,
+            alpha: 1.0,
+        }
+    }
+}
+
 /// Anything that occupies a position and can be hit: players, enemies, bosses,
 /// training dummies.
 ///
@@ -167,6 +197,7 @@ pub struct GameEntity {
     #[index(btree)]
     pub owner: Option<Identity>,
     pub display_name: String,
+    pub color: ColorRow,
     pub position: Vec3Row,
     pub look: Vec3Row,
     pub move_target: Option<Vec3Row>,

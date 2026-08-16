@@ -291,27 +291,6 @@ impl From<&HotbarRow> for SpellHotbar {
     }
 }
 
-/// The glyphs a character has discovered.
-pub fn known_glyphs_to_rows(known: &KnownGlyphs) -> (Vec<String>, Vec<String>, Vec<String>) {
-    (
-        known
-            .essences
-            .iter()
-            .map(|e| e.as_str().to_string())
-            .collect(),
-        known
-            .modifiers
-            .iter()
-            .map(|m| m.as_str().to_string())
-            .collect(),
-        known
-            .ancient_words
-            .iter()
-            .map(|w| w.as_str().to_string())
-            .collect(),
-    )
-}
-
 pub fn known_glyphs_from_rows(
     essences: &[String],
     modifiers: &[String],

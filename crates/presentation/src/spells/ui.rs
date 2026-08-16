@@ -7,22 +7,19 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_shared::abilities::{
     resolve_active_ability, AbilityId, AbilitySlot, BaseAbilityRegistry, EssenceRegistry,
 };
+use bevymmo_shared::entity::LocalPlayer;
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::movement::MoveTarget;
 use bevymmo_shared::network::mode::has_client;
-use bevymmo_shared::network::protocol::{
-    Channel2, LookDirection, NetworkEntityId, Position, SpellCastCommand,
-};
+use bevymmo_shared::network::protocol::{LookDirection, NetworkEntityId, Position};
 use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId};
 use bevymmo_shared::targeting::CurrentTarget;
 use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
-use bevymmo_shared::entity::LocalPlayer;
-use lightyear::prelude::MessageSender;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::spells::cursor::{cursor_ground_point, flat_direction_towards};
@@ -299,7 +296,7 @@ fn cast_spell_from_hud_click(
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut controlled_players: Query<(&Position, &mut LookDirection), With<LocalPlayer>>,
     mut move_target: ResMut<MoveTarget>,
-    mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
+    conn: Option<Res<StdbConnection>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
     registry: Res<bevymmo_shared::spells::SpellRegistry>,
 ) {
@@ -320,12 +317,15 @@ fn cast_spell_from_hud_click(
             }
         }
 
-        for mut sender in senders.iter_mut() {
-            sender.send::<Channel2>(SpellCastCommand {
-                spell_id: spell_id.as_str().to_owned(),
-                target_position,
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::cast_spell(
+                conn,
+                spell_id.as_str().to_owned(),
                 target_id,
-            });
+                target_position,
+            ) {
+                error!("could not cast spell: {err}");
+            }
         }
 
         if let Some(spell_def) = registry.get(spell_id) {

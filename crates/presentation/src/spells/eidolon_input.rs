@@ -17,19 +17,16 @@
 //! Eidolon abilities, so there is no movement-freeze/cast-bar handling here.
 
 use bevy::prelude::*;
-use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_shared::abilities::{
     resolve_active_ability, AbilityAim, AbilityId, AbilitySlot, BaseAbilityRegistry,
 };
+use bevymmo_shared::entity::LocalPlayer;
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
-use bevymmo_shared::network::protocol::{
-    Channel2, EidolonCastCommand, LookDirection, NetworkEntityId, Position,
-};
+use bevymmo_shared::network::protocol::{LookDirection, NetworkEntityId, Position};
 use bevymmo_shared::targeting::CurrentTarget;
 use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
-use bevymmo_shared::entity::LocalPlayer;
-use lightyear::prelude::MessageSender;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::spells::cursor::{cursor_ground_point, flat_direction_towards};
@@ -55,7 +52,7 @@ pub fn cast_eidolon_abilities_on_key(
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut controlled_players: Query<(&Equipment, &Position, &mut LookDirection), With<LocalPlayer>>,
-    mut cast_senders: Query<&mut MessageSender<EidolonCastCommand>, With<ConnectedClient>>,
+    conn: Option<Res<StdbConnection>>,
     registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
     hud_state: Res<SpellHudState>,
@@ -157,12 +154,10 @@ pub fn cast_eidolon_abilities_on_key(
             }
         }
 
-        for mut sender in cast_senders.iter_mut() {
-            sender.send::<Channel2>(EidolonCastCommand {
-                slot,
-                target_position,
-                target_id,
-            });
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::eidolon_cast(conn, slot, target_id, target_position) {
+                error!("could not cast Eidolon ability: {err}");
+            }
         }
 
         if let Some((ability_id, cooldown_seconds)) = ability {

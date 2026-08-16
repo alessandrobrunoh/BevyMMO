@@ -1,38 +1,53 @@
 //! Walking characters towards their destinations.
 
-use bevymmo_domain::movement::{self, Step};
+use bevymmo_domain::movement::{self, TerrainStep};
 use glam::Vec3;
 use spacetimedb::{ReducerContext, Table};
 
 use crate::rows::Vec3Row;
 use crate::tables::{game_entity, grid_cell, EntityStateRow, GameEntity};
+use crate::world;
 
-/// Advances every entity that has somewhere to be.
-///
-/// Straight-line only for now: terrain following and collision need the world
-/// data, and arrive with it. This mirrors the branch `player_movement.rs` takes
-/// when no surface is loaded.
+/// Advances every entity that has somewhere to be across the embedded map.
 pub fn step(ctx: &ReducerContext, dt: f32) {
-    for entity in ctx.db.game_entity().iter() {
-        if entity.state == EntityStateRow::Dead {
-            continue;
-        }
-        let Some(target) = entity.move_target else {
-            continue;
-        };
-        let position = Vec3::from(entity.position);
-        let target = Vec3::from(target);
+    let Some(map) = world::default_map() else {
+        log::error!("default map is unavailable; skipping movement step");
+        return;
+    };
+    let max_step_height = map.manifest.get_world_metrics().max_step_height;
 
-        let look = movement::look_direction(position, target)
+    // A reducer must not mutate a table while iterating it. Snapshotting also
+    // makes every entity's step observe the same pre-movement world state.
+    let moving: Vec<GameEntity> = ctx
+        .db
+        .game_entity()
+        .iter()
+        .filter(|entity| entity.state != EntityStateRow::Dead && entity.move_target.is_some())
+        .collect();
+
+    for entity in moving {
+        let target = entity.move_target.expect("filtered above");
+        let mut position = Vec3::from(entity.position);
+        movement::snap_to_ground(&mut position, &map.surfaces, max_step_height);
+
+        let look = movement::look_direction(position, Vec3::from(target))
             .map(Vec3Row::from)
             .unwrap_or(entity.look);
 
-        let (position, move_target, state) =
-            match movement::step_towards(position, target, entity.speed, dt) {
-                Step::Moving(p) => (p, Some(Vec3Row::from(target)), EntityStateRow::Moving),
-                // Clearing the target is what tells the client to stop predicting.
-                Step::Arrived(p) => (p, None, EntityStateRow::Idle),
-            };
+        let (position, move_target, state) = match movement::step_on_terrain(
+            position,
+            target.x,
+            target.z,
+            entity.speed * dt,
+            &map.surfaces,
+            &map.collision,
+            max_step_height,
+        ) {
+            TerrainStep::Moved(position) => (position, Some(target), EntityStateRow::Moving),
+            // Clearing the target is what tells the client to stop predicting.
+            TerrainStep::Arrived(position) => (position, None, EntityStateRow::Idle),
+            TerrainStep::Blocked | TerrainStep::NoSurface => (position, None, EntityStateRow::Idle),
+        };
 
         let position = Vec3Row::from(position);
         let (cell_x, cell_z) = grid_cell(position);

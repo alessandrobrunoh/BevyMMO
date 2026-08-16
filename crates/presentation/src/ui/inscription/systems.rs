@@ -1,26 +1,26 @@
 use super::components::*;
 use super::InscriptionUiState;
 use bevy::prelude::*;
-use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_shared::abilities::{
     resolve_active_ability, AbilitySelection, AbilitySlot, BaseAbilityRegistry, EssenceId,
     EssenceRegistry, Inscription, KnownGlyphs, ModifierId, ModifierRegistry, WeaponAbilities,
     WeaponInscriptions,
 };
+use bevymmo_shared::entity::LocalPlayer;
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
-use bevymmo_shared::network::protocol::{
-    Channel2, UpdateAbilitySelectionRequest, UpdateInscriptionRequest,
-};
-use bevymmo_shared::entity::LocalPlayer;
-use lightyear::prelude::MessageSender;
 
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::UiTheme;
 
 const WINDOW_WIDTH: f32 = 820.0;
 const WINDOW_HEIGHT: f32 = 460.0;
-const SLOTS: [AbilitySlot; 3] = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate];
+const SLOTS: [AbilitySlot; 3] = [
+    AbilitySlot::Primary,
+    AbilitySlot::Secondary,
+    AbilitySlot::Ultimate,
+];
 
 /// Presentation-only mnemonic — the actual key is rebindable
 /// (`KeyAction::CastSpellQ/W/E`); this is just a label.
@@ -277,7 +277,11 @@ fn spawn_slot_column(
         },))
         .with_children(|column| {
             column.spawn((
-                Text(format!("{} \u{2014} {}", slot_key_label(slot), ability.display_name())),
+                Text(format!(
+                    "{} \u{2014} {}",
+                    slot_key_label(slot),
+                    ability.display_name()
+                )),
                 TextFont {
                     font_size: FontSize::Px(theme.button_font_size),
                     ..default()
@@ -334,7 +338,10 @@ fn spawn_slot_column(
                     theme,
                     essence.display_name(),
                     is_active,
-                    EssenceToggleButton { slot, essence_id: essence_id.as_str().to_string() },
+                    EssenceToggleButton {
+                        slot,
+                        essence_id: essence_id.as_str().to_string(),
+                    },
                 );
             }
 
@@ -362,7 +369,10 @@ fn spawn_slot_column(
                     theme,
                     modifier.display_name(),
                     is_active,
-                    ModifierToggleButton { slot, modifier_id: modifier_id.as_str().to_string() },
+                    ModifierToggleButton {
+                        slot,
+                        modifier_id: modifier_id.as_str().to_string(),
+                    },
                 );
             }
         });
@@ -386,7 +396,11 @@ fn spawn_toggle_button(
     is_active: bool,
     marker: impl Component,
 ) {
-    let text = if is_active { format!("\u{2713} {label}") } else { label.to_string() };
+    let text = if is_active {
+        format!("\u{2713} {label}")
+    } else {
+        label.to_string()
+    };
     parent
         .spawn((
             Button,
@@ -398,7 +412,11 @@ fn spawn_toggle_button(
                 padding: UiRect::horizontal(Val::Px(8.0)),
                 ..default()
             },
-            BackgroundColor(if is_active { theme.button_pressed_bg } else { theme.button_bg }),
+            BackgroundColor(if is_active {
+                theme.button_pressed_bg
+            } else {
+                theme.button_bg
+            }),
             marker,
         ))
         .with_children(|button| {
@@ -430,11 +448,7 @@ pub fn handle_inscription_interactions(
     >,
     close_interactions: Query<&Interaction, (Changed<Interaction>, With<CloseInscriptionButton>)>,
     player_query: Query<&Equipment, With<LocalPlayer>>,
-    mut senders: Query<&mut MessageSender<UpdateInscriptionRequest>, With<ConnectedClient>>,
-    mut selection_senders: Query<
-        &mut MessageSender<UpdateAbilitySelectionRequest>,
-        With<ConnectedClient>,
-    >,
+    conn: Option<Res<StdbConnection>>,
     mut commands: Commands,
     window_query: Query<Entity, With<InscriptionWindow>>,
 ) {
@@ -459,17 +473,21 @@ pub fn handle_inscription_interactions(
         if *interaction != Interaction::Pressed {
             continue;
         }
-        if weapon.ability_selection.get(pick.slot).map(|id| id.as_str())
+        if weapon
+            .ability_selection
+            .get(pick.slot)
+            .map(|id| id.as_str())
             == Some(pick.ability_id.as_str())
         {
             // Already the active gesture — nothing to ask the server for.
             continue;
         }
-        for mut sender in selection_senders.iter_mut() {
-            sender.send::<Channel2>(UpdateAbilitySelectionRequest {
-                slot: pick.slot,
-                ability_id: pick.ability_id.clone(),
-            });
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) =
+                stdb_commands::set_ability_selection(conn, pick.slot, pick.ability_id.clone())
+            {
+                error!("could not set ability selection: {err}");
+            }
         }
     }
 
@@ -478,9 +496,14 @@ pub fn handle_inscription_interactions(
             continue;
         }
         let mut inscription = current.get(toggle.slot).clone();
-        let toggled_off = inscription.essence.as_ref().map(|id| id.as_str()) == Some(toggle.essence_id.as_str());
-        inscription.essence = if toggled_off { None } else { Some(EssenceId::new(toggle.essence_id.clone())) };
-        send_update(&mut senders, toggle.slot, &inscription);
+        let toggled_off =
+            inscription.essence.as_ref().map(|id| id.as_str()) == Some(toggle.essence_id.as_str());
+        inscription.essence = if toggled_off {
+            None
+        } else {
+            Some(EssenceId::new(toggle.essence_id.clone()))
+        };
+        send_update(conn.as_deref(), toggle.slot, &inscription);
     }
 
     for (interaction, toggle) in modifier_interactions.iter() {
@@ -495,24 +518,36 @@ pub fn handle_inscription_interactions(
         {
             inscription.modifiers.remove(pos);
         } else {
-            inscription.modifiers.push(ModifierId::new(toggle.modifier_id.clone()));
+            inscription
+                .modifiers
+                .push(ModifierId::new(toggle.modifier_id.clone()));
         }
-        send_update(&mut senders, toggle.slot, &inscription);
+        send_update(conn.as_deref(), toggle.slot, &inscription);
     }
 }
 
-fn send_update(
-    senders: &mut Query<&mut MessageSender<UpdateInscriptionRequest>, With<ConnectedClient>>,
-    slot: AbilitySlot,
-    inscription: &Inscription,
-) {
-    for mut sender in senders.iter_mut() {
-        sender.send::<Channel2>(UpdateInscriptionRequest {
-            slot,
-            essence: inscription.essence.as_ref().map(|id| id.as_str().to_string()),
-            modifiers: inscription.modifiers.iter().map(|id| id.as_str().to_string()).collect(),
-            ancient_word: inscription.ancient_word.as_ref().map(|id| id.as_str().to_string()),
-        });
+fn send_update(conn: Option<&StdbConnection>, slot: AbilitySlot, inscription: &Inscription) {
+    let Some(conn) = conn else {
+        return;
+    };
+    if let Err(err) = stdb_commands::set_inscription(
+        conn,
+        slot,
+        inscription
+            .essence
+            .as_ref()
+            .map(|id| id.as_str().to_string()),
+        inscription
+            .modifiers
+            .iter()
+            .map(|id| id.as_str().to_string())
+            .collect(),
+        inscription
+            .ancient_word
+            .as_ref()
+            .map(|id| id.as_str().to_string()),
+    ) {
+        error!("could not set inscription: {err}");
     }
 }
 

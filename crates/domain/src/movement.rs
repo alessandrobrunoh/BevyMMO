@@ -7,10 +7,9 @@
 //! implementations of "walk towards a point" would disagree in exactly the way
 //! that makes a character rubber-band.
 //!
-//! Terrain following and collision are deliberately absent — they belong with
-//! the world data, which only the server holds. This is the flat-ground case
-//! that `bevymmo_server::player_movement` falls back to when no surface is
-//! loaded.
+//! Flat stepping remains useful for client reconciliation. Terrain stepping is
+//! also defined here, but callers supply the world query and collision grid so
+//! this crate remains independent of Bevy, filesystems, and storage.
 
 use glam::Vec3;
 
@@ -65,9 +64,197 @@ pub fn look_direction(position: Vec3, target: Vec3) -> Option<Vec3> {
     Some(flat.normalize_or_zero())
 }
 
+/// Outcome of a terrain-aware movement step.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TerrainStep {
+    /// Entity reached its target; carry the resolved on-ground position.
+    Arrived(Vec3),
+    /// Entity moved one step toward the target.
+    Moved(Vec3),
+    /// Step was rejected by terrain or a blocker.
+    Blocked,
+    /// Target is not on a walkable surface.
+    NoSurface,
+}
+
+/// Permissive vertical budget for spawn, persisted-position, and teleport recovery.
+pub const SNAP_STEP_BUDGET: f32 = 5.0;
+
+/// Default collision radius used while probing static world blockers.
+const STEP_COLLISION_RADIUS: f32 = 0.45;
+
+/// Snaps an entity onto the highest reachable ground surface at its X/Z point.
+///
+/// When the entity is stranded below terrain, this deliberately falls back to
+/// the highest surface so spawn and persisted-position recovery cannot leave it
+/// permanently unable to move.
+pub fn snap_to_ground(
+    position: &mut Vec3,
+    surface_query: &crate::world::SurfaceQuery,
+    max_step_height: f32,
+) -> bool {
+    let contact = surface_query
+        .ground_at_reachable(position.x, position.z, position.y, max_step_height)
+        .or_else(|| surface_query.ground_at(position.x, position.z));
+    let Some(contact) = contact else {
+        return false;
+    };
+
+    if (contact.height - position.y).abs() <= ARRIVAL_EPSILON {
+        return false;
+    }
+    position.y = contact.height;
+    true
+}
+
+/// Advances an entity toward an X/Z target across walkable terrain.
+///
+/// `max_travel` is the horizontal distance available for this simulation step;
+/// callers with per-second speed should pass `speed * dt`. Height is always
+/// resolved from the authoritative surface query, never from the target.
+pub fn step_on_terrain(
+    current: Vec3,
+    target_x: f32,
+    target_z: f32,
+    max_travel: f32,
+    surface_query: &crate::world::SurfaceQuery,
+    collision_grid: &crate::world::CollisionGrid,
+    max_step_height: f32,
+) -> TerrainStep {
+    let target_contact = match surface_query.ground_at(target_x, target_z) {
+        Some(contact) => contact,
+        None => return TerrainStep::NoSurface,
+    };
+
+    let dx = target_x - current.x;
+    let dz = target_z - current.z;
+    let horizontal_distance = (dx * dx + dz * dz).sqrt();
+    if horizontal_distance <= ARRIVAL_EPSILON {
+        return TerrainStep::Arrived(Vec3::new(target_x, target_contact.height, target_z));
+    }
+
+    let travel = max_travel.max(0.0).min(horizontal_distance);
+    if travel <= 0.0 {
+        return TerrainStep::Blocked;
+    }
+    let nx = dx / horizontal_distance;
+    let nz = dz / horizontal_distance;
+
+    if let Some(position) = try_terrain_step(
+        current,
+        nx,
+        nz,
+        travel,
+        surface_query,
+        collision_grid,
+        max_step_height,
+    ) {
+        return TerrainStep::Moved(position);
+    }
+
+    let (first, second) = if nx.abs() >= nz.abs() {
+        ((nx, 0.0), (0.0, nz))
+    } else {
+        ((0.0, nz), (nx, 0.0))
+    };
+    for (step_x, step_z) in [first, second] {
+        if let Some(position) = try_terrain_step(
+            current,
+            step_x,
+            step_z,
+            travel,
+            surface_query,
+            collision_grid,
+            max_step_height,
+        ) {
+            return TerrainStep::Moved(position);
+        }
+    }
+
+    TerrainStep::Blocked
+}
+
+fn try_terrain_step(
+    current: Vec3,
+    direction_x: f32,
+    direction_z: f32,
+    travel: f32,
+    surface_query: &crate::world::SurfaceQuery,
+    collision_grid: &crate::world::CollisionGrid,
+    max_step_height: f32,
+) -> Option<Vec3> {
+    let length = (direction_x * direction_x + direction_z * direction_z).sqrt();
+    if length <= ARRIVAL_EPSILON {
+        return None;
+    }
+
+    let next_x = current.x + direction_x / length * travel;
+    let next_z = current.z + direction_z / length * travel;
+    let contact = surface_query.ground_at_reachable(next_x, next_z, current.y, max_step_height)?;
+    let candidate = Vec3::new(next_x, contact.height, next_z);
+
+    (!collision_grid.is_blocked(
+        [candidate.x, candidate.y, candidate.z],
+        STEP_COLLISION_RADIUS,
+    ))
+    .then_some(candidate)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::{
+        CollisionGrid, MapBounds, MapManifest, SurfaceBounds, SurfaceKind, SurfaceQuery,
+        WalkableSurface, WorldMetrics,
+    };
+
+    fn flat_world(height: f32) -> (SurfaceQuery, CollisionGrid) {
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "movement_test".to_string(),
+            display_name: "Movement Test".to_string(),
+            bounds: MapBounds {
+                min_x: -10.0,
+                max_x: 10.0,
+                min_z: -10.0,
+                max_z: 10.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: Some(WorldMetrics::default()),
+            surfaces: vec![WalkableSurface {
+                id: "ground".to_string(),
+                kind: SurfaceKind::Flat,
+                object: None,
+                bounds: Some(SurfaceBounds {
+                    min_x: -10.0,
+                    max_x: 10.0,
+                    min_z: -10.0,
+                    max_z: 10.0,
+                }),
+                height: Some(height),
+                min_height: None,
+                max_height: None,
+                grid_size: None,
+                size: None,
+                purpose: None,
+                heightfield: None,
+                walkable_mesh: None,
+                layer: None,
+                max_slope_deg: None,
+            }],
+            traversals: vec![],
+            blockers: vec![],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+        (
+            SurfaceQuery::from_manifest(&manifest),
+            CollisionGrid::build(&manifest),
+        )
+    }
 
     #[test]
     fn moves_along_the_line_to_the_target() {
@@ -85,7 +272,10 @@ mod tests {
     #[test]
     fn arrives_when_already_on_target() {
         let target = Vec3::new(4.0, 1.0, -2.0);
-        assert_eq!(step_towards(target, target, 5.0, 0.05), Step::Arrived(target));
+        assert_eq!(
+            step_towards(target, target, 5.0, 0.05),
+            Step::Arrived(target)
+        );
     }
 
     #[test]
@@ -115,5 +305,26 @@ mod tests {
     #[test]
     fn look_direction_is_none_when_only_height_differs() {
         assert_eq!(look_direction(Vec3::ZERO, Vec3::new(0.0, 5.0, 0.0)), None);
+    }
+
+    #[test]
+    fn terrain_step_snaps_then_follows_authoritative_ground_height() {
+        let (surfaces, collision) = flat_world(2.0);
+        let mut current = Vec3::new(0.0, 0.0, 0.0);
+        assert!(snap_to_ground(&mut current, &surfaces, 0.45));
+
+        assert_eq!(
+            step_on_terrain(current, 2.0, 0.0, 0.5, &surfaces, &collision, 0.45),
+            TerrainStep::Moved(Vec3::new(0.5, 2.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn terrain_step_rejects_targets_outside_walkable_surfaces() {
+        let (surfaces, collision) = flat_world(0.0);
+        assert_eq!(
+            step_on_terrain(Vec3::ZERO, 20.0, 0.0, 1.0, &surfaces, &collision, 0.45),
+            TerrainStep::NoSurface
+        );
     }
 }

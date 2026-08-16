@@ -1,17 +1,12 @@
 //! Systems for Inventory UI rendering, input handling, and server communication.
 
-use bevymmo_shared::entity::LocalPlayer;
 use bevy::prelude::*;
-use bevymmo_client::network::types::ConnectedClient;
-use bevymmo_shared::{
-    items::{
-        components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY},
-        events::{EquipItemCommand, UnequipItemCommand},
-        registry::ItemRegistry,
-    },
-    network::protocol::Channel2,
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
+use bevymmo_shared::entity::LocalPlayer;
+use bevymmo_shared::items::{
+    components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY},
+    registry::ItemRegistry,
 };
-use lightyear::prelude::MessageSender;
 
 use bevymmo_shared::abilities::KnownGlyphs;
 
@@ -88,7 +83,12 @@ fn equip_slot_label(equipment: &Equipment, registry: &ItemRegistry, slot: EquipS
 
 /// Spawns one equipment slot cell: a small caption above a bordered box.
 /// Shared by the 3x3 body-slot grid and the standalone Mount row.
-fn spawn_equip_slot_cell(parent: &mut ChildSpawnerCommands, theme: &UiTheme, slot: EquipSlot, label: String) {
+fn spawn_equip_slot_cell(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiTheme,
+    slot: EquipSlot,
+    label: String,
+) {
     let has_item = label != EMPTY_SLOT_PLACEHOLDER;
 
     parent
@@ -273,9 +273,7 @@ fn spawn_inventory_window(
                                     btn.spawn((
                                         Text::new(item_name),
                                         TextFont {
-                                            font_size: FontSize::Px(
-                                                theme.button_font_size * 0.55,
-                                            ),
+                                            font_size: FontSize::Px(theme.button_font_size * 0.55),
                                             ..default()
                                         },
                                         TextColor(theme.text_color),
@@ -378,12 +376,8 @@ pub fn handle_inventory_interactions(
     equip_slot_clicks: EquipSlotClicksQuery,
     equip_clicks: EquipClicksQuery,
     unequip_clicks: UnequipClicksQuery,
-    mut equip_senders: Query<&mut MessageSender<EquipItemCommand>, With<ConnectedClient>>,
-    mut unequip_senders: Query<&mut MessageSender<UnequipItemCommand>, With<ConnectedClient>>,
-    player_query: Query<
-        (&Inventory, &Equipment, Option<&KnownGlyphs>),
-        With<LocalPlayer>,
-    >,
+    conn: Option<Res<StdbConnection>>,
+    player_query: Query<(&Inventory, &Equipment, Option<&KnownGlyphs>), With<LocalPlayer>>,
     registry: Res<ItemRegistry>,
     glyphs: GlyphRegistries,
     theme: Res<UiTheme>,
@@ -444,10 +438,10 @@ pub fn handle_inventory_interactions(
         if *interaction != Interaction::Pressed {
             continue;
         }
-        for mut sender in equip_senders.iter_mut() {
-            sender.send::<Channel2>(EquipItemCommand {
-                slot_index: equip_btn.slot_index,
-            });
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::equip_item(conn, equip_btn.slot_index) {
+                error!("could not equip item: {err}");
+            }
         }
         despawn_detail_cards(&mut commands, &all_cards);
         state.selected = None;
@@ -457,10 +451,10 @@ pub fn handle_inventory_interactions(
         if *interaction != Interaction::Pressed {
             continue;
         }
-        for mut sender in unequip_senders.iter_mut() {
-            sender.send::<Channel2>(UnequipItemCommand {
-                slot: unequip_btn.slot,
-            });
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::unequip_item(conn, unequip_btn.slot) {
+                error!("could not unequip item: {err}");
+            }
         }
         despawn_detail_cards(&mut commands, &all_cards);
         state.selected = None;

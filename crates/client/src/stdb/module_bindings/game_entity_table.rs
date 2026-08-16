@@ -2,6 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use super::color_row_type::ColorRow;
 use super::entity_kind_row_type::EntityKindRow;
 use super::entity_state_row_type::EntityStateRow;
 use super::game_entity_type::GameEntity;

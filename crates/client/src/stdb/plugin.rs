@@ -18,39 +18,52 @@
 //! neither. The server ticks at roughly 18-19 Hz, so rendering raw authoritative
 //! positions would visibly stutter. Instead every entity carries its destination
 //! ([`StdbAuthoritative::move_target`], replicated on purpose), and the client
-//! walks towards it every frame using [`bevymmo_domain::movement::step_towards`]
-//! — the *same function the server's tick calls*. Shared code rather than a
-//! parallel implementation is what stops the two from disagreeing and
-//! rubber-banding.
+//! walks towards it every frame using [`bevymmo_domain::movement::step_towards`].
+//! The server additionally resolves terrain and collision from its embedded
+//! world data, so reconciliation remains responsible for correcting local
+//! prediction around slopes and blockers.
 
 use bevy::prelude::*;
 use bevymmo_domain::movement::{self, Step};
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
+use bevymmo_shared::abilities::{AncientWordId, EssenceId, KnownGlyphs, ModifierId};
+use bevymmo_shared::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
+use bevymmo_shared::entity::boss::components::{Boss, BossArena, BossPhase};
 use bevymmo_shared::entity::components::{EntityKind, EntityState, GameEntity, PlayerName};
 use bevymmo_shared::entity::LocalPlayer;
 use bevymmo_shared::game_state::{
     ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen, Screen,
 };
 use bevymmo_shared::items::components::{Equipment, Inventory};
+use bevymmo_shared::movement::{resolve_ray_to_ground, ClientSurfaceQuery};
+use bevymmo_shared::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
 use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
-use bevymmo_shared::world_components::{LookDirection, NetworkEntityId, Position};
+use bevymmo_shared::world_components::{EntityColor, LookDirection, NetworkEntityId, Position};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use spacetimedb_sdk::{credentials, DbContext, Identity, Table, TableWithPrimaryKey};
+use spacetimedb_sdk::{credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey};
 use std::collections::HashMap;
 
+use super::module_bindings::boss_state_table::BossStateTableAccess;
+use super::module_bindings::cast_ended_table::CastEndedTableAccess;
+use super::module_bindings::cast_state_table::CastStateTableAccess;
+use super::module_bindings::crowd_control_table::CrowdControlTableAccess;
 use super::module_bindings::entity_stats_table::EntityStatsTableAccess;
 use super::module_bindings::equipment_table::EquipmentTableAccess;
 use super::module_bindings::game_entity_table::GameEntityTableAccess;
+use super::module_bindings::heartbeat_reducer::heartbeat;
 use super::module_bindings::hotbar_table::HotbarTableAccess;
 use super::module_bindings::inventory_table::InventoryTableAccess;
 use super::module_bindings::join_reducer::join;
-use super::module_bindings::heartbeat_reducer::heartbeat;
+use super::module_bindings::known_glyphs_table::KnownGlyphsTableAccess;
 use super::module_bindings::move_to_reducer::move_to;
 use super::module_bindings::player_table::PlayerTableAccess;
+use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAccess;
 use super::module_bindings::{
-    DbConnection, EntityKindRow, EntityStateRow, EntityStats, EquipmentTable, GameEntity as EntityRow,
-    Hotbar, InventoryTable, ItemInstanceRow, Player, RemoteReducers, Vec3Row,
+    BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState, ColorRow, CrowdControl,
+    CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow, EntityStats, EquipmentTable,
+    GameEntity as EntityRow, Hotbar, InventoryTable, ItemInstanceRow, KnownGlyphsTable, Player,
+    RemoteReducers, SpellVisualEffectEvent, Vec3Row,
 };
 
 /// How fast predicted position is pulled back towards the authoritative one, as
@@ -92,6 +105,33 @@ enum RowEvent {
     Inventory(InventoryTable),
     Equipment(EquipmentTable),
     Hotbar(Hotbar),
+    KnownGlyphs(KnownGlyphsTable),
+    CastState(CastState),
+    CastEnded(CastEndedEvent),
+    SpellVisualEffect(SpellVisualEffectEvent),
+    BossState(BossState),
+    CrowdControl(CrowdControl),
+    CrowdControlRemoved(CrowdControl),
+}
+
+/// Latest rows retained until the dependent Bevy entity exists. Initial
+/// subscription rows have no delivery order guarantee.
+#[derive(Resource, Default)]
+/// Caches the latest received rows per entity so that `replay_entity` can
+/// restore full component state on (re)connect or after a reconcile gap.
+struct PendingRows {
+    stats: HashMap<u64, EntityStats>,
+    inventory: HashMap<Identity, InventoryTable>,
+    equipment: HashMap<Identity, EquipmentTable>,
+    hotbar: HashMap<Identity, Hotbar>,
+    known_glyphs: HashMap<Identity, KnownGlyphsTable>,
+    boss_state: HashMap<u64, BossState>,
+    crowd_control: HashMap<u64, PendingCrowdControl>,
+}
+
+struct PendingCrowdControl {
+    row: CrowdControl,
+    total_seconds: f32,
 }
 
 /// Owns the connection. Call reducers through [`StdbConnection::reducers`].
@@ -139,15 +179,15 @@ impl Plugin for StdbPlugin {
         let module = self.module.clone();
 
         app.init_resource::<StdbEntityMap>();
-        app.add_systems(
-            Startup,
-            move |world: &mut World| match connect(&uri, &module) {
+        app.init_resource::<PendingRows>();
+        app.add_systems(Startup, move |world: &mut World| {
+            match connect(&uri, &module) {
                 Ok(connection) => world.insert_resource(connection),
                 // Not fatal: the menu stays usable and the player can retry
                 // rather than the process dying on a cold database.
                 Err(err) => error!("SpacetimeDB connection to {uri} failed: {err}"),
-            },
-        );
+            }
+        });
         app.add_systems(
             PreUpdate,
             (pump_connection, drain_events)
@@ -201,6 +241,12 @@ fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error
             "SELECT * FROM inventory",
             "SELECT * FROM equipment",
             "SELECT * FROM hotbar",
+            "SELECT * FROM known_glyphs",
+            "SELECT * FROM cast_state",
+            "SELECT * FROM boss_state",
+            "SELECT * FROM crowd_control",
+            "SELECT * FROM cast_ended",
+            "SELECT * FROM spell_visual_effect",
         ]);
 
     Ok(StdbConnection { conn, events })
@@ -213,17 +259,13 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     macro_rules! mirror {
         ($table:ident, $variant:ident) => {{
             let inserted = tx.clone();
-            conn.db()
-                .$table()
-                .on_insert(move |_ctx, row| {
-                    let _ = inserted.send(RowEvent::$variant(row.clone()));
-                });
+            conn.db().$table().on_insert(move |_ctx, row| {
+                let _ = inserted.send(RowEvent::$variant(row.clone()));
+            });
             let updated = tx.clone();
-            conn.db()
-                .$table()
-                .on_update(move |_ctx, _old, new| {
-                    let _ = updated.send(RowEvent::$variant(new.clone()));
-                });
+            conn.db().$table().on_update(move |_ctx, _old, new| {
+                let _ = updated.send(RowEvent::$variant(new.clone()));
+            });
         }};
     }
 
@@ -233,6 +275,24 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(inventory, Inventory);
     mirror!(equipment, Equipment);
     mirror!(hotbar, Hotbar);
+    mirror!(known_glyphs, KnownGlyphs);
+    mirror!(cast_state, CastState);
+    mirror!(boss_state, BossState);
+    mirror!(crowd_control, CrowdControl);
+
+    let cast_ended = tx.clone();
+    conn.db().cast_ended().on_insert(move |_ctx, row| {
+        let _ = cast_ended.send(RowEvent::CastEnded(row.clone()));
+    });
+    let spell_visual_effect = tx.clone();
+    conn.db().spell_visual_effect().on_insert(move |_ctx, row| {
+        let _ = spell_visual_effect.send(RowEvent::SpellVisualEffect(row.clone()));
+    });
+
+    let crowd_control_removed = tx.clone();
+    conn.db().crowd_control().on_delete(move |_ctx, row| {
+        let _ = crowd_control_removed.send(RowEvent::CrowdControlRemoved(row.clone()));
+    });
 
     let removed = tx.clone();
     conn.db().game_entity().on_delete(move |_ctx, row| {
@@ -255,60 +315,153 @@ fn pump_connection(conn: Res<StdbConnection>) {
 fn drain_events(
     conn: Res<StdbConnection>,
     mut map: ResMut<StdbEntityMap>,
+    mut pending: ResMut<PendingRows>,
     mut commands: Commands,
+    mut cast_progress: MessageWriter<SpellCastProgress>,
+    mut cast_ended: MessageWriter<SpellCastEnded>,
+    mut visual_effects: MessageWriter<SpellVisualEffect>,
 ) {
     let local_identity = conn.identity();
 
     while let Ok(event) = conn.events.try_recv() {
         match event {
-            RowEvent::Entity(row) => apply_entity(&mut commands, &mut map, &row, local_identity),
+            RowEvent::Entity(row) => {
+                apply_entity(&mut commands, &mut map, &row, local_identity);
+                replay_entity(&mut commands, &map, &pending, row.entity_id);
+                if let Some(identity) = row.owner {
+                    replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                }
+            }
             RowEvent::EntityRemoved(entity_id) => {
                 if let Some(entity) = map.by_entity_id.remove(&entity_id) {
                     commands.entity(entity).despawn();
                 }
+                map.entity_of_identity.retain(|_, id| *id != entity_id);
+                pending.stats.remove(&entity_id);
+                pending.boss_state.remove(&entity_id);
+                pending
+                    .crowd_control
+                    .retain(|_, cc| cc.row.entity_id != entity_id);
             }
             RowEvent::Stats(row) => {
-                if let Some(entity) = map.get(row.entity_id) {
-                    let stats = &row.stats;
-                    commands.entity(entity).insert((
-                        VitalStats {
-                            current_health: stats.current_health,
-                            max_health: stats.max_health,
-                            max_mana: stats.max_mana,
-                            mana_regeneration: stats.mana_regeneration,
-                        },
-                        CombatStats {
-                            armor: stats.armor,
-                            attack_power: stats.attack_power,
-                        },
-                        MovementStats {
-                            speed: stats.movement_speed,
-                        },
-                    ));
-                }
+                pending.stats.insert(row.entity_id, row.clone());
+                replay_entity(&mut commands, &map, &pending, row.entity_id);
             }
             RowEvent::Player(row) => {
                 map.entity_of_identity.insert(row.identity, row.entity_id);
+                replay_identity(&mut commands, &map, &pending, row.identity, local_identity);
             }
             RowEvent::Inventory(row) => {
-                if let Some(entity) = entity_for(&map, row.identity) {
-                    commands.entity(entity).insert(inventory_from(&row.slots));
-                }
+                let identity = row.identity;
+                pending.inventory.insert(identity, row);
+                replay_identity(&mut commands, &map, &pending, identity, local_identity);
             }
             RowEvent::Equipment(row) => {
-                if let Some(entity) = entity_for(&map, row.identity) {
-                    commands.entity(entity).insert(equipment_from(&row.slots));
-                }
+                let identity = row.identity;
+                pending.equipment.insert(identity, row);
+                replay_identity(&mut commands, &map, &pending, identity, local_identity);
             }
             RowEvent::Hotbar(row) => {
-                if let Some(entity) = entity_for(&map, row.identity) {
-                    commands.entity(entity).insert(SpellHotbar {
-                        q_spell: row.slots.q.clone().map(SpellId::new),
-                        w_spell: row.slots.w.clone().map(SpellId::new),
-                        e_spell: row.slots.e.clone().map(SpellId::new),
-                    });
+                let identity = row.identity;
+                pending.hotbar.insert(identity, row);
+                replay_identity(&mut commands, &map, &pending, identity, local_identity);
+            }
+            RowEvent::KnownGlyphs(row) => {
+                let identity = row.identity;
+                pending.known_glyphs.insert(identity, row);
+                if local_identity == Some(identity) {
+                    replay_identity(&mut commands, &map, &pending, identity, local_identity);
                 }
             }
+            RowEvent::CastState(row) => {
+                cast_progress.write(cast_progress_from(&row));
+            }
+            RowEvent::CastEnded(row) => {
+                cast_ended.write(SpellCastEnded {
+                    caster_network_id: row.entity_id,
+                    spell_id: row.spell_id,
+                    completed: !row.interrupted,
+                });
+            }
+            RowEvent::SpellVisualEffect(row) => {
+                visual_effects.write(SpellVisualEffect {
+                    spell_id: row.spell_id,
+                    start: to_vec3(&row.start),
+                    end: to_vec3(&row.end),
+                });
+            }
+            RowEvent::BossState(row) => {
+                pending.boss_state.insert(row.entity_id, row.clone());
+                replay_entity(&mut commands, &map, &pending, row.entity_id);
+            }
+            RowEvent::CrowdControl(row) => {
+                let total_seconds = pending
+                    .crowd_control
+                    .get(&row.id)
+                    .map(|existing| {
+                        if row.remaining_seconds > existing.row.remaining_seconds {
+                            row.remaining_seconds
+                        } else {
+                            existing.total_seconds
+                        }
+                    })
+                    .unwrap_or(row.remaining_seconds);
+                let entity_id = row.entity_id;
+                pending
+                    .crowd_control
+                    .insert(row.id, PendingCrowdControl { row, total_seconds });
+                replay_entity(&mut commands, &map, &pending, entity_id);
+            }
+            RowEvent::CrowdControlRemoved(row) => {
+                pending.crowd_control.remove(&row.id);
+                replay_entity(&mut commands, &map, &pending, row.entity_id);
+            }
+        }
+    }
+}
+
+fn replay_entity(
+    commands: &mut Commands,
+    map: &StdbEntityMap,
+    pending: &PendingRows,
+    entity_id: u64,
+) {
+    let Some(entity) = map.get(entity_id) else {
+        return;
+    };
+
+    if let Some(row) = pending.stats.get(&entity_id) {
+        apply_stats(commands, entity, row);
+    }
+    if let Some(row) = pending.boss_state.get(&entity_id) {
+        apply_boss_state(commands, entity, row);
+    }
+    apply_crowd_control(commands, entity, entity_id, pending);
+}
+
+fn replay_identity(
+    commands: &mut Commands,
+    map: &StdbEntityMap,
+    pending: &PendingRows,
+    identity: Identity,
+    local_identity: Option<Identity>,
+) {
+    let Some(entity) = entity_for(map, identity) else {
+        return;
+    };
+
+    if let Some(row) = pending.inventory.get(&identity) {
+        commands.entity(entity).insert(inventory_from(&row.slots));
+    }
+    if let Some(row) = pending.equipment.get(&identity) {
+        commands.entity(entity).insert(equipment_from(&row.slots));
+    }
+    if let Some(row) = pending.hotbar.get(&identity) {
+        commands.entity(entity).insert(hotbar_from(row));
+    }
+    if local_identity == Some(identity) {
+        if let Some(row) = pending.known_glyphs.get(&identity) {
+            commands.entity(entity).insert(known_glyphs_from(row));
         }
     }
 }
@@ -317,6 +470,115 @@ fn entity_for(map: &StdbEntityMap, identity: Identity) -> Option<Entity> {
     map.entity_of_identity
         .get(&identity)
         .and_then(|id| map.get(*id))
+}
+
+fn apply_stats(commands: &mut Commands, entity: Entity, row: &EntityStats) {
+    let stats = &row.stats;
+    commands.entity(entity).insert((
+        VitalStats {
+            current_health: stats.current_health,
+            max_health: stats.max_health,
+            max_mana: stats.max_mana,
+            mana_regeneration: stats.mana_regeneration,
+        },
+        CombatStats {
+            armor: stats.armor,
+            attack_power: stats.attack_power,
+        },
+        MovementStats {
+            speed: stats.movement_speed,
+        },
+    ));
+}
+
+fn hotbar_from(row: &Hotbar) -> SpellHotbar {
+    SpellHotbar {
+        q_spell: row.slots.q.clone().map(SpellId::new),
+        w_spell: row.slots.w.clone().map(SpellId::new),
+        e_spell: row.slots.e.clone().map(SpellId::new),
+    }
+}
+
+fn known_glyphs_from(row: &KnownGlyphsTable) -> KnownGlyphs {
+    KnownGlyphs {
+        essences: row.essences.iter().cloned().map(EssenceId::new).collect(),
+        modifiers: row.modifiers.iter().cloned().map(ModifierId::new).collect(),
+        ancient_words: row
+            .ancient_words
+            .iter()
+            .cloned()
+            .map(AncientWordId::new)
+            .collect(),
+    }
+}
+
+fn cast_progress_from(row: &CastState) -> SpellCastProgress {
+    SpellCastProgress {
+        caster_network_id: row.entity_id,
+        spell_id: row.spell_id.clone(),
+        kind: match row.kind {
+            CastKindRow::Channeling => 1,
+            CastKindRow::Instant | CastKindRow::CastTime => 0,
+        },
+        elapsed_seconds: row.elapsed_seconds,
+        required_seconds: row.required_seconds,
+    }
+}
+
+fn apply_boss_state(commands: &mut Commands, entity: Entity, row: &BossState) {
+    commands.entity(entity).insert((
+        BossArena {
+            center: to_vec3(&row.arena_center),
+            radius: row.arena_radius,
+            is_engaged: row.is_engaged,
+        },
+        boss_phase(row.phase),
+    ));
+}
+
+fn boss_phase(phase: BossPhaseRow) -> BossPhase {
+    match phase {
+        BossPhaseRow::Idle => BossPhase::Dormant,
+        BossPhaseRow::PhaseOne => BossPhase::Ground,
+        BossPhaseRow::PhaseTwo => BossPhase::Aerial,
+        BossPhaseRow::Enraged => BossPhase::Berserk,
+    }
+}
+
+fn apply_crowd_control(
+    commands: &mut Commands,
+    entity: Entity,
+    entity_id: u64,
+    pending: &PendingRows,
+) {
+    commands
+        .entity(entity)
+        .insert(crowd_control_state_for(entity_id, pending));
+}
+
+fn crowd_control_state_for(entity_id: u64, pending: &PendingRows) -> CrowdControlState {
+    let effects = pending
+        .crowd_control
+        .values()
+        .filter(|cc| cc.row.entity_id == entity_id)
+        .filter_map(|cc| {
+            let kind = match cc.row.kind {
+                CrowdControlKindRow::Stun => CrowdControlKind::Stun,
+                other => {
+                    debug!(
+                        "omitting non-Stun CrowdControl row: entity={entity_id}, kind={other:?}"
+                    );
+                    return None;
+                }
+            };
+            Some(ActiveCrowdControl {
+                kind,
+                remaining_seconds: cc.row.remaining_seconds,
+                total_seconds: cc.total_seconds,
+            })
+        })
+        .collect();
+    CrowdControlState { effects }
 }
 
 /// Spawns or updates the Bevy entity mirroring one `game_entity` row.
@@ -365,13 +627,26 @@ fn apply_entity(
     let mut cmd = commands.entity(entity);
     cmd.insert((
         authoritative,
+        entity_color(&row.color),
         LookDirection(to_vec3(&row.look)),
         entity_kind(row.kind),
         entity_state(row.state),
     ));
+    if matches!(row.kind, EntityKindRow::Boss) {
+        cmd.insert(Boss);
+    }
     if local_identity.is_some() && row.owner == local_identity {
         cmd.insert(LocalPlayer);
     }
+}
+
+fn entity_color(color: &ColorRow) -> EntityColor {
+    EntityColor(Color::srgba(
+        color.red,
+        color.green,
+        color.blue,
+        color.alpha,
+    ))
 }
 
 /// Maps the module's entity kinds onto the presentation's.
@@ -504,6 +779,7 @@ fn send_move_commands(
     mouse: Option<Res<ButtonInput<MouseButton>>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    surface_query: Res<ClientSurfaceQuery>,
     mut cooldown: Local<f32>,
 ) {
     let Some(mouse) = mouse else {
@@ -536,11 +812,19 @@ fn send_move_commands(
     let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else {
         return;
     };
-    let Some(point) = ray.plane_intersection_point(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y)) else {
-        return;
-    };
+    // When no terrain mesh is available, fall back to a horizontal plane at Y=0.
+    // This is safe: the server ignores the client-sent Y and resolves X/Z
+    // authoritatively against its own collision data.
+    let point = surface_query
+        .0
+        .as_ref()
+        .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, 100.0, 0.5))
+        .unwrap_or_else(|| {
+            let t = -ray.origin.y / ray.direction.y;
+            ray.origin + *ray.direction * t
+        });
 
-    if let Err(err) = conn.reducers().move_to(point.x, 0.0, point.z) {
+    if let Err(err) = conn.reducers().move_to(point.x, point.y, point.z) {
         error!("move_to failed: {err}");
     }
 }
@@ -577,4 +861,117 @@ fn predict_and_reconcile(time: Res<Time>, mut query: Query<(&mut Position, &Stdb
 
 fn to_vec3(v: &Vec3Row) -> Vec3 {
     Vec3::new(v.x, v.y, v.z)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn color_row_becomes_entity_color() {
+        let row = ColorRow {
+            red: 0.2,
+            green: 0.4,
+            blue: 0.6,
+            alpha: 0.8,
+        };
+
+        assert_eq!(
+            entity_color(&row),
+            EntityColor(Color::srgba(0.2, 0.4, 0.6, 0.8))
+        );
+    }
+
+    #[test]
+    fn known_glyph_row_becomes_domain_component() {
+        let row = KnownGlyphsTable {
+            identity: Identity::default(),
+            essences: vec!["fire".to_string()],
+            modifiers: vec!["amplify".to_string()],
+            ancient_words: vec!["eternity".to_string()],
+        };
+
+        let glyphs = known_glyphs_from(&row);
+
+        assert!(glyphs.essences.contains(&EssenceId::new("fire")));
+        assert!(glyphs.modifiers.contains(&ModifierId::new("amplify")));
+        assert!(glyphs
+            .ancient_words
+            .contains(&AncientWordId::new("eternity")));
+    }
+
+    #[test]
+    fn cast_state_becomes_legacy_cast_progress() {
+        let row = CastState {
+            entity_id: 42,
+            spell_id: "ray_of_light".to_string(),
+            kind: CastKindRow::Channeling,
+            elapsed_seconds: 1.5,
+            required_seconds: 3.0,
+            start_position: Vec3Row {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            target_position: None,
+            target_entity: None,
+            channel_tick_accumulator: 0.0,
+            tick_interval_seconds: 0.25,
+        };
+
+        assert_eq!(
+            cast_progress_from(&row),
+            SpellCastProgress {
+                caster_network_id: 42,
+                spell_id: "ray_of_light".to_string(),
+                kind: 1,
+                elapsed_seconds: 1.5,
+                required_seconds: 3.0,
+            }
+        );
+    }
+
+    #[test]
+    fn boss_phases_match_existing_presentation_contract() {
+        assert_eq!(boss_phase(BossPhaseRow::Idle), BossPhase::Dormant);
+        assert_eq!(boss_phase(BossPhaseRow::PhaseOne), BossPhase::Ground);
+        assert_eq!(boss_phase(BossPhaseRow::PhaseTwo), BossPhase::Aerial);
+        assert_eq!(boss_phase(BossPhaseRow::Enraged), BossPhase::Berserk);
+    }
+
+    #[test]
+    fn crowd_control_projects_only_representable_stuns() {
+        let mut pending = PendingRows::default();
+        pending.crowd_control.insert(
+            1,
+            PendingCrowdControl {
+                row: CrowdControl {
+                    id: 1,
+                    entity_id: 7,
+                    kind: CrowdControlKindRow::Stun,
+                    remaining_seconds: 1.5,
+                },
+                total_seconds: 2.0,
+            },
+        );
+        pending.crowd_control.insert(
+            2,
+            PendingCrowdControl {
+                row: CrowdControl {
+                    id: 2,
+                    entity_id: 7,
+                    kind: CrowdControlKindRow::Root,
+                    remaining_seconds: 1.0,
+                },
+                total_seconds: 1.0,
+            },
+        );
+
+        let state = crowd_control_state_for(7, &pending);
+
+        assert_eq!(state.effects.len(), 1);
+        assert_eq!(state.effects[0].kind, CrowdControlKind::Stun);
+        assert_eq!(state.effects[0].remaining_seconds, 1.5);
+        assert_eq!(state.effects[0].total_seconds, 2.0);
+    }
 }

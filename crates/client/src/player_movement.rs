@@ -7,23 +7,14 @@
 //! render the click-feedback rings.
 
 use bevy::color::Color;
-use bevy::math::primitives::InfinitePlane3d;
+
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use bevymmo_shared::movement::{resolve_ray_to_ground, ClientSurfaceQuery, MoveTarget};
 use bevymmo_shared::network::mode;
-use bevymmo_shared::network::protocol::{Channel2, MoveCommand};
-use lightyear::prelude::MessageSender;
-
-use crate::network::types::ConnectedClient;
 
 const INDICATOR_DURATION: f32 = 0.55;
-
-/// While the right mouse button is held we re-broadcast the move target so the
-/// player keeps following the cursor. Sending every frame would flood the
-/// server, so we cap the send rate at ~20 Hz.
-const HELD_MOVE_SEND_INTERVAL: f32 = 0.05;
 
 pub struct PlayerMovementPlugin;
 
@@ -47,13 +38,10 @@ impl Plugin for PlayerMovementPlugin {
 /// Reads left click on terrain and stores the point to send to the server.
 fn select_move_target(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
-    time: Res<Time>,
-    mut send_cooldown: Local<f32>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut move_target: ResMut<MoveTarget>,
     surface_query: Res<ClientSurfaceQuery>,
-    mut move_senders: Query<&mut MessageSender<MoveCommand>, With<ConnectedClient>>,
     mut commands: Commands,
     meshes: Option<ResMut<Assets<Mesh>>>,
     materials: Option<ResMut<Assets<StandardMaterial>>>,
@@ -67,7 +55,6 @@ fn select_move_target(
     let just_pressed = mouse_buttons.just_pressed(MouseButton::Right);
     let held = mouse_buttons.pressed(MouseButton::Right);
     if !held {
-        *send_cooldown = 0.0;
         return;
     }
 
@@ -84,43 +71,19 @@ fn select_move_target(
         return;
     };
 
-    // Use height-aware ray-to-surface resolution when surface data is available
-    let target = if let Some(surface_query) = surface_query.0.as_ref() {
-        resolve_ray_to_ground(
-            ray.origin,
-            *ray.direction, // Convert Dir3 to Vec3
-            surface_query,
-            100.0, // max_distance
-            0.5,   // step_size
-        )
-    } else {
-        // Fallback to Y=0 plane when no surface data is available
-        ray.plane_intersection_point(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y))
-            .map(|point| Vec3::new(point.x, 0.0, point.z))
-    };
-
-    let Some(target) = target else {
-        return;
-    };
+    // When no terrain mesh is available, fall back to a horizontal plane at Y=0.
+    // This is safe: the server ignores the client-sent Y and resolves X/Z
+    // authoritatively against its own collision data.
+    let target = surface_query
+        .0
+        .as_ref()
+        .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, 100.0, 0.5))
+        .unwrap_or_else(|| {
+            let t = -ray.origin.y / ray.direction.y;
+            ray.origin + *ray.direction * t
+        });
 
     move_target.0 = Some(target);
-
-    // Always forward the very first press immediately; while the button stays
-    // held, forward the updated cursor target at a throttled rate so the
-    // player keeps following the pointer without flooding the server.
-    *send_cooldown -= time.delta_secs();
-    if just_pressed || *send_cooldown <= 0.0 {
-        if just_pressed {
-            info!(
-                "Client movement target set to ({:.2}, {:.2}, {:.2})",
-                target.x, target.y, target.z
-            );
-        }
-        for mut sender in &mut move_senders {
-            sender.send::<Channel2>(MoveCommand { target });
-        }
-        *send_cooldown = HELD_MOVE_SEND_INTERVAL;
-    }
 
     if !just_pressed {
         return;

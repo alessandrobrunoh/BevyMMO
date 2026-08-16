@@ -44,7 +44,7 @@ use spacetimedb::{reducer, ReducerContext, Table};
 use crate::rows::{StatsRow, Vec3Row};
 use crate::tables::{
     boss_state, entity_stats, game_entity, grid_cell, player, prop_override, BossPhaseRow,
-    BossState, EntityKindRow, EntityStateRow, EntityStats, GameEntity, PropOverride,
+    BossState, ColorRow, EntityKindRow, EntityStateRow, EntityStats, GameEntity, PropOverride,
 };
 
 // `EMBEDDED_MAPS: &[(&str, &[u8])]`, one entry per authored map.
@@ -416,6 +416,7 @@ fn spawn_entity(
         kind,
         owner: None,
         display_name: display_name.to_string(),
+        color: ColorRow::for_kind(kind),
         position,
         look: authored_facing(prop),
         move_target: None,

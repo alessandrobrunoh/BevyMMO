@@ -15,17 +15,12 @@
 //!    restores the origin slot with no command sent.
 
 use bevy::prelude::*;
-use bevymmo_client::network::types::ConnectedClient;
-use bevymmo_shared::{
-    items::{
-        components::{Equipment, Inventory},
-        events::{EquipItemCommand, MoveItemCommand, UnequipItemCommand},
-        registry::{ItemId, ItemRegistry},
-    },
-    network::protocol::Channel2,
-};
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_shared::entity::LocalPlayer;
-use lightyear::prelude::MessageSender;
+use bevymmo_shared::items::{
+    components::{Equipment, Inventory},
+    registry::{ItemId, ItemRegistry},
+};
 
 use super::components::{EquipSlotButton, ItemDragGhost, ItemSlotButton, ItemSlotOrigin};
 use crate::ui::{
@@ -93,17 +88,26 @@ pub fn start_item_drag(
                 .slots
                 .get(btn.index as usize)
                 .and_then(Clone::clone)
-                .map(|instance| (entity, ItemSlotOrigin::Inventory(btn.index), instance.item_id))
+                .map(|instance| {
+                    (
+                        entity,
+                        ItemSlotOrigin::Inventory(btn.index),
+                        instance.item_id,
+                    )
+                })
         })
         .or_else(|| {
             equip_presses
                 .iter()
                 .find(|(_, interaction, _)| **interaction == Interaction::Pressed)
                 .and_then(|(entity, _, btn)| {
-                    equipment
-                        .get(btn.slot)
-                        .clone()
-                        .map(|instance| (entity, ItemSlotOrigin::Equipment(btn.slot), instance.item_id))
+                    equipment.get(btn.slot).clone().map(|instance| {
+                        (
+                            entity,
+                            ItemSlotOrigin::Equipment(btn.slot),
+                            instance.item_id,
+                        )
+                    })
                 })
         });
 
@@ -215,9 +219,7 @@ pub fn end_item_drag(
     registry: Res<ItemRegistry>,
     theme: Res<UiTheme>,
     mut backgrounds: Query<&mut BackgroundColor>,
-    mut equip_senders: Query<&mut MessageSender<EquipItemCommand>, With<ConnectedClient>>,
-    mut unequip_senders: Query<&mut MessageSender<UnequipItemCommand>, With<ConnectedClient>>,
-    mut move_senders: Query<&mut MessageSender<MoveItemCommand>, With<ConnectedClient>>,
+    conn: Option<Res<StdbConnection>>,
     all_cards: Query<(Entity, &CardWindow)>,
     mut commands: Commands,
 ) {
@@ -254,8 +256,10 @@ pub fn end_item_drag(
 
     let sent = match (pending.origin, target) {
         (ItemSlotOrigin::Inventory(from), ItemSlotOrigin::Inventory(to)) => {
-            for mut sender in move_senders.iter_mut() {
-                sender.send::<Channel2>(MoveItemCommand { from, to });
+            if let Some(conn) = conn.as_deref() {
+                if let Err(err) = stdb_commands::move_item(conn, from, to) {
+                    error!("could not move item: {err}");
+                }
             }
             true
         }
@@ -265,15 +269,19 @@ pub fn end_item_drag(
                 .and_then(|item| item.config().equippable_into)
                 == Some(slot);
             if matches_slot {
-                for mut sender in equip_senders.iter_mut() {
-                    sender.send::<Channel2>(EquipItemCommand { slot_index: idx });
+                if let Some(conn) = conn.as_deref() {
+                    if let Err(err) = stdb_commands::equip_item(conn, idx) {
+                        error!("could not equip item: {err}");
+                    }
                 }
             }
             matches_slot
         }
         (ItemSlotOrigin::Equipment(slot), ItemSlotOrigin::Inventory(_)) => {
-            for mut sender in unequip_senders.iter_mut() {
-                sender.send::<Channel2>(UnequipItemCommand { slot });
+            if let Some(conn) = conn.as_deref() {
+                if let Err(err) = stdb_commands::unequip_item(conn, slot) {
+                    error!("could not unequip item: {err}");
+                }
             }
             true
         }

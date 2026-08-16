@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::color_row_type::ColorRow;
 use super::entity_kind_row_type::EntityKindRow;
 use super::entity_state_row_type::EntityStateRow;
 use super::vec_3_row_type::Vec3Row;
@@ -15,6 +16,7 @@ pub struct GameEntity {
     pub kind: EntityKindRow,
     pub owner: Option<__sdk::Identity>,
     pub display_name: String,
+    pub color: ColorRow,
     pub position: Vec3Row,
     pub look: Vec3Row,
     pub move_target: Option<Vec3Row>,
@@ -38,6 +40,7 @@ pub struct GameEntityCols {
     pub kind: __sdk::__query_builder::Col<GameEntity, EntityKindRow>,
     pub owner: __sdk::__query_builder::Col<GameEntity, Option<__sdk::Identity>>,
     pub display_name: __sdk::__query_builder::Col<GameEntity, String>,
+    pub color: __sdk::__query_builder::Col<GameEntity, ColorRow>,
     pub position: __sdk::__query_builder::Col<GameEntity, Vec3Row>,
     pub look: __sdk::__query_builder::Col<GameEntity, Vec3Row>,
     pub move_target: __sdk::__query_builder::Col<GameEntity, Option<Vec3Row>>,
@@ -57,6 +60,7 @@ impl __sdk::__query_builder::HasCols for GameEntity {
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
             owner: __sdk::__query_builder::Col::new(table_name, "owner"),
             display_name: __sdk::__query_builder::Col::new(table_name, "display_name"),
+            color: __sdk::__query_builder::Col::new(table_name, "color"),
             position: __sdk::__query_builder::Col::new(table_name, "position"),
             look: __sdk::__query_builder::Col::new(table_name, "look"),
             move_target: __sdk::__query_builder::Col::new(table_name, "move_target"),

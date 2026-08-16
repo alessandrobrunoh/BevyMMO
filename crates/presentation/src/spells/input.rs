@@ -1,18 +1,15 @@
 use bevy::prelude::*;
-use bevymmo_client::network::types::ConnectedClient;
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
+use bevymmo_shared::entity::LocalPlayer;
 use bevymmo_shared::items::components::Equipment;
 use bevymmo_shared::items::registry::ItemRegistry;
 use bevymmo_shared::movement::MoveTarget;
-use bevymmo_shared::network::protocol::{
-    Channel2, LookDirection, NetworkEntityId, Position, SpellCastCommand, SpellCastRelease,
-};
+use bevymmo_shared::network::protocol::{LookDirection, NetworkEntityId, Position};
 use bevymmo_shared::spells::{
     CastKind, ChannelMovementPolicy, HotbarSlot, SpellHotbar, SpellRegistry,
 };
 use bevymmo_shared::targeting::CurrentTarget;
 use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
-use bevymmo_shared::entity::LocalPlayer;
-use lightyear::prelude::MessageSender;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::spells::cast_bar::ObservedCasts;
@@ -41,8 +38,7 @@ pub fn cast_spells_on_key(
     >,
     observed_casts: Res<ObservedCasts>,
     mut move_target: ResMut<MoveTarget>,
-    mut cast_senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
-    mut release_senders: Query<&mut MessageSender<SpellCastRelease>, With<ConnectedClient>>,
+    conn: Option<Res<StdbConnection>>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
     registry: Res<SpellRegistry>,
     item_registry: Res<ItemRegistry>,
@@ -128,10 +124,12 @@ pub fn cast_spells_on_key(
                 .is_some_and(|cast| cast.spell_id == spell_id.as_str());
 
             if is_channeling_this_spell {
-                for mut sender in release_senders.iter_mut() {
-                    sender.send::<Channel2>(SpellCastRelease {
-                        spell_id: spell_id.as_str().to_owned(),
-                    });
+                if let Some(conn) = conn.as_deref() {
+                    if let Err(err) =
+                        stdb_commands::release_cast(conn, spell_id.as_str().to_owned())
+                    {
+                        error!("could not release spell cast: {err}");
+                    }
                 }
                 continue;
             }
@@ -140,12 +138,15 @@ pub fn cast_spells_on_key(
                 continue;
             }
 
-            for mut sender in cast_senders.iter_mut() {
-                sender.send::<Channel2>(SpellCastCommand {
-                    spell_id: spell_id.as_str().to_owned(),
-                    target_position,
+            if let Some(conn) = conn.as_deref() {
+                if let Err(err) = stdb_commands::cast_spell(
+                    conn,
+                    spell_id.as_str().to_owned(),
                     target_id,
-                });
+                    target_position,
+                ) {
+                    error!("could not cast spell: {err}");
+                }
             }
             hud_cooldowns.write(SpellHudCooldownStarted {
                 key: HudCooldownKey::Spell(spell_id.clone()),
@@ -157,12 +158,15 @@ pub fn cast_spells_on_key(
         if hud_state.spell_on_cooldown(&spell_id) {
             continue;
         }
-        for mut sender in cast_senders.iter_mut() {
-            sender.send::<Channel2>(SpellCastCommand {
-                spell_id: spell_id.as_str().to_owned(),
-                target_position,
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::cast_spell(
+                conn,
+                spell_id.as_str().to_owned(),
                 target_id,
-            });
+                target_position,
+            ) {
+                error!("could not cast spell: {err}");
+            }
         }
         if matches!(spell_def.cast_kind(), CastKind::Instant) {
             hud_cooldowns.write(SpellHudCooldownStarted {

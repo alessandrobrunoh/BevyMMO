@@ -3,13 +3,11 @@
 use spacetimedb::{reducer, ReducerContext, ScheduleAt, Table};
 use std::time::Duration;
 
-use crate::rows::{
-    equipment_to_rows, inventory_to_rows, known_glyphs_to_rows, HotbarRow, StatsRow, Vec3Row,
-};
+use crate::rows::{equipment_to_rows, inventory_to_rows, HotbarRow, StatsRow, Vec3Row};
 use crate::tables::{
     aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats, equipment,
     game_entity, grid_cell, hotbar, inventory, known_glyphs, player, player_stats, projectile,
-    stat_modifier, threat, tick_schedule, tick_stats, EntityKindRow, EntityStateRow,
+    stat_modifier, threat, tick_schedule, tick_stats, ColorRow, EntityKindRow, EntityStateRow,
     EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownGlyphsTable, Player, PlayerStats,
     TickSchedule,
 };
@@ -39,39 +37,65 @@ pub fn init(ctx: &ReducerContext) {
 /// Player *characters* are deliberately untouched — those are the persistent
 /// half, and losing them on every publish would be the opposite of the point.
 fn clear_runtime_state(ctx: &ReducerContext) {
-    for row in ctx.db.projectile().iter() {
-        ctx.db.projectile().id().delete(&row.id);
+    // Table scans and mutations must be separate passes, even during init.
+    let projectile_ids: Vec<_> = ctx.db.projectile().iter().map(|row| row.id).collect();
+    let aoe_ids: Vec<_> = ctx.db.aoe_region().iter().map(|row| row.id).collect();
+    let crowd_control_ids: Vec<_> = ctx.db.crowd_control().iter().map(|row| row.id).collect();
+    let modifier_ids: Vec<_> = ctx.db.stat_modifier().iter().map(|row| row.id).collect();
+    let threat_ids: Vec<_> = ctx.db.threat().iter().map(|row| row.id).collect();
+    let cast_entity_ids: Vec<_> = ctx
+        .db
+        .cast_state()
+        .iter()
+        .map(|row| row.entity_id)
+        .collect();
+    let cooldown_ids: Vec<_> = ctx.db.cooldown().iter().map(|row| row.id).collect();
+    let boss_entity_ids: Vec<_> = ctx
+        .db
+        .boss_state()
+        .iter()
+        .map(|row| row.entity_id)
+        .collect();
+    let seeded_entity_ids: Vec<_> = ctx
+        .db
+        .game_entity()
+        .iter()
+        .filter(|row| row.owner.is_none())
+        .map(|row| row.entity_id)
+        .collect();
+    let tick_stat_ids: Vec<_> = ctx.db.tick_stats().iter().map(|row| row.id).collect();
+
+    for id in projectile_ids {
+        ctx.db.projectile().id().delete(&id);
     }
-    for row in ctx.db.aoe_region().iter() {
-        ctx.db.aoe_region().id().delete(&row.id);
+    for id in aoe_ids {
+        ctx.db.aoe_region().id().delete(&id);
     }
-    for row in ctx.db.crowd_control().iter() {
-        ctx.db.crowd_control().id().delete(&row.id);
+    for id in crowd_control_ids {
+        ctx.db.crowd_control().id().delete(&id);
     }
-    for row in ctx.db.stat_modifier().iter() {
-        ctx.db.stat_modifier().id().delete(&row.id);
+    for id in modifier_ids {
+        ctx.db.stat_modifier().id().delete(&id);
     }
-    for row in ctx.db.threat().iter() {
-        ctx.db.threat().id().delete(&row.id);
+    for id in threat_ids {
+        ctx.db.threat().id().delete(&id);
     }
-    for row in ctx.db.cast_state().iter() {
-        ctx.db.cast_state().entity_id().delete(&row.entity_id);
+    for entity_id in cast_entity_ids {
+        ctx.db.cast_state().entity_id().delete(&entity_id);
     }
-    for row in ctx.db.cooldown().iter() {
-        ctx.db.cooldown().id().delete(&row.id);
+    for id in cooldown_ids {
+        ctx.db.cooldown().id().delete(&id);
     }
-    for row in ctx.db.boss_state().iter() {
-        ctx.db.boss_state().entity_id().delete(&row.entity_id);
+    for entity_id in boss_entity_ids {
+        ctx.db.boss_state().entity_id().delete(&entity_id);
     }
     // Non-player entities are respawned from the map manifest by `world::seed`.
-    for row in ctx.db.game_entity().iter() {
-        if row.owner.is_none() {
-            ctx.db.entity_stats().entity_id().delete(&row.entity_id);
-            ctx.db.game_entity().entity_id().delete(&row.entity_id);
-        }
+    for entity_id in seeded_entity_ids {
+        ctx.db.entity_stats().entity_id().delete(&entity_id);
+        ctx.db.game_entity().entity_id().delete(&entity_id);
     }
-    for row in ctx.db.tick_stats().iter() {
-        ctx.db.tick_stats().id().delete(&row.id);
+    for id in tick_stat_ids {
+        ctx.db.tick_stats().id().delete(&id);
     }
 }
 
@@ -158,6 +182,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         kind: EntityKindRow::Player,
         owner: Some(identity),
         display_name: display_name.clone(),
+        color: ColorRow::for_kind(EntityKindRow::Player),
         position: spawn,
         look: Vec3Row {
             x: 0.0,
@@ -193,16 +218,33 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         identity,
         slots: inventory_to_rows(&Default::default()),
     });
+    for item_id in [
+        "magic_staff",
+        "leather_helmet",
+        "travelers_cape",
+        "iron_plate_armor",
+        "wooden_shield",
+        "quick_flask",
+        "swift_boots",
+        "field_rations",
+        "swift_steed",
+        "travelers_bag",
+    ] {
+        crate::reducers::items::grant_item(ctx, identity, item_id)?;
+    }
     ctx.db.equipment().insert(EquipmentTable {
         identity,
         slots: equipment_to_rows(&Default::default()),
     });
-    let (essences, modifiers, ancient_words) = known_glyphs_to_rows(&Default::default());
     ctx.db.known_glyphs().insert(KnownGlyphsTable {
         identity,
-        essences,
-        modifiers,
-        ancient_words,
+        essences: vec!["fuoco".to_string(), "gelo".to_string(), "terra".to_string()],
+        modifiers: vec![
+            "espandere".to_string(),
+            "amplificare".to_string(),
+            "concentrare".to_string(),
+        ],
+        ancient_words: Vec::new(),
     });
 
     ctx.db.player().insert(Player {

@@ -45,7 +45,7 @@ pub const DEFAULT_MAP_ID: &str = "map_02";
 ///
 /// # Example
 /// ```rust,no_run
-/// let root = bevymmo_shared::paths::assets_root();
+/// let root = bevymmo_app_support::paths::assets_root();
 /// let tree_glb = root.join("models/tree_oak.glb");
 /// ```
 pub fn assets_root() -> PathBuf {
@@ -65,7 +65,7 @@ pub fn assets_root() -> PathBuf {
 ///
 /// # Example
 /// ```rust,no_run
-/// let path = bevymmo_shared::paths::map_file("rolling_hills_test");
+/// let path = bevymmo_app_support::paths::map_file("rolling_hills_test");
 /// ```
 pub fn map_file(map_id: &str) -> PathBuf {
     assets_root().join("maps").join(format!("{map_id}.glb"))

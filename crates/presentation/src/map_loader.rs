@@ -967,8 +967,9 @@ fn check_bounds(bounds: &MapBounds, issues: &mut Vec<ValidationIssue>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::manifest::{Prop, Terrain, TransformData};
-    use crate::world::shapes::CollisionShape;
+    // `crate::world` re-imports these privately (see world.rs), so tests go
+    // to the defining crate directly.
+    use bevymmo_world::{CollisionShape, Prop, Terrain, TransformData};
 
     fn empty_manifest() -> MapManifest {
         MapManifest {
@@ -1289,14 +1290,14 @@ mod tests {
 
         assert!(
             !manifest.blockers.is_empty(),
-            "map_02 is expected to ship blockers for its rocks and tree trunks"
+            "map_02 is expected to ship blockers for its arena walls and cover"
         );
         assert!(
             manifest.blockers.iter().all(|b| b.shape.is_some()),
             "a blocker without a shape is silently dropped by CollisionGrid::build"
         );
 
-        let grid = crate::world::CollisionGrid::build(&manifest);
+        let grid = bevymmo_world::CollisionGrid::build(&manifest);
         assert_eq!(
             grid.obstacle_count(),
             manifest.blockers.len(),
@@ -1333,7 +1334,7 @@ mod tests {
         assert_eq!(metrics.max_step_height, 0.45);
         assert_eq!(metrics.max_walkable_slope_deg, 45.0);
 
-        let surface_query = crate::world::SurfaceQuery::from_manifest(&manifest);
+        let surface_query = bevymmo_world::SurfaceQuery::from_manifest(&manifest);
         let outer_edge = surface_query
             .ground_at(-22.0, -22.0)
             .expect("outer edge should resolve from fixture heightfield");

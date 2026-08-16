@@ -10,7 +10,7 @@ use bevy::input::ButtonInput;
 use bevy::input::ButtonState;
 use bevy::prelude::*;
 
-use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
+use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::game_state::{
     validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen,
@@ -232,7 +232,7 @@ pub fn toggle_pause(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevymmo_shared::user_settings::{GameSettings, KeyBinding, KeyModifiers};
+    use bevymmo_client::user_settings::{GameSettings, KeyBinding, KeyModifiers};
 
     fn test_app() -> App {
         let mut app = App::new();

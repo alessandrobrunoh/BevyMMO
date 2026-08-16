@@ -1,11 +1,6 @@
 services:
-  # The authoritative server, once the migration off lightyear/Postgres lands.
-  # Runs alongside them for now: the game still boots on the old stack until the
-  # gameplay reducers are ported, and killing Postgres today would just stop it
-  # working. Both `postgres` and `server` below go away at the end.
   spacetimedb:
     image: clockworklabs/spacetime:latest
-    container_name: bevytest2_spacetimedb
     restart: unless-stopped
     command: ["start", "--listen-addr", "0.0.0.0:3000"]
     ports:
@@ -13,42 +8,5 @@ services:
     volumes:
       - spacetime_data:/stdb
 
-  postgres:
-    image: postgres:16
-    container_name: bevytest2_postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    command: ["postgres", "-c", "port=${POSTGRES_PORT}"]
-    ports:
-      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -p ${POSTGRES_PORT}",
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  server:
-    image: ghcr.io/alessandrobrunoh/bevy_mmo:latest
-    container_name: bevytest2_server
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "5051:5051/udp"
-    environment:
-      - APP_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/${POSTGRES_DB}
-
 volumes:
-  postgres_data:
   spacetime_data:

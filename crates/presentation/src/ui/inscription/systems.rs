@@ -2,14 +2,14 @@ use super::components::*;
 use super::InscriptionUiState;
 use bevy::prelude::*;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
-use bevymmo_shared::abilities::{
+use bevymmo_gameplay::abilities::{
     resolve_active_ability, AbilitySelection, AbilitySlot, BaseAbilityRegistry, EssenceId,
     EssenceRegistry, Inscription, KnownGlyphs, ModifierId, ModifierRegistry, WeaponAbilities,
     WeaponInscriptions,
 };
-use bevymmo_shared::entity::LocalPlayer;
-use bevymmo_shared::items::components::Equipment;
-use bevymmo_shared::items::registry::ItemRegistry;
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_gameplay::items::components::Equipment;
+use bevymmo_gameplay::items::registry::ItemRegistry;
 
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::UiTheme;

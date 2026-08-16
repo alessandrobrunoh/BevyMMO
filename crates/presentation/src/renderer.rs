@@ -2,8 +2,8 @@ use bevy::prelude::*;
 
 use crate::assets::{BossDragonAssets, PlayerAssets};
 use crate::game_state::{GameScreen, Screen};
-use bevymmo_shared::entity::components::EntityKind;
-use bevymmo_shared::network::protocol::*;
+use bevymmo_gameplay::entity::components::EntityKind;
+use bevymmo_network::network::protocol::*;
 use std::collections::HashMap;
 
 #[derive(Resource)]

@@ -1,7 +1,7 @@
 //! Components and markers for the Inventory UI.
 
 use bevy::prelude::*;
-use bevymmo_shared::items::components::EquipSlot;
+use bevymmo_gameplay::items::components::EquipSlot;
 
 /// State for item selection in the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

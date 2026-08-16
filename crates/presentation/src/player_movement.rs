@@ -10,18 +10,18 @@ use bevy::prelude::*;
 use lightyear::prelude::input::native::ActionState;
 use lightyear::prelude::*;
 
-use bevymmo_shared::crowd_control::CrowdControlState;
-use bevymmo_shared::entity::components::EntityState;
-use bevymmo_shared::entity::player::components::Player;
-use bevymmo_shared::movement::{
+use bevymmo_gameplay::crowd_control::CrowdControlState;
+use bevymmo_gameplay::entity::components::EntityState;
+use bevymmo_gameplay::entity::player::components::Player;
+use bevymmo_client::movement::{
     effective_movement_speed, move_towards_target, snap_to_ground, step_on_terrain, TerrainStep,
 };
-use bevymmo_shared::network::mode;
-use bevymmo_shared::network::protocol::{Inputs, LookDirection, NetworkEntityId, Position};
-use bevymmo_shared::spells::{ChannelMovementPolicy, SpellId, SpellRegistry};
+use bevymmo_network::network::mode;
+use bevymmo_network::network::protocol::{Inputs, LookDirection, NetworkEntityId, Position};
+use bevymmo_gameplay::spells::{ChannelMovementPolicy, SpellId, SpellRegistry};
 
-use bevymmo_shared::stats::components::{MovementStats, VitalStats};
-use bevymmo_shared::stats::modifiers::ActiveStatModifiers;
+use bevymmo_gameplay::stats::components::{MovementStats, VitalStats};
+use bevymmo_gameplay::stats::modifiers::ActiveStatModifiers;
 
 use crate::spells::cast_bar::{ObservedCast, ObservedCasts};
 use crate::world::ClientWorldMap;
@@ -165,7 +165,7 @@ fn predict_move_to_target(
     }
 }
 
-/// Client-side mirror of `bevymmo_shared::movement::should_block_movement_for_cast`,
+/// Client-side mirror of `bevymmo_client::movement::should_block_movement_for_cast`,
 /// driven by the locally observed cast snapshot instead of the authoritative
 /// `CastProgress` component (which is server-only).
 ///

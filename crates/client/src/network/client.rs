@@ -2,11 +2,11 @@ use bevy::prelude::*;
 use core::time::Duration;
 use std::net::SocketAddr;
 
-use bevymmo_shared::game_state::{
+use crate::app_state::{
     ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen, Screen,
 };
-use bevymmo_shared::network::mode::has_client;
-use bevymmo_shared::network::protocol::{Channel2, JoinRequest};
+use bevymmo_network::network::mode::has_client;
+use bevymmo_network::network::protocol::{Channel2, JoinRequest};
 use lightyear::netcode::client_plugin::NetcodeConfig;
 use lightyear::netcode::NetcodeClient;
 use lightyear::prelude::client::{InputDelayConfig, InputTimelineConfig};

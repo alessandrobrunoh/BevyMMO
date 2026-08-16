@@ -4,8 +4,10 @@ members = [
     "crates/world",
     "crates/gameplay",
     "crates/content",
+    "crates/app-support",
+    "crates/network",
     "crates/domain",
-    "crates/shared",
+
     "crates/bevymmo-props-macro",
     "crates/client",
     "crates/presentation",

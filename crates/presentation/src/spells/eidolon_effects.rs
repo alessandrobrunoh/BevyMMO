@@ -17,8 +17,8 @@
 use bevy::color::Color;
 use bevy::prelude::*;
 
-use bevymmo_shared::abilities::{AbilityGeometry, ArcBaseAbility};
-use bevymmo_shared::network::protocol::SpellVisualEffect;
+use bevymmo_gameplay::abilities::{AbilityGeometry, ArcBaseAbility};
+use bevymmo_network::network::protocol::SpellVisualEffect;
 
 use crate::spells::effects::SpellVisual;
 

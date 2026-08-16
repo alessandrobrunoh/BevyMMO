@@ -1,6 +1,6 @@
-use bevymmo_shared::entity::LocalPlayer;
+use crate::local_player::LocalPlayer;
 use bevy::prelude::*;
-use bevymmo_shared::network::protocol::{
+use bevymmo_network::network::protocol::{
     EntityColor, Inputs, PlayerId, PlayerMessage, SpellVisualEffect,
 };
 use lightyear::prelude::input::native::ActionState;

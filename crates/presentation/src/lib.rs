@@ -3,6 +3,7 @@
 pub mod assets;
 pub mod entity;
 pub mod game_state;
+pub mod map_loader;
 pub mod player_movement;
 pub mod renderer;
 pub mod scenes;
@@ -26,7 +27,7 @@ pub struct PresentationCorePlugin;
 impl Plugin for PresentationCorePlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<PresentationState>()
-            .init_resource::<bevymmo_shared::placeables::PlaceableRegistry>()
+            .init_resource::<bevymmo_gameplay::placeables::PlaceableRegistry>()
             .add_loading_state(
                 LoadingState::new(PresentationState::Loading)
                     .continue_to_state(PresentationState::Ready)
@@ -55,9 +56,9 @@ impl Plugin for PresentationPlugin {
 }
 
 fn register_presentation_placeables(
-    mut registry: ResMut<bevymmo_shared::placeables::PlaceableRegistry>,
+    mut registry: ResMut<bevymmo_gameplay::placeables::PlaceableRegistry>,
 ) {
-    bevymmo_shared::content::placeables::register_all(&mut registry);
+    bevymmo_content::placeable_definitions::register_all(&mut registry);
 }
 
 pub mod prelude {

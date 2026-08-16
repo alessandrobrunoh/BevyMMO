@@ -1,8 +1,0 @@
-//! Boss encounter components (dragon boss).
-//!
-//! `Boss`, `BossPhase` and `BossArena` are replicated so clients can render
-//! the arena ring, boss bar and phase banner. The remaining types are
-//! server-only AI state and never cross the network.
-
-pub use bevymmo_domain::entity::boss::components;
-pub mod spawn;

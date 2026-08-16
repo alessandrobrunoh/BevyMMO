@@ -16,8 +16,8 @@
 
 use bevy::prelude::*;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
-use bevymmo_shared::entity::LocalPlayer;
-use bevymmo_shared::items::{
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_gameplay::items::{
     components::{Equipment, Inventory},
     registry::{ItemId, ItemRegistry},
 };

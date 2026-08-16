@@ -12,12 +12,12 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
-use bevymmo_shared::abilities::{
+use bevymmo_gameplay::abilities::{
     inscription::inscription_cost, resolve_active_ability, resolve_slot_preview, AbilitySlot,
     AbilityTag, AncientWordRegistry, BaseAbilityRegistry, CastBlockedReason, EssenceRegistry,
     Inscription, KnownGlyphs, ModifierRegistry, RuneProfile, SlotPreview, WeaponInscriptions,
 };
-use bevymmo_shared::items::{instance::ItemInstance, ItemCategory, ItemRarity, ItemRegistry};
+use bevymmo_gameplay::items::{instance::ItemInstance, ItemCategory, ItemRarity, ItemRegistry};
 
 /// I registri necessari a descrivere un'arma incisa, raggruppati per non far
 /// crescere la firma della scheda item di un argomento per tipo di Glifo.
@@ -176,7 +176,7 @@ fn total_rune_cost(
 fn summarize_slot(
     slot: AbilitySlot,
     instance: &ItemInstance,
-    abilities: &bevymmo_shared::abilities::WeaponAbilities,
+    abilities: &bevymmo_gameplay::abilities::WeaponAbilities,
     inscriptions: &WeaponInscriptions,
     glyphs: GlyphCatalog,
     known: &KnownGlyphs,
@@ -208,7 +208,7 @@ fn summarize_slot(
     };
     let params = match preview {
         Ok(SlotPreview { params, .. }) => params,
-        Err(_) => bevymmo_shared::abilities::resolve_ability_params(
+        Err(_) => bevymmo_gameplay::abilities::resolve_ability_params(
             ability.base_params(),
             &inscription.modifiers,
             glyphs.modifiers,
@@ -256,8 +256,8 @@ const fn slot_name(slot: AbilitySlot) -> &'static str {
     }
 }
 
-fn describe_geometry(geometry: bevymmo_shared::abilities::AbilityGeometry) -> String {
-    use bevymmo_shared::abilities::AbilityGeometry::*;
+fn describe_geometry(geometry: bevymmo_gameplay::abilities::AbilityGeometry) -> String {
+    use bevymmo_gameplay::abilities::AbilityGeometry::*;
     match geometry {
         Cone { radius, angle_deg } => {
             format!("Cone {} m / {} deg", number(radius), number(angle_deg))
@@ -272,7 +272,7 @@ fn describe_geometry(geometry: bevymmo_shared::abilities::AbilityGeometry) -> St
 
 /// Solo i campi che portano informazione: un `0` ovunque è il default di
 /// `AbilityParams`, e stamparlo riempirebbe la riga di rumore.
-fn describe_params(params: &bevymmo_shared::abilities::AbilityParams) -> String {
+fn describe_params(params: &bevymmo_gameplay::abilities::AbilityParams) -> String {
     let mut parts = Vec::new();
     if params.power != 0.0 {
         parts.push(format!("{} power", number(params.power)));
@@ -362,8 +362,8 @@ fn number(value: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevymmo_shared::abilities::{AbilityGeometry, AbilityParams};
-    use bevymmo_shared::items::components::EquipSlot;
+    use bevymmo_gameplay::abilities::{AbilityGeometry, AbilityParams};
+    use bevymmo_gameplay::items::components::EquipSlot;
 
     fn params() -> AbilityParams {
         AbilityParams {
@@ -382,11 +382,11 @@ mod tests {
         let mut app = App::new();
         // Registries are plain values now, so the fixture inserts them
         // directly instead of running a `Startup` schedule to fill them.
-        app.insert_resource(bevymmo_shared::content::items::default_items());
-        app.insert_resource(bevymmo_shared::content::abilities::default_base_abilities());
-        app.insert_resource(bevymmo_shared::content::essences::default_essences());
-        app.insert_resource(bevymmo_shared::content::modifiers::default_modifiers());
-        app.insert_resource(bevymmo_shared::content::ancient_words::default_ancient_words());
+        app.insert_resource(bevymmo_content::item_definitions::default_items());
+        app.insert_resource(bevymmo_content::ability_definitions::default_base_abilities());
+        app.insert_resource(bevymmo_content::essence_definitions::default_essences());
+        app.insert_resource(bevymmo_content::modifier_definitions::default_modifiers());
+        app.insert_resource(bevymmo_content::ancient_word_definitions::default_ancient_words());
         app
     }
 
@@ -402,7 +402,7 @@ mod tests {
     }
 
     fn magic_staff() -> ItemInstance {
-        ItemInstance::new(bevymmo_shared::items::ItemId::new("magic_staff"))
+        ItemInstance::new(bevymmo_gameplay::items::ItemId::new("magic_staff"))
     }
 
     /// A weapon with no inscription still describes all three of its gestures.
@@ -439,7 +439,7 @@ mod tests {
         let mut instance = magic_staff();
         instance.inscriptions = Some(WeaponInscriptions {
             primary: Inscription {
-                essence: Some(bevymmo_shared::abilities::EssenceId::new("fuoco")),
+                essence: Some(bevymmo_gameplay::abilities::EssenceId::new("fuoco")),
                 modifiers: vec![],
                 ancient_word: None,
             },
@@ -449,7 +449,7 @@ mod tests {
         let mut known = KnownGlyphs::default();
         known
             .essences
-            .insert(bevymmo_shared::abilities::EssenceId::new("fuoco"));
+            .insert(bevymmo_gameplay::abilities::EssenceId::new("fuoco"));
 
 
         let summary = summarize(&app, &instance, &known);
@@ -474,7 +474,7 @@ mod tests {
         let mut instance = magic_staff();
         instance.inscriptions = Some(WeaponInscriptions {
             primary: Inscription {
-                essence: Some(bevymmo_shared::abilities::EssenceId::new("fuoco")),
+                essence: Some(bevymmo_gameplay::abilities::EssenceId::new("fuoco")),
                 modifiers: vec![],
                 ancient_word: None,
             },

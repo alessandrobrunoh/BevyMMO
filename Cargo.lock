@@ -1463,9 +1463,12 @@ name = "bevy_lightyear_game"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevymmo_app_support",
  "bevymmo_client",
+ "bevymmo_content",
+ "bevymmo_gameplay",
+ "bevymmo_network",
  "bevymmo_presentation",
- "bevymmo_shared",
  "clap",
  "config",
  "lightyear",
@@ -2262,15 +2265,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevymmo_app_support"
+version = "0.1.0"
+dependencies = [
+ "config",
+ "dirs",
+ "serde",
+]
+
+[[package]]
 name = "bevymmo_client"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevymmo_content",
  "bevymmo_domain",
- "bevymmo_shared",
+ "bevymmo_gameplay",
+ "bevymmo_network",
+ "bevymmo_world",
  "crossbeam-channel",
  "dirs",
  "lightyear",
+ "serde",
+ "serde_json",
  "spacetimedb-sdk",
 ]
 
@@ -2324,28 +2341,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevymmo_network"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevymmo_gameplay",
+ "lightyear",
+ "serde",
+]
+
+[[package]]
 name = "bevymmo_presentation"
 version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_asset_loader",
+ "bevymmo_app_support",
  "bevymmo_client",
+ "bevymmo_content",
  "bevymmo_domain",
- "bevymmo_shared",
- "dirs",
- "lightyear",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bevymmo_shared"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevymmo-props-macro",
- "bevymmo_domain",
- "config",
+ "bevymmo_gameplay",
+ "bevymmo_network",
+ "bevymmo_world",
  "dirs",
  "gltf",
  "lightyear",
@@ -2353,7 +2370,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.19",
- "uuid",
 ]
 
 [[package]]

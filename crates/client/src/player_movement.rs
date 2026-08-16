@@ -11,8 +11,8 @@ use bevy::color::Color;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use bevymmo_shared::movement::{resolve_ray_to_ground, ClientSurfaceQuery, MoveTarget};
-use bevymmo_shared::network::mode;
+use crate::movement::{resolve_ray_to_ground, ClientSurfaceQuery, MoveTarget};
+use bevymmo_network::network::mode;
 
 const INDICATOR_DURATION: f32 = 0.55;
 

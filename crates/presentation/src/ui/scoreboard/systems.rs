@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
-use bevymmo_shared::entity::components::PlayerName;
-use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
+use bevymmo_gameplay::entity::components::PlayerName;
+use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::ui::theme::UiTheme;
 
@@ -128,7 +128,7 @@ mod tests {
         app.init_resource::<UiTheme>();
         app.init_resource::<GameScreen>();
         app.insert_resource(GameSettingsResource(
-            bevymmo_shared::user_settings::GameSettings::default(),
+            bevymmo_client::user_settings::GameSettings::default(),
         ));
         app.add_plugins(ScoreboardPlugin);
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;

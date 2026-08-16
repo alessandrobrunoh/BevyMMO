@@ -1,11 +1,11 @@
 use bevy::prelude::*;
-use bevymmo_shared::entity::LocalPlayer;
+use bevymmo_client::local_player::LocalPlayer;
 
 use bevymmo_client::network::types::ClientConnectionConfig;
-use bevymmo_shared::movement::effective_movement_speed;
-use bevymmo_shared::network::protocol::PlayerId;
-use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
-use bevymmo_shared::stats::modifiers::ActiveStatModifiers;
+use bevymmo_client::movement::effective_movement_speed;
+use bevymmo_network::network::protocol::PlayerId;
+use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
+use bevymmo_gameplay::stats::modifiers::ActiveStatModifiers;
 
 use crate::game_state::{GameScreen, Screen};
 

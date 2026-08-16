@@ -2,13 +2,13 @@
 
 use bevy::prelude::*;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
-use bevymmo_shared::entity::LocalPlayer;
-use bevymmo_shared::items::{
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_gameplay::items::{
     components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY},
     registry::ItemRegistry,
 };
 
-use bevymmo_shared::abilities::KnownGlyphs;
+use bevymmo_gameplay::abilities::KnownGlyphs;
 
 use super::weapon_detail::GlyphRegistries;
 use super::{components::*, detail::*, InventoryUiState};
@@ -196,10 +196,20 @@ fn spawn_inventory_window(
             },))
                 .with_children(|main| {
                     // 3x3 equipment grid.
+                    //
+                    // Rows are `auto`, not `flex`: `flex()` tracks are
+                    // `minmax(0, Nfr)`, and inside the scrollable body the
+                    // grid's height is indefinite (it sizes to its own
+                    // content), so there is no space to distribute the `fr`
+                    // against — every row collapsed to its zero minimum and
+                    // all three rows of captions/boxes drew stacked on top of
+                    // each other. `auto` sizes each row to its content
+                    // instead, which works regardless of the container's
+                    // height being definite or not.
                     main.spawn((Node {
                         display: Display::Grid,
                         grid_template_columns: RepeatedGridTrack::flex(3, 1.0),
-                        grid_template_rows: RepeatedGridTrack::flex(3, 1.0),
+                        grid_template_rows: RepeatedGridTrack::auto(3),
                         row_gap: Val::Px(10.0),
                         column_gap: Val::Px(10.0),
                         ..default()

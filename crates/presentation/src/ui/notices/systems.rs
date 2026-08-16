@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevymmo_shared::server_feed::ServerNotice;
+use bevymmo_client::server_feed::ServerNotice;
 
 use crate::ui::theme::UiTheme;
 

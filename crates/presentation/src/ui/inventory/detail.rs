@@ -1,7 +1,7 @@
 //! Detail card spawner for selected inventory or equipment slots.
 
 use bevy::prelude::*;
-use bevymmo_shared::{
+use bevymmo_gameplay::{
     items::{
         components::{Equipment, Inventory},
         effects::ItemEffect,
@@ -10,7 +10,7 @@ use bevymmo_shared::{
     stats::events::{ModifierOp, StatField},
 };
 
-use bevymmo_shared::abilities::KnownGlyphs;
+use bevymmo_gameplay::abilities::KnownGlyphs;
 
 use super::components::*;
 use super::weapon_detail::{meta_line, summarize_weapon, GlyphRegistries, SlotSummary};

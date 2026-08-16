@@ -7,8 +7,8 @@
 
 use bevy::prelude::*;
 
-use bevymmo_shared::entity::boss::components::{Boss, BossArena, BossPhase};
-use bevymmo_shared::stats::components::VitalStats;
+use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
+use bevymmo_gameplay::stats::components::VitalStats;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::ui::theme::UiTheme;

@@ -3,8 +3,8 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevymmo_shared::entity::components::{EntityKind, GameEntity, PlayerName};
-use bevymmo_shared::network::protocol::Position;
+use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
+use bevymmo_network::network::protocol::Position;
 
 use crate::ui::card::{CardBuilder, CardExclusivityPolicy, CardKind, CardPositioning};
 use crate::ui::npc_sidebar::components::NpcSidebar;

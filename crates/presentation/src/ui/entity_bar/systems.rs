@@ -11,9 +11,9 @@
 //! Fuori dal gameplay, `cleanup_floating_ui_root` rimuove la root UI e resetta
 //! `FloatingUiAttached` sui target, così il re-entry può ri-spawnare le barre.
 
-use bevymmo_shared::entity::components::{EntityKind, PlayerName};
-use bevymmo_shared::network::protocol::Position;
-use bevymmo_shared::stats::components::VitalStats;
+use bevymmo_gameplay::entity::components::{EntityKind, PlayerName};
+use bevymmo_network::network::protocol::Position;
+use bevymmo_gameplay::stats::components::VitalStats;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::ui::theme::UiTheme;

@@ -2,7 +2,7 @@
 //!
 //! The player no longer assigns *any* registered spell to a hotbar key: the
 //! legal picks per key are whatever the currently equipped items offer (see
-//! `bevymmo_shared::items::AvailableSpellChoices`, kept in sync client-side
+//! `bevymmo_gameplay::items::AvailableSpellChoices`, kept in sync client-side
 //! by `crate::spells::available_choices::sync_available_spell_choices`).
 //! This window only ever renders — and lets the player click — spells drawn
 //! from that pool.
@@ -11,7 +11,7 @@ mod components;
 mod systems;
 
 use bevy::prelude::*;
-use bevymmo_shared::network::mode::has_client;
+use bevymmo_network::network::mode::has_client;
 
 use crate::game_state::{GameScreen, Screen};
 

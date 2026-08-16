@@ -10,7 +10,7 @@ mod components;
 mod systems;
 
 use bevy::prelude::*;
-use bevymmo_shared::network::mode::has_client;
+use bevymmo_network::network::mode::has_client;
 
 use crate::game_state::{GameScreen, Screen};
 

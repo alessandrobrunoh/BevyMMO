@@ -3,8 +3,8 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-use bevymmo_shared::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
-use bevymmo_shared::network::protocol::Position;
+use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
+use bevymmo_network::network::protocol::Position;
 
 use crate::ui::bar::spawn_bar;
 use crate::ui::crowd_control_bar::components::{

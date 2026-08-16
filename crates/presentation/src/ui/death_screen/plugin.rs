@@ -1,7 +1,7 @@
 //! Plugin della death screen.
 
 use bevy::prelude::*;
-use bevymmo_shared::network::mode::has_client;
+use bevymmo_network::network::mode::has_client;
 
 use super::systems::{
     handle_respawn_button, setup_death_screen, update_death_screen_visibility,

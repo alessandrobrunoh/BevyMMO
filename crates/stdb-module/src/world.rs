@@ -3,7 +3,7 @@
 //! # How the map gets in here
 //!
 //! A WASM module has no filesystem, so the loader the native server used
-//! (`bevymmo_shared::world::loader`) cannot run. Instead `build.rs` parses every
+//! (`bevymmo_presentation::map_loader`) cannot run. Instead `build.rs` parses every
 //! `assets/maps/*.world.json` on the host and re-emits it as postcard under
 //! `OUT_DIR`; the generated table below is a list of `include_bytes!`, decoded
 //! once into a `OnceLock` the first time anything asks for a map.

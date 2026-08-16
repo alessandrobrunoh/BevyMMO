@@ -2,9 +2,9 @@
 
 use bevy::light::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
-use bevymmo_shared::entity::LocalPlayer;
+use bevymmo_client::local_player::LocalPlayer;
 
-use bevymmo_shared::network::protocol::Position;
+use bevymmo_network::network::protocol::Position;
 
 use crate::game_state::{GameScreen, Screen};
 
@@ -114,11 +114,11 @@ pub fn follow_controlled_player(
 /// CameraZoomOut actions within the defined limits.
 pub fn handle_camera_zoom(
     keyboard: Res<ButtonInput<KeyCode>>,
-    settings: Res<bevymmo_shared::user_settings::GameSettingsResource>,
+    settings: Res<bevymmo_client::user_settings::GameSettingsResource>,
     time: Res<Time>,
     mut zoom: ResMut<CameraZoom>,
 ) {
-    use bevymmo_shared::user_settings::KeyAction;
+    use bevymmo_client::user_settings::KeyAction;
 
     const ZOOM_SPEED: f32 = 10.0; // Units per second
 
@@ -195,7 +195,7 @@ mod tests {
     use super::*;
     use crate::renderer::RendererPlugin;
     use crate::scenes::base::BaseScenePlugin;
-    use bevymmo_shared::network::protocol::{EntityColor, Position};
+    use bevymmo_network::network::protocol::{EntityColor, Position};
 
     fn test_app() -> App {
         let mut app = App::new();
@@ -206,7 +206,7 @@ mod tests {
         // Without these the system fails parameter validation and aborts the
         // whole schedule, taking every test in this module with it.
         app.init_resource::<ButtonInput<KeyCode>>();
-        app.init_resource::<bevymmo_shared::user_settings::GameSettingsResource>();
+        app.init_resource::<bevymmo_client::user_settings::GameSettingsResource>();
         app.init_resource::<Time>();
         // `sync_transforms` reads the fixed-step overstep to interpolate.
         app.init_resource::<Time<Fixed>>();

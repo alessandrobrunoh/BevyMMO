@@ -9,9 +9,9 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 
 use bevymmo_client::network::types::ConnectedClient;
-use bevymmo_shared::abilities::{AbilityId, BaseAbilityRegistry};
-use bevymmo_shared::network::mode::has_client;
-use bevymmo_shared::network::protocol::{
+use bevymmo_gameplay::abilities::{AbilityId, BaseAbilityRegistry};
+use bevymmo_network::network::mode::has_client;
+use bevymmo_network::network::protocol::{
     NetworkEntityId, Position, SpellCastEnded, SpellCastProgress,
 };
 

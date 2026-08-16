@@ -19,7 +19,10 @@ lightyear = { workspace = true }
 serde = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
-bevymmo_shared = { path = "../../crates/shared" }
+bevymmo_app_support = { path = "../../crates/app-support" }
+bevymmo_network = { path = "../../crates/network" }
+bevymmo_gameplay = { path = "../../crates/gameplay", features = ["bevy"] }
+bevymmo_content = { path = "../../crates/content" }
 bevymmo_client = { path = "../../crates/client", optional = true }
 bevymmo_presentation = { path = "../../crates/presentation", optional = true }
 

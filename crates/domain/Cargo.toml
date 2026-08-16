@@ -8,7 +8,7 @@ repository.workspace = true
 # Game rules and data types, with no Bevy dependency.
 #
 # This crate is compiled twice with different targets: natively, as a dependency
-# of `bevymmo_shared` (the Bevy-facing layer), and to `wasm32-unknown-unknown` as
+# of the Bevy-facing client layers, and to `wasm32-unknown-unknown` as
 # a dependency of the SpacetimeDB module. Nothing in here may reach for Bevy, the
 # filesystem, threads, the clock, or the OS RNG — none of those exist inside the
 # module sandbox.
@@ -32,8 +32,8 @@ repository.workspace = true
 # The Bevy-side derives (`Component`, `Resource`, `Reflect`) are opt-in.
 #
 # The types below are the same on both sides of the wire, but only the client
-# puts them in an ECS. `bevymmo_shared` turns this on; the SpacetimeDB module
-# does not, and so never pulls `bevy_ecs` into a WASM build.
+# puts them in an ECS. The client gameplay feature turns this on; the
+# SpacetimeDB module does not, and so never pulls `bevy_ecs` into a WASM build.
 #
 # `bevy_ecs`/`bevy_reflect` are depended on directly rather than through the
 # `bevy` facade: the facade drags in windowing, rendering and asset crates that

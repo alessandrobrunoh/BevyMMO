@@ -26,9 +26,9 @@
 use bevy::camera::primitives::Aabb;
 use bevy::prelude::*;
 use bevy::reflect::Reflect;
-use bevymmo_shared::entity::LocalPlayer;
+use bevymmo_client::local_player::LocalPlayer;
 
-use bevymmo_shared::network::protocol::Position;
+use bevymmo_network::network::protocol::Position;
 
 use super::systems::GameCamera;
 use crate::world::MapSceneVisual;

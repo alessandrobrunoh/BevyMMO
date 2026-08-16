@@ -4,7 +4,7 @@ pub mod components;
 mod systems;
 
 use bevy::prelude::*;
-use bevymmo_shared::network::mode::has_client;
+use bevymmo_network::network::mode::has_client;
 
 pub struct CrowdControlBarPlugin;
 

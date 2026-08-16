@@ -2,8 +2,8 @@
 
 use bevy::prelude::*;
 
-use bevymmo_shared::network::mode;
-use bevymmo_shared::targeting::CurrentTarget;
+use bevymmo_network::network::mode;
+use crate::targeting::CurrentTarget;
 
 use crate::targeting::systems::{
     cleanup_invalid_target, clear_target_with_escape, select_target_with_right_click,

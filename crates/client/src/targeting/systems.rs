@@ -3,10 +3,10 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use bevymmo_shared::entity::components::GameEntity;
-use bevymmo_shared::network::protocol::Position;
-use bevymmo_shared::stats::components::VitalStats;
-use bevymmo_shared::targeting::CurrentTarget;
+use bevymmo_gameplay::entity::components::GameEntity;
+use bevymmo_network::network::protocol::Position;
+use bevymmo_gameplay::stats::components::VitalStats;
+use crate::targeting::CurrentTarget;
 
 const TARGETING_RADIUS: f32 = 1.2;
 
@@ -128,7 +128,7 @@ pub fn select_target_with_right_click(
 /// System to clear target with the configured "Clear Target" key.
 pub fn clear_target_with_escape(
     keyboard: Option<Res<ButtonInput<KeyCode>>>,
-    settings: Option<Res<bevymmo_shared::user_settings::GameSettingsResource>>,
+    settings: Option<Res<crate::user_settings::GameSettingsResource>>,
     mut current_target: ResMut<CurrentTarget>,
 ) {
     let Some(keyboard) = keyboard else {
@@ -138,7 +138,7 @@ pub fn clear_target_with_escape(
         return;
     };
 
-    if settings.just_pressed(bevymmo_shared::user_settings::KeyAction::ClearTarget, &keyboard) {
+    if settings.just_pressed(crate::user_settings::KeyAction::ClearTarget, &keyboard) {
         current_target.clear();
     }
 }

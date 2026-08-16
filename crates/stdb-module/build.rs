@@ -1,7 +1,7 @@
 //! Pre-compiles the authored map manifests into the module binary.
 //!
 //! The module runs in a WASM sandbox with no filesystem, so
-//! `bevymmo_shared::world::loader` — which reads `.world.json` off disk — is
+//! `bevymmo_presentation::map_loader` — which reads `.world.json` off disk — is
 //! unusable there. This build script runs on the **host**, where `std::fs` and
 //! `serde_json` do exist: it parses every `assets/maps/*.world.json` into a
 //! [`MapManifest`], re-emits it in a compact binary form under `OUT_DIR`, and

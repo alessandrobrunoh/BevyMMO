@@ -16,18 +16,18 @@ use std::f32::consts::TAU;
 
 use bevy::color::palettes::css;
 use bevy::prelude::*;
-use bevymmo_shared::abilities::base_ability::FORWARD_LANE_HALF_WIDTH;
-use bevymmo_shared::abilities::{
+use bevymmo_gameplay::abilities::base_ability::FORWARD_LANE_HALF_WIDTH;
+use bevymmo_gameplay::abilities::{
     resolve_slot_preview, AbilityAim, AbilityGeometry, BaseAbilityRegistry, KnownGlyphs,
     ModifierRegistry, SlotPreview,
 };
-use bevymmo_shared::entity::LocalPlayer;
-use bevymmo_shared::items::components::Equipment;
-use bevymmo_shared::items::registry::ItemRegistry;
-use bevymmo_shared::network::protocol::{LookDirection, Position};
-use bevymmo_shared::spells::context::{AoeShape, SpellCastContext};
-use bevymmo_shared::stats::components::CombatStats;
-use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_gameplay::items::components::Equipment;
+use bevymmo_gameplay::items::registry::ItemRegistry;
+use bevymmo_network::network::protocol::{LookDirection, Position};
+use bevymmo_gameplay::spells::context::{AoeShape, SpellCastContext};
+use bevymmo_gameplay::stats::components::CombatStats;
+use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::spells::ui::SpellHudState;
 
@@ -267,7 +267,7 @@ fn draw_forward_lane(
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use bevymmo_shared::abilities::AbilitySlot;
+    use bevymmo_gameplay::abilities::AbilitySlot;
 
 
     use super::*;
@@ -277,7 +277,7 @@ mod tests {
         app.init_resource::<ButtonInput<KeyCode>>();
         app.init_resource::<AbilityAim>();
         app.insert_resource(GameSettingsResource(
-            bevymmo_shared::user_settings::GameSettings::default(),
+            bevymmo_client::user_settings::GameSettings::default(),
         ));
         app.add_systems(Update, cancel_ability_aim_on_escape);
         app

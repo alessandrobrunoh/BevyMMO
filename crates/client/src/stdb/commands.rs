@@ -20,7 +20,7 @@
 //! - the callback carries the module's `Result<(), String>` — "inventory is
 //!   full", "target is out of range", "that name is taken". It arrives later, on
 //!   the SDK's thread, so it is pushed onto the same channel row changes use and
-//!   surfaces as a [`bevymmo_shared::server_feed::ServerNotice`].
+//!   surfaces as a [`crate::server_feed::ServerNotice`].
 //!
 //! The plain fire-and-forget forms reported only the first kind, which is why
 //! every carefully worded refusal in the module used to vanish.

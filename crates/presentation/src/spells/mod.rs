@@ -10,7 +10,7 @@ pub mod input;
 pub mod ui;
 
 use bevy::prelude::*;
-use bevymmo_shared::network::protocol::SpellVisualEffect;
+use bevymmo_network::network::protocol::SpellVisualEffect;
 
 /// Registers spell HUD, cast-bar and client visual systems.
 pub struct SpellsHudPlugin;
@@ -19,7 +19,7 @@ impl Plugin for SpellsHudPlugin {
     fn build(&self, app: &mut App) {
         ui::spell_hud_systems(app);
         cast_bar::cast_bar_systems(app);
-        app.init_resource::<bevymmo_shared::abilities::AbilityAim>();
+        app.init_resource::<bevymmo_gameplay::abilities::AbilityAim>();
 
         // `Escape` is bound to both `TogglePause` and `ClearTarget`: cancelling
         // an aim must claim the press before those two see it, otherwise
@@ -29,7 +29,7 @@ impl Plugin for SpellsHudPlugin {
             aim_preview::cancel_ability_aim_on_escape
                 .before(crate::ui::systems::toggle_pause)
                 .before(bevymmo_client::targeting::systems::clear_target_with_escape)
-                .run_if(bevymmo_shared::network::mode::has_client),
+                .run_if(bevymmo_network::network::mode::has_client),
         );
 
         app.add_systems(
@@ -47,7 +47,7 @@ impl Plugin for SpellsHudPlugin {
                 dispatch_visual_effects,
                 eidolon_effects::animate,
             )
-                .run_if(bevymmo_shared::network::mode::has_client),
+                .run_if(bevymmo_network::network::mode::has_client),
         );
     }
 }
@@ -57,10 +57,10 @@ fn dispatch_visual_effects(
     mut effects: MessageReader<SpellVisualEffect>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    abilities: Res<bevymmo_shared::abilities::BaseAbilityRegistry>,
+    abilities: Res<bevymmo_gameplay::abilities::BaseAbilityRegistry>,
 ) {
     for effect in effects.read() {
-        let ability = abilities.get(&bevymmo_shared::abilities::AbilityId::new(
+        let ability = abilities.get(&bevymmo_gameplay::abilities::AbilityId::new(
             effect.spell_id.clone(),
         ));
         match ability {

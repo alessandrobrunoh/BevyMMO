@@ -8,13 +8,13 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::Indices;
 use bevy::prelude::*;
 use bevy::render::render_resource::PrimitiveTopology;
-use bevymmo_shared::game_state::{GameScreen, Screen};
-use bevymmo_shared::movement::ClientSurfaceQuery;
-use bevymmo_shared::paths;
-use bevymmo_shared::placeables::{AssetHint, PlaceableRegistry};
-use bevymmo_shared::world::{
-    load_map_auto, CollisionGrid, MapManifest, Prop, SurfaceQuery, Terrain,
-};
+use crate::game_state::{GameScreen, Screen};
+use bevymmo_client::movement::ClientSurfaceQuery;
+use bevymmo_app_support::paths;
+use bevymmo_gameplay::placeables::{AssetHint, PlaceableRegistry};
+use bevymmo_world::{CollisionGrid, MapManifest, Prop, SurfaceQuery, Terrain};
+
+use crate::map_loader::load_map_auto;
 
 #[derive(Resource, Default)]
 pub struct ClientWorldMap {

@@ -26,8 +26,8 @@ mod tests {
     use super::*;
     use crate::game_state::{GameScreen, Screen};
     use crate::ui::theme::UiTheme;
-    use bevymmo_shared::entity::LocalPlayer;
-    use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
+    use bevymmo_client::local_player::LocalPlayer;
+    use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
 
     fn test_app() -> App {
         let mut app = App::new();

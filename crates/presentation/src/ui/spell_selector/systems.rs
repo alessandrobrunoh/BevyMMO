@@ -2,11 +2,11 @@ use super::components::*;
 use super::SpellSelectorUiState;
 use bevy::prelude::*;
 use bevymmo_client::stdb::{commands, StdbConnection};
-use bevymmo_shared::entity::LocalPlayer;
-use bevymmo_shared::items::components::Equipment;
-use bevymmo_shared::items::registry::ItemRegistry;
-use bevymmo_shared::items::AvailableSpellChoices;
-use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId, SpellRegistry};
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_gameplay::items::components::Equipment;
+use bevymmo_gameplay::items::registry::ItemRegistry;
+use bevymmo_gameplay::items::AvailableSpellChoices;
+use bevymmo_gameplay::spells::{HotbarSlot, SpellHotbar, SpellId, SpellRegistry};
 
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::UiTheme;

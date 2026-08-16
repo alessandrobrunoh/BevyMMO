@@ -19,16 +19,16 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
-use bevymmo_shared::abilities::{
+use bevymmo_gameplay::abilities::{
     resolve_active_ability, AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility, BaseAbilityRegistry,
 };
-use bevymmo_shared::entity::LocalPlayer;
-use bevymmo_shared::items::components::Equipment;
-use bevymmo_shared::items::registry::ItemRegistry;
-use bevymmo_shared::movement::ClientSurfaceQuery;
-use bevymmo_shared::network::protocol::{LookDirection, NetworkEntityId, Position};
-use bevymmo_shared::targeting::CurrentTarget;
-use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_gameplay::items::components::Equipment;
+use bevymmo_gameplay::items::registry::ItemRegistry;
+use bevymmo_client::movement::ClientSurfaceQuery;
+use bevymmo_network::network::protocol::{LookDirection, NetworkEntityId, Position};
+use bevymmo_client::targeting::CurrentTarget;
+use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::game_state::{GameScreen, Screen};
 use crate::spells::cast_bar::ObservedCasts;
@@ -65,7 +65,7 @@ pub fn cast_abilities_on_key(
         With<LocalPlayer>,
     >,
     observed_casts: Res<ObservedCasts>,
-    mut move_target: ResMut<bevymmo_shared::movement::MoveTarget>,
+    mut move_target: ResMut<bevymmo_client::movement::MoveTarget>,
     conn: Option<Res<StdbConnection>>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
@@ -130,12 +130,12 @@ pub fn cast_abilities_on_key(
         };
 
         match ability.cast_mode() {
-            bevymmo_shared::abilities::AbilityCastMode::Instant
-            | bevymmo_shared::abilities::AbilityCastMode::CastTime => {
+            bevymmo_gameplay::abilities::AbilityCastMode::Instant
+            | bevymmo_gameplay::abilities::AbilityCastMode::CastTime => {
                 // Open aim; the release below will confirm and send.
                 aim.begin(slot);
             }
-            bevymmo_shared::abilities::AbilityCastMode::Channeling { .. } => {
+            bevymmo_gameplay::abilities::AbilityCastMode::Channeling { .. } => {
                 // Channeling starts immediately on press — no aim window.
                 if hud_state.ability_on_cooldown(&ability_id) {
                     continue;
@@ -187,8 +187,8 @@ pub fn cast_abilities_on_key(
         };
 
         match ability.cast_mode() {
-            bevymmo_shared::abilities::AbilityCastMode::Instant
-            | bevymmo_shared::abilities::AbilityCastMode::CastTime => {
+            bevymmo_gameplay::abilities::AbilityCastMode::Instant
+            | bevymmo_gameplay::abilities::AbilityCastMode::CastTime => {
                 if aim.slot != Some(slot) {
                     continue;
                 }
@@ -232,7 +232,7 @@ pub fn cast_abilities_on_key(
                     });
                 }
             }
-            bevymmo_shared::abilities::AbilityCastMode::Channeling { .. } => {
+            bevymmo_gameplay::abilities::AbilityCastMode::Channeling { .. } => {
                 // Release ends the channel early.
                 let is_channeling_this = observed_casts
                     .0
@@ -258,8 +258,8 @@ pub fn cast_abilities_on_key(
 /// from the registry.
 fn active_ability(
     slot: AbilitySlot,
-    weapon_abilities: &bevymmo_shared::abilities::WeaponAbilities,
-    weapon: &bevymmo_shared::items::instance::ItemInstance,
+    weapon_abilities: &bevymmo_gameplay::abilities::WeaponAbilities,
+    weapon: &bevymmo_gameplay::items::instance::ItemInstance,
     ability_registry: &BaseAbilityRegistry,
 ) -> Option<(AbilityId, ArcBaseAbility)> {
     let ability_id = resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)?;
@@ -271,8 +271,8 @@ fn active_ability(
 ///
 /// Mirrors the server's logic so the client freezes instantly instead of
 /// waiting for the next `SpellCastProgress` (~100ms + RTT).
-fn stops_movement_for_ability(cast_mode: bevymmo_shared::abilities::AbilityCastMode) -> bool {
-    use bevymmo_shared::abilities::{AbilityCastMode, ChannelMovementPolicy};
+fn stops_movement_for_ability(cast_mode: bevymmo_gameplay::abilities::AbilityCastMode) -> bool {
+    use bevymmo_gameplay::abilities::{AbilityCastMode, ChannelMovementPolicy};
     match cast_mode {
         AbilityCastMode::Instant => false,
         AbilityCastMode::CastTime => true,

@@ -1,10 +1,10 @@
 //! Debug overlay showing the local player's replicated position.
 
 use bevy::prelude::*;
-use bevymmo_shared::entity::LocalPlayer;
+use bevymmo_client::local_player::LocalPlayer;
 
 use bevymmo_client::network::types::ClientConnectionConfig;
-use bevymmo_shared::network::protocol::{PlayerId, Position};
+use bevymmo_network::network::protocol::{PlayerId, Position};
 
 use crate::game_state::{GameScreen, Screen};
 use crate::ui::text::spawn_text;

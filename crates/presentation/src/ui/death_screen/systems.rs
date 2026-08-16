@@ -2,12 +2,12 @@
 
 use bevy::prelude::*;
 use bevymmo_client::stdb::{commands, StdbConnection};
-use bevymmo_shared::entity::LocalPlayer;
+use bevymmo_client::local_player::LocalPlayer;
 
 use bevymmo_client::network::types::ClientConnectionConfig;
-use bevymmo_shared::entity::components::EntityState;
-use bevymmo_shared::network::protocol::PlayerId;
-use bevymmo_shared::stats::components::VitalStats;
+use bevymmo_gameplay::entity::components::EntityState;
+use bevymmo_network::network::protocol::PlayerId;
+use bevymmo_gameplay::stats::components::VitalStats;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::ui::text::spawn_text;
@@ -192,8 +192,8 @@ mod tests {
     use super::*;
     use crate::game_state::{GameScreen, Screen};
     use crate::ui::theme::UiTheme;
-    use bevymmo_shared::entity::components::EntityState;
-    use bevymmo_shared::entity::LocalPlayer;
+    use bevymmo_gameplay::entity::components::EntityState;
+    use bevymmo_client::local_player::LocalPlayer;
 
     fn test_app() -> App {
         let mut app = App::new();

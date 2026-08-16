@@ -7,7 +7,7 @@ pub mod systems;
 pub mod weapon_detail;
 
 use bevy::prelude::*;
-use bevymmo_shared::network::mode::has_client;
+use bevymmo_network::network::mode::has_client;
 
 use crate::game_state::{GameScreen, Screen};
 use components::InventorySelection;

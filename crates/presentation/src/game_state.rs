@@ -1,6 +1,3 @@
-//! Client/presentation screen state.
-//!
-//! Re-exported from `bevymmo_shared`: the source of truth lives in the shared
-//! crate so both client transport and presentation can read the same resources.
+//! Client application state consumed by presentation systems.
 
-pub use bevymmo_shared::game_state::*;
+pub use bevymmo_client::app_state::*;

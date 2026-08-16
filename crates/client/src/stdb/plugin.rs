@@ -32,20 +32,20 @@ use bevymmo_domain::stats::modifiers::{
     ActiveStatModifiers, ModifierEffectInstance, ModifierId as StatModifierId, StatModifierInstance,
 };
 use bevymmo_domain::EntityId;
-use bevymmo_shared::abilities::{AncientWordId, EssenceId, KnownGlyphs, ModifierId};
-use bevymmo_shared::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
-use bevymmo_shared::entity::boss::components::{Boss, BossArena, BossPhase};
-use bevymmo_shared::entity::components::{EntityKind, EntityState, GameEntity, PlayerName};
-use bevymmo_shared::entity::LocalPlayer;
-use bevymmo_shared::game_state::{
+use bevymmo_gameplay::abilities::{AncientWordId, EssenceId, KnownGlyphs, ModifierId};
+use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
+use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
+use bevymmo_gameplay::entity::components::{EntityKind, EntityState, GameEntity, PlayerName};
+use crate::local_player::LocalPlayer;
+use crate::app_state::{
     ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen, Screen,
 };
-use bevymmo_shared::items::components::{Equipment, Inventory};
-use bevymmo_shared::movement::{resolve_ray_to_ground, ClientSurfaceQuery};
-use bevymmo_shared::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
-use bevymmo_shared::server_feed::{ServerNotice, SpellCooldownState};
-use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
-use bevymmo_shared::world_components::{
+use bevymmo_gameplay::items::components::{Equipment, Inventory};
+use crate::movement::{resolve_ray_to_ground, ClientSurfaceQuery};
+use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
+use crate::server_feed::{ServerNotice, SpellCooldownState};
+use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
+use bevymmo_network::world_components::{
     EntityColor, LookDirection, NetworkEntityId, Position, ProjectileVisual,
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -319,22 +319,6 @@ impl Plugin for StdbPlugin {
 /// since the character is keyed by identity, a brand-new character.
 fn credential_store() -> credentials::File {
     credentials::File::new("bevymmo")
-}
-
-fn clear_cached_token() {
-    let Some(home) = dirs::home_dir() else {
-        warn!("could not determine the home directory to clear the SpacetimeDB token");
-        return;
-    };
-    let path = home.join(".spacetimedb_client_credentials/bevymmo");
-    match std::fs::remove_file(&path) {
-        Ok(()) => info!("cleared cached SpacetimeDB identity"),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => warn!(
-            "could not clear cached SpacetimeDB token at {}: {err}",
-            path.display()
-        ),
-    }
 }
 
 fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error::Error>> {
@@ -1108,7 +1092,7 @@ fn inventory_from(slots: &[Option<ItemInstanceRow>]) -> Inventory {
 }
 
 fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
-    use bevymmo_shared::items::EquipSlot;
+    use bevymmo_gameplay::items::EquipSlot;
     // Same order the module writes them in; see `rows::EQUIP_SLOTS`.
     const ORDER: [EquipSlot; 10] = [
         EquipSlot::Bag,
@@ -1129,12 +1113,12 @@ fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
     equipment
 }
 
-fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_shared::items::instance::ItemInstance {
-    use bevymmo_shared::abilities::inscription::{Inscription, WeaponInscriptions};
-    use bevymmo_shared::abilities::weapon_abilities::AbilitySelection;
-    use bevymmo_shared::abilities::{AbilityId, AncientWordId, EssenceId, ModifierId};
-    use bevymmo_shared::items::instance::{ItemInstance, ItemInstanceId};
-    use bevymmo_shared::items::registry::ItemId;
+fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instance::ItemInstance {
+    use bevymmo_gameplay::abilities::inscription::{Inscription, WeaponInscriptions};
+    use bevymmo_gameplay::abilities::weapon_abilities::AbilitySelection;
+    use bevymmo_gameplay::abilities::{AbilityId, AncientWordId, EssenceId, ModifierId};
+    use bevymmo_gameplay::items::instance::{ItemInstance, ItemInstanceId};
+    use bevymmo_gameplay::items::registry::ItemId;
 
     let inscription = |i: &super::module_bindings::InscriptionRow| Inscription {
         essence: i.essence.clone().map(EssenceId::new),
@@ -1198,7 +1182,10 @@ fn join_on_request(
             if let Err(err) = conn.conn.disconnect() {
                 warn!("could not disconnect during logout: {err}");
             }
-            clear_cached_token();
+            // Keep the cached token: logout returns to the main menu, not to a
+            // fresh account. Clearing it here would mint a new `Identity` on
+            // reconnect, orphaning the character under the old identity and
+            // making its name unusable ("name is taken") on the next join.
             clear_replicated_state(&mut commands, &mut map, &mut pending);
 
             match connect(&config.uri, &config.module) {

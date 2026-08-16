@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevymmo_shared::abilities::AbilitySlot;
+use bevymmo_gameplay::abilities::AbilitySlot;
 
 #[derive(Component)]
 pub struct InscriptionWindow;

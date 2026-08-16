@@ -1,7 +1,7 @@
 //! Client-side mirror of the server's `AvailableSpellChoices` recomputation.
 //!
 //! `AvailableSpellChoices` is not replicated (see its doc comment in
-//! `bevymmo_shared::items::available_spells`): `Equipment` already is, and
+//! `bevymmo_gameplay::items::available_spells`): `Equipment` already is, and
 //! `ItemRegistry` is populated identically on both sides at `Startup`, so the
 //! client derives the exact same value locally instead of waiting on a
 //! network round trip. This system only maintains the read side for the
@@ -20,11 +20,11 @@
 //! a freshly spawned/replicated player entity.
 
 use bevy::prelude::*;
-use bevymmo_shared::entity::LocalPlayer;
+use bevymmo_client::local_player::LocalPlayer;
 
-use bevymmo_shared::items::components::Equipment;
-use bevymmo_shared::items::registry::ItemRegistry;
-use bevymmo_shared::items::{compute_available_choices, AvailableSpellChoices};
+use bevymmo_gameplay::items::components::Equipment;
+use bevymmo_gameplay::items::registry::ItemRegistry;
+use bevymmo_gameplay::items::{compute_available_choices, AvailableSpellChoices};
 
 pub fn sync_available_spell_choices(
     mut commands: Commands,

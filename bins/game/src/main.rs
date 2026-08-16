@@ -5,9 +5,10 @@ use bevy::window::PresentMode;
 use clap::{Parser, Subcommand};
 use core::time::Duration;
 
-use bevymmo_shared::paths;
-use bevymmo_shared::settings::Settings;
-use bevymmo_shared::{game_state, network::mode};
+use bevymmo_app_support::paths;
+use bevymmo_app_support::settings::Settings;
+use bevymmo_client::app_state as game_state;
+use bevymmo_network::network::mode;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -80,25 +81,25 @@ fn build_app(config: &AppConfig) -> App {
     // Local Bevy messages/resources used by client presentation systems. The
     // Lightyear protocol registration alone does not initialize the local
     // message queue or the shared spell registry.
-    app.add_message::<bevymmo_shared::network::protocol::SpellVisualEffect>();
-    app.add_message::<bevymmo_shared::network::protocol::SpellCastProgress>();
-    app.add_message::<bevymmo_shared::network::protocol::SpellCastEnded>();
+    app.add_message::<bevymmo_network::network::protocol::SpellVisualEffect>();
+    app.add_message::<bevymmo_network::network::protocol::SpellCastProgress>();
+    app.add_message::<bevymmo_network::network::protocol::SpellCastEnded>();
     // Written by the SpacetimeDB bridge, read by the presentation: the server's
     // refusals and announcements, and the authoritative cooldown table.
-    app.add_message::<bevymmo_shared::server_feed::ServerNotice>();
-    app.add_message::<bevymmo_shared::server_feed::SpellCooldownState>();
+    app.add_message::<bevymmo_client::server_feed::ServerNotice>();
+    app.add_message::<bevymmo_client::server_feed::SpellCooldownState>();
     // Game content. These used to be empty `Resource`s filled by `Startup`
     // systems; they are plain values now, because the SpacetimeDB module needs
     // the same registries and has no ECS to build them in. Inserting them
     // directly also removes a startup-ordering hazard: nothing can read a
     // registry before the system that populates it has run, because there is no
     // such system.
-    app.insert_resource(bevymmo_shared::content::spells::default_spells());
-    app.insert_resource(bevymmo_shared::content::items::default_items());
-    app.insert_resource(bevymmo_shared::content::abilities::default_base_abilities());
-    app.insert_resource(bevymmo_shared::content::essences::default_essences());
-    app.insert_resource(bevymmo_shared::content::modifiers::default_modifiers());
-    app.insert_resource(bevymmo_shared::content::ancient_words::default_ancient_words());
+    app.insert_resource(bevymmo_content::spell_definitions::default_spells());
+    app.insert_resource(bevymmo_content::item_definitions::default_items());
+    app.insert_resource(bevymmo_content::ability_definitions::default_base_abilities());
+    app.insert_resource(bevymmo_content::essence_definitions::default_essences());
+    app.insert_resource(bevymmo_content::modifier_definitions::default_modifiers());
+    app.insert_resource(bevymmo_content::ancient_word_definitions::default_ancient_words());
 
     #[cfg(feature = "client")]
     if config.mode.has_client() {

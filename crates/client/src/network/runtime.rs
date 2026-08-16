@@ -1,5 +1,6 @@
+use crate::local_player::LocalPlayer;
 use bevy::prelude::*;
-use bevymmo_shared::network::protocol::{
+use bevymmo_network::network::protocol::{
     EntityColor, Inputs, PlayerId, PlayerMessage, SpellVisualEffect,
 };
 use lightyear::prelude::input::native::ActionState;
@@ -26,7 +27,7 @@ pub struct PendingClientCleanup;
 /// Reduces saturation on predicted entities so the local player is visually distinct.
 pub fn handle_predicted_spawn(
     trigger: On<Add, (PlayerId, Predicted)>,
-    mut predicted: Query<&mut EntityColor, Without<Controlled>>,
+    mut predicted: Query<&mut EntityColor, Without<LocalPlayer>>,
 ) {
     if let Ok(mut color) = predicted.get_mut(trigger.entity) {
         let hsva = Hsva {
@@ -38,7 +39,7 @@ pub fn handle_predicted_spawn(
 }
 
 /// Reduces saturation of the controlled (local) player even further.
-pub fn lower_controlled_saturation(mut controlled: Query<&mut EntityColor, Added<Controlled>>) {
+pub fn lower_controlled_saturation(mut controlled: Query<&mut EntityColor, Added<LocalPlayer>>) {
     for mut color in controlled.iter_mut() {
         let hsva = Hsva {
             saturation: 0.2,
@@ -55,7 +56,7 @@ pub fn lower_controlled_saturation(mut controlled: Query<&mut EntityColor, Added
 /// makes the native input plugin build redundant tick sequences and can cause
 /// an unbounded allocation when its tick range wraps.
 pub fn handle_controlled_spawn(
-    trigger: On<Add, Controlled>,
+    trigger: On<Add, LocalPlayer>,
     mut commands: Commands,
     players: Query<&PlayerId, Without<ActionState<Inputs>>>,
 ) {

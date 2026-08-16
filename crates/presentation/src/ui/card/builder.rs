@@ -13,6 +13,7 @@ use super::components::{
     CardBody, CardExclusivityPolicy, CardFooter, CardHeader, CardHeaderDragHandle, CardKind,
     CardPositioning, CardWindow, CloseCardButton, DraggableCard,
 };
+use crate::ui::scrollbar::spawn_scroll_view;
 use crate::ui::theme::UiTheme;
 
 /// Default card geometry. Callers override via [`CardBuilder::width`] /
@@ -20,10 +21,24 @@ use crate::ui::theme::UiTheme;
 pub const DEFAULT_CARD_WIDTH: f32 = 520.0;
 pub const DEFAULT_CARD_HEIGHT: f32 = 360.0;
 const HEADER_HEIGHT: f32 = 44.0;
+
+/// Font size for a card's header title.
+///
+/// Deliberately not `theme.title_font_size`: that one is sized for a full
+/// screen title (40 px) and does not fit a 44 px card header — a two-word item
+/// name wrapped onto a second line and spilled over the close button.
+const CARD_TITLE_FONT_SIZE: f32 = 22.0;
+
+/// The title has to fit the header on a single line. Checked at compile time
+/// rather than in a `#[test]`: both sides are constants, so a runtime assert
+/// adds nothing (and clippy rightly flags it).
+const _: () = assert!(CARD_TITLE_FONT_SIZE < HEADER_HEIGHT);
 const INNER_PADDING: f32 = 14.0;
 const HEADER_BOTTOM_GAP: f32 = 12.0;
 /// Gap between a `CardPositioning::Right` card and the right edge of the viewport.
 const RIGHT_EDGE_GAP: f32 = 40.0;
+/// Gap between a `CardPositioning::Left` card and the left edge of the viewport.
+const LEFT_EDGE_GAP: f32 = 40.0;
 
 /// Layout variant for the close button inside the header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -48,6 +63,7 @@ pub struct CardBuilder<'a> {
     exclusivity: CardExclusivityPolicy,
     positioning: CardPositioning,
     draggable: bool,
+    scrollable: bool,
     body: CardContentSpawner<'a>,
     footer: Option<CardContentSpawner<'a>>,
 }
@@ -64,6 +80,7 @@ impl<'a> CardBuilder<'a> {
             exclusivity: CardExclusivityPolicy::default(),
             positioning: CardPositioning::Center,
             draggable: false,
+            scrollable: false,
             body: Box::new(|_| {}),
             footer: None,
         }
@@ -90,6 +107,16 @@ impl<'a> CardBuilder<'a> {
     /// Enables dragging the card window around by holding its header.
     pub fn draggable(mut self) -> Self {
         self.draggable = true;
+        self
+    }
+
+    /// Puts the body inside a scroll view (mouse wheel + draggable thumb).
+    ///
+    /// Without this, a body taller than the card does not clip: it draws
+    /// straight over the world outside the card's own background, and whatever
+    /// falls past the footer is simply unreachable.
+    pub fn scrollable(mut self) -> Self {
+        self.scrollable = true;
         self
     }
 
@@ -140,6 +167,7 @@ impl<'a> CardBuilder<'a> {
             exclusivity,
             positioning,
             draggable,
+            scrollable,
             body,
             footer,
         } = self;
@@ -165,6 +193,7 @@ impl<'a> CardBuilder<'a> {
                 _ => (Val::Px(0.0), Val::Px(0.0), Val::Auto),
             },
             CardPositioning::Right => (Val::Auto, Val::Px(RIGHT_EDGE_GAP), Val::Auto),
+            CardPositioning::Left => (Val::Px(LEFT_EDGE_GAP), Val::Auto, Val::Auto),
         };
         let margin = UiRect {
             left: margin_left,
@@ -173,7 +202,7 @@ impl<'a> CardBuilder<'a> {
             bottom: Val::Auto,
         };
 
-        let mut card_entity = commands.spawn((
+        let mut card_root_cmd = commands.spawn((
             Node {
                 position_type: PositionType::Absolute,
                 width,
@@ -201,48 +230,66 @@ impl<'a> CardBuilder<'a> {
         ));
 
         if draggable {
-            card_entity.insert(DraggableCard);
+            card_root_cmd.insert(DraggableCard);
         }
 
-        card_entity
-            .with_children(|card_root| {
-                spawn_header(card_root, kind, layout, &title, &header_style, draggable);
+        // The body content is filled in *after* this block: a scrollable body
+        // needs `&mut Commands`, which `card_root_cmd` is holding borrowed.
+        let mut body_container = Entity::PLACEHOLDER;
+        card_root_cmd.with_children(|card_root| {
+            spawn_header(card_root, kind, layout, &title, &header_style);
 
+            body_container = card_root
+                .spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        // Without this the body reports its full content height
+                        // to the flex layout and pushes the footer out of the
+                        // card instead of scrolling inside it.
+                        min_height: Val::Px(0.0),
+                        flex_direction: FlexDirection::Column,
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    CardBody,
+                ))
+                .id();
+
+            if let Some(footer_fn) = footer {
                 card_root
                     .spawn((
                         Node {
                             width: Val::Percent(100.0),
-                            flex_grow: 1.0,
-                            flex_direction: FlexDirection::Column,
+                            flex_direction: FlexDirection::Row,
+                            column_gap: Val::Px(8.0),
+                            padding: UiRect::top(Val::Px(8.0)),
+                            border: UiRect::top(Val::Px(1.0)),
+                            flex_shrink: 0.0,
                             ..default()
                         },
-                        CardBody,
+                        BorderColor {
+                            top: Color::srgba(1.0, 1.0, 1.0, 0.1),
+                            right: Color::NONE,
+                            bottom: Color::NONE,
+                            left: Color::NONE,
+                        },
+                        CardFooter,
                     ))
-                    .with_children(body);
+                    .with_children(footer_fn);
+            }
+        });
+        let card_id = card_root_cmd.id();
 
-                if let Some(footer_fn) = footer {
-                    card_root
-                        .spawn((
-                            Node {
-                                width: Val::Percent(100.0),
-                                flex_direction: FlexDirection::Row,
-                                column_gap: Val::Px(8.0),
-                                padding: UiRect::top(Val::Px(8.0)),
-                                border: UiRect::top(Val::Px(1.0)),
-                                ..default()
-                            },
-                            BorderColor {
-                                top: Color::srgba(1.0, 1.0, 1.0, 0.1),
-                                right: Color::NONE,
-                                bottom: Color::NONE,
-                                left: Color::NONE,
-                            },
-                            CardFooter,
-                        ))
-                        .with_children(footer_fn);
-                }
-            })
-            .id()
+        if scrollable {
+            spawn_scroll_view(commands, body_container, theme, |commands| {
+                commands.spawn(Node::default()).with_children(body).id()
+            });
+        } else {
+            commands.entity(body_container).with_children(body);
+        }
+
+        card_id
     }
 }
 
@@ -252,13 +299,13 @@ fn spawn_header(
     layout: CardLayout,
     title: &str,
     style: &HeaderStyle,
-    draggable: bool,
 ) {
     let mut header_cmd = parent.spawn((
         Button,
         Node {
             width: Val::Percent(100.0),
             height: Val::Px(HEADER_HEIGHT),
+            flex_shrink: 0.0,
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
             justify_content: JustifyContent::SpaceBetween,
@@ -270,41 +317,33 @@ fn spawn_header(
         CardHeader,
     ));
 
-    if draggable {
-        header_cmd.insert(CardHeaderDragHandle);
-    }
+    // The whole header is the drag handle, so it carries the marker whether or
+    // not the card is draggable-decorated. There used to be a `≡` glyph here
+    // too; Bevy's built-in font is an ASCII subset, so it rendered as a blank
+    // box rather than a grip.
+    header_cmd.insert(CardHeaderDragHandle);
 
     header_cmd.with_children(|header| {
-        let title_text = title.to_string();
-
-        header
-            .spawn((Node {
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(8.0),
+        header.spawn((
+            Text::new(title.to_string()),
+            TextFont {
+                font_size: FontSize::Px(style.title_font_size),
                 ..default()
-            },))
-            .with_children(|title_node| {
-                if draggable {
-                    title_node.spawn((
-                        Text::new("≡".to_string()),
-                        TextFont {
-                            font_size: FontSize::Px(style.title_font_size * 1.1),
-                            ..default()
-                        },
-                        TextColor(Color::srgba(0.7, 0.75, 0.85, 0.8)),
-                    ));
-                }
-
-                title_node.spawn((
-                    Text::new(title_text),
-                    TextFont {
-                        font_size: FontSize::Px(style.title_font_size),
-                        ..default()
-                    },
-                    TextColor(style.text_color),
-                ));
-            });
+            },
+            TextColor(style.text_color),
+            // A long item name must be cut, never wrapped: the header has a
+            // fixed height, so a second line draws straight over the body and
+            // over the close button.
+            TextLayout {
+                linebreak: LineBreak::NoWrap,
+                ..default()
+            },
+            Node {
+                flex_shrink: 1.0,
+                overflow: Overflow::clip_x(),
+                ..default()
+            },
+        ));
 
         if layout == CardLayout::WithClose {
             spawn_close_button(header, kind, style);
@@ -350,7 +389,7 @@ struct HeaderStyle {
 impl HeaderStyle {
     fn from_theme(theme: &UiTheme) -> Self {
         Self {
-            title_font_size: theme.title_font_size,
+            title_font_size: CARD_TITLE_FONT_SIZE,
             button_font_size: theme.button_font_size,
             text_color: theme.text_color,
             button_bg: theme.button_bg,
@@ -399,6 +438,82 @@ mod tests {
         let world = app.world_mut();
         let mut footers = world.query::<&CardFooter>();
         assert_eq!(footers.iter(world).count(), 0);
+    }
+
+    /// The regression: a body taller than the card drew straight over the world
+    /// outside the card background, and everything past the footer was
+    /// unreachable. A scrollable card must put its content behind a viewport.
+    #[test]
+    fn scrollable_card_wraps_its_body_in_a_scroll_view() {
+        use crate::ui::scrollbar::{ScrollContent, ScrollView};
+
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        CardBuilder::new(CardKind::ItemDetail, "Tall")
+            .scrollable()
+            .with_body(|body| {
+                body.spawn(Text::new("line"));
+            })
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let world = app.world_mut();
+        let mut views = world.query::<&ScrollView>();
+        assert_eq!(views.iter(world).count(), 1, "one viewport per scroll body");
+
+        let world = app.world_mut();
+        let mut contents = world.query::<&ScrollContent>();
+        assert_eq!(contents.iter(world).count(), 1);
+    }
+
+    /// A plain card must stay exactly as it was: no viewport, body content
+    /// parented straight to `CardBody`.
+    #[test]
+    fn a_non_scrollable_card_has_no_scroll_view() {
+        use crate::ui::scrollbar::ScrollView;
+
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        CardBuilder::new(CardKind::Generic, "Plain")
+            .with_body(|body| {
+                body.spawn(Text::new("line"));
+            })
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let world = app.world_mut();
+        let mut views = world.query::<&ScrollView>();
+        assert_eq!(views.iter(world).count(), 0);
+    }
+
+    /// The header has a fixed height, so a title that wraps draws over the body
+    /// and over the close button — as "Magic Staff" did at the 40 px screen
+    /// title size. It must be laid out no-wrap, at a size that fits.
+    #[test]
+    fn header_title_never_wraps_and_fits_the_header() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        CardBuilder::new(CardKind::ItemDetail, "A Very Long Item Name Indeed")
+            .closeable()
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let world = app.world_mut();
+        let mut titles = world.query::<(&Text, &TextLayout)>();
+        let (_, layout) = titles
+            .iter(world)
+            .find(|(text, _)| text.0.starts_with("A Very Long"))
+            .expect("header title spawned");
+        assert_eq!(layout.linebreak, LineBreak::NoWrap);
     }
 
     #[test]
@@ -458,6 +573,28 @@ mod tests {
         let node = app.world().get::<Node>(entity).expect("card node");
         assert_eq!(node.right, Val::Px(RIGHT_EDGE_GAP));
         assert_eq!(node.left, Val::Auto);
+        // Vertically centred like any other card.
+        assert_eq!(node.top, Val::Percent(50.0));
+        assert_eq!(node.margin.top, Val::Px(-150.0));
+    }
+
+    #[test]
+    fn left_positioned_card_anchors_to_the_left_edge() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        let entity = CardBuilder::new(CardKind::Inventory, "Inventory")
+            .width(Val::Px(400.0))
+            .height(Val::Px(300.0))
+            .positioning(CardPositioning::Left)
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let node = app.world().get::<Node>(entity).expect("card node");
+        assert_eq!(node.left, Val::Px(LEFT_EDGE_GAP));
+        assert_eq!(node.right, Val::Auto);
         // Vertically centred like any other card.
         assert_eq!(node.top, Val::Percent(50.0));
         assert_eq!(node.margin.top, Val::Px(-150.0));

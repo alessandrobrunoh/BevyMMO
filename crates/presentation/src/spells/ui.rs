@@ -1,45 +1,32 @@
-//! Client-only modular spell HUD.
+//! Client-only modular ability HUD for Eidolon weapons.
 //!
-//! UI isolata e data-driven per mostrare spell/keybind/cooldown.
-//! Per rimuoverla basta togliere `spell_hud_systems(app)` dal `SpellsPlugin`
-//! e cancellare questo file.
+//! Data-driven UI showing weapon ability slots (Q/W/E), keybinds and cooldowns.
+//! Entries are derived exclusively from `WeaponAbilities`; the legacy
+//! `SpellHotbar` / `SpellRegistry` path is no longer used for player input.
 
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-use bevymmo_client::network::types::ConnectedClient;
-use bevymmo_shared::abilities::{
+use bevymmo_gameplay::abilities::{
     resolve_active_ability, AbilityId, AbilitySlot, BaseAbilityRegistry, EssenceRegistry,
 };
-use bevymmo_shared::items::components::Equipment;
-use bevymmo_shared::items::registry::ItemRegistry;
-use bevymmo_shared::movement::MoveTarget;
-use bevymmo_shared::network::mode::has_client;
-use bevymmo_shared::network::protocol::{
-    Channel2, LookDirection, NetworkEntityId, Position, SpellCastCommand,
-};
-use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId};
-use bevymmo_shared::targeting::CurrentTarget;
-use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
-use lightyear::prelude::{Controlled, MessageSender};
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_gameplay::items::components::Equipment;
+use bevymmo_gameplay::items::registry::ItemRegistry;
+use bevymmo_network::network::mode::has_client;
+use bevymmo_network::network::protocol::NetworkEntityId;
+use bevymmo_client::server_feed::SpellCooldownState;
+use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::game_state::{GameScreen, Screen};
-use crate::spells::cursor::{cursor_ground_point, flat_direction_towards};
-use crate::spells::input::stops_movement_for_cast;
 use crate::ui::theme::UiTheme;
 
 /// What a HUD cooldown countdown is keyed by.
 ///
-/// The two cast pipelines name what they fire differently: the classic hotbar
-/// sends a `SpellId`, while an Eidolon weapon sends a *slot* that resolves to
-/// an `AbilityId` (the gesture) — see `crate::spells::eidolon_input`. Keying
-/// the countdown by the union of the two lets one timer and one label path
-/// serve both. Before this existed the HUD tracked spells only, so equipping
-/// an Eidolon weapon made the cooldown disappear from Q/W/E entirely: those
-/// entries carry no `SpellId` at all.
+/// Only `AbilityId` exists now — the legacy `SpellId` variant was removed when
+/// player input consolidated onto the Eidolon pipeline.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HudCooldownKey {
-    Spell(SpellId),
     Ability(AbilityId),
 }
 
@@ -57,11 +44,9 @@ pub struct SpellHudState {
 #[derive(Resource, Default)]
 struct SpellHudLayoutState {
     initialized: bool,
-    /// `(slot, spell_id, key_label, display_name)` — `display_name` is
-    /// included (not derivable from `spell_id` alone) so the HUD also
-    /// rebuilds when an Eidolon weapon's Incisione changes, even though
-    /// `spell_id` stays `None` throughout that case.
-    signature: Vec<(HotbarSlot, Option<SpellId>, String, String)>,
+    /// `(ability_slot, ability_id, key_label, display_name)` — rebuilds the HUD
+    /// when any of these change (e.g. weapon swap or Incisione rewrite).
+    signature: Vec<(AbilitySlot, Option<AbilityId>, String, String)>,
 }
 
 impl SpellHudState {
@@ -76,11 +61,6 @@ impl SpellHudState {
             .is_some_and(|remaining| *remaining > 0.0)
     }
 
-    /// Convenience for the classic hotbar pipeline.
-    pub fn spell_on_cooldown(&self, id: &SpellId) -> bool {
-        self.is_on_cooldown(&HudCooldownKey::Spell(id.clone()))
-    }
-
     /// Convenience for the Eidolon pipeline.
     pub fn ability_on_cooldown(&self, id: &AbilityId) -> bool {
         self.is_on_cooldown(&HudCooldownKey::Ability(id.clone()))
@@ -92,10 +72,6 @@ struct SpellHudRoot;
 
 #[derive(Component, Clone)]
 struct SpellHudEntry {
-    /// Set only for classic hotbar spells. An Eidolon gesture is cast by
-    /// *slot*, not by id, so `cast_spell_from_hud_click` deliberately no-ops
-    /// when this is `None`.
-    spell_id: Option<SpellId>,
     /// What this entry's countdown is keyed by — `None` only for an empty slot.
     cooldown_key: Option<HudCooldownKey>,
     display_name: String,
@@ -109,7 +85,13 @@ pub fn spell_hud_systems(app: &mut App) {
     app.add_systems(Startup, setup_spell_hud.run_if(has_client));
     app.add_systems(
         Update,
-        (sync_spell_hud, cast_spell_from_hud_click, update_spell_hud)
+        (
+            sync_spell_hud,
+            // Before `update_spell_hud` counts down: the server's number wins
+            // for this frame rather than the frame after.
+            adopt_server_cooldowns,
+            update_spell_hud,
+        )
             .chain()
             .run_if(has_client)
             .run_if(in_gameplay_or_paused),
@@ -129,6 +111,7 @@ fn in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
 fn not_in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
     !in_gameplay_or_paused(screen)
 }
+
 fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
     commands.spawn((
         Node {
@@ -147,8 +130,7 @@ fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
 
 /// Reads the equipped weapon's active Eidolon gesture for `slot` — its
 /// `AbilityId` and the label to show — if the weapon has Eidolon abilities at
-/// all. `None` means this weapon uses the classic `SpellHotbar` model instead
-/// and `sync_spell_hud` falls back to that.
+/// all. `None` means this weapon offers nothing for that slot.
 ///
 /// The id is returned alongside the label because it is what the countdown is
 /// keyed by: the gesture, not the Essence inscribed over it (an Incisione can
@@ -184,16 +166,15 @@ fn eidolon_hud_entry(
 fn sync_spell_hud(
     mut commands: Commands,
     theme: Res<UiTheme>,
-    registry: Res<bevymmo_shared::spells::SpellRegistry>,
     settings: Res<GameSettingsResource>,
     mut layout_state: ResMut<SpellHudLayoutState>,
-    player_query: Query<(&SpellHotbar, &Equipment), With<lightyear::prelude::Controlled>>,
+    player_query: Query<&Equipment, With<LocalPlayer>>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
     essence_registry: Res<EssenceRegistry>,
     hud_query: Query<Entity, With<SpellHudRoot>>,
 ) {
-    let Ok((hotbar, equipment)) = player_query.single() else {
+    let Ok(equipment) = player_query.single() else {
         return;
     };
     let Ok(root_entity) = hud_query.single() else {
@@ -203,12 +184,12 @@ fn sync_spell_hud(
     let mut signature = Vec::new();
     let mut entries = Vec::new();
 
-    // Map each hotbar slot to its rebindable action and read the current
+    // Map each ability slot to its rebindable action and read the current
     // binding label from the settings resource so the HUD reflects rebinding.
-    for (slot, ability_slot, action) in [
-        (HotbarSlot::Q, AbilitySlot::Primary, KeyAction::CastSpellQ),
-        (HotbarSlot::W, AbilitySlot::Secondary, KeyAction::CastSpellW),
-        (HotbarSlot::E, AbilitySlot::Ultimate, KeyAction::CastSpellE),
+    for (ability_slot, action) in [
+        (AbilitySlot::Primary, KeyAction::CastSpellQ),
+        (AbilitySlot::Secondary, KeyAction::CastSpellW),
+        (AbilitySlot::Ultimate, KeyAction::CastSpellE),
     ] {
         let eidolon = eidolon_hud_entry(
             ability_slot,
@@ -218,36 +199,22 @@ fn sync_spell_hud(
             &essence_registry,
         );
 
-        // An Eidolon weapon's gesture isn't a `SpellId` at all — leave it
-        // `None` so `cast_spell_from_hud_click` (which only acts when
-        // `spell_id` is `Some`) safely no-ops on this entry.
-        let spell_id = if eidolon.is_some() {
-            None
-        } else {
-            hotbar.spell_for_slot(slot).cloned()
-        };
-        let (cooldown_key, display_name) = match eidolon {
-            Some((ability_id, label)) => (Some(HudCooldownKey::Ability(ability_id)), label),
-            None => {
-                let label = spell_id
-                    .as_ref()
-                    .and_then(|id| registry.get(id))
-                    .map(|spell_def| spell_def.display_name().to_string())
-                    .unwrap_or_else(|| "Empty".to_string());
-                let key = spell_id.clone().map(HudCooldownKey::Spell);
-                (key, label)
-            }
+        let (cooldown_key, display_name) = match &eidolon {
+            Some((ability_id, label)) => (
+                Some(HudCooldownKey::Ability(ability_id.clone())),
+                label.clone(),
+            ),
+            None => (None, "Empty".to_string()),
         };
         let key_label = settings.0.keybinds.get(action).label();
 
         signature.push((
-            slot,
-            spell_id.clone(),
+            ability_slot,
+            eidolon.as_ref().map(|(id, _)| id.clone()),
             key_label.clone(),
             display_name.clone(),
         ));
         entries.push(SpellHudEntry {
-            spell_id,
             cooldown_key,
             display_name,
             key_label,
@@ -266,7 +233,6 @@ fn sync_spell_hud(
         for entry in entries {
             parent
                 .spawn((
-                    Button,
                     Node {
                         padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
                         ..default()
@@ -289,65 +255,38 @@ fn sync_spell_hud(
     });
 }
 
-fn cast_spell_from_hud_click(
-    interactions: Query<(&Interaction, &SpellHudEntry), (Changed<Interaction>, With<Button>)>,
-    hud_state: Res<SpellHudState>,
-    current_target: Res<CurrentTarget>,
-    target_ids: Query<&NetworkEntityId>,
-    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    mut controlled_players: Query<(&Position, &mut LookDirection), With<Controlled>>,
-    mut move_target: ResMut<MoveTarget>,
-    mut senders: Query<&mut MessageSender<SpellCastCommand>, With<ConnectedClient>>,
-    mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
-    registry: Res<bevymmo_shared::spells::SpellRegistry>,
+/// Replaces the HUD's own countdown with the server `cooldown` table's.
+///
+/// The HUD starts a timer the moment a key is pressed, which is right up until
+/// the server disagrees — a cast that was refused still greyed the key out for
+/// its full duration, and a cooldown the server shortened stayed grey anyway.
+/// This overwrites the local guess whenever the authoritative row moves.
+///
+/// Only the local player's rows are read: the table carries every entity's
+/// cooldowns, and this HUD shows one character's.
+fn adopt_server_cooldowns(
+    mut state: ResMut<SpellHudState>,
+    mut incoming: MessageReader<SpellCooldownState>,
+    local_player: Query<&NetworkEntityId, With<LocalPlayer>>,
 ) {
-    for (interaction, entry) in interactions.iter() {
-        let Some(spell_id) = &entry.spell_id else {
+    let Ok(local) = local_player.single() else {
+        // Nothing to attribute the cooldowns to yet. Dropping them is right:
+        // a fresh row for every live cooldown arrives with the subscription.
+        incoming.clear();
+        return;
+    };
+
+    for message in incoming.read() {
+        if message.entity_id != local.0 {
             continue;
-        };
-        if *interaction != Interaction::Pressed || hud_state.spell_on_cooldown(spell_id) {
-            continue;
         }
-
-        let target_position = cursor_ground_point(&windows, &cameras);
-
-        let mut target_id = None;
-        if let Some(target_entity) = current_target.entity {
-            if let Ok(net_id) = target_ids.get(target_entity) {
-                target_id = Some(net_id.0);
-            }
-        }
-
-        for mut sender in senders.iter_mut() {
-            sender.send::<Channel2>(SpellCastCommand {
-                spell_id: spell_id.as_str().to_owned(),
-                target_position,
-                target_id,
-            });
-        }
-
-        if let Some(spell_def) = registry.get(spell_id) {
-            if let Ok((player_position, mut look_direction)) = controlled_players.single_mut() {
-                let face_direction = target_position
-                    .and_then(|target| flat_direction_towards(player_position.0, target));
-                if let Some(direction) = face_direction {
-                    look_direction.0 = direction;
-                }
-                if stops_movement_for_cast(
-                    spell_def.cast_kind(),
-                    spell_def.config().channel_movement,
-                ) {
-                    move_target.0 = None;
-                }
-            }
-
-            if spell_def.cast_kind() == bevymmo_shared::spells::CastKind::Instant {
-                hud_cooldowns.write(SpellHudCooldownStarted {
-                    key: HudCooldownKey::Spell(spell_id.clone()),
-                    cooldown_seconds: spell_def.config().cooldown_seconds,
-                });
-            }
+        let key = HudCooldownKey::Ability(AbilityId::new(message.ability_id.clone()));
+        if message.is_ready() {
+            state.remaining_seconds.remove(&key);
+        } else {
+            state
+                .remaining_seconds
+                .insert(key, message.remaining_seconds);
         }
     }
 }
@@ -410,11 +349,6 @@ fn format_spell_label(entry: &SpellHudEntry, remaining_seconds: f32) -> String {
         return format!("[{}] Empty", entry.key_label);
     }
 
-    // Note this keys off `cooldown_key`, not `spell_id`. An Eidolon gesture
-    // deliberately has no `SpellId` (so `cast_spell_from_hud_click` no-ops on
-    // it) yet still has a cooldown, keyed by `AbilityId` — branching on
-    // `spell_id` here is exactly what used to drop the countdown for every
-    // equipped Eidolon weapon.
     let Some(_) = entry.cooldown_key.as_ref() else {
         return format!("[{}] {}", entry.key_label, entry.display_name);
     };
@@ -435,10 +369,9 @@ fn format_spell_label(entry: &SpellHudEntry, remaining_seconds: f32) -> String {
 mod tests {
     use super::*;
 
-    fn spell_entry(id: &'static str, name: &str, key: &str) -> SpellHudEntry {
+    fn ability_entry(id: &'static str, name: &str, key: &str) -> SpellHudEntry {
         SpellHudEntry {
-            spell_id: Some(SpellId::new(id)),
-            cooldown_key: Some(HudCooldownKey::Spell(SpellId::new(id))),
+            cooldown_key: Some(HudCooldownKey::Ability(AbilityId::new(id))),
             display_name: name.to_string(),
             key_label: key.to_string(),
         }
@@ -446,38 +379,21 @@ mod tests {
 
     #[test]
     fn spell_label_formats_ready_cooldown_and_empty_states() {
-        let entry = spell_entry("test", "Test Spell", "Q");
+        let entry = ability_entry("test", "Test Ability", "Q");
         let empty_entry = SpellHudEntry {
-            spell_id: None,
             cooldown_key: None,
             display_name: "Empty".to_string(),
             key_label: "W".to_string(),
         };
 
-        assert_eq!(format_spell_label(&entry, 0.0), "[Q] Test Spell - Ready");
-        assert_eq!(format_spell_label(&entry, 1.25), "[Q] Test Spell - 1.2s");
+        assert_eq!(format_spell_label(&entry, 0.0), "[Q] Test Ability - Ready");
+        assert_eq!(format_spell_label(&entry, 1.25), "[Q] Test Ability - 1.2s");
         assert_eq!(format_spell_label(&empty_entry, 0.0), "[W] Empty");
     }
 
-    /// An Eidolon gesture carries no `SpellId` — the label must still name it.
-    #[test]
-    fn spell_label_shows_the_eidolon_gesture_despite_a_none_spell_id() {
-        let entry = SpellHudEntry {
-            spell_id: None,
-            cooldown_key: Some(HudCooldownKey::Ability(AbilityId::new("staff_bolt"))),
-            display_name: "Getto (Fuoco)".to_string(),
-            key_label: "Q".to_string(),
-        };
-        assert_eq!(format_spell_label(&entry, 0.0), "[Q] Getto (Fuoco) - Ready");
-    }
-
-    /// The regression: equipping an Eidolon weapon made the cooldown vanish
-    /// from Q/W/E, because the countdown was keyed by `SpellId` and those
-    /// entries have none. It is keyed by the gesture's `AbilityId` instead.
     #[test]
     fn eidolon_gesture_counts_down_like_a_spell() {
         let entry = SpellHudEntry {
-            spell_id: None,
             cooldown_key: Some(HudCooldownKey::Ability(AbilityId::new("staff_bolt"))),
             display_name: "Getto".to_string(),
             key_label: "Q".to_string(),
@@ -485,16 +401,15 @@ mod tests {
         assert_eq!(format_spell_label(&entry, 2.5), "[Q] Getto - 2.5s");
     }
 
-    /// A gesture and a spell that happen to share an id string are distinct
-    /// countdowns — the key carries which pipeline it came from.
     #[test]
-    fn spell_and_ability_keys_with_the_same_id_do_not_collide() {
+    fn ability_cooldown_tracking_works() {
         let mut state = SpellHudState::default();
+        let id = AbilityId::new("bolt");
+        assert!(!state.ability_on_cooldown(&id));
+
         state
             .remaining_seconds
-            .insert(HudCooldownKey::Spell(SpellId::new("bolt")), 3.0);
-
-        assert!(state.spell_on_cooldown(&SpellId::new("bolt")));
-        assert!(!state.ability_on_cooldown(&AbilityId::new("bolt")));
+            .insert(HudCooldownKey::Ability(id.clone()), 3.0);
+        assert!(state.ability_on_cooldown(&id));
     }
 }

@@ -6,29 +6,12 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = [
-    "client",
-    "server",
-    "netcode",
-    "udp",
-    "interpolation",
-    "prediction",
-    "replication",
-    "input_native",
-]
+default = ["client"]
 client = [
-    "lightyear/client",
     "bevy/default",
     "dep:bevymmo_client",
     "dep:bevymmo_presentation",
 ]
-server = ["lightyear/server"]
-netcode = ["lightyear/netcode"]
-udp = ["lightyear/udp"]
-interpolation = ["lightyear/interpolation"]
-prediction = ["lightyear/prediction"]
-replication = ["lightyear/replication"]
-input_native = ["lightyear/input_native"]
 
 [dependencies]
 bevy = { workspace = true }
@@ -36,12 +19,10 @@ lightyear = { workspace = true }
 serde = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
-sea-orm = { workspace = true }
-sea-orm-migration = { workspace = true }
-tokio = { workspace = true }
-uuid = { workspace = true }
-bevymmo_shared = { path = "../../crates/shared" }
-bevymmo_server = { path = "../../crates/server" }
+bevymmo_app_support = { path = "../../crates/app-support" }
+bevymmo_network = { path = "../../crates/network" }
+bevymmo_gameplay = { path = "../../crates/gameplay", features = ["bevy"] }
+bevymmo_content = { path = "../../crates/content" }
 bevymmo_client = { path = "../../crates/client", optional = true }
 bevymmo_presentation = { path = "../../crates/presentation", optional = true }
 

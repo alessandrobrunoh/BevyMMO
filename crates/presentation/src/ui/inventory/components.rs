@@ -1,7 +1,7 @@
 //! Components and markers for the Inventory UI.
 
 use bevy::prelude::*;
-use bevymmo_shared::items::components::EquipSlot;
+use bevymmo_gameplay::items::components::EquipSlot;
 
 /// State for item selection in the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,7 +14,7 @@ pub enum InventorySelection {
 #[derive(Component, Debug)]
 pub struct InventoryWindow;
 
-/// Button component attached to one of the 10 inventory grid slots (0..10).
+/// Button component attached to an inventory grid slot.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct ItemSlotButton {
     pub index: u8,

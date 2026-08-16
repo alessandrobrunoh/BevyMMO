@@ -6,6 +6,7 @@ use bevy::{
     window::PrimaryWindow,
 };
 
+use crate::ui::scale::window_to_ui_px;
 use crate::ui::theme::UiTheme;
 
 pub struct ScrollbarPlugin;
@@ -178,6 +179,7 @@ fn handle_scrollbar_drag(
     mut view_q: Query<(&mut ScrollView, &ComputedNode)>,
     mouse_input: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
+    ui_scale: Res<UiScale>,
     theme: Res<UiTheme>,
 ) {
     let Ok(window) = windows.single() else {
@@ -211,10 +213,15 @@ fn handle_scrollbar_drag(
 
         // Calcolo spostamento
         if thumb.is_dragging {
-            let dy = cursor_y - thumb.drag_start_y;
+            // `cursor_y` è in px logici della finestra, `size()` in px fisici:
+            // vanno riportati nello stesso spazio (UI-logico, quello dei
+            // `Val::Px`), altrimenti il rapporto sbaglia del fattore di scala
+            // del layout e il trascinamento della barra scorre più lento del
+            // mouse.
+            let dy = window_to_ui_px(Vec2::new(0.0, cursor_y - thumb.drag_start_y), &ui_scale).y;
             if let Ok((mut view, view_node)) = view_q.get_mut(thumb.viewport_entity) {
                 // proporzione per tradurre spostamento del mouse in scroll
-                let view_h = view_node.size().y;
+                let view_h = view_node.size().y * view_node.inverse_scale_factor();
                 // thumb occupa min 20.0 px (es.)
                 let max_thumb_travel = view_h - 20.0;
                 if max_thumb_travel > 0.0 && view.max_scroll > 0.0 {

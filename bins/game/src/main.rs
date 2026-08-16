@@ -4,13 +4,11 @@ use bevy::prelude::*;
 use bevy::window::PresentMode;
 use clap::{Parser, Subcommand};
 use core::time::Duration;
-use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use bevymmo_shared::paths;
-use bevymmo_shared::settings::Settings;
-use bevymmo_shared::{game_state, network::mode};
+use bevymmo_app_support::paths;
+use bevymmo_app_support::settings::Settings;
+use bevymmo_client::app_state as game_state;
+use bevymmo_network::network::mode;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -21,121 +19,42 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Mode {
+    /// Run the game client.
+    ///
+    /// There is no `server` or `host-client` any more: the authoritative server
+    /// is the SpacetimeDB module (`docker compose up -d spacetimedb`, then
+    /// `./scripts/stdb.sh publish`), not a Bevy process.
     Client {
-        /// Reproducible Netcode identity override. If omitted, a
-        /// unique non-zero ID is generated for this process.
-        #[arg(short, long)]
-        client_id: Option<u64>,
+        /// SpacetimeDB URL override (default: from config).
+        #[arg(long)]
+        uri: Option<String>,
 
-        /// Remote server address override to connect to
-        /// (default: from config/client.toml).
+        /// Published module name override (default: from config).
         #[arg(long)]
-        server_addr: Option<SocketAddr>,
-    },
-    Server {
-        /// Local address override for the server to listen on
-        /// (default: from config/server.toml).
-        #[arg(long)]
-        bind_addr: Option<SocketAddr>,
-    },
-    HostClient {
-        /// Reproducible Netcode identity override. If omitted, a
-        /// unique non-zero ID is generated for this process.
-        #[arg(short, long)]
-        client_id: Option<u64>,
-
-        /// Local server address override used by the embedded client
-        /// (default: from config/client.toml).
-        #[arg(long)]
-        server_addr: Option<SocketAddr>,
+        module: Option<String>,
     },
 }
 
 struct AppConfig {
     mode: mode::AppMode,
-    client_id: Option<u64>,
-    server_addr: SocketAddr,
-    client_addr: SocketAddr,
     log_filter: String,
     tick_rate: f64,
-    database_url: Option<String>,
+    spacetime_uri: String,
+    spacetime_module: String,
 }
 
 impl AppConfig {
     /// Merges default values from `config/*.toml` files with CLI overrides.
     fn resolve(mode: Mode, settings: Settings) -> Self {
-        let tick_rate = settings.tick_rate;
-        let log_filter = settings.log_filter.clone();
-        let database_url = settings.database_url.clone();
-
-        // `SocketAddr` values arrive as strings from `Settings`; we parse them
-        // once here. Defaults guarantee valid values.
-        let client_server_addr = parse_addr(&settings.client.server_addr, "client.server_addr");
-        let client_addr = parse_addr(&settings.client.client_addr, "client.client_addr");
-        let server_bind_addr = parse_addr(&settings.server.bind_addr, "server.bind_addr");
-
-        match mode {
-            Mode::Client {
-                client_id,
-                server_addr,
-            } => Self {
-                mode: mode::AppMode::Client,
-                client_id: Some(resolve_client_id(client_id)),
-                server_addr: server_addr.unwrap_or(client_server_addr),
-                client_addr,
-                tick_rate,
-                log_filter,
-                database_url,
-            },
-            Mode::Server { bind_addr } => Self {
-                mode: mode::AppMode::Server,
-                client_id: None,
-                server_addr: bind_addr.unwrap_or(server_bind_addr),
-                client_addr,
-                tick_rate,
-                log_filter,
-                database_url,
-            },
-            Mode::HostClient {
-                client_id,
-                server_addr,
-            } => Self {
-                mode: mode::AppMode::HostClient,
-                client_id: Some(resolve_client_id(client_id)),
-                server_addr: server_addr.unwrap_or(client_server_addr),
-                client_addr,
-                tick_rate,
-                log_filter,
-                database_url,
-            },
+        let Mode::Client { uri, module } = mode;
+        Self {
+            mode: mode::AppMode::Client,
+            tick_rate: settings.tick_rate,
+            log_filter: settings.log_filter.clone(),
+            spacetime_uri: uri.unwrap_or(settings.spacetime_uri),
+            spacetime_module: module.unwrap_or(settings.spacetime_module),
         }
     }
-
-    fn client_id(&self) -> u64 {
-        self.client_id
-            .expect("client and host-client modes always resolve a client id")
-    }
-}
-
-/// Produces a distinct Netcode ID for concurrent local processes.
-///
-/// The server rejects two clients with the same ID; `0` is avoided because it is
-/// the placeholder identity used by Lightyear for missing authentication.
-fn resolve_client_id(override_id: Option<u64>) -> u64 {
-    if let Some(id) = override_id.filter(|id| *id != 0) {
-        return id;
-    }
-
-    static SEQUENCE: AtomicU64 = AtomicU64::new(1);
-
-    let process_id = u64::from(std::process::id());
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or_default();
-    let generated = (process_id << 32) ^ timestamp ^ SEQUENCE.fetch_add(1, Ordering::Relaxed);
-
-    generated.max(1)
 }
 
 fn main() {
@@ -151,54 +70,36 @@ fn build_app(config: &AppConfig) -> App {
     app.insert_resource(config.mode);
     app.add_plugins(game_state::GameStatePlugin);
 
-    let tick_duration = Duration::from_secs_f64(1.0 / config.tick_rate);
-
-    if config.mode.has_server() {
-        let database_url = config
-            .database_url
-            .clone()
-            .expect("DATABASE_URL is required when starting a server; set it in config/<env>.toml, config/local.toml, or as the DATABASE_URL env var");
-        app.add_plugins(bevymmo_server::ServerPlugin {
-            database_url,
-            server_addr: config.server_addr,
-            tick_duration,
-        });
-    }
-
     #[cfg(feature = "client")]
     if config.mode.has_client() {
-        app.add_plugins(bevymmo_client::network::client::ClientTransportPlugins {
-            client_id: config.client_id(),
-            server_addr: config.server_addr,
-            client_addr: config.client_addr,
-            tick_duration,
+        app.add_plugins(bevymmo_client::stdb::StdbPlugin {
+            uri: config.spacetime_uri.clone(),
+            module: config.spacetime_module.clone(),
         });
-        app.add_systems(
-            Startup,
-            (
-                bevymmo_shared::spells_impl::register_default_spells,
-                bevymmo_shared::items_impl::register_default_items,
-                bevymmo_shared::base_abilities_impl::register_default_base_abilities,
-                bevymmo_shared::essences_impl::register_default_essences,
-                bevymmo_shared::modifiers_impl::register_default_modifiers,
-                bevymmo_shared::ancient_words_impl::register_default_ancient_words,
-            ),
-        );
     }
 
-    app.add_plugins(bevymmo_shared::network::protocol::ProtocolPlugin);
     // Local Bevy messages/resources used by client presentation systems. The
     // Lightyear protocol registration alone does not initialize the local
     // message queue or the shared spell registry.
-    app.add_message::<bevymmo_shared::network::protocol::SpellVisualEffect>();
-    app.add_message::<bevymmo_shared::network::protocol::SpellCastProgress>();
-    app.add_message::<bevymmo_shared::network::protocol::SpellCastEnded>();
-    app.init_resource::<bevymmo_shared::spells::SpellRegistry>();
-    app.init_resource::<bevymmo_shared::items::registry::ItemRegistry>();
-    app.init_resource::<bevymmo_shared::abilities::BaseAbilityRegistry>();
-    app.init_resource::<bevymmo_shared::abilities::EssenceRegistry>();
-    app.init_resource::<bevymmo_shared::abilities::ModifierRegistry>();
-    app.init_resource::<bevymmo_shared::abilities::AncientWordRegistry>();
+    app.add_message::<bevymmo_network::network::protocol::SpellVisualEffect>();
+    app.add_message::<bevymmo_network::network::protocol::SpellCastProgress>();
+    app.add_message::<bevymmo_network::network::protocol::SpellCastEnded>();
+    // Written by the SpacetimeDB bridge, read by the presentation: the server's
+    // refusals and announcements, and the authoritative cooldown table.
+    app.add_message::<bevymmo_client::server_feed::ServerNotice>();
+    app.add_message::<bevymmo_client::server_feed::SpellCooldownState>();
+    // Game content. These used to be empty `Resource`s filled by `Startup`
+    // systems; they are plain values now, because the SpacetimeDB module needs
+    // the same registries and has no ECS to build them in. Inserting them
+    // directly also removes a startup-ordering hazard: nothing can read a
+    // registry before the system that populates it has run, because there is no
+    // such system.
+    app.insert_resource(bevymmo_content::spell_definitions::default_spells());
+    app.insert_resource(bevymmo_content::item_definitions::default_items());
+    app.insert_resource(bevymmo_content::ability_definitions::default_base_abilities());
+    app.insert_resource(bevymmo_content::essence_definitions::default_essences());
+    app.insert_resource(bevymmo_content::modifier_definitions::default_modifiers());
+    app.insert_resource(bevymmo_content::ancient_word_definitions::default_ancient_words());
 
     #[cfg(feature = "client")]
     if config.mode.has_client() {
@@ -217,10 +118,11 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
     if config.mode.is_windowed() {
         #[cfg(feature = "client")]
         {
-            let title = match config.client_id {
-                Some(client_id) => format!("{:?} {}", config.mode, client_id),
-                None => format!("{:?}", config.mode),
-            };
+            // Names the window after the module it is talking to. The old title
+            // carried a Netcode client id, which no longer exists: SpacetimeDB
+            // identifies a connection by its `Identity`, and the client does not
+            // know that until it has connected.
+            let title = format!("BevyMMO — {}", config.spacetime_module);
             app.add_plugins(
                 DefaultPlugins
                     // The runnable package lives in `bins/game`, while the
@@ -264,39 +166,5 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
             ..default()
         });
         app.insert_resource(Time::<Fixed>::from_duration(tick_duration));
-    }
-}
-
-/// Parses a "host:port" address from configuration files.
-///
-/// Failing here is a configuration error: it is better to panic on startup with
-/// a clear message than at runtime.
-fn parse_addr(raw: &str, field: &str) -> SocketAddr {
-    raw.parse()
-        .unwrap_or_else(|e| panic!("invalid socket address for {field}: {raw:?} ({e})"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn generated_client_ids_are_non_zero_and_distinct() {
-        let first = resolve_client_id(None);
-        let second = resolve_client_id(None);
-
-        assert_ne!(first, 0);
-        assert_ne!(second, 0);
-        assert_ne!(first, second);
-    }
-
-    #[test]
-    fn explicit_non_zero_client_id_is_preserved() {
-        assert_eq!(resolve_client_id(Some(42)), 42);
-    }
-
-    #[test]
-    fn zero_client_id_is_replaced_with_a_generated_value() {
-        assert_ne!(resolve_client_id(Some(0)), 0);
     }
 }

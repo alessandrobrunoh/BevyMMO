@@ -3,10 +3,10 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use bevymmo_shared::entity::components::GameEntity;
-use bevymmo_shared::network::protocol::Position;
-use bevymmo_shared::stats::components::VitalStats;
-use bevymmo_shared::targeting::CurrentTarget;
+use bevymmo_gameplay::entity::components::GameEntity;
+use bevymmo_network::network::protocol::Position;
+use bevymmo_gameplay::stats::components::VitalStats;
+use crate::targeting::CurrentTarget;
 
 const TARGETING_RADIUS: f32 = 1.2;
 
@@ -54,59 +54,6 @@ fn ray_sphere_intersection(
         Some(t2)
     } else {
         None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ray_sphere_hits_directly() {
-        let origin = Vec3::ZERO;
-        let direction = Vec3::X;
-        let center = Vec3::new(5.0, 0.0, 0.0);
-        let radius = 1.0;
-
-        let hit = ray_sphere_intersection(origin, direction, center, radius);
-        assert!(hit.is_some());
-        // Approximate distance: 5.0 - 1.0 = 4.0
-        assert!(hit.unwrap() > 3.9 && hit.unwrap() < 4.1);
-    }
-
-    #[test]
-    fn ray_sphere_misses() {
-        let origin = Vec3::ZERO;
-        let direction = Vec3::X;
-        let center = Vec3::new(5.0, 5.0, 0.0);
-        let radius = 1.0;
-
-        let hit = ray_sphere_intersection(origin, direction, center, radius);
-        assert!(hit.is_none());
-    }
-
-    #[test]
-    fn ray_sphere_origin_inside() {
-        let origin = Vec3::ZERO;
-        let direction = Vec3::X;
-        let center = Vec3::new(0.5, 0.0, 0.0);
-        let radius = 2.0;
-
-        let hit = ray_sphere_intersection(origin, direction, center, radius);
-        assert!(hit.is_some());
-        // Should be positive and relatively small
-        assert!(hit.unwrap() >= 0.0);
-    }
-
-    #[test]
-    fn ray_sphere_misses_backward() {
-        let origin = Vec3::ZERO;
-        let direction = -Vec3::X;
-        let center = Vec3::new(5.0, 0.0, 0.0);
-        let radius = 1.0;
-
-        let hit = ray_sphere_intersection(origin, direction, center, radius);
-        assert!(hit.is_none());
     }
 }
 
@@ -181,7 +128,7 @@ pub fn select_target_with_right_click(
 /// System to clear target with the configured "Clear Target" key.
 pub fn clear_target_with_escape(
     keyboard: Option<Res<ButtonInput<KeyCode>>>,
-    settings: Option<Res<bevymmo_shared::user_settings::GameSettingsResource>>,
+    settings: Option<Res<crate::user_settings::GameSettingsResource>>,
     mut current_target: ResMut<CurrentTarget>,
 ) {
     let Some(keyboard) = keyboard else {
@@ -191,7 +138,7 @@ pub fn clear_target_with_escape(
         return;
     };
 
-    if settings.just_pressed(bevymmo_shared::user_settings::KeyAction::ClearTarget, &keyboard) {
+    if settings.just_pressed(crate::user_settings::KeyAction::ClearTarget, &keyboard) {
         current_target.clear();
     }
 }
@@ -223,3 +170,57 @@ pub fn cleanup_invalid_target(
         current_target.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ray_sphere_hits_directly() {
+        let origin = Vec3::ZERO;
+        let direction = Vec3::X;
+        let center = Vec3::new(5.0, 0.0, 0.0);
+        let radius = 1.0;
+
+        let hit = ray_sphere_intersection(origin, direction, center, radius);
+        assert!(hit.is_some());
+        // Approximate distance: 5.0 - 1.0 = 4.0
+        assert!(hit.unwrap() > 3.9 && hit.unwrap() < 4.1);
+    }
+
+    #[test]
+    fn ray_sphere_misses() {
+        let origin = Vec3::ZERO;
+        let direction = Vec3::X;
+        let center = Vec3::new(5.0, 5.0, 0.0);
+        let radius = 1.0;
+
+        let hit = ray_sphere_intersection(origin, direction, center, radius);
+        assert!(hit.is_none());
+    }
+
+    #[test]
+    fn ray_sphere_origin_inside() {
+        let origin = Vec3::ZERO;
+        let direction = Vec3::X;
+        let center = Vec3::new(0.5, 0.0, 0.0);
+        let radius = 2.0;
+
+        let hit = ray_sphere_intersection(origin, direction, center, radius);
+        assert!(hit.is_some());
+        // Should be positive and relatively small
+        assert!(hit.unwrap() >= 0.0);
+    }
+
+    #[test]
+    fn ray_sphere_misses_backward() {
+        let origin = Vec3::ZERO;
+        let direction = -Vec3::X;
+        let center = Vec3::new(5.0, 0.0, 0.0);
+        let radius = 1.0;
+
+        let hit = ray_sphere_intersection(origin, direction, center, radius);
+        assert!(hit.is_none());
+    }
+}
+

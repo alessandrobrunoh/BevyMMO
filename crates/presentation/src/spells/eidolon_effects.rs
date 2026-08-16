@@ -17,8 +17,8 @@
 use bevy::color::Color;
 use bevy::prelude::*;
 
-use bevymmo_shared::abilities::{AbilityGeometry, ArcBaseAbility};
-use bevymmo_shared::network::protocol::SpellVisualEffect;
+use bevymmo_gameplay::abilities::{AbilityGeometry, ArcBaseAbility};
+use bevymmo_network::network::protocol::SpellVisualEffect;
 
 use crate::spells::effects::SpellVisual;
 
@@ -69,7 +69,11 @@ fn ability_color(id: &str) -> Color {
 
 fn glow(color: Color, strength: f32) -> LinearRgba {
     let rgba = color.to_linear();
-    LinearRgba::rgb(rgba.red * strength, rgba.green * strength, rgba.blue * strength)
+    LinearRgba::rgb(
+        rgba.red * strength,
+        rgba.green * strength,
+        rgba.blue * strength,
+    )
 }
 
 /// Visual di un gesto Eidolon, scelto dalla sua geometria.
@@ -88,13 +92,39 @@ pub fn spawn_for_ability(
         AbilityGeometry::Projectile { .. } => {
             // La palla è un'entità replicata che si vede da sé: qui basta il
             // lampo alla mano, che dà il feedback immediato del tasto.
-            spawn_burst(commands, meshes, materials, effect.start + Vec3::Y * CAST_HEIGHT, color, MUZZLE_SECONDS, 0.15, 0.7);
+            spawn_burst(
+                commands,
+                meshes,
+                materials,
+                effect.start + Vec3::Y * CAST_HEIGHT,
+                color,
+                MUZZLE_SECONDS,
+                0.15,
+                0.7,
+            );
         }
         AbilityGeometry::Cone { .. } | AbilityGeometry::Circle { .. } => {
             let radius = ability.impact_radius(&params).max(0.5);
-            spawn_ground_ring(commands, meshes, materials, effect.start, radius, color, delay);
+            spawn_ground_ring(
+                commands,
+                meshes,
+                materials,
+                effect.start,
+                radius,
+                color,
+                delay,
+            );
             if delay <= 0.0 {
-                spawn_burst(commands, meshes, materials, effect.start + Vec3::Y * 0.4, color, BURST_SECONDS, 0.2, radius * 0.8);
+                spawn_burst(
+                    commands,
+                    meshes,
+                    materials,
+                    effect.start + Vec3::Y * 0.4,
+                    color,
+                    BURST_SECONDS,
+                    0.2,
+                    radius * 0.8,
+                );
             }
             if delay >= ROCK_FALL_SECONDS {
                 // Preavviso abbastanza lungo da far vedere qualcosa cadere.
@@ -102,7 +132,16 @@ pub fn spawn_for_ability(
             }
         }
         AbilityGeometry::SelfBuff { .. } => {
-            spawn_burst(commands, meshes, materials, effect.start + Vec3::Y * CAST_HEIGHT, color, BURST_SECONDS, 0.3, 1.6);
+            spawn_burst(
+                commands,
+                meshes,
+                materials,
+                effect.start + Vec3::Y * CAST_HEIGHT,
+                color,
+                BURST_SECONDS,
+                0.3,
+                1.6,
+            );
         }
     }
 }
@@ -115,7 +154,16 @@ pub fn spawn(
     effect: &SpellVisualEffect,
 ) {
     let color = ability_color(effect.spell_id.as_str());
-    spawn_burst(commands, meshes, materials, effect.start + Vec3::Y * 0.5, color, BURST_SECONDS, 0.1, 1.5);
+    spawn_burst(
+        commands,
+        meshes,
+        materials,
+        effect.start + Vec3::Y * 0.5,
+        color,
+        BURST_SECONDS,
+        0.1,
+        1.5,
+    );
 }
 
 fn spawn_burst(
@@ -170,7 +218,10 @@ fn spawn_ground_ring(
     commands.spawn((
         Mesh3d(mesh),
         MeshMaterial3d(material),
-        Transform::from_translation(Vec3::new(center.x, 0.05, center.z)),
+        // `center.y` is the impact's real elevation (mountain, valley, or
+        // sea level) — flattening it to a fixed height drew every ground
+        // effect at world Y=0 regardless of where the caster was standing.
+        Transform::from_translation(center + Vec3::Y * 0.05),
         SpellVisual,
         EidolonGroundRing {
             elapsed_seconds: 0.0,
@@ -202,7 +253,9 @@ fn spawn_falling_rock(
         EidolonFallingRock {
             elapsed_seconds: 0.0,
             impact_at_seconds,
-            center: Vec3::new(center.x, 0.0, center.z),
+            // Same reason as `spawn_ground_ring`: keep the real elevation, or
+            // the rock lands at world Y=0 instead of the target's height.
+            center,
         },
     ));
 }

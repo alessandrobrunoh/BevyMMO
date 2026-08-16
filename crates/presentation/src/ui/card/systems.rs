@@ -19,11 +19,13 @@ use super::components::{
     CardDraggingState, CardExclusivityPolicy, CardHeaderDragHandle, CardWindow, CloseCardButton,
     DraggableCard,
 };
+use crate::ui::scale::{physical_to_ui_px, window_to_ui_px};
 
 /// System to handle dragging draggable Card windows when clicking and dragging their header.
 pub fn handle_card_drag(
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
+    ui_scale: Res<UiScale>,
     header_query: Query<
         (&Interaction, &ChildOf),
         (With<CardHeaderDragHandle>, Changed<Interaction>),
@@ -57,6 +59,11 @@ pub fn handle_card_drag(
     // instead read the card's actual on-screen top-left corner from its
     // computed transform, then rewrite the node to a plain `Val::Px` anchor
     // at that same spot before applying any cursor delta.
+    //
+    // That read is in *physical* pixels while `Val::Px` is UI-logical, so it
+    // has to go through `physical_to_ui_px`: writing the raw value back would
+    // multiply the card's position by the layout scale factor on every
+    // drag start, throwing it down and to the right.
     if mouse_button.just_pressed(MouseButton::Left) {
         for (interaction, child) in header_query.iter() {
             if *interaction == Interaction::Pressed {
@@ -66,7 +73,10 @@ pub fn handle_card_drag(
                     if let Ok((card_entity, mut node, computed, transform)) =
                         draggable_cards.get_mut(entity)
                     {
-                        let top_left = transform.translation - computed.size() * 0.5;
+                        let top_left = physical_to_ui_px(
+                            transform.translation - computed.size() * 0.5,
+                            computed,
+                        );
 
                         node.left = Val::Px(top_left.x);
                         node.top = Val::Px(top_left.y);
@@ -90,7 +100,11 @@ pub fn handle_card_drag(
     // 2. Handle active dragging
     if mouse_button.pressed(MouseButton::Left) {
         for (_entity, mut node, state) in dragging_query.iter_mut() {
-            let delta = cursor_pos - state.drag_start_cursor;
+            // The cursor delta is in window-logical px and the anchor it is
+            // added to is UI-logical, so the delta has to be converted too —
+            // otherwise the card slides faster than the pointer by exactly
+            // `UiScale` and drifts away over the course of a drag.
+            let delta = window_to_ui_px(cursor_pos - state.drag_start_cursor, &ui_scale);
             node.left = Val::Px(state.drag_start_left + delta.x);
             node.top = Val::Px(state.drag_start_top + delta.y);
         }

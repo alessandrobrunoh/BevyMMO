@@ -1,9 +1,9 @@
 //! Sistemi per il target indicator (anello rosso sotto il target).
 
 use bevy::prelude::*;
-use bevymmo_shared::entity::components::EntityKind;
-use bevymmo_shared::network::protocol::Position;
-use bevymmo_shared::targeting::CurrentTarget;
+use bevymmo_gameplay::entity::components::EntityKind;
+use bevymmo_network::network::protocol::Position;
+use bevymmo_client::targeting::CurrentTarget;
 
 use super::components::{TargetRingTarget, TargetSelectionRing};
 

@@ -9,11 +9,19 @@ repository.workspace = true
 bevy = { workspace = true, features = ["default", "serialize"] }
 bevy_asset_loader = { version = "0.27", features = ["3d"] }
 lightyear = { workspace = true }
-bevymmo_shared = { path = "../shared" }
+bevymmo_app_support = { path = "../app-support" }
+bevymmo_network = { path = "../network" }
+bevymmo_domain = { path = "../domain", features = ["bevy"] }
+bevymmo_world = { path = "../world" }
+bevymmo_gameplay = { path = "../gameplay", features = ["bevy"] }
+bevymmo_content = { path = "../content" }
 bevymmo_client = { path = "../client" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 dirs = { workspace = true }
+ron = "0.10"
+thiserror = "2"
+gltf = { version = "1", default-features = false, features = ["utils", "names", "extras"] }
 
 [lints]
 workspace = true

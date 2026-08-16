@@ -1,10 +1,10 @@
 //! Debug overlay showing the local player's replicated position.
 
 use bevy::prelude::*;
-use lightyear::prelude::Controlled;
+use bevymmo_client::local_player::LocalPlayer;
 
 use bevymmo_client::network::types::ClientConnectionConfig;
-use bevymmo_shared::network::protocol::{PlayerId, Position};
+use bevymmo_network::network::protocol::{PlayerId, Position};
 
 use crate::game_state::{GameScreen, Screen};
 use crate::ui::text::spawn_text;
@@ -54,7 +54,7 @@ fn setup_debug_position(mut commands: Commands, theme: Res<UiTheme>) {
 fn update_debug_position(
     screen: Res<GameScreen>,
     client_config: Option<Res<ClientConnectionConfig>>,
-    players: Query<(&Position, Option<&PlayerId>, Has<Controlled>)>,
+    players: Query<(&Position, Option<&PlayerId>, Has<LocalPlayer>)>,
     mut roots: Query<&mut Node, With<DebugPositionUi>>,
     mut texts: Query<&mut Text, With<DebugPositionText>>,
     mut last_text: Local<String>,
@@ -131,7 +131,7 @@ mod tests {
         let mut app = test_app();
         app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
         app.world_mut()
-            .spawn((Controlled, Position(Vec3::new(3.0, 1.5, -4.25))));
+            .spawn((LocalPlayer, Position(Vec3::new(3.0, 1.5, -4.25))));
 
         app.update();
 
@@ -154,7 +154,7 @@ mod tests {
     fn stays_hidden_outside_gameplay() {
         let mut app = test_app();
         app.world_mut()
-            .spawn((Controlled, Position(Vec3::new(3.0, 1.5, -4.25))));
+            .spawn((LocalPlayer, Position(Vec3::new(3.0, 1.5, -4.25))));
 
         app.update();
 

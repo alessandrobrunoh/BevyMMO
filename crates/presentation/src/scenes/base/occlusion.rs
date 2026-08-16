@@ -26,9 +26,9 @@
 use bevy::camera::primitives::Aabb;
 use bevy::prelude::*;
 use bevy::reflect::Reflect;
-use lightyear::prelude::Controlled;
+use bevymmo_client::local_player::LocalPlayer;
 
-use bevymmo_shared::network::protocol::Position;
+use bevymmo_network::network::protocol::Position;
 
 use super::systems::GameCamera;
 use crate::world::MapSceneVisual;
@@ -192,7 +192,7 @@ fn is_descendant_of(entity: Entity, root: Entity, parents: &Query<&ChildOf>) -> 
 /// for map_02's boulders, whose 20×7×20 half-extents give a 29 m bounding
 /// radius — they would have ghosted from thirty metres off to the side.
 pub fn update_camera_occlusion(
-    player_query: Query<&Position, With<Controlled>>,
+    player_query: Query<&Position, With<LocalPlayer>>,
     camera_query: Query<&Transform, With<GameCamera>>,
     mut occluders: Query<(&GlobalTransform, Option<&Aabb>, &mut OccluderFade), With<Occludable>>,
 ) {
@@ -373,7 +373,7 @@ mod tests {
             .target
     }
 
-    /// Spawns a `GameCamera` at `camera` and a `Controlled` player at `player`,
+    /// Spawns a `GameCamera` at `camera` and a `LocalPlayer` player at `player`,
     /// then runs [`update_camera_occlusion`] once.
     fn run_occlusion(world: &mut World, camera: Vec3, player: Vec3) {
         world.spawn((
@@ -381,7 +381,7 @@ mod tests {
             Transform::from_translation(camera),
             Camera3d::default(),
         ));
-        world.spawn((Controlled, Position(player)));
+        world.spawn((LocalPlayer, Position(player)));
         world
             .run_system_once(update_camera_occlusion)
             .expect("system runs");
@@ -392,7 +392,11 @@ mod tests {
         let mut world = test_world();
         let entity = occluder_entity(&mut world, Vec3::ZERO, 5.0);
 
-        run_occlusion(&mut world, Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.0, 10.0));
+        run_occlusion(
+            &mut world,
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::new(0.0, 0.0, 10.0),
+        );
 
         assert_eq!(
             target_of(&world, entity),
@@ -406,7 +410,11 @@ mod tests {
         let mut world = test_world();
         let entity = occluder_entity(&mut world, Vec3::new(50.0, 0.0, 0.0), 1.0);
 
-        run_occlusion(&mut world, Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.0, 10.0));
+        run_occlusion(
+            &mut world,
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::new(0.0, 0.0, 10.0),
+        );
 
         assert_eq!(target_of(&world, entity), 1.0);
     }
@@ -417,7 +425,11 @@ mod tests {
         // Past the player along the same axis: the segment stops short of it.
         let entity = occluder_entity(&mut world, Vec3::new(0.0, 0.0, 20.0), 1.0);
 
-        run_occlusion(&mut world, Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.0, 10.0));
+        run_occlusion(
+            &mut world,
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::new(0.0, 0.0, 10.0),
+        );
 
         assert_eq!(target_of(&world, entity), 1.0);
     }

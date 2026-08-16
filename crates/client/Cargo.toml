@@ -8,7 +8,24 @@ repository.workspace = true
 [dependencies]
 bevy = { workspace = true, features = ["default"] }
 lightyear = { workspace = true }
-bevymmo_shared = { path = "../shared" }
+
+bevymmo_network = { path = "../network" }
+bevymmo_gameplay = { path = "../gameplay", features = ["bevy"] }
+bevymmo_world = { path = "../world" }
+bevymmo_content = { path = "../content" }
+bevymmo_domain = { path = "../domain" }
+
+# SpacetimeDB client. Pinned to the same patch as the module and the CLI that
+# generates `src/stdb/module_bindings/`: the generated code is stamped with the
+# CLI version and calls into `spacetimedb_sdk::__codegen`, an internal API with
+# no stability promise across patches.
+spacetimedb-sdk = "=2.8.1"
+# `DbConnection` callbacks fire on the SDK's thread and must not touch the Bevy
+# `World`. They hand rows to a channel that a Bevy system drains instead.
+crossbeam-channel = "0.5"
+dirs = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

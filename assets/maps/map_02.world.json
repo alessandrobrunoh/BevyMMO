@@ -135520,6 +135520,28 @@
   ],
   "props": [
     {
+      "id": "PLACEABLE_npc_greeter_01",
+      "kind": "npc_greeter",
+      "transform": {
+        "translation": [
+          32.0,
+          0.0,
+          -42.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "blocks_movement": false
+    },
+    {
       "id": "PLACEABLE_boss_dragon",
       "kind": "boss_dragon",
       "transform": {

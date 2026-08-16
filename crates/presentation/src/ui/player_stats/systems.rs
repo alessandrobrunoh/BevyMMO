@@ -1,14 +1,14 @@
 use bevy::prelude::*;
-use lightyear::prelude::Controlled;
+use bevymmo_client::local_player::LocalPlayer;
 
 use bevymmo_client::network::types::ClientConnectionConfig;
-use bevymmo_shared::movement::effective_movement_speed;
-use bevymmo_shared::network::protocol::{NetworkEntityId, PlayerId};
-use bevymmo_shared::stats::components::{CombatStats, MovementStats, VitalStats};
-use bevymmo_shared::stats::modifiers::ActiveStatModifiers;
+use bevymmo_client::movement::effective_movement_speed;
+use bevymmo_network::network::protocol::PlayerId;
+use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
+use bevymmo_gameplay::stats::modifiers::ActiveStatModifiers;
 
 use crate::game_state::{GameScreen, Screen};
-use crate::spells::cast_bar::ObservedCasts;
+
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 
@@ -44,15 +44,14 @@ pub fn setup_player_stats(mut commands: Commands, theme: Res<UiTheme>) {
 pub fn update_player_stats(
     screen: Res<GameScreen>,
     client_config: Option<Res<ClientConnectionConfig>>,
-    observed_casts: Option<Res<ObservedCasts>>,
+
     player_query: Query<(
         &MovementStats,
         &CombatStats,
         &VitalStats,
         Option<&PlayerId>,
-        Has<Controlled>,
+        Has<LocalPlayer>,
         Option<&ActiveStatModifiers>,
-        Option<&NetworkEntityId>,
     )>,
     mut root_query: Query<&mut Node, With<PlayerStatsUi>>,
     mut text_query: Query<&mut Text, With<PlayerStatsText>>,
@@ -69,11 +68,11 @@ pub fn update_player_stats(
 
     root.display = Display::Flex;
     let local_client_id = client_config.map(|config| config.client_id);
-    let Some((movement, combat, vital, _, _, modifiers, network_id)) = player_query
+    let Some((movement, combat, vital, _, _, modifiers)) = player_query
         .iter()
-        .find(|(_, _, _, _, controlled, _, _)| *controlled)
+        .find(|(_, _, _, _, controlled, _)| *controlled)
         .or_else(|| {
-            player_query.iter().find(|(_, _, _, player_id, _, _, _)| {
+            player_query.iter().find(|(_, _, _, player_id, _, _)| {
                 player_id.is_some_and(|id| {
                     local_client_id.is_some_and(|client_id| id.0.to_bits() == client_id)
                 })
@@ -91,8 +90,6 @@ pub fn update_player_stats(
         combat,
         vital,
         modifiers,
-        network_id,
-        observed_casts.as_deref(),
     );
     if *last_text != new_text {
         text.0 = new_text.clone();
@@ -105,11 +102,8 @@ fn format_stats(
     combat: &CombatStats,
     vital: &VitalStats,
     modifiers: Option<&ActiveStatModifiers>,
-    network_id: Option<&NetworkEntityId>,
-    observed_casts: Option<&ObservedCasts>,
 ) -> String {
-    let move_speed =
-        displayed_movement_speed(movement.speed, modifiers, network_id, observed_casts);
+    let move_speed = displayed_movement_speed(movement.speed, modifiers);
     format!(
         "HP: {}/{}\nMax Mana: {}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)\nAttack Power: {}\nMove Speed: {:.2}",
         format_value(vital.current_health),
@@ -123,29 +117,8 @@ fn format_stats(
     )
 }
 
-fn displayed_movement_speed(
-    base_speed: f32,
-    modifiers: Option<&ActiveStatModifiers>,
-    network_id: Option<&NetworkEntityId>,
-    observed_casts: Option<&ObservedCasts>,
-) -> f32 {
-    let effective_speed = effective_movement_speed(base_speed, modifiers);
-    if modifiers.is_some() {
-        return effective_speed;
-    }
-
-    let (Some(network_id), Some(observed_casts)) = (network_id, observed_casts) else {
-        return effective_speed;
-    };
-    if observed_casts
-        .0
-        .get(&network_id.0)
-        .is_some_and(|cast| cast.spell_id == "swift")
-    {
-        return effective_speed * 1.35;
-    }
-
-    effective_speed
+fn displayed_movement_speed(base_speed: f32, modifiers: Option<&ActiveStatModifiers>) -> f32 {
+    effective_movement_speed(base_speed, modifiers)
 }
 
 fn format_value(value: f32) -> String {

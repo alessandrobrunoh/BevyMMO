@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevymmo_shared::spells::{HotbarSlot, SpellId};
+use bevymmo_gameplay::spells::{HotbarSlot, SpellId};
 
 #[derive(Component)]
 pub struct SpellSelectorWindow;

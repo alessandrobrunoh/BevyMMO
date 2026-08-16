@@ -12,12 +12,12 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
-use bevymmo_shared::abilities::{
+use bevymmo_gameplay::abilities::{
     inscription::inscription_cost, resolve_active_ability, resolve_slot_preview, AbilitySlot,
     AbilityTag, AncientWordRegistry, BaseAbilityRegistry, CastBlockedReason, EssenceRegistry,
     Inscription, KnownGlyphs, ModifierRegistry, RuneProfile, SlotPreview, WeaponInscriptions,
 };
-use bevymmo_shared::items::{instance::ItemInstance, ItemCategory, ItemRarity, ItemRegistry};
+use bevymmo_gameplay::items::{instance::ItemInstance, ItemCategory, ItemRarity, ItemRegistry};
 
 /// I registri necessari a descrivere un'arma incisa, raggruppati per non far
 /// crescere la firma della scheda item di un argomento per tipo di Glifo.
@@ -71,7 +71,7 @@ impl RuneSummary {
         if let Some(affinity) = &self.affinity {
             parts.push(format!("{affinity} affinity"));
         }
-        parts.join("  ·  ")
+        parts.join("   |   ")
     }
 }
 
@@ -115,7 +115,7 @@ pub fn meta_line(
     if weight > 0.0 {
         parts.push(format!("{} wt", number(weight)));
     }
-    parts.join("  ·  ")
+    parts.join("   |   ")
 }
 
 /// Costruisce il riepilogo Eidolon di `instance`, o `None` se l'item non è
@@ -176,7 +176,7 @@ fn total_rune_cost(
 fn summarize_slot(
     slot: AbilitySlot,
     instance: &ItemInstance,
-    abilities: &bevymmo_shared::abilities::WeaponAbilities,
+    abilities: &bevymmo_gameplay::abilities::WeaponAbilities,
     inscriptions: &WeaponInscriptions,
     glyphs: GlyphCatalog,
     known: &KnownGlyphs,
@@ -201,14 +201,14 @@ fn summarize_slot(
     );
     let blocked = match &preview {
         Err(CastBlockedReason::UnknownGlyph) => {
-            Some("Locked — you don't know every inscribed Glyph".to_string())
+            Some("LOCKED - you don't know every inscribed Glyph".to_string())
         }
-        Err(reason) => Some(format!("Unavailable — {reason:?}")),
+        Err(reason) => Some(format!("UNAVAILABLE - {reason:?}")),
         Ok(_) => None,
     };
     let params = match preview {
         Ok(SlotPreview { params, .. }) => params,
-        Err(_) => bevymmo_shared::abilities::resolve_ability_params(
+        Err(_) => bevymmo_gameplay::abilities::resolve_ability_params(
             ability.base_params(),
             &inscription.modifiers,
             glyphs.modifiers,
@@ -221,8 +221,8 @@ fn summarize_slot(
         .and_then(|id| glyphs.essences.get(id))
         .map(|essence| essence.display_name().to_string());
     let title = match &essence_name {
-        Some(name) => format!("{} — {name}", ability.display_name()),
-        None => format!("{} — physical", ability.display_name()),
+        Some(name) => format!("{} - {name}", ability.display_name()),
+        None => format!("{} - physical", ability.display_name()),
     };
 
     let alternatives = {
@@ -256,15 +256,15 @@ const fn slot_name(slot: AbilitySlot) -> &'static str {
     }
 }
 
-fn describe_geometry(geometry: bevymmo_shared::abilities::AbilityGeometry) -> String {
-    use bevymmo_shared::abilities::AbilityGeometry::*;
+fn describe_geometry(geometry: bevymmo_gameplay::abilities::AbilityGeometry) -> String {
+    use bevymmo_gameplay::abilities::AbilityGeometry::*;
     match geometry {
         Cone { radius, angle_deg } => {
-            format!("Cone {} m / {}°", number(radius), number(angle_deg))
+            format!("Cone {} m / {} deg", number(radius), number(angle_deg))
         }
         Circle { radius } => format!("Circle {} m", number(radius)),
-        Projectile { range, speed } => {
-            format!("Projectile {} m @ {} m/s", number(range), number(speed))
+        Projectile { speed } => {
+            format!("Projectile @ {} m/s", number(speed))
         }
         SelfBuff { duration_seconds } => format!("Self buff {} s", number(duration_seconds)),
     }
@@ -272,7 +272,7 @@ fn describe_geometry(geometry: bevymmo_shared::abilities::AbilityGeometry) -> St
 
 /// Solo i campi che portano informazione: un `0` ovunque è il default di
 /// `AbilityParams`, e stamparlo riempirebbe la riga di rumore.
-fn describe_params(params: &bevymmo_shared::abilities::AbilityParams) -> String {
+fn describe_params(params: &bevymmo_gameplay::abilities::AbilityParams) -> String {
     let mut parts = Vec::new();
     if params.power != 0.0 {
         parts.push(format!("{} power", number(params.power)));
@@ -293,19 +293,19 @@ fn describe_params(params: &bevymmo_shared::abilities::AbilityParams) -> String 
         parts.push(format!("{} mana", number(params.energy_cost)));
     }
     if parts.is_empty() {
-        return "—".to_string();
+        return "-".to_string();
     }
-    parts.join("  ·  ")
+    parts.join("   |   ")
 }
 
 fn describe_tags(tags: &[AbilityTag]) -> String {
     if tags.is_empty() {
-        return "—".to_string();
+        return "-".to_string();
     }
     tags.iter()
         .map(|tag| format!("{tag:?}"))
         .collect::<Vec<_>>()
-        .join(" · ")
+        .join(" / ")
 }
 
 /// L'incisione dello slot, con il costo runico di ogni Glifo: è il numero che
@@ -362,8 +362,8 @@ fn number(value: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevymmo_shared::abilities::{AbilityGeometry, AbilityParams};
-    use bevymmo_shared::items::components::EquipSlot;
+    use bevymmo_gameplay::abilities::{AbilityGeometry, AbilityParams};
+    use bevymmo_gameplay::items::components::EquipSlot;
 
     fn params() -> AbilityParams {
         AbilityParams {
@@ -380,22 +380,13 @@ mod tests {
     /// summary is exercised against the same data the player sees.
     fn catalog_app() -> App {
         let mut app = App::new();
-        app.init_resource::<ItemRegistry>()
-            .init_resource::<BaseAbilityRegistry>()
-            .init_resource::<EssenceRegistry>()
-            .init_resource::<ModifierRegistry>()
-            .init_resource::<AncientWordRegistry>();
-        app.add_systems(
-            Startup,
-            (
-                bevymmo_shared::items_impl::register_default_items,
-                bevymmo_shared::base_abilities_impl::register_default_base_abilities,
-                bevymmo_shared::essences_impl::register_default_essences,
-                bevymmo_shared::modifiers_impl::register_default_modifiers,
-                bevymmo_shared::ancient_words_impl::register_default_ancient_words,
-            ),
-        );
-        app.update();
+        // Registries are plain values now, so the fixture inserts them
+        // directly instead of running a `Startup` schedule to fill them.
+        app.insert_resource(bevymmo_content::item_definitions::default_items());
+        app.insert_resource(bevymmo_content::ability_definitions::default_base_abilities());
+        app.insert_resource(bevymmo_content::essence_definitions::default_essences());
+        app.insert_resource(bevymmo_content::modifier_definitions::default_modifiers());
+        app.insert_resource(bevymmo_content::ancient_word_definitions::default_ancient_words());
         app
     }
 
@@ -411,7 +402,7 @@ mod tests {
     }
 
     fn magic_staff() -> ItemInstance {
-        ItemInstance::new(bevymmo_shared::items::ItemId::new("magic_staff"))
+        ItemInstance::new(bevymmo_gameplay::items::ItemId::new("magic_staff"))
     }
 
     /// A weapon with no inscription still describes all three of its gestures.
@@ -432,26 +423,12 @@ mod tests {
         assert_eq!(runes.affinity.as_deref(), Some("Fuoco"));
     }
 
-    /// Primary offers two gestures, so the card must name the one that is not
-    /// active — that is how the player learns the weapon can be re-selected.
     #[test]
-    fn slots_with_a_choice_list_the_other_option() {
+    fn slots_with_one_gesture_have_no_alternatives() {
         let app = catalog_app();
         let summary = summarize(&app, &magic_staff(), &KnownGlyphs::default());
 
-        let primary = &summary.slots[0];
-        let alternatives = primary
-            .alternatives
-            .as_ref()
-            .expect("Primary offers two gestures");
-        assert!(
-            alternatives.starts_with("Also offers: "),
-            "got: {alternatives}"
-        );
-        assert!(!alternatives.contains(&primary.title));
-
-        // Ultimate has exactly one gesture: nothing to offer.
-        assert!(summary.slots[2].alternatives.is_none());
+        assert!(summary.slots.iter().all(|slot| slot.alternatives.is_none()));
     }
 
     /// The rune line is the shared budget across all three slots, discounted by
@@ -462,8 +439,8 @@ mod tests {
         let mut instance = magic_staff();
         instance.inscriptions = Some(WeaponInscriptions {
             primary: Inscription {
-                essence: Some(bevymmo_shared::abilities::EssenceId::new("fuoco")),
-                modifiers: vec![bevymmo_shared::abilities::ModifierId::new("amplificare")],
+                essence: Some(bevymmo_gameplay::abilities::EssenceId::new("fuoco")),
+                modifiers: vec![],
                 ancient_word: None,
             },
             ..Default::default()
@@ -472,10 +449,8 @@ mod tests {
         let mut known = KnownGlyphs::default();
         known
             .essences
-            .insert(bevymmo_shared::abilities::EssenceId::new("fuoco"));
-        known
-            .modifiers
-            .insert(bevymmo_shared::abilities::ModifierId::new("amplificare"));
+            .insert(bevymmo_gameplay::abilities::EssenceId::new("fuoco"));
+
 
         let summary = summarize(&app, &instance, &known);
         let primary = &summary.slots[0];
@@ -484,11 +459,10 @@ mod tests {
         assert!(primary.title.contains("Fuoco"), "got: {}", primary.title);
         let glyphs = primary.glyphs.as_ref().expect("primary is inscribed");
         assert!(glyphs.contains("Fuoco (2)"), "got: {glyphs}");
-        assert!(glyphs.contains("Amplificare (3)"), "got: {glyphs}");
 
-        // Fuoco (2) discounted to 1 by the staff's Fuoco affinity, + 3.
+        // Fuoco (2) is discounted to 1 by the staff's Fuoco affinity.
         let runes = summary.runes.expect("rune profile");
-        assert_eq!(runes.used, 4);
+        assert_eq!(runes.used, 1);
     }
 
     /// The regression this guards: a weapon found already inscribed by someone
@@ -500,7 +474,7 @@ mod tests {
         let mut instance = magic_staff();
         instance.inscriptions = Some(WeaponInscriptions {
             primary: Inscription {
-                essence: Some(bevymmo_shared::abilities::EssenceId::new("fuoco")),
+                essence: Some(bevymmo_gameplay::abilities::EssenceId::new("fuoco")),
                 modifiers: vec![],
                 ancient_word: None,
             },
@@ -546,17 +520,16 @@ mod tests {
             cooldown: 0.0,
             energy_cost: 0.0,
         };
-        assert_eq!(describe_params(&empty), "—");
+        assert_eq!(describe_params(&empty), "-");
     }
 
     #[test]
     fn geometry_is_described_per_shape() {
         assert_eq!(
             describe_geometry(AbilityGeometry::Projectile {
-                range: 22.0,
                 speed: 24.0
             }),
-            "Projectile 22 m @ 24 m/s"
+            "Projectile @ 24 m/s"
         );
         assert_eq!(
             describe_geometry(AbilityGeometry::Circle { radius: 4.5 }),
@@ -567,16 +540,16 @@ mod tests {
                 radius: 8.0,
                 angle_deg: 60.0
             }),
-            "Cone 8 m / 60°"
+            "Cone 8 m / 60 deg"
         );
     }
 
     #[test]
     fn tags_fall_back_to_a_dash_when_empty() {
-        assert_eq!(describe_tags(&[]), "—");
+        assert_eq!(describe_tags(&[]), "-");
         assert_eq!(
             describe_tags(&[AbilityTag::Ranged, AbilityTag::Projectile]),
-            "Ranged · Projectile"
+            "Ranged / Projectile"
         );
     }
 
@@ -613,7 +586,7 @@ mod tests {
             None::<EquipSlot>,
             0.0,
         );
-        assert_eq!(line, "Material  ·  Common");
+        assert_eq!(line, "Material   |   Common");
     }
 
     #[test]

@@ -2,9 +2,9 @@
 
 use bevy::light::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
-use lightyear::prelude::Controlled;
+use bevymmo_client::local_player::LocalPlayer;
 
-use bevymmo_shared::network::protocol::Position;
+use bevymmo_network::network::protocol::Position;
 
 use crate::game_state::{GameScreen, Screen};
 
@@ -71,7 +71,7 @@ pub fn update_game_scene_lifecycle(
     }
 }
 
-/// Moves the game camera to follow the local player (`Controlled`).
+/// Moves the game camera to follow the local player (`LocalPlayer`).
 ///
 /// By maintaining a dynamic offset based on the current zoom level relative to the local
 /// player's `Position`, a rotation-free "third-person isometric" effect is achieved:
@@ -84,7 +84,7 @@ pub fn update_game_scene_lifecycle(
 /// // Player at (10, 0, 5) -> camera at (10, zoomed_height, zoomed_depth) looking at the player.
 /// ```
 pub fn follow_controlled_player(
-    player: Query<(&Position, Option<&Transform>), (With<Controlled>, Without<GameCamera>)>,
+    player: Query<(&Position, Option<&Transform>), (With<LocalPlayer>, Without<GameCamera>)>,
     mut camera: Query<&mut Transform, With<GameCamera>>,
     zoom: Res<CameraZoom>,
 ) {
@@ -114,11 +114,11 @@ pub fn follow_controlled_player(
 /// CameraZoomOut actions within the defined limits.
 pub fn handle_camera_zoom(
     keyboard: Res<ButtonInput<KeyCode>>,
-    settings: Res<bevymmo_shared::user_settings::GameSettingsResource>,
+    settings: Res<bevymmo_client::user_settings::GameSettingsResource>,
     time: Res<Time>,
     mut zoom: ResMut<CameraZoom>,
 ) {
-    use bevymmo_shared::user_settings::KeyAction;
+    use bevymmo_client::user_settings::KeyAction;
 
     const ZOOM_SPEED: f32 = 10.0; // Units per second
 
@@ -195,7 +195,7 @@ mod tests {
     use super::*;
     use crate::renderer::RendererPlugin;
     use crate::scenes::base::BaseScenePlugin;
-    use bevymmo_shared::network::protocol::{EntityColor, Position};
+    use bevymmo_network::network::protocol::{EntityColor, Position};
 
     fn test_app() -> App {
         let mut app = App::new();
@@ -206,7 +206,7 @@ mod tests {
         // Without these the system fails parameter validation and aborts the
         // whole schedule, taking every test in this module with it.
         app.init_resource::<ButtonInput<KeyCode>>();
-        app.init_resource::<bevymmo_shared::user_settings::GameSettingsResource>();
+        app.init_resource::<bevymmo_client::user_settings::GameSettingsResource>();
         app.init_resource::<Time>();
         // `sync_transforms` reads the fixed-step overstep to interpolate.
         app.init_resource::<Time<Fixed>>();
@@ -233,7 +233,7 @@ mod tests {
 
         // Local player controlled by the client.
         app.world_mut()
-            .spawn((Controlled, Position(Vec3::new(10.0, 0.0, 5.0))));
+            .spawn((LocalPlayer, Position(Vec3::new(10.0, 0.0, 5.0))));
         app.update();
 
         let mut cams = app

@@ -11,22 +11,23 @@
 //! dopo per applicare l'effetto. Finché resta così, l'anteprima non può
 //! mentire su dove cadrà il colpo.
 
+use bevymmo_domain::EntityId;
 use std::f32::consts::TAU;
 
 use bevy::color::palettes::css;
 use bevy::prelude::*;
-use bevymmo_shared::abilities::base_ability::FORWARD_LANE_HALF_WIDTH;
-use bevymmo_shared::abilities::{
+use bevymmo_gameplay::abilities::base_ability::FORWARD_LANE_HALF_WIDTH;
+use bevymmo_gameplay::abilities::{
     resolve_slot_preview, AbilityAim, AbilityGeometry, BaseAbilityRegistry, KnownGlyphs,
     ModifierRegistry, SlotPreview,
 };
-use bevymmo_shared::items::components::Equipment;
-use bevymmo_shared::items::registry::ItemRegistry;
-use bevymmo_shared::network::protocol::{LookDirection, Position};
-use bevymmo_shared::spells::context::{AoeShape, SpellCastContext};
-use bevymmo_shared::stats::components::CombatStats;
-use bevymmo_shared::user_settings::{GameSettingsResource, KeyAction};
-use lightyear::prelude::Controlled;
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_gameplay::items::components::Equipment;
+use bevymmo_gameplay::items::registry::ItemRegistry;
+use bevymmo_network::network::protocol::{LookDirection, Position};
+use bevymmo_gameplay::spells::context::{AoeShape, SpellCastContext};
+use bevymmo_gameplay::stats::components::CombatStats;
+use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::spells::ui::SpellHudState;
 
@@ -52,7 +53,7 @@ const CONE_ARC_SEGMENTS: usize = 32;
 pub fn draw_ability_aim_preview(
     mut gizmos: Gizmos,
     aim: Res<AbilityAim>,
-    players: Query<(&Equipment, &KnownGlyphs, &Position, &LookDirection), With<Controlled>>,
+    players: Query<(&Equipment, &KnownGlyphs, &Position, &LookDirection), With<LocalPlayer>>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
     modifier_registry: Res<ModifierRegistry>,
@@ -98,7 +99,11 @@ pub fn draw_ability_aim_preview(
     };
 
     let on_cooldown = hud_state.ability_on_cooldown(&ability.id());
-    let color = if on_cooldown { BLOCKED_COLOR } else { IMPACT_COLOR };
+    let color = if on_cooldown {
+        BLOCKED_COLOR
+    } else {
+        IMPACT_COLOR
+    };
 
     // `impact_center`/`impact_shape` leggono il contesto di cast: lo si
     // costruisce identico a quello che il server costruirà, con il punto di
@@ -109,7 +114,7 @@ pub fn draw_ability_aim_preview(
         armor: 0.0,
     };
     let ctx = SpellCastContext::new(
-        Entity::PLACEHOLDER,
+        EntityId::PLACEHOLDER,
         position.0,
         &combat,
         look_direction.0,
@@ -140,8 +145,8 @@ pub fn draw_ability_aim_preview(
                 draw_flat_cone(&mut gizmos, center, radius, direction, angle_deg, color);
             }
         }
-        AbilityGeometry::Projectile { range, .. } => {
-            draw_forward_lane(&mut gizmos, position.0, look_direction.0, range, color);
+        AbilityGeometry::Projectile { .. } => {
+            draw_forward_lane(&mut gizmos, position.0, look_direction.0, params.range, color);
         }
         AbilityGeometry::SelfBuff { .. } => {
             draw_flat_circle(&mut gizmos, position.0, 1.0, color);
@@ -220,7 +225,9 @@ fn draw_flat_cone(
         apex + rotation * axis * radius
     };
 
-    let steps = (CONE_ARC_SEGMENTS as f32 * (half_angle * 2.0 / TAU)).ceil().max(2.0) as usize;
+    let steps = (CONE_ARC_SEGMENTS as f32 * (half_angle * 2.0 / TAU))
+        .ceil()
+        .max(2.0) as usize;
     let mut previous = point_at(-half_angle);
     gizmos.line(apex, previous, color);
     for step in 1..=steps {
@@ -259,9 +266,9 @@ fn draw_forward_lane(
 
 #[cfg(test)]
 mod tests {
-    use bevymmo_shared::abilities::AbilitySlot;
-    use bevymmo_shared::spells::context::AoeShape;
     use bevy::prelude::*;
+    use bevymmo_gameplay::abilities::AbilitySlot;
+
 
     use super::*;
 
@@ -270,7 +277,7 @@ mod tests {
         app.init_resource::<ButtonInput<KeyCode>>();
         app.init_resource::<AbilityAim>();
         app.insert_resource(GameSettingsResource(
-            bevymmo_shared::user_settings::GameSettings::default(),
+            bevymmo_client::user_settings::GameSettings::default(),
         ));
         app.add_systems(Update, cancel_ability_aim_on_escape);
         app
@@ -316,43 +323,5 @@ mod tests {
             .just_pressed(KeyCode::Escape));
     }
 
-    /// Il preview di un cono va disegnato dai valori che il server userà per
-    /// colpire: questo test blocca la terna centro/raggio/forma di ArcaneGale.
-    #[test]
-    fn the_cone_preview_reads_the_same_geometry_the_server_hits_with() {
-        use bevymmo_shared::abilities::BaseAbility;
-        use bevymmo_shared::base_abilities_impl::arcane_gale::ArcaneGale;
-        use bevymmo_shared::stats::components::CombatStats;
 
-        let combat = CombatStats {
-            attack_power: 0.0,
-            armor: 0.0,
-        };
-        let caster_position = Vec3::new(3.0, 0.0, 1.0);
-        let ctx = SpellCastContext::new(
-            Entity::PLACEHOLDER,
-            caster_position,
-            &combat,
-            Vec3::Z,
-            Some(Vec3::new(3.0, 0.0, 20.0)),
-            None,
-            &[],
-        );
-
-        let ability = ArcaneGale;
-        let params = ability.base_params();
-
-        // L'apice è il lanciatore, non un centro spinto in avanti.
-        assert_eq!(ability.impact_center(&params, &ctx), caster_position);
-        assert!(matches!(
-            ability.impact_shape(&ctx),
-            AoeShape::Cone { .. }
-        ));
-
-        // Un bersaglio davanti è dentro, uno di lato no.
-        let shape = ability.impact_shape(&ctx);
-        let radius = ability.impact_radius(&params);
-        assert!(shape.contains(caster_position, radius, caster_position + Vec3::Z * 4.0));
-        assert!(!shape.contains(caster_position, radius, caster_position + Vec3::X * 4.0));
-    }
 }

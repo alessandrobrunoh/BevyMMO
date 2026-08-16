@@ -1,13 +1,12 @@
 use super::components::*;
 use super::SpellSelectorUiState;
 use bevy::prelude::*;
-use bevymmo_client::network::types::ConnectedClient;
-use bevymmo_shared::items::components::Equipment;
-use bevymmo_shared::items::registry::ItemRegistry;
-use bevymmo_shared::items::AvailableSpellChoices;
-use bevymmo_shared::network::protocol::{Channel2, UpdateHotbarSlotRequest};
-use bevymmo_shared::spells::{HotbarSlot, SpellHotbar, SpellId, SpellRegistry};
-use lightyear::prelude::MessageSender;
+use bevymmo_client::stdb::{commands, StdbConnection};
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_gameplay::items::components::Equipment;
+use bevymmo_gameplay::items::registry::ItemRegistry;
+use bevymmo_gameplay::items::AvailableSpellChoices;
+use bevymmo_gameplay::spells::{HotbarSlot, SpellHotbar, SpellId, SpellRegistry};
 
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::UiTheme;
@@ -26,10 +25,7 @@ pub fn toggle_spell_selector(
     theme: Res<UiTheme>,
     registry: Res<SpellRegistry>,
     item_registry: Res<ItemRegistry>,
-    player_query: Query<
-        (&SpellHotbar, &AvailableSpellChoices, &Equipment),
-        With<lightyear::prelude::Controlled>,
-    >,
+    player_query: Query<(&SpellHotbar, &AvailableSpellChoices, &Equipment), With<LocalPlayer>>,
 ) {
     if !settings.just_pressed(KeyAction::ToggleSpellbook, &keys) {
         return;
@@ -56,7 +52,7 @@ pub fn toggle_spell_selector(
     }
 
     let Some((hotbar, choices, _)) = player_query.iter().next() else {
-        // Controlled entity not spawned/replicated yet (e.g. still joining).
+        // LocalPlayer entity not spawned/replicated yet (e.g. still joining).
         state.is_open = false;
         return;
     };
@@ -201,7 +197,14 @@ fn spawn_slot_column(
                         .get(spell_id)
                         .map(|spell| spell.display_name())
                         .unwrap_or("???");
-                    spawn_option_button(column, theme, slot, spell_id.clone(), display_name, hotbar);
+                    spawn_option_button(
+                        column,
+                        theme,
+                        slot,
+                        spell_id.clone(),
+                        display_name,
+                        hotbar,
+                    );
                 }
             }
 
@@ -292,7 +295,7 @@ pub fn update_spell_selector_ui(
     mut option_buttons: Query<(Entity, &mut BackgroundColor), With<SpellOptionButton>>,
     registry: Res<SpellRegistry>,
     theme: Res<UiTheme>,
-    player_query: Query<&SpellHotbar, With<lightyear::prelude::Controlled>>,
+    player_query: Query<&SpellHotbar, With<LocalPlayer>>,
 ) {
     let Some(hotbar) = player_query.iter().next() else {
         return;
@@ -323,14 +326,17 @@ pub fn update_spell_selector_ui(
 #[allow(clippy::type_complexity)]
 pub fn handle_spell_selector_interactions(
     mut state: ResMut<SpellSelectorUiState>,
-    option_interactions: Query<(&Interaction, &SpellOptionButton), (Changed<Interaction>, With<Button>)>,
+    option_interactions: Query<
+        (&Interaction, &SpellOptionButton),
+        (Changed<Interaction>, With<Button>),
+    >,
     clear_interactions: Query<
         (&Interaction, &ClearHotbarSlotButton),
         (Changed<Interaction>, With<Button>),
     >,
     close_interactions: Query<&Interaction, (Changed<Interaction>, With<CloseSpellSelectorButton>)>,
-    mut player_query: Query<&mut SpellHotbar, With<lightyear::prelude::Controlled>>,
-    mut senders: Query<&mut MessageSender<UpdateHotbarSlotRequest>, With<ConnectedClient>>,
+    mut player_query: Query<&mut SpellHotbar, With<LocalPlayer>>,
+    conn: Option<Res<StdbConnection>>,
     mut commands: Commands,
     window_query: Query<Entity, With<SpellSelectorWindow>>,
 ) {
@@ -351,7 +357,7 @@ pub fn handle_spell_selector_interactions(
             option.slot,
             Some(option.spell_id.clone()),
             &mut player_query,
-            &mut senders,
+            conn.as_deref(),
         );
     }
 
@@ -359,7 +365,7 @@ pub fn handle_spell_selector_interactions(
         if *interaction != Interaction::Pressed {
             continue;
         }
-        apply_hotbar_selection(clear_slot.slot, None, &mut player_query, &mut senders);
+        apply_hotbar_selection(clear_slot.slot, None, &mut player_query, conn.as_deref());
     }
 }
 
@@ -369,20 +375,21 @@ pub fn handle_spell_selector_interactions(
 fn apply_hotbar_selection(
     slot: HotbarSlot,
     spell_id: Option<SpellId>,
-    player_query: &mut Query<&mut SpellHotbar, With<lightyear::prelude::Controlled>>,
-    senders: &mut Query<&mut MessageSender<UpdateHotbarSlotRequest>, With<ConnectedClient>>,
+    player_query: &mut Query<&mut SpellHotbar, With<LocalPlayer>>,
+    conn: Option<&StdbConnection>,
 ) {
     if let Some(mut hotbar) = player_query.iter_mut().next() {
         hotbar.assign(slot, spell_id.clone());
     }
 
-    for mut sender in senders.iter_mut() {
-        sender.send::<Channel2>(UpdateHotbarSlotRequest {
-            slot,
-            spell_id: spell_id
-                .as_ref()
-                .map(|spell_id| spell_id.as_str().to_string()),
-        });
+    let Some(conn) = conn else {
+        return;
+    };
+    let spell_id = spell_id.as_ref().map(|id| id.as_str().to_string());
+    if let Err(err) = commands::set_hotbar_spell(conn, slot, spell_id) {
+        // The local assignment above stays until the server's `hotbar` row
+        // arrives and overwrites it, so a rejected pick corrects itself.
+        error!("could not set hotbar slot: {err}");
     }
 }
 
@@ -395,7 +402,11 @@ fn despawn_spell_selector_windows(
     }
 }
 
-fn format_hotbar_slot_label(slot: HotbarSlot, hotbar: &SpellHotbar, registry: &SpellRegistry) -> String {
+fn format_hotbar_slot_label(
+    slot: HotbarSlot,
+    hotbar: &SpellHotbar,
+    registry: &SpellRegistry,
+) -> String {
     let spell_name = hotbar
         .spell_for_slot(slot)
         .and_then(|spell_id| registry.get(spell_id))

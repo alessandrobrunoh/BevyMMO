@@ -19,6 +19,6 @@ pub struct BossBanner;
 /// and arm the banner. Lives in a resource because there is at most one boss.
 #[derive(Resource, Default)]
 pub struct BossBannerState {
-    pub last_phase: Option<bevymmo_shared::entity::boss::components::BossPhase>,
+    pub last_phase: Option<bevymmo_gameplay::entity::boss::components::BossPhase>,
     pub remaining_seconds: f32,
 }

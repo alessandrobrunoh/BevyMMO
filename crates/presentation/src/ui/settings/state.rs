@@ -1,8 +1,8 @@
 //! UI-specific settings types. The data model lives in
-//! [`bevymmo_shared::user_settings`]; this module re-exports those types for
+//! [`bevymmo_client::user_settings`]; this module re-exports those types for
 //! convenience and adds the UI-only [`SettingsTab`] enum (sidebar tabs).
 
-pub use bevymmo_shared::user_settings::{
+pub use bevymmo_client::user_settings::{
     load_settings, save_settings, settings_path, GameSettings, GameSettingsResource,
     GeneralSettings, GraphicsSettings, KeyAction, KeyBinding, KeyModifiers, KeybindSettings,
     Resolution, WindowMode,
@@ -32,4 +32,3 @@ impl SettingsTab {
         }
     }
 }
-

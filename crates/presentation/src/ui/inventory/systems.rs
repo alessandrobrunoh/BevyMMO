@@ -1,18 +1,14 @@
 //! Systems for Inventory UI rendering, input handling, and server communication.
 
 use bevy::prelude::*;
-use bevymmo_client::network::types::ConnectedClient;
-use bevymmo_shared::{
-    items::{
-        components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY},
-        events::{EquipItemCommand, UnequipItemCommand},
-        registry::ItemRegistry,
-    },
-    network::protocol::Channel2,
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_gameplay::items::{
+    components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY},
+    registry::ItemRegistry,
 };
-use lightyear::prelude::MessageSender;
 
-use bevymmo_shared::abilities::KnownGlyphs;
+use bevymmo_gameplay::abilities::KnownGlyphs;
 
 use super::weapon_detail::GlyphRegistries;
 use super::{components::*, detail::*, InventoryUiState};
@@ -27,12 +23,20 @@ use crate::ui::{
 
 // Sized to still fit the default 800x600 dev window (see
 // `ui::card::builder`'s note on why cards use viewport-relative centring):
-// header + padding + 3x3 equip grid + mount row + divider + 5x2 item grid
-// comfortably clears 600px tall at these dimensions.
+// header + padding + 3x3 equip grid + mount row + divider + 6x5 item grid
+// fit in the scrollable body at these dimensions.
 const INVENTORY_CARD_WIDTH: f32 = 340.0;
 const INVENTORY_CARD_HEIGHT: f32 = 560.0;
+const INVENTORY_GRID_COLUMNS: u16 = 5;
+const INVENTORY_GRID_ROWS: u16 =
+    INVENTORY_CAPACITY.div_ceil(INVENTORY_GRID_COLUMNS as usize) as u16;
+const INVENTORY_SLOT_HEIGHT: f32 = 64.0;
 const EQUIP_SLOT_SIZE: f32 = 46.0;
-const EMPTY_SLOT_PLACEHOLDER: &str = "—";
+/// Shown in an empty inventory / equipment cell.
+///
+/// ASCII on purpose: Bevy's built-in font is an ASCII subset, so an em dash
+/// renders as a blank box rather than a dash.
+const EMPTY_SLOT_PLACEHOLDER: &str = "-";
 
 /// Slot border color for an empty box vs. one holding an item, approximating
 /// the rune-lined boxes of the reference design.
@@ -47,7 +51,7 @@ pub fn toggle_inventory(
     window_query: Query<(Entity, &CardWindow)>,
     theme: Res<UiTheme>,
     registry: Res<ItemRegistry>,
-    player_query: Query<(&Inventory, &Equipment), With<lightyear::prelude::Controlled>>,
+    player_query: Query<(&Inventory, &Equipment), With<LocalPlayer>>,
 ) {
     if !settings.just_pressed(KeyAction::ToggleInventory, &keys) {
         return;
@@ -83,7 +87,12 @@ fn equip_slot_label(equipment: &Equipment, registry: &ItemRegistry, slot: EquipS
 
 /// Spawns one equipment slot cell: a small caption above a bordered box.
 /// Shared by the 3x3 body-slot grid and the standalone Mount row.
-fn spawn_equip_slot_cell(parent: &mut ChildSpawnerCommands, theme: &UiTheme, slot: EquipSlot, label: String) {
+fn spawn_equip_slot_cell(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiTheme,
+    slot: EquipSlot,
+    label: String,
+) {
     let has_item = label != EMPTY_SLOT_PLACEHOLDER;
 
     parent
@@ -174,12 +183,12 @@ fn spawn_inventory_window(
         .width(Val::Px(INVENTORY_CARD_WIDTH))
         .height(Val::Px(INVENTORY_CARD_HEIGHT))
         .positioning(CardPositioning::Right)
+        .scrollable()
         .closeable()
         .exclusive()
         .with_body(move |body| {
             body.spawn((Node {
                 width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 row_gap: Val::Px(9.0),
@@ -187,10 +196,20 @@ fn spawn_inventory_window(
             },))
                 .with_children(|main| {
                     // 3x3 equipment grid.
+                    //
+                    // Rows are `auto`, not `flex`: `flex()` tracks are
+                    // `minmax(0, Nfr)`, and inside the scrollable body the
+                    // grid's height is indefinite (it sizes to its own
+                    // content), so there is no space to distribute the `fr`
+                    // against — every row collapsed to its zero minimum and
+                    // all three rows of captions/boxes drew stacked on top of
+                    // each other. `auto` sizes each row to its content
+                    // instead, which works regardless of the container's
+                    // height being definite or not.
                     main.spawn((Node {
                         display: Display::Grid,
                         grid_template_columns: RepeatedGridTrack::flex(3, 1.0),
-                        grid_template_rows: RepeatedGridTrack::flex(3, 1.0),
+                        grid_template_rows: RepeatedGridTrack::auto(3),
                         row_gap: Val::Px(10.0),
                         column_gap: Val::Px(10.0),
                         ..default()
@@ -231,12 +250,19 @@ fn spawn_inventory_window(
                         TextColor(Color::srgba(0.6, 0.75, 0.95, 0.9)),
                     ));
 
-                    // 5x2 generic inventory grid.
+                    // Generic inventory grid. The card body scrolls when all
+                    // rows exceed the available height.
                     main.spawn((Node {
                         width: Val::Percent(100.0),
                         display: Display::Grid,
-                        grid_template_columns: RepeatedGridTrack::flex(5, 1.0),
-                        grid_template_rows: RepeatedGridTrack::flex(2, 1.0),
+                        grid_template_columns: RepeatedGridTrack::flex(INVENTORY_GRID_COLUMNS, 1.0),
+                        // Item names can wrap to two lines. Fixed tracks keep
+                        // each row tall enough and make the grid expand inside
+                        // the scroll view instead of compressing its contents.
+                        grid_template_rows: RepeatedGridTrack::px(
+                            INVENTORY_GRID_ROWS,
+                            INVENTORY_SLOT_HEIGHT,
+                        ),
                         row_gap: Val::Px(8.0),
                         column_gap: Val::Px(8.0),
                         ..default()
@@ -248,7 +274,7 @@ fn spawn_inventory_window(
                                 grid.spawn((
                                     Button,
                                     Node {
-                                        height: Val::Px(44.0),
+                                        height: Val::Px(INVENTORY_SLOT_HEIGHT),
                                         justify_content: JustifyContent::Center,
                                         align_items: AlignItems::Center,
                                         padding: UiRect::all(Val::Px(4.0)),
@@ -268,9 +294,7 @@ fn spawn_inventory_window(
                                     btn.spawn((
                                         Text::new(item_name),
                                         TextFont {
-                                            font_size: FontSize::Px(
-                                                theme.button_font_size * 0.55,
-                                            ),
+                                            font_size: FontSize::Px(theme.button_font_size * 0.55),
                                             ..default()
                                         },
                                         TextColor(theme.text_color),
@@ -297,7 +321,7 @@ pub fn update_inventory_ui(
         (Without<ItemSlotButton>, Without<EquipSlotText>),
     >,
     registry: Res<ItemRegistry>,
-    player_query: Query<(&Inventory, &Equipment), With<lightyear::prelude::Controlled>>,
+    player_query: Query<(&Inventory, &Equipment), With<LocalPlayer>>,
 ) {
     let Some((inventory, equipment)) = player_query.iter().next() else {
         return;
@@ -373,12 +397,8 @@ pub fn handle_inventory_interactions(
     equip_slot_clicks: EquipSlotClicksQuery,
     equip_clicks: EquipClicksQuery,
     unequip_clicks: UnequipClicksQuery,
-    mut equip_senders: Query<&mut MessageSender<EquipItemCommand>, With<ConnectedClient>>,
-    mut unequip_senders: Query<&mut MessageSender<UnequipItemCommand>, With<ConnectedClient>>,
-    player_query: Query<
-        (&Inventory, &Equipment, Option<&KnownGlyphs>),
-        With<lightyear::prelude::Controlled>,
-    >,
+    conn: Option<Res<StdbConnection>>,
+    player_query: Query<(&Inventory, &Equipment, Option<&KnownGlyphs>), With<LocalPlayer>>,
     registry: Res<ItemRegistry>,
     glyphs: GlyphRegistries,
     theme: Res<UiTheme>,
@@ -439,10 +459,10 @@ pub fn handle_inventory_interactions(
         if *interaction != Interaction::Pressed {
             continue;
         }
-        for mut sender in equip_senders.iter_mut() {
-            sender.send::<Channel2>(EquipItemCommand {
-                slot_index: equip_btn.slot_index,
-            });
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::equip_item(conn, equip_btn.slot_index) {
+                error!("could not equip item: {err}");
+            }
         }
         despawn_detail_cards(&mut commands, &all_cards);
         state.selected = None;
@@ -452,10 +472,10 @@ pub fn handle_inventory_interactions(
         if *interaction != Interaction::Pressed {
             continue;
         }
-        for mut sender in unequip_senders.iter_mut() {
-            sender.send::<Channel2>(UnequipItemCommand {
-                slot: unequip_btn.slot,
-            });
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::unequip_item(conn, unequip_btn.slot) {
+                error!("could not unequip item: {err}");
+            }
         }
         despawn_detail_cards(&mut commands, &all_cards);
         state.selected = None;

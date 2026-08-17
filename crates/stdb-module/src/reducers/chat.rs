@@ -2,7 +2,8 @@
 
 use spacetimedb::{reducer, ReducerContext, Table};
 
-use crate::tables::{player, player_message, PlayerMessageEvent};
+use crate::reducers::lifecycle::caller_character;
+use crate::tables::{player_message, PlayerMessageEvent};
 
 const MAX_CHAT_MESSAGE_CHARS: usize = 240;
 
@@ -31,16 +32,12 @@ fn validate_chat_message(text: &str) -> Result<&str, String> {
 pub fn send_chat_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let message = validate_chat_message(&text)?;
 
-    let player = ctx
-        .db
-        .player()
-        .identity()
-        .find(&ctx.sender())
-        .ok_or_else(|| "you must join the world before chatting".to_string())?;
+    let character = caller_character(ctx)
+        .map_err(|_| "you must join the world before chatting".to_string())?;
 
     ctx.db.player_message().insert(PlayerMessageEvent {
         target: None,
-        text: format!("{}: {}", player.display_name, message),
+        text: format!("{}: {}", character.display_name, message),
     });
     Ok(())
 }

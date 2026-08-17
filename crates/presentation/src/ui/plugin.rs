@@ -3,9 +3,10 @@
 use bevy::prelude::*;
 
 use super::{
-    boss_bar, card, chat, connecting, crowd_control_bar, death_screen, debug_position, entity_bar,
-    inscription, inventory, main_menu, notices, npc_sidebar, pause_menu, player_stats, scoreboard,
-    scrollbar, settings, spell_selector, status_bar, systems, target_frame, target_indicator,
+    boss_bar, card, character_roster, chat, connecting, crowd_control_bar, death_screen,
+    debug_position, entity_bar, inscription, inventory, login, main_menu, notices, npc_sidebar,
+    pause_menu, player_stats, scoreboard, scrollbar, settings, spell_selector, status_bar,
+    systems, target_frame, target_indicator,
 };
 
 use crate::ui::theme::UiTheme;
@@ -27,6 +28,8 @@ impl Plugin for UiPlugin {
             entity_bar::EntityBarPlugin,
             scoreboard::ScoreboardPlugin,
             main_menu::MainMenuPlugin,
+            character_roster::CharacterRosterPlugin,
+            login::LoginPlugin,
             settings::SettingsPlugin,
             pause_menu::PauseMenuPlugin,
             player_stats::PlayerStatsPlugin,
@@ -52,6 +55,7 @@ impl Plugin for UiPlugin {
             Update,
             (
                 systems::update_button_actions,
+                systems::update_auth_button_actions,
                 systems::update_button_visuals,
                 systems::update_text_input_focus,
                 systems::update_text_input_keyboard,

@@ -34,7 +34,7 @@ use bevymmo_domain::stats::components::StatsBundleData;
 use bevymmo_domain::stats::defaults;
 use bevymmo_domain::stats::events::{ModifierOp, StatField};
 use bevymmo_domain::stats::formulas::damage_after_armor;
-use spacetimedb::{Identity, ReducerContext, Table};
+use spacetimedb::{ReducerContext, Table};
 
 use crate::rows::{equipment_from_rows, StatsRow, EQUIP_SLOTS};
 use crate::tables::{
@@ -706,10 +706,10 @@ pub const LEGACY_TICKS_PER_SECOND: f32 = 60.0;
 /// reconstructed — an NPC, or a character whose `player_stats` row is missing —
 /// and the caller must then leave the effective stats alone.
 fn base_stats(ctx: &ReducerContext, entity: &GameEntity) -> Option<StatsRow> {
-    if let Some(identity) = entity.owner {
-        let persisted = ctx.db.player_stats().identity().find(&identity)?;
+    if let Some(character_id) = entity.owner_character_id {
+        let persisted = ctx.db.player_stats().character_id().find(&character_id)?;
         let mut stats = persisted.stats;
-        apply_equipment_bonuses(ctx, identity, &mut stats);
+        apply_equipment_bonuses(ctx, character_id, &mut stats);
         return Some(stats);
     }
 
@@ -734,8 +734,8 @@ fn base_stats(ctx: &ReducerContext, entity: &GameEntity) -> Option<StatsRow> {
 /// Slot order is `EQUIP_SLOTS`, matching `recompute_equipment_bonuses` in the
 /// Bevy server, so a `Multiply` bonus composes with an `Add` bonus the same way
 /// it did there.
-fn apply_equipment_bonuses(ctx: &ReducerContext, identity: Identity, stats: &mut StatsRow) {
-    let Some(row) = ctx.db.equipment().identity().find(&identity) else {
+fn apply_equipment_bonuses(ctx: &ReducerContext, character_id: u64, stats: &mut StatsRow) {
+    let Some(row) = ctx.db.equipment().character_id().find(&character_id) else {
         return;
     };
     let equipment = equipment_from_rows(&row.slots);

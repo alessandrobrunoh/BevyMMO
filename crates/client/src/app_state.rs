@@ -48,6 +48,96 @@ pub enum ConnectionIntent {
 #[derive(Resource, Debug, Default)]
 pub struct ConnectionFailure(pub Option<String>);
 
+/// Where the connection stands with respect to an [`Account`](crate) login.
+///
+/// Distinct from [`Screen`]: `Screen` is which panel is on-screen, `AuthStatus`
+/// is whether the connection is allowed to do anything past the login form.
+/// A cached SpacetimeDB token is not, by itself, evidence of either — see the
+/// module docs on `stdb::plugin` for why every connection re-authenticates
+/// explicitly.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AuthStatus {
+    #[default]
+    LoggedOut,
+    Authenticating,
+    Authenticated,
+    Rejected,
+}
+
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AuthState(pub AuthStatus);
+
+/// The last `register`/`login` rejection reason, shown under the auth form.
+/// Cleared on the next attempt, independent of [`ConnectionFailure`] (which is
+/// about `join`, a step later in the flow).
+#[derive(Resource, Debug, Default)]
+pub struct AuthFailure(pub Option<String>);
+
+#[derive(Resource, Debug, Default)]
+pub struct AuthRequest(pub Option<AuthIntent>);
+
+/// Mirrors `bevymmo_module::MAX_CHARACTERS_PER_ACCOUNT`. The server enforces
+/// the real cap; this is only so the character-select screen knows when to
+/// hide the "create a new character" field.
+pub const MAX_CHARACTERS_PER_ACCOUNT: usize = 3;
+
+/// Requests deletion of one of the caller's own characters by id. A separate
+/// resource from [`ConnectionRequest`]/[`AuthRequest`]: deleting a character
+/// is neither a connection-lifecycle action nor an account-auth action.
+#[derive(Resource, Debug, Default)]
+pub struct DeleteCharacterRequest(pub Option<u64>);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuthIntent {
+    Register { email: String, password: String },
+    Login { email: String, password: String },
+}
+
+/// Reasons a typed email fails the client-side shape check.
+///
+/// Deliberately loose — a full RFC 5321 parser would still accept addresses no
+/// mail server would deliver to. The server re-validates authoritatively
+/// (`reducers::account::validate_email`); this only gives fast feedback
+/// without a round trip for the obviously-wrong cases.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmailError {
+    MissingAt,
+    EmptyLocalOrDomain,
+    DomainMissingDot,
+}
+
+/// Normalizes (trim + lowercase) and validates an email's shape.
+pub fn validate_email(email: &str) -> Result<String, EmailError> {
+    let normalized = email.trim().to_lowercase();
+    let Some((local, domain)) = normalized.split_once('@') else {
+        return Err(EmailError::MissingAt);
+    };
+    if local.is_empty() || domain.is_empty() || domain.contains('@') {
+        return Err(EmailError::EmptyLocalOrDomain);
+    }
+    if !domain.contains('.') || domain.starts_with('.') || domain.ends_with('.') {
+        return Err(EmailError::DomainMissingDot);
+    }
+    Ok(normalized)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PasswordError {
+    TooShort,
+}
+
+/// Mirrors the server's floor (`reducers::account::MIN_PASSWORD_LEN`). The
+/// server is authoritative; this exists only so a too-short password is
+/// rejected before a round trip, not to duplicate the full policy.
+const MIN_PASSWORD_LEN: usize = 8;
+
+pub fn validate_password(password: &str) -> Result<(), PasswordError> {
+    if password.chars().count() < MIN_PASSWORD_LEN {
+        return Err(PasswordError::TooShort);
+    }
+    Ok(())
+}
+
 /// Normalizes and validates the player's chosen name.
 pub fn validate_player_name(name: &str) -> Result<String, PlayerNameError> {
     let name = name.trim();
@@ -70,6 +160,10 @@ impl Plugin for GameStatePlugin {
         app.init_resource::<GameScreen>();
         app.init_resource::<ConnectionRequest>();
         app.init_resource::<ConnectionFailure>();
+        app.init_resource::<AuthState>();
+        app.init_resource::<AuthFailure>();
+        app.init_resource::<AuthRequest>();
+        app.init_resource::<DeleteCharacterRequest>();
     }
 }
 
@@ -90,5 +184,52 @@ mod tests {
     #[test]
     fn screen_defaults_to_main_menu() {
         assert_eq!(GameScreen::default().0, Screen::MainMenu);
+    }
+
+    #[test]
+    fn auth_state_defaults_to_logged_out() {
+        assert_eq!(AuthState::default().0, AuthStatus::LoggedOut);
+    }
+
+    #[test]
+    fn validate_email_normalizes_case_and_whitespace() {
+        assert_eq!(
+            validate_email("  Someone@Example.COM  "),
+            Ok("someone@example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_email_rejects_missing_at_sign() {
+        assert_eq!(
+            validate_email("no-at-sign.com"),
+            Err(EmailError::MissingAt)
+        );
+    }
+
+    #[test]
+    fn validate_email_rejects_empty_local_or_domain() {
+        assert_eq!(
+            validate_email("@example.com"),
+            Err(EmailError::EmptyLocalOrDomain)
+        );
+        assert_eq!(
+            validate_email("user@"),
+            Err(EmailError::EmptyLocalOrDomain)
+        );
+    }
+
+    #[test]
+    fn validate_email_rejects_domain_without_dot() {
+        assert_eq!(
+            validate_email("user@nodomain"),
+            Err(EmailError::DomainMissingDot)
+        );
+    }
+
+    #[test]
+    fn validate_password_enforces_minimum_length() {
+        assert_eq!(validate_password("1234567"), Err(PasswordError::TooShort));
+        assert_eq!(validate_password("12345678"), Ok(()));
     }
 }

@@ -12,6 +12,8 @@ use crate::ui::theme::UiTheme;
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiButtonAction {
     Play,
+    Login,
+    Register,
     OpenSettings,
     BackToMenu,
     Resume,

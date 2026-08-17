@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
@@ -45,6 +46,12 @@ export const routes: Routes = [
     path: 'login',
     loadComponent: () => import('./features/auth/login.component').then(m => m.LoginComponent),
     title: 'Alpha Login — Eivar Online'
+  },
+  {
+    path: 'profile',
+    loadComponent: () => import('./features/profile/profile.component').then(m => m.ProfileComponent),
+    canActivate: [authGuard],
+    title: 'Your Profile — Eivar Online'
   },
   {
     path: '**',

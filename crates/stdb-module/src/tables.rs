@@ -61,7 +61,15 @@ pub enum RoleRow {
 /// Deliberately holds no gameplay state of its own — that stays on `Player`
 /// rows, keyed by `account_id` — so an account is exactly the credential plus
 /// the role, and nothing about it needs to change when a character does.
-#[table(accessor = account, public)]
+///
+/// Deliberately **not** `public`: SpacetimeDB 2.8.1's row-level security
+/// filters are unimplemented (`client_visibility_filter` is marked
+/// unenforced), so `public` here would let any connected client subscribe to
+/// `SELECT * FROM account` and read every email and password hash in the
+/// database. Reducers can still read and write this table freely — visibility
+/// only gates client-side subscriptions — so nothing about `reducers::account`
+/// needs to change; the client simply never sees this table directly.
+#[table(accessor = account)]
 pub struct Account {
     #[primary_key]
     #[auto_inc]
@@ -86,6 +94,15 @@ pub struct Account {
 /// SpacetimeDB `Identity` is a per-connection credential, not a login: this is
 /// the only path a reducer has from `ctx.sender()` to an account, and from
 /// there to a character.
+///
+/// Unlike [`Account`], this table **is** `public` — it holds no credential,
+/// only bookkeeping (`account_id`, `character_id`) that is already derivable
+/// from the public `player` table (`Player::account_id`) by anyone who knows
+/// one of the account's characters. Making `Session` public is what lets the
+/// owning client learn its *own* `account_id` — the one thing it cannot
+/// derive from `player` before it has a character yet — and from there build
+/// its character roster, by filtering `player` rows client-side to the row
+/// whose `identity` matches its own connection.
 #[table(accessor = session, public)]
 pub struct Session {
     #[primary_key]

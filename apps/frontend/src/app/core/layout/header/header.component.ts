@@ -2,7 +2,7 @@ import { Component, inject, HostListener, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router } from '@angular/router';
 import { SearchService } from '../../services/search.service';
-import { AuthMockService } from '../../services/auth-mock.service';
+import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
 import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-menu.component';
 
@@ -69,7 +69,7 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
             <div class="account-wrapper">
               <button class="nav-action account-btn" (click)="toggleAccountMenu()">
                 <span class="material-symbols-outlined nav-ico">person</span>
-                <span class="action-label">{{ authService.currentUser()?.name }}</span>
+                <span class="action-label">{{ authService.email() ?? 'Wayfarer' }}</span>
                 <span class="material-symbols-outlined arrow-ico">expand_more</span>
               </button>
               @if (isAccountMenuOpen()) {
@@ -112,7 +112,7 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
       <a routerLink="/store" (click)="closeMobileMenu()">Store</a>
       <a (click)="onCommunityClick(); closeMobileMenu()">Community</a>
       @if (authService.isLoggedIn()) {
-        <a (click)="authService.logoutMock(); closeMobileMenu()">Logout ({{ authService.currentUser()?.name }})</a>
+        <a (click)="authService.logout(); closeMobileMenu()">Logout ({{ authService.email() ?? 'Wayfarer' }})</a>
       } @else {
         <a routerLink="/login" (click)="closeMobileMenu()">Login</a>
       }
@@ -122,7 +122,7 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
 })
 export class HeaderComponent {
   searchService = inject(SearchService);
-  authService = inject(AuthMockService);
+  authService = inject(AuthService);
   toastService = inject(ToastService);
   router = inject(Router);
 

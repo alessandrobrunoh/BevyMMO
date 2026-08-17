@@ -16,4 +16,6 @@ pub mod combat_input;
 pub mod commands;
 pub mod plugin;
 
-pub use plugin::{StdbAuthoritative, StdbConnection, StdbEntityMap, StdbPlugin};
+pub use plugin::{
+    CharacterRoster, RosterCharacter, StdbAuthoritative, StdbConnection, StdbEntityMap, StdbPlugin,
+};

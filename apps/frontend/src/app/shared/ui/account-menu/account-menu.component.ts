@@ -1,7 +1,7 @@
-import { Component, inject, Input, Output, EventEmitter } from '@angular/core';
+import { Component, inject, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
-import { AuthMockService } from '../../../core/services/auth-mock.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 
 @Component({
@@ -15,16 +15,16 @@ import { ToastService } from '../../../core/services/toast.service';
           <span class="avatar-rune">ᛟ</span>
         </div>
         <div class="user-details">
-          <h4 class="user-name">{{ user?.name || 'Wayfarer' }}</h4>
-          <span class="user-rank">{{ user?.rank || 'Alpha Explorer' }}</span>
+          <h4 class="user-name">{{ authService.email() ?? 'Wayfarer' }}</h4>
+          <span class="user-rank">Alpha Explorer</span>
         </div>
       </header>
 
       <div class="user-currencies">
         <div class="currency-item">
           <span class="cur-icon">✦</span>
-          <span class="cur-label">Astral Marks:</span>
-          <span class="cur-val">{{ user?.astralMarks || 2400 }}</span>
+          <span class="cur-label">Characters:</span>
+          <span class="cur-val">{{ authService.profile()?.characters?.length ?? 0 }}</span>
         </div>
       </div>
 
@@ -51,20 +51,24 @@ import { ToastService } from '../../../core/services/toast.service';
   styleUrls: ['./account-menu.component.scss']
 })
 export class AccountMenuComponent {
-  authService = inject(AuthMockService);
+  authService = inject(AuthService);
   toastService = inject(ToastService);
   router = inject(Router);
 
-  @Input() user = this.authService.currentUser();
   @Output() closeMenu = new EventEmitter<void>();
 
   onAction(actionName: string) {
+    if (actionName === 'Profile') {
+      this.closeMenu.emit();
+      this.router.navigate(['/profile']);
+      return;
+    }
     this.toastService.showInfo(`${actionName} screen is for prototype demonstration.`, 'Eivar Account');
     this.closeMenu.emit();
   }
 
-  onLogout() {
-    this.authService.logoutMock();
+  async onLogout() {
+    await this.authService.logout();
     this.toastService.showSuccess('You have logged out of the Eivar prototype.', 'Signed Out');
     this.closeMenu.emit();
     this.router.navigate(['/']);

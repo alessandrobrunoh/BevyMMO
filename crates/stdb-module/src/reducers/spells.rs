@@ -36,7 +36,7 @@ use bevymmo_domain::EntityId;
 use glam::Vec3;
 use spacetimedb::{reducer, ReducerContext, Table};
 
-use crate::reducers::lifecycle::caller_entity;
+use crate::reducers::lifecycle::{caller_character, caller_entity};
 use crate::rows::{
     equipment_from_rows, known_ancient_language_from_rows, known_glyphs_from_rows, Vec3Row,
 };
@@ -61,6 +61,7 @@ pub fn cast_spell(
     target_entity: Option<u64>,
     target_position: Option<Vec3Row>,
 ) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
     let caster = caller_entity(ctx)?;
     if caster.state == EntityStateRow::Dead {
         return Err("dead characters do not cast".to_string());
@@ -75,8 +76,8 @@ pub fn cast_spell(
     let hotbar: SpellHotbar = ctx
         .db
         .hotbar()
-        .identity()
-        .find(&ctx.sender())
+        .character_id()
+        .find(&character_id)
         .map(|row| (&row.slots).into())
         .unwrap_or_default();
     if !hotbar.contains(&SpellId::new(spell_id.clone())) {
@@ -242,6 +243,7 @@ pub fn eidolon_cast(
     target_entity: Option<u64>,
     target_position: Option<Vec3Row>,
 ) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
     let caster = caller_entity(ctx)?;
     if caster.state == EntityStateRow::Dead {
         return Err("dead characters do not cast".to_string());
@@ -251,8 +253,8 @@ pub fn eidolon_cast(
     let equipment = ctx
         .db
         .equipment()
-        .identity()
-        .find(&ctx.sender())
+        .character_id()
+        .find(&character_id)
         .map(|row| equipment_from_rows(&row.slots))
         .unwrap_or_default();
     let weapon = equipment
@@ -279,8 +281,8 @@ pub fn eidolon_cast(
     let known = ctx
         .db
         .known_glyphs()
-        .identity()
-        .find(&ctx.sender())
+        .character_id()
+        .find(&character_id)
         .map(|row| known_glyphs_from_rows(&row.essences, &row.modifiers, &row.ancient_words))
         .unwrap_or_default();
     let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
@@ -291,8 +293,8 @@ pub fn eidolon_cast(
         let known_language = ctx
             .db
             .known_ancient_language()
-            .identity()
-            .find(&ctx.sender())
+            .character_id()
+            .find(&character_id)
             .map(|row| {
                 known_ancient_language_from_rows(
                     &row.root_words,
@@ -359,8 +361,8 @@ pub fn eidolon_cast(
                 let known_language = ctx
                     .db
                     .known_ancient_language()
-                    .identity()
-                    .find(&ctx.sender())
+                    .character_id()
+                    .find(&character_id)
                     .map(|row| {
                         known_ancient_language_from_rows(
                             &row.root_words,
@@ -511,6 +513,7 @@ pub fn armor_cast(
     target_entity: Option<u64>,
     target_position: Option<Vec3Row>,
 ) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
     let caster = caller_entity(ctx)?;
     if caster.state == EntityStateRow::Dead {
         return Err("dead characters do not cast".to_string());
@@ -524,8 +527,8 @@ pub fn armor_cast(
     let equipment = ctx
         .db
         .equipment()
-        .identity()
-        .find(&ctx.sender())
+        .character_id()
+        .find(&character_id)
         .map(|row| equipment_from_rows(&row.slots))
         .unwrap_or_default();
     let armor = equipment
@@ -553,8 +556,8 @@ pub fn armor_cast(
     let language_row = ctx
         .db
         .known_ancient_language()
-        .identity()
-        .find(&ctx.sender())
+        .character_id()
+        .find(&character_id)
         .ok_or_else(|| "ancient language has not been initialized".to_string())?;
     let language = known_ancient_language_from_rows(
         &language_row.root_words,

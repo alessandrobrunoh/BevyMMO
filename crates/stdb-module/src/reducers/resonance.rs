@@ -8,6 +8,7 @@ use spacetimedb::{reducer, ReducerContext, Table};
 
 use bevymmo_domain::abilities::RootWordId;
 
+use crate::reducers::lifecycle::caller_character;
 use crate::sim::spells;
 use crate::tables::{resonance, Resonance};
 
@@ -27,16 +28,15 @@ pub fn award_resonance_xp(
         return Err("xp_amount must be positive".to_string());
     }
 
-    let identity = ctx.sender();
-    let _identity_hex = identity.to_hex().to_string();
+    let character_id = caller_character(ctx)?.character_id;
 
     // Scan for existing row; SpacetimeDB 2.8.1 supports single-column indexes
-    // on the primary accessor, so we filter by identity then by root_word_id.
+    // on the primary accessor, so we filter by character_id then by root_word_id.
     let existing = ctx
         .db
         .resonance()
         .iter()
-        .find(|row| row.identity == identity && row.root_word_id == root_word_id);
+        .find(|row| row.character_id == character_id && row.root_word_id == root_word_id);
 
     match existing {
         Some(row) => {
@@ -53,7 +53,7 @@ pub fn award_resonance_xp(
             let level = compute_level(xp_amount);
             ctx.db.resonance().insert(Resonance {
                 id: 0, // auto_inc fills this
-                identity: identity.clone(),
+                character_id,
                 root_word_id,
                 xp: xp_amount,
                 level,

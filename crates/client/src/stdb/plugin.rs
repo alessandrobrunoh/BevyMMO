@@ -40,7 +40,8 @@ use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
 use bevymmo_gameplay::entity::components::{EntityKind, EntityState, GameEntity, PlayerName};
 use crate::local_player::LocalPlayer;
 use crate::app_state::{
-    ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen, Screen,
+    AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus, ConnectionFailure,
+    ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, GameScreen, Screen,
 };
 use bevymmo_gameplay::items::components::{Equipment, Inventory};
 use crate::movement::{resolve_ray_to_ground, ClientSurfaceQuery};
@@ -61,6 +62,7 @@ use super::module_bindings::cast_ended_table::CastEndedTableAccess;
 use super::module_bindings::cast_state_table::CastStateTableAccess;
 use super::module_bindings::cooldown_table::CooldownTableAccess;
 use super::module_bindings::crowd_control_table::CrowdControlTableAccess;
+use super::module_bindings::delete_character_reducer::delete_character;
 use super::module_bindings::entity_stats_table::EntityStatsTableAccess;
 use super::module_bindings::equipment_table::EquipmentTableAccess;
 use super::module_bindings::game_entity_table::GameEntityTableAccess;
@@ -69,12 +71,15 @@ use super::module_bindings::hotbar_table::HotbarTableAccess;
 use super::module_bindings::inventory_table::InventoryTableAccess;
 use super::module_bindings::join_reducer::join;
 use super::module_bindings::leave_reducer::leave;
+use super::module_bindings::login_reducer::login;
+use super::module_bindings::register_reducer::register;
 use super::module_bindings::known_glyphs_table::KnownGlyphsTableAccess;
 use super::module_bindings::move_to_reducer::move_to;
 use super::module_bindings::periodic_effect_table::PeriodicEffectTableAccess;
 use super::module_bindings::player_message_table::PlayerMessageTableAccess;
 use super::module_bindings::player_table::PlayerTableAccess;
 use super::module_bindings::projectile_table::ProjectileTableAccess;
+use super::module_bindings::session_table::SessionTableAccess;
 use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAccess;
 use super::module_bindings::stat_modifier_table::StatModifierTableAccess;
 use super::module_bindings::{
@@ -82,7 +87,7 @@ use super::module_bindings::{
     Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow, EntityStats,
     EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable, ItemInstanceRow,
     KnownGlyphsTable, ModifierKindRow, PeriodicEffect, Player, PlayerMessageEvent, Projectile,
-    ReducerEventContext, RemoteReducers, SpellVisualEffectEvent, StatModifier, Vec3Row,
+    ReducerEventContext, RemoteReducers, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
 };
 
 /// How fast predicted position is pulled back towards the authoritative one, as
@@ -132,6 +137,7 @@ enum RowEvent {
     EntityRemoved(u64),
     Stats(EntityStats),
     Player(Player),
+    Session(Session),
     Inventory(InventoryTable),
     Equipment(EquipmentTable),
     Hotbar(Hotbar),
@@ -156,6 +162,9 @@ enum RowEvent {
     /// A reducer the client called came back with the module's own `Err`.
     ReducerRejected(String),
     JoinRejected(String),
+    /// `register`/`login` confirmed the caller's connection as an account.
+    AuthAccepted,
+    AuthRejected(String),
 }
 
 /// Latest rows retained until the dependent Bevy entity exists. Initial
@@ -166,12 +175,12 @@ enum RowEvent {
 #[derive(Resource, Default)]
 struct PendingRows {
     entities: HashMap<u64, EntityRow>,
-    offline_players: HashSet<Identity>,
+    offline_players: HashSet<u64>,
     stats: HashMap<u64, EntityStats>,
-    inventory: HashMap<Identity, InventoryTable>,
-    equipment: HashMap<Identity, EquipmentTable>,
-    hotbar: HashMap<Identity, Hotbar>,
-    known_glyphs: HashMap<Identity, KnownGlyphsTable>,
+    inventory: HashMap<u64, InventoryTable>,
+    equipment: HashMap<u64, EquipmentTable>,
+    hotbar: HashMap<u64, Hotbar>,
+    known_glyphs: HashMap<u64, KnownGlyphsTable>,
     boss_state: HashMap<u64, BossState>,
     /// Keyed by `active_status.id`, not by entity: one entity can carry several.
     active_status: HashMap<u64, ActiveStatus>,
@@ -271,6 +280,24 @@ impl StdbConnection {
             let _ = reports.send(RowEvent::JoinRejected(message));
         }
     }
+
+    /// Unlike [`Self::report_rejection`], `register`/`login` also report
+    /// success: `AuthState::Authenticating` is a real waiting period the UI
+    /// shows while the round trip is in flight, not an optimistic guess, so
+    /// something has to confirm it turned into `Authenticated`.
+    fn report_auth_outcome(
+        &self,
+    ) -> impl FnOnce(&ReducerEventContext, ReducerOutcome) + Send + 'static {
+        let reports = self.reports.clone();
+        move |_ctx, outcome| {
+            let event = match outcome {
+                Ok(Ok(())) => RowEvent::AuthAccepted,
+                Ok(Err(reason)) => RowEvent::AuthRejected(reason),
+                Err(err) => RowEvent::AuthRejected(err.to_string()),
+            };
+            let _ = reports.send(event);
+        }
+    }
 }
 
 /// What a `*_then` callback is handed: the module's own `Result`, or the SDK
@@ -282,9 +309,9 @@ type ReducerOutcome =
 #[derive(Resource, Default)]
 pub struct StdbEntityMap {
     by_entity_id: HashMap<u64, Entity>,
-    /// Which server entity belongs to which account, so the per-character
+    /// Which server entity belongs to which character, so the per-character
     /// tables (inventory, equipment, hotbar) can find the entity to attach to.
-    entity_of_identity: HashMap<Identity, u64>,
+    entity_of_character: HashMap<u64, u64>,
     /// Projectiles live in their own id space — `projectile.id` counts
     /// separately from `game_entity.entity_id` — so they get their own map
     /// rather than colliding in the one above.
@@ -294,6 +321,85 @@ pub struct StdbEntityMap {
 impl StdbEntityMap {
     pub fn get(&self, entity_id: u64) -> Option<Entity> {
         self.by_entity_id.get(&entity_id).copied()
+    }
+}
+
+/// Which account and character (if any) this connection is authenticated as
+/// and playing.
+///
+/// Resolved from the `session` table, which — unlike `account` — is
+/// `public` precisely so the owning client can learn its own `account_id`
+/// (see `tables::Session`'s doc comment) and, once `join` selects one, its
+/// `character_id`.
+#[derive(Resource, Default)]
+struct LocalCharacter {
+    account_id: Option<u64>,
+    character_id: Option<u64>,
+}
+
+/// One of the caller's own characters, for the character-select screen.
+///
+/// Cheap to keep around: a handful of fields per character, at most
+/// [`crate::app_state::MAX_CHARACTERS_PER_ACCOUNT`] of them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RosterCharacter {
+    pub character_id: u64,
+    pub display_name: String,
+    pub online: bool,
+}
+
+/// The caller's own characters (from the public `player` table, filtered to
+/// [`LocalCharacter::account_id`]), for the character-select screen.
+///
+/// A plain resource, not ECS entities: an offline character has no mirrored
+/// `game_entity` (see [`RowEvent::Player`]'s `else` branch), so there is
+/// nothing in the world for the character-select screen to query — this is
+/// the only place its name and id are still available.
+#[derive(Resource, Default)]
+pub struct CharacterRoster {
+    characters: HashMap<u64, RosterCharacter>,
+}
+
+impl CharacterRoster {
+    pub fn iter(&self) -> impl Iterator<Item = &RosterCharacter> {
+        self.characters.values()
+    }
+
+    pub fn len(&self) -> usize {
+        self.characters.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.characters.is_empty()
+    }
+}
+
+/// The client-side replication state, bundled into one [`SystemParam`] so
+/// `drain_events` — which already touches every mirrored table — does not
+/// cross the workspace's raised `too-many-arguments` threshold (see
+/// `clippy.toml`) just by also tracking [`LocalCharacter`].
+#[derive(bevy::ecs::system::SystemParam)]
+struct ReplicationState<'w> {
+    map: ResMut<'w, StdbEntityMap>,
+    pending: ResMut<'w, PendingRows>,
+    local: ResMut<'w, LocalCharacter>,
+    roster: ResMut<'w, CharacterRoster>,
+}
+
+/// [`AuthState`]/[`AuthFailure`], bundled for the same reason as
+/// [`ReplicationState`]: `drain_events` is already near the workspace's
+/// raised `too-many-arguments` threshold.
+#[derive(bevy::ecs::system::SystemParam)]
+struct AuthResources<'w> {
+    state: ResMut<'w, AuthState>,
+    failure: ResMut<'w, AuthFailure>,
+}
+
+impl LocalCharacter {
+    /// Whether `character_id` (from a `game_entity` row's `owner_character_id`,
+    /// or a `player` row's own id) is this connection's active character.
+    fn is(&self, character_id: Option<u64>) -> bool {
+        matches!((self.character_id, character_id), (Some(a), Some(b)) if a == b)
     }
 }
 
@@ -311,6 +417,8 @@ impl Plugin for StdbPlugin {
 
         app.init_resource::<StdbEntityMap>();
         app.init_resource::<PendingRows>();
+        app.init_resource::<LocalCharacter>();
+        app.init_resource::<CharacterRoster>();
         app.init_resource::<ShuttingDown>();
         app.init_resource::<LoggingOut>();
         app.insert_resource(StdbConnectionConfig {
@@ -341,7 +449,14 @@ impl Plugin for StdbPlugin {
         app.add_systems(Update, finish_logout);
         app.add_systems(
             Update,
-            (join_on_request, send_move_commands, send_heartbeat, send_combat_inputs)
+            (
+                auth_on_request,
+                delete_character_on_request,
+                join_on_request,
+                send_move_commands,
+                send_heartbeat,
+                send_combat_inputs,
+            )
                 .run_if(resource_exists::<StdbConnection>),
         );
         app.add_systems(Update, predict_and_reconcile);
@@ -419,6 +534,7 @@ fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error
             "SELECT * FROM game_entity",
             "SELECT * FROM entity_stats",
             "SELECT * FROM player",
+            "SELECT * FROM session",
             "SELECT * FROM inventory",
             "SELECT * FROM equipment",
             "SELECT * FROM hotbar",
@@ -499,6 +615,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(game_entity, Entity);
     mirror!(entity_stats, Stats);
     mirror!(player, Player);
+    mirror!(session, Session);
     mirror!(inventory, Inventory);
     mirror!(equipment, Equipment);
     mirror!(hotbar, Hotbar);
@@ -570,8 +687,8 @@ fn pump_connection(conn: Res<StdbConnection>) {
 
 fn drain_events(
     conn: Res<StdbConnection>,
-    mut map: ResMut<StdbEntityMap>,
-    mut pending: ResMut<PendingRows>,
+    mut state: ReplicationState,
+    mut auth: AuthResources,
     mut commands: Commands,
     mut cast_progress: MessageWriter<SpellCastProgress>,
     mut cast_ended: MessageWriter<SpellCastEnded>,
@@ -588,94 +705,142 @@ fn drain_events(
         match event {
             RowEvent::Entity(row) => {
                 let entity_id = row.entity_id;
-                let owner = row.owner;
-                pending.entities.insert(entity_id, row.clone());
-                if owner.is_some_and(|identity| pending.offline_players.contains(&identity)) {
+                let owner = row.owner_character_id;
+                state.pending.entities.insert(entity_id, row.clone());
+                if owner.is_some_and(|character_id| state.pending.offline_players.contains(&character_id)) {
                     continue;
                 }
 
-                apply_entity(&mut commands, &mut map, &row, local_identity);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
-                if let Some(identity) = owner {
-                    replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                apply_entity(&mut commands, &mut state.map, &row, &state.local);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
+                if let Some(character_id) = owner {
+                    replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
                 }
             }
             RowEvent::EntityRemoved(entity_id) => {
-                if let Some(entity) = map.by_entity_id.remove(&entity_id) {
+                if let Some(entity) = state.map.by_entity_id.remove(&entity_id) {
                     commands.entity(entity).despawn();
                 }
                 // Everything keyed by this entity goes with it — including the
-                // per-account rows, which are keyed by `Identity` and so were
-                // outliving the character they belonged to.
-                let owners: Vec<Identity> = map
-                    .entity_of_identity
+                // per-character rows, which are keyed by `character_id` and so
+                // were outliving the character they belonged to.
+                let owners: Vec<u64> = state.map
+                    .entity_of_character
                     .iter()
                     .filter(|(_, id)| **id == entity_id)
-                    .map(|(identity, _)| *identity)
+                    .map(|(character_id, _)| *character_id)
                     .collect();
-                for identity in owners {
-                    map.entity_of_identity.remove(&identity);
-                    pending.inventory.remove(&identity);
-                    pending.equipment.remove(&identity);
-                    pending.hotbar.remove(&identity);
-                    pending.known_glyphs.remove(&identity);
+                for character_id in owners {
+                    state.map.entity_of_character.remove(&character_id);
+                    state.pending.inventory.remove(&character_id);
+                    state.pending.equipment.remove(&character_id);
+                    state.pending.hotbar.remove(&character_id);
+                    state.pending.known_glyphs.remove(&character_id);
+                    state.roster.characters.remove(&character_id);
+                    if state.local.character_id == Some(character_id) {
+                        state.local.character_id = None;
+                    }
                 }
-                pending.entities.remove(&entity_id);
-                pending.stats.remove(&entity_id);
-                pending.boss_state.remove(&entity_id);
-                pending
+                state.pending.entities.remove(&entity_id);
+                state.pending.stats.remove(&entity_id);
+                state.pending.boss_state.remove(&entity_id);
+                state.pending
                     .active_status
                     .retain(|_, row| row.entity_id != entity_id);
-                pending.applied.remove(&entity_id);
-                pending.crowd_control.retain(|_, cc| cc.entity_id != entity_id);
-                pending
+                state.pending.applied.remove(&entity_id);
+                state.pending.crowd_control.retain(|_, cc| cc.entity_id != entity_id);
+                state.pending
                     .stat_modifier
                     .retain(|_, row| row.entity_id != entity_id);
-                pending
+                state.pending
                     .periodic_effect
                     .retain(|_, row| row.entity_id != entity_id);
             }
             RowEvent::Stats(row) => {
                 let entity_id = row.entity_id;
-                pending.stats.insert(entity_id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.stats.insert(entity_id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::Player(row) => {
-                map.entity_of_identity.insert(row.identity, row.entity_id);
-                if row.online {
-                    pending.offline_players.remove(&row.identity);
-                    if let Some(entity_row) = pending.entities.get(&row.entity_id).cloned() {
-                        apply_entity(&mut commands, &mut map, &entity_row, local_identity);
-                        replay_entity(&mut commands, &map, &mut pending, row.entity_id);
-                    }
-                    replay_identity(&mut commands, &map, &pending, row.identity, local_identity);
+                state.map.entity_of_character.insert(row.character_id, row.entity_id);
+
+                // Populate the character-select roster with every character
+                // that belongs to the same account as this connection —
+                // never with other accounts' characters, even though
+                // `player` is public and carries every one of them.
+                if state.local.account_id == Some(row.account_id) {
+                    state.roster.characters.insert(
+                        row.character_id,
+                        RosterCharacter {
+                            character_id: row.character_id,
+                            display_name: row.display_name.clone(),
+                            online: row.online,
+                        },
+                    );
                 } else {
-                    pending.offline_players.insert(row.identity);
-                    if let Some(entity) = map.by_entity_id.remove(&row.entity_id) {
+                    state.roster.characters.remove(&row.character_id);
+                }
+
+                if row.online {
+                    state.pending.offline_players.remove(&row.character_id);
+                    if let Some(entity_row) = state.pending.entities.get(&row.entity_id).cloned() {
+                        apply_entity(&mut commands, &mut state.map, &entity_row, &state.local);
+                        replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
+                    }
+                    replay_character(&mut commands, &state.map, &state.pending, row.character_id, state.local.character_id);
+                } else {
+                    state.pending.offline_players.insert(row.character_id);
+                    if let Some(entity) = state.map.by_entity_id.remove(&row.entity_id) {
                         commands.entity(entity).despawn();
                     }
                 }
             }
             RowEvent::Inventory(row) => {
-                let identity = row.identity;
-                pending.inventory.insert(identity, row);
-                replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                let character_id = row.character_id;
+                state.pending.inventory.insert(character_id, row);
+                replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
             }
             RowEvent::Equipment(row) => {
-                let identity = row.identity;
-                pending.equipment.insert(identity, row);
-                replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                let character_id = row.character_id;
+                state.pending.equipment.insert(character_id, row);
+                replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
             }
             RowEvent::Hotbar(row) => {
-                let identity = row.identity;
-                pending.hotbar.insert(identity, row);
-                replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                let character_id = row.character_id;
+                state.pending.hotbar.insert(character_id, row);
+                replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
             }
             RowEvent::KnownGlyphs(row) => {
-                let identity = row.identity;
-                pending.known_glyphs.insert(identity, row);
-                if local_identity == Some(identity) {
-                    replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                let character_id = row.character_id;
+                state.pending.known_glyphs.insert(character_id, row);
+                if state.local.character_id == Some(character_id) {
+                    replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
+                }
+            }
+            RowEvent::Session(row) => {
+                // `session` is public (see `tables::Session`'s doc comment),
+                // so this connection receives every connected player's row —
+                // filter to ours by `identity`, the one column every client
+                // can compare against its own connection.
+                if Some(row.identity) != local_identity {
+                    continue;
+                }
+                state.local.account_id = Some(row.account_id);
+                state.local.character_id = row.character_id;
+
+                // The `game_entity`/`player` rows for this character may well
+                // have already arrived before this `Session` row confirmed
+                // which character it belongs to — apply the marker now rather
+                // than waiting for the next unrelated update to those rows.
+                if let Some(character_id) = row.character_id {
+                    if let Some(entity) = state
+                        .map
+                        .entity_of_character
+                        .get(&character_id)
+                        .and_then(|id| state.map.get(*id))
+                    {
+                        commands.entity(entity).insert(LocalPlayer);
+                    }
                 }
             }
             RowEvent::CastState(row) => {
@@ -697,44 +862,44 @@ fn drain_events(
             }
             RowEvent::BossState(row) => {
                 let entity_id = row.entity_id;
-                pending.boss_state.insert(entity_id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.boss_state.insert(entity_id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::ActiveStatus(row) => {
                 let entity_id = row.entity_id;
-                pending.active_status.insert(row.id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.active_status.insert(row.id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::ActiveStatusRemoved(row) => {
-                pending.active_status.remove(&row.id);
-                replay_entity(&mut commands, &map, &mut pending, row.entity_id);
+                state.pending.active_status.remove(&row.id);
+                replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
             }
             RowEvent::CrowdControl(row) => {
                 let entity_id = row.entity_id;
-                pending.crowd_control.insert(row.id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.crowd_control.insert(row.id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::CrowdControlRemoved(row) => {
-                pending.crowd_control.remove(&row.id);
-                replay_entity(&mut commands, &map, &mut pending, row.entity_id);
+                state.pending.crowd_control.remove(&row.id);
+                replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
             }
             RowEvent::StatModifier(row) => {
                 let entity_id = row.entity_id;
-                pending.stat_modifier.insert(row.id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.stat_modifier.insert(row.id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::StatModifierRemoved(row) => {
-                pending.stat_modifier.remove(&row.id);
-                replay_entity(&mut commands, &map, &mut pending, row.entity_id);
+                state.pending.stat_modifier.remove(&row.id);
+                replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
             }
             RowEvent::PeriodicEffect(row) => {
                 let entity_id = row.entity_id;
-                pending.periodic_effect.insert(row.id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.periodic_effect.insert(row.id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::PeriodicEffectRemoved(row) => {
-                pending.periodic_effect.remove(&row.id);
-                replay_entity(&mut commands, &map, &mut pending, row.entity_id);
+                state.pending.periodic_effect.remove(&row.id);
+                replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
             }
             RowEvent::Cooldown(row) => {
                 cooldowns.write(SpellCooldownState {
@@ -755,10 +920,10 @@ fn drain_events(
                 });
             }
             RowEvent::Projectile(row) => {
-                apply_projectile(&mut commands, &mut map, &row);
+                apply_projectile(&mut commands, &mut state.map, &row);
             }
             RowEvent::ProjectileRemoved(id) => {
-                if let Some(entity) = map.projectiles.remove(&id) {
+                if let Some(entity) = state.map.projectiles.remove(&id) {
                     commands.entity(entity).despawn();
                 }
             }
@@ -779,6 +944,14 @@ fn drain_events(
             RowEvent::JoinRejected(message) => {
                 failure.0 = Some(message);
                 screen.0 = Screen::MainMenu;
+            }
+            RowEvent::AuthAccepted => {
+                auth.state.0 = AuthStatus::Authenticated;
+                auth.failure.0 = None;
+            }
+            RowEvent::AuthRejected(message) => {
+                auth.state.0 = AuthStatus::Rejected;
+                auth.failure.0 = Some(message);
             }
         }
     }
@@ -840,36 +1013,36 @@ fn apply_effects(
     pending.applied.insert(entity_id, next);
 }
 
-fn replay_identity(
+fn replay_character(
     commands: &mut Commands,
     map: &StdbEntityMap,
     pending: &PendingRows,
-    identity: Identity,
-    local_identity: Option<Identity>,
+    character_id: u64,
+    local_character_id: Option<u64>,
 ) {
-    let Some(entity) = entity_for(map, identity) else {
+    let Some(entity) = entity_for(map, character_id) else {
         return;
     };
 
-    if let Some(row) = pending.inventory.get(&identity) {
+    if let Some(row) = pending.inventory.get(&character_id) {
         commands.entity(entity).insert(inventory_from(&row.slots));
     }
-    if let Some(row) = pending.equipment.get(&identity) {
+    if let Some(row) = pending.equipment.get(&character_id) {
         commands.entity(entity).insert(equipment_from(&row.slots));
     }
-    if let Some(row) = pending.hotbar.get(&identity) {
+    if let Some(row) = pending.hotbar.get(&character_id) {
         commands.entity(entity).insert(hotbar_from(row));
     }
-    if local_identity == Some(identity) {
-        if let Some(row) = pending.known_glyphs.get(&identity) {
+    if local_character_id == Some(character_id) {
+        if let Some(row) = pending.known_glyphs.get(&character_id) {
             commands.entity(entity).insert(known_glyphs_from(row));
         }
     }
 }
 
-fn entity_for(map: &StdbEntityMap, identity: Identity) -> Option<Entity> {
-    map.entity_of_identity
-        .get(&identity)
+fn entity_for(map: &StdbEntityMap, character_id: u64) -> Option<Entity> {
+    map.entity_of_character
+        .get(&character_id)
         .and_then(|id| map.get(*id))
 }
 
@@ -1159,7 +1332,7 @@ fn apply_entity(
     commands: &mut Commands,
     map: &mut StdbEntityMap,
     row: &EntityRow,
-    local_identity: Option<Identity>,
+    local: &LocalCharacter,
 ) {
     let authoritative = StdbAuthoritative {
         position: to_vec3(&row.position),
@@ -1182,12 +1355,10 @@ fn apply_entity(
                 ))
                 .id();
             map.by_entity_id.insert(row.entity_id, entity);
-            if row.owner.is_some() {
+            if let Some(character_id) = row.owner_character_id {
                 // Recorded here as well as from the `player` table, because the
                 // two rows can arrive in either order.
-                if let Some(identity) = row.owner {
-                    map.entity_of_identity.insert(identity, row.entity_id);
-                }
+                map.entity_of_character.insert(character_id, row.entity_id);
             }
             debug!(
                 "mirrored {:?} {} as entity {} at {}",
@@ -1208,7 +1379,7 @@ fn apply_entity(
     if matches!(row.kind, EntityKindRow::Boss) {
         cmd.insert(Boss);
     }
-    if local_identity.is_some() && row.owner == local_identity {
+    if matches!(row.kind, EntityKindRow::Player) && local.is(row.owner_character_id) {
         cmd.insert(LocalPlayer);
     }
 }
@@ -1326,6 +1497,62 @@ fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
     }
 }
 
+/// Turns a login-form submission into a `register`/`login` call.
+///
+/// `AuthState` moves to `Authenticating` the moment the request is sent, and
+/// stays there until [`drain_events`] sees the reducer's own answer
+/// (`AuthAccepted`/`AuthRejected`) — unlike `join`, this does not move
+/// optimistically to the success state, so a slow round trip shows as
+/// genuinely pending rather than as a lie the UI has to walk back.
+fn auth_on_request(
+    conn: Res<StdbConnection>,
+    mut request: ResMut<AuthRequest>,
+    mut auth_state: ResMut<AuthState>,
+    mut auth_failure: ResMut<AuthFailure>,
+) {
+    let Some(intent) = request.0.take() else {
+        return;
+    };
+
+    auth_state.0 = AuthStatus::Authenticating;
+    auth_failure.0 = None;
+
+    let result = match intent {
+        AuthIntent::Register { email, password } => conn
+            .reducers()
+            .register_then(email, password, conn.report_auth_outcome()),
+        AuthIntent::Login { email, password } => conn
+            .reducers()
+            .login_then(email, password, conn.report_auth_outcome()),
+    };
+    if let Err(err) = result {
+        auth_state.0 = AuthStatus::Rejected;
+        auth_failure.0 = Some(err.to_string());
+    }
+}
+
+/// Turns a character-select "delete" press into a `delete_character` call.
+///
+/// Fire-and-forget beyond the rejection path: on success the row deletions
+/// (and the `game_entity` deletion in particular) reach the client as
+/// ordinary `EntityRemoved`/roster-cleanup events through [`drain_events`],
+/// the same as any other character disappearing — there is no separate
+/// "delete succeeded" signal to wait for.
+fn delete_character_on_request(
+    conn: Res<StdbConnection>,
+    mut request: ResMut<DeleteCharacterRequest>,
+) {
+    let Some(character_id) = request.0.take() else {
+        return;
+    };
+    if let Err(err) = conn.reducers().delete_character_then(
+        character_id,
+        conn.report_rejection("Impossibile eliminare il personaggio"),
+    ) {
+        error!("delete_character failed to send: {err}");
+    }
+}
+
 /// Turns the main menu's "connect as <name>" into a `join` call and handles logout.
 ///
 /// Reuses `ConnectionRequest`, the same resource the lightyear path consumed, so
@@ -1402,6 +1629,8 @@ fn clear_replicated_state(
     commands: &mut Commands,
     map: &mut StdbEntityMap,
     pending: &mut PendingRows,
+    local: &mut LocalCharacter,
+    roster: &mut CharacterRoster,
 ) {
     for entity in map
         .by_entity_id
@@ -1411,8 +1640,10 @@ fn clear_replicated_state(
     {
         commands.entity(entity).despawn();
     }
-    map.entity_of_identity.clear();
+    map.entity_of_character.clear();
     *pending = PendingRows::default();
+    *local = LocalCharacter::default();
+    roster.characters.clear();
 }
 
 /// Tells the server the client is still here.
@@ -1513,10 +1744,10 @@ fn finish_logout(
     config: Res<StdbConnectionConfig>,
     time: Res<Time>,
     mut commands: Commands,
-    mut map: ResMut<StdbEntityMap>,
-    mut pending: ResMut<PendingRows>,
+    mut state: ReplicationState,
     mut failure: ResMut<ConnectionFailure>,
     mut screen: ResMut<GameScreen>,
+    mut auth: AuthResources,
 ) {
     let Some(elapsed) = logging_out.0.as_mut() else {
         return;
@@ -1531,7 +1762,19 @@ fn finish_logout(
     // Only now does the identity actually become unreachable — `leave` had
     // its chance to fire on the connection this replaces.
     forget_cached_credentials(&config.uri, &config.module);
-    clear_replicated_state(&mut commands, &mut map, &mut pending);
+    clear_replicated_state(
+        &mut commands,
+        &mut state.map,
+        &mut state.pending,
+        &mut state.local,
+        &mut state.roster,
+    );
+    // The server drops `Session` on disconnect (see `client_disconnected`), so
+    // the fresh connection this function opens is unauthenticated again —
+    // reflect that immediately rather than waiting for the user to notice the
+    // login form is back.
+    auth.state.0 = AuthStatus::LoggedOut;
+    auth.failure.0 = None;
 
     match connect(&config.uri, &config.module) {
         Ok(connection) => {
@@ -1668,7 +1911,7 @@ mod tests {
     #[test]
     fn known_glyph_row_becomes_domain_component() {
         let row = KnownGlyphsTable {
-            identity: Identity::default(),
+            character_id: 0,
             essences: vec!["fire".to_string()],
             modifiers: vec!["amplify".to_string()],
             ancient_words: vec!["eternity".to_string()],

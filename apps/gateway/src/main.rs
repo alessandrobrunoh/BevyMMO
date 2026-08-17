@@ -5,23 +5,44 @@
 //! protocol. This service exists for clients that prefer a plain HTTP surface
 //! (login proxy, REST shims, webhooks, ...).
 //!
-//! Keep the gateway stateless and free of gameplay rules — anything that
-//! runs authoritatively on the server belongs in `bevymmo_domain`.
+//! Free of gameplay rules — anything that runs authoritatively on the server
+//! belongs in `bevymmo_domain` — but *not* stateless: `/auth/*` holds one
+//! live SpacetimeDB connection per logged-in browser (see [`stdb::session`]
+//! for why a one-shot HTTP call to SpacetimeDB cannot substitute for one).
+
+mod auth;
+mod stdb;
 
 use std::net::SocketAddr;
 
-use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::{HeaderValue, Method, StatusCode, header},
+    response::IntoResponse,
+    routing::{get, post},
+};
 use serde::Serialize;
 use tokio::signal;
+use tower_http::cors::CorsLayer;
 use tracing::info;
 
 use bevymmo_app_support::settings::Settings;
+use stdb::session::SessionStore;
 
 #[derive(Clone)]
 struct AppState {
     /// SpacetimeDB module the gateway is configured to talk to. Surfaced on
     /// `/` so an operator can confirm wiring without grepping the config.
     spacetime_module: String,
+    /// WebSocket URL of the SpacetimeDB instance — see `stdb::connection`
+    /// for why the gateway needs a real connection, not a one-shot HTTP call.
+    spacetime_uri: String,
+    /// Live SpacetimeDB connections, one per authenticated web session.
+    sessions: SessionStore,
+    /// Whether the session cookie is marked `Secure`. See
+    /// `GatewaySettings::cookie_secure`'s doc comment.
+    cookie_secure: bool,
 }
 
 #[derive(Serialize)]
@@ -50,10 +71,22 @@ async fn main() {
         .parse()
         .expect("gateway.bind_addr is not a valid host:port");
 
+    let sessions = SessionStore::new();
+    sessions.spawn_reaper();
+
+    let cors_origin: HeaderValue = settings
+        .gateway
+        .cors_origin
+        .parse()
+        .expect("gateway.cors_origin is not a valid header value");
+
     let state = AppState {
         spacetime_module: settings.spacetime_module,
+        spacetime_uri: settings.spacetime_uri,
+        sessions,
+        cookie_secure: settings.gateway.cookie_secure,
     };
-    let app = build_router(state);
+    let app = build_router(state, cors_origin);
 
     let listener = tokio::net::TcpListener::bind(bind_addr)
         .await
@@ -67,10 +100,25 @@ async fn main() {
         .expect("gateway server crashed");
 }
 
-fn build_router(state: AppState) -> Router {
+fn build_router(state: AppState, cors_origin: HeaderValue) -> Router {
+    // `Any` origin is not an option: the session cookie needs
+    // `Access-Control-Allow-Credentials`, which browsers refuse to honor
+    // together with a wildcard `Access-Control-Allow-Origin`. See
+    // `GatewaySettings::cors_origin`'s doc comment.
+    let cors = CorsLayer::new()
+        .allow_origin(cors_origin)
+        .allow_credentials(true)
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([header::CONTENT_TYPE]);
+
     Router::new()
         .route("/", get(welcome))
         .route("/health", get(health))
+        .route("/auth/register", post(auth::register))
+        .route("/auth/login", post(auth::login))
+        .route("/auth/logout", post(auth::logout))
+        .route("/profile", get(auth::profile))
+        .layer(cors)
         .with_state(state)
 }
 

@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
-import { AuthMockService } from '../../core/services/auth-mock.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { EivarButtonComponent } from '../../shared/ui/button/button.component';
 import { RuneDividerComponent } from '../../shared/ui/rune-divider/rune-divider.component';
@@ -17,7 +17,7 @@ export type AuthMode = 'login' | 'register' | 'forgot';
   styleUrls: ['./login.component.scss']
 })
 export class LoginComponent {
-  private authService = inject(AuthMockService);
+  private authService = inject(AuthService);
   private toastService = inject(ToastService);
   private router = inject(Router);
 
@@ -38,43 +38,50 @@ export class LoginComponent {
     this.showPassword.update(v => !v);
   }
 
-  onSubmit() {
+  async onSubmit() {
     const em = this.email().trim();
     const pw = this.password().trim();
 
-    // Local Format Validation
+    // Local format validation — the gateway/module re-validate authoritatively
+    // (reducers::account::{validate_email,validate_password}); this is only
+    // to avoid a round trip for the obviously-wrong cases.
     if (!em || !em.includes('@') || !em.includes('.')) {
       this.errorMessage.set('Please enter a valid email address (e.g. name@domain.com).');
       return;
     }
 
-    if (this.mode() !== 'forgot' && (!pw || pw.length < 6)) {
-      this.errorMessage.set('Password must contain at least 6 characters.');
+    if (this.mode() !== 'forgot' && (!pw || pw.length < 8)) {
+      this.errorMessage.set('Password must contain at least 8 characters.');
       return;
     }
 
     this.errorMessage.set(null);
+
+    if (this.mode() === 'forgot') {
+      this.toastService.showSuccess(
+        `Password recovery dispatched to ${em} (Prototype demo).`,
+        'Recovery Rune'
+      );
+      this.setMode('login');
+      return;
+    }
+
     this.isLoading.set(true);
-
-    // Simulate mock network response
-    setTimeout(() => {
-      this.isLoading.set(false);
-
-      if (this.mode() === 'forgot') {
-        this.toastService.showSuccess(
-          `Password recovery dispatched to ${em} (Prototype demo).`,
-          'Recovery Rune'
-        );
-        this.setMode('login');
-        return;
+    try {
+      if (this.mode() === 'register') {
+        await this.authService.register(em, pw);
+      } else {
+        await this.authService.login(em, pw);
       }
-
-      this.authService.loginMock(em);
       this.toastService.showSuccess(
         `Welcome to Eivar Online, ${em.split('@')[0]}!`,
         'Vanguard Attunement'
       );
       this.router.navigate(['/']);
-    }, 1200);
+    } catch (err) {
+      this.errorMessage.set(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      this.isLoading.set(false);
+    }
   }
 }

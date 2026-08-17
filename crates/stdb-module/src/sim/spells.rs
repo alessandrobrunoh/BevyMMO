@@ -348,16 +348,16 @@ pub fn fire_eidolon_ability(
 
     // `ctx.sender()` is the *module's* identity here: this runs from
     // `advance_casts`, inside the scheduled `game_tick` reducer, not from a
-    // call the player made directly. The caster's own identity — who started
-    // the cast — is `caster.owner`, not the sender of whatever reducer
-    // happens to be running this tick. Using `ctx.sender()` made every
-    // CastTime/Channeling Eidolon ability resolve against an identity with no
+    // call the player made directly. The caster's own character — who started
+    // the cast — is `caster.owner_character_id`, not the sender of whatever
+    // reducer happens to be running this tick. Using `ctx.sender()` made every
+    // CastTime/Channeling Eidolon ability resolve against a character with no
     // rows at all, so every one of them silently failed to fire.
-    let identity = caster.owner?;
+    let character_id = caster.owner_character_id?;
 
     // Re-resolve the source item. A cast can finish several ticks after it
     // started, so equipment and inscriptions must still be valid at fire time.
-    let equip_row = ctx.db.equipment().identity().find(&identity)?;
+    let equip_row = ctx.db.equipment().character_id().find(&character_id)?;
     let equipment = equipment_from_rows(&equip_row.slots);
     let ability_id = bevymmo_domain::abilities::AbilityId::new(ability_id_str.to_string());
 
@@ -372,13 +372,13 @@ pub fn fire_eidolon_ability(
                     resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
                         .map_or(false, |id| id.as_str() == ability_id.as_str())
                 })?;
-            let known_row = ctx.db.known_glyphs().identity().find(&identity);
+            let known_row = ctx.db.known_glyphs().character_id().find(&character_id);
             let known = known_row
                 .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
                 .unwrap_or_default();
             let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
             let preview = if let Some(root_inscription) = weapon.root_inscription.as_ref() {
-                let language_row = ctx.db.known_ancient_language().identity().find(&identity)?;
+                let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
                 let language = known_ancient_language_from_rows(
                     &language_row.root_words,
                     &language_row.ancient_words,
@@ -420,7 +420,7 @@ pub fn fire_eidolon_ability(
             let armor = equipment.get(slot).as_ref()?;
             let item = items().get(&armor.item_id)?;
             ability_loadout_for_item(item.as_ref())?.primary.iter().find(|id| id.as_str() == ability_id.as_str())?;
-            let language_row = ctx.db.known_ancient_language().identity().find(&identity)?;
+            let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
             let language = known_ancient_language_from_rows(
                 &language_row.root_words,
                 &language_row.ancient_words,
@@ -459,7 +459,7 @@ pub fn fire_eidolon_ability(
 
     match source {
         CastSourceRow::Eidolon => {
-            let equip_row = ctx.db.equipment().identity().find(&identity)?;
+            let equip_row = ctx.db.equipment().character_id().find(&character_id)?;
             let equipment = equipment_from_rows(&equip_row.slots);
             let weapon = equipment.weapon.as_ref()?;
             let weapon_abilities = ability_loadout_for_item(item.as_ref())?;
@@ -469,12 +469,12 @@ pub fn fire_eidolon_ability(
                     resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
                         .map_or(false, |id| id.as_str() == ability_id.as_str())
                 })?;
-            let known = ctx.db.known_glyphs().identity().find(&identity)
+            let known = ctx.db.known_glyphs().character_id().find(&character_id)
                 .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
                 .unwrap_or_default();
             let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
             if let Some(root_inscription) = weapon.root_inscription.as_ref() {
-                let language_row = ctx.db.known_ancient_language().identity().find(&identity)?;
+                let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
                 let language = known_ancient_language_from_rows(
                     &language_row.root_words,
                     &language_row.ancient_words,
@@ -495,7 +495,7 @@ pub fn fire_eidolon_ability(
         }
         CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes => {
             let inscription = armor_inscription.as_ref();
-            let language_row = ctx.db.known_ancient_language().identity().find(&identity)?;
+            let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
             let language = known_ancient_language_from_rows(
                 &language_row.root_words,
                 &language_row.ancient_words,

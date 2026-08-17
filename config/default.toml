@@ -26,7 +26,15 @@ client_addr = "0.0.0.0:0"
 [gateway]
 # Address the HTTP gateway (apps/gateway) binds to. The Angular frontend in
 # apps/frontend talks to it; it is a facade, not the authoritative server.
-bind_addr = "127.0.0.1:8080"
+bind_addr = "127.0.0.1:8081"
+# Exact origin the frontend is served from. Must match precisely (scheme,
+# host, port) — the session cookie needs credentialed CORS, which browsers
+# refuse to combine with a wildcard origin. `ng serve`'s default.
+cors_origin = "http://localhost:4200"
+# `false` locally: browsers drop `Secure` cookies over plain HTTP, which
+# would make login look like it silently does nothing. Set `true` once
+# served over HTTPS (see config/production.toml).
+cookie_secure = false
 
 # NOTE: `database_url` has no default. It must be provided by:
 #   - config/development.toml or config/production.toml (local/non-sensitive values)

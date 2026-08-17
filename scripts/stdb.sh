@@ -7,12 +7,13 @@
 # `--module-path` and an out-dir that nobody should have to remember. Every
 # command here is one you would otherwise mistype.
 #
-#   ./scripts/stdb.sh publish    build + publish to the local server
-#   ./scripts/stdb.sh generate   regenerate the Rust client bindings
-#   ./scripts/stdb.sh dev        watch, rebuild, republish, regenerate
-#   ./scripts/stdb.sh logs       tail module logs
-#   ./scripts/stdb.sh sql "..."  run a SQL query against the module
-#   ./scripts/stdb.sh reset      wipe the database and republish from scratch
+#   ./scripts/stdb.sh publish          build + publish to the local server
+#   ./scripts/stdb.sh generate         regenerate the Bevy client's Rust bindings
+#   ./scripts/stdb.sh generate-gateway regenerate the gateway's Rust bindings
+#   ./scripts/stdb.sh dev               watch, rebuild, republish, regenerate
+#   ./scripts/stdb.sh logs             tail module logs
+#   ./scripts/stdb.sh sql "..."        run a SQL query against the module
+#   ./scripts/stdb.sh reset            wipe the database and republish from scratch
 #
 # The server itself comes from docker: `docker compose up -d spacetimedb`.
 
@@ -21,6 +22,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODULE_PATH="$REPO_ROOT/crates/stdb-module"
 BINDINGS_OUT="$REPO_ROOT/crates/client/src/stdb/module_bindings"
+GATEWAY_BINDINGS_OUT="$REPO_ROOT/apps/gateway/src/stdb/module_bindings"
 SERVER="local"
 DATABASE="bevymmo"
 
@@ -37,6 +39,15 @@ generate)
     exec spacetime generate --lang rust \
         --module-path "$MODULE_PATH" \
         --out-dir "$BINDINGS_OUT"
+    ;;
+generate-gateway)
+    # The gateway gets its own copy rather than depending on
+    # `bevymmo_client` for these: that crate pulls in all of Bevy, which a
+    # server process has no business linking. Generated code, so
+    # duplicating it costs nothing beyond running this command twice.
+    exec spacetime generate --lang rust \
+        --module-path "$MODULE_PATH" \
+        --out-dir "$GATEWAY_BINDINGS_OUT"
     ;;
 dev)
     # `dev` resolves the bindings dir relative to --project-path, so the project

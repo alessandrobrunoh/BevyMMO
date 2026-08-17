@@ -80,6 +80,24 @@ pub struct GatewaySettings {
     /// the `config` crate hands us strings, conversion happens at call sites.
     #[serde(default = "default_gateway_bind_addr")]
     pub bind_addr: String,
+
+    /// Origin the frontend is served from, for CORS. The gateway's session
+    /// cookie requires credentialed cross-origin requests
+    /// (`Access-Control-Allow-Credentials`), which browsers refuse to pair
+    /// with a wildcard `*` origin — this must be the frontend's exact
+    /// scheme+host+port. Override per environment (`config/production.toml`,
+    /// `GATEWAY__CORS_ORIGIN`) rather than trusting this default anywhere but
+    /// local development.
+    #[serde(default = "default_cors_origin")]
+    pub cors_origin: String,
+
+    /// Whether the session cookie is marked `Secure` (HTTPS-only). `false`
+    /// by default so plain-HTTP local development keeps working — browsers
+    /// silently drop `Secure` cookies over HTTP, which would otherwise look
+    /// like login "succeeding" but never actually persisting. Production
+    /// must set this `true` once served over HTTPS.
+    #[serde(default)]
+    pub cookie_secure: bool,
 }
 
 impl Settings {
@@ -148,4 +166,8 @@ fn default_client_addr() -> String {
 
 fn default_gateway_bind_addr() -> String {
     "127.0.0.1:8080".to_owned()
+}
+
+fn default_cors_origin() -> String {
+    "http://localhost:4200".to_owned()
 }

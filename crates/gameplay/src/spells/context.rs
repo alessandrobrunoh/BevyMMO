@@ -417,6 +417,54 @@ impl<'a> SpellCastContext<'a> {
         spell_id: impl Into<String>,
         effects: Vec<EffectSpec>,
     ) {
+        self.emit_aoe_with_targeting(
+            center,
+            radius,
+            shape,
+            duration_seconds,
+            initial_delay_seconds,
+            spell_id,
+            effects,
+            AoeTargeting::default(),
+        );
+    }
+
+    /// Emit an offensive AoE that never applies its effects to the caster.
+    #[allow(clippy::too_many_arguments)]
+    pub fn emit_aoe_excluding_caster(
+        &mut self,
+        center: Vec3,
+        radius: f32,
+        shape: AoeShape,
+        duration_seconds: f32,
+        initial_delay_seconds: f32,
+        spell_id: impl Into<String>,
+        effects: Vec<EffectSpec>,
+    ) {
+        self.emit_aoe_with_targeting(
+            center,
+            radius,
+            shape,
+            duration_seconds,
+            initial_delay_seconds,
+            spell_id,
+            effects,
+            AoeTargeting::ExcludeCaster,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit_aoe_with_targeting(
+        &mut self,
+        center: Vec3,
+        radius: f32,
+        shape: AoeShape,
+        duration_seconds: f32,
+        initial_delay_seconds: f32,
+        spell_id: impl Into<String>,
+        effects: Vec<EffectSpec>,
+        targeting: AoeTargeting,
+    ) {
         self.pending_aoes.push(AoeSpawnRequest {
             center,
             radius,
@@ -425,7 +473,7 @@ impl<'a> SpellCastContext<'a> {
             initial_delay_seconds,
             spell_id: spell_id.into(),
             effects,
-            targeting: AoeTargeting::default(),
+            targeting,
         });
     }
 
@@ -750,5 +798,33 @@ mod tests {
         );
 
         assert_eq!(ctx.pending_aoes[0].shape, AoeShape::Circle);
+    }
+
+    #[test]
+    fn offensive_aoe_excludes_the_caster() {
+        use crate::effects::EffectSpec;
+        use crate::stats::components::CombatStats;
+
+        let combat = CombatStats {
+            attack_power: 0.0,
+            armor: 0.0,
+        };
+        let caster = EntityId::new(1);
+        let mut ctx = SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
+
+        ctx.emit_aoe_excluding_caster(
+            Vec3::ZERO,
+            3.0,
+            AoeShape::Circle,
+            0.0,
+            0.0,
+            "offensive_test",
+            vec![EffectSpec::Damage(crate::effects::DamageEffect { amount: 1.0 })],
+        );
+
+        assert_eq!(ctx.pending_aoes[0].targeting, AoeTargeting::ExcludeCaster);
+        assert!(!ctx.pending_aoes[0]
+            .targeting
+            .allows(caster, caster));
     }
 }

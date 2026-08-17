@@ -346,7 +346,7 @@ pub trait BaseAbility: Send + Sync + 'static {
         effects: Vec<EffectSpec>,
     ) {
         let delay = self.impact_delay();
-        ctx.emit_aoe(
+        ctx.emit_aoe_excluding_caster(
             self.impact_center(params, ctx),
             self.impact_radius(params),
             self.impact_shape(ctx),

@@ -144,8 +144,10 @@ pub fn cast_abilities_on_key(
                 aim.begin(slot);
             }
             (_, true) => {
-                // Charge: start charging immediately on press (like Channeling).
+                // Charge: start charging immediately on press, but keep the aim
+                // window open so the player sees the same preview while holding.
                 // The server opens a Charge CastState that waits for release.
+                aim.begin(slot);
                 if hud_state.ability_on_cooldown(&ability_id) {
                     continue;
                 }
@@ -269,6 +271,7 @@ pub fn cast_abilities_on_key(
                     .0
                     .get(&local_network_id.0)
                     .is_some_and(|cast| cast.spell_id == ability_id.as_str());
+                aim.clear();
 
                 if is_charging_this {
                     if let Some(conn) = conn.as_deref() {

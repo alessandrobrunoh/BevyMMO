@@ -133,6 +133,14 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Re
     spawn_button(
         &mut commands,
         root,
+        "Logout",
+        UiButtonAction::LogoutAccount,
+        &theme,
+        &asset_server,
+    );
+    spawn_button(
+        &mut commands,
+        root,
         "Exit",
         UiButtonAction::Exit,
         &theme,

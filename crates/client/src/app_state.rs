@@ -37,8 +37,15 @@ pub enum ConnectionIntent {
         player_name: String,
     },
     Disconnect,
-    /// Disconnect and discard the locally cached SpacetimeDB identity.
-    Logout,
+    /// Returns to character select: calls `leave` (marks the active
+    /// character offline, does not delete it) and stays authenticated as
+    /// the same account — no disconnect. The pause menu's "Leave Character".
+    LeaveCharacter,
+    /// Ends the account's session (calls `logout`) and returns to the login
+    /// form, so a different account can sign in — no disconnect: the same
+    /// SpacetimeDB connection just authenticates fresh on the next
+    /// `login`/`register`. The character-select screen's "Logout".
+    LogoutAccount,
     /// The process is exiting. Disconnect and let the app close once the
     /// disconnect has actually reached the socket (or a short grace period
     /// runs out), instead of tearing the connection down mid-send.

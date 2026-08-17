@@ -301,15 +301,20 @@ fn select_character(ctx: &ReducerContext, character_id: u64) {
     }
 }
 
-/// Permanently deletes the caller's active character, freeing its display
-/// name and its slot in the account's character cap.
+/// Returns the caller to character select: marks the active character
+/// offline and clears the connection's `Session.character_id`, without
+/// deleting anything. The account stays authenticated and every other
+/// character keeps existing — to permanently delete one, use
+/// [`delete_character`].
 ///
-/// The client's identity is a throwaway credential today (see
-/// `forget_cached_credentials` in `bevymmo_client::stdb::plugin`): every
-/// logout and every shutdown mints a fresh one on the next launch. Deleting
-/// every row the character owns, rather than merely marking it offline, is
-/// what makes that character's name and account slot immediately reusable —
-/// including by the same account, to make room for a replacement.
+/// Deliberately non-destructive, unlike an earlier version of this reducer:
+/// back when a character *was* the `Identity` (no accounts, one throwaway
+/// identity per launch), deleting on `leave` was how a name got freed up
+/// again. With accounts, a character survives across logins by design, and
+/// deleting it here made both closing the game window and pressing the
+/// pause menu's "Logout" silently destroy the character being played —
+/// exactly the data loss `delete_character`'s two-click confirmation exists
+/// to prevent everywhere else.
 ///
 /// A no-op if the caller has no active character selected.
 #[reducer]
@@ -317,7 +322,18 @@ pub fn leave(ctx: &ReducerContext) -> Result<(), String> {
     let Some(character) = active_character(ctx) else {
         return Ok(());
     };
-    delete_character_rows(ctx, &character);
+    if let Some(entity) = ctx.db.game_entity().entity_id().find(&character.entity_id) {
+        ctx.db.game_entity().entity_id().update(GameEntity {
+            move_target: None,
+            state: EntityStateRow::Idle,
+            ..entity
+        });
+    }
+    ctx.db.player().character_id().update(Player {
+        online: false,
+        last_seen: ctx.timestamp,
+        ..character
+    });
     // Free the connection to pick or create a different character without
     // logging out of the account.
     select_character_cleared(ctx);
@@ -326,8 +342,8 @@ pub fn leave(ctx: &ReducerContext) -> Result<(), String> {
 
 /// Permanently deletes one of the caller's own characters by id, whether or
 /// not it is the connection's currently active one — the character-select
-/// screen's "delete" action, as opposed to [`leave`]'s "delete the one I'm
-/// playing".
+/// screen's "delete" action. [`leave`] does not delete anything; this is the
+/// only reducer that does.
 ///
 /// Rejects deleting a character belonging to a *different* account: the
 /// caller only ever supplies a bare `character_id`, so without this check

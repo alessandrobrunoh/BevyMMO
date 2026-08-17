@@ -72,6 +72,7 @@ use super::module_bindings::inventory_table::InventoryTableAccess;
 use super::module_bindings::join_reducer::join;
 use super::module_bindings::leave_reducer::leave;
 use super::module_bindings::login_reducer::login;
+use super::module_bindings::logout_reducer::logout;
 use super::module_bindings::register_reducer::register;
 use super::module_bindings::known_glyphs_table::KnownGlyphsTableAccess;
 use super::module_bindings::move_to_reducer::move_to;
@@ -455,7 +456,6 @@ impl Plugin for StdbPlugin {
         app.init_resource::<LocalCharacter>();
         app.init_resource::<CharacterRoster>();
         app.init_resource::<ShuttingDown>();
-        app.init_resource::<LoggingOut>();
         app.insert_resource(StdbConnectionConfig {
             uri: uri.clone(),
             module: module.clone(),
@@ -481,7 +481,6 @@ impl Plugin for StdbPlugin {
                 .run_if(resource_exists::<StdbConnection>),
         );
         app.add_systems(Update, finish_shutdown);
-        app.add_systems(Update, finish_logout);
         app.add_systems(
             Update,
             (auth_on_request, delete_character_on_request, join_on_request)
@@ -1605,25 +1604,27 @@ fn delete_character_on_request(
     }
 }
 
-/// Turns the main menu's "connect as <name>" into a `join` call and handles logout.
+/// Turns the main menu's "connect as <name>" into a `join` call, and handles
+/// leaving a character / logging out of an account.
 ///
 /// Reuses `ConnectionRequest`, the same resource the lightyear path consumed, so
 /// the menu does not need to know which transport is mounted.
+///
+/// Unlike the version this replaced, neither `LeaveCharacter` nor
+/// `LogoutAccount` disconnects: `leave` and `logout` are ordinary reducer
+/// calls on the connection that is already open, the same as `join`. There is
+/// nothing to wait for a grace period on — see the removed `finish_logout`
+/// commit for the disconnect/reconnect dance this used to require back when
+/// an `Identity` had no account behind it to keep authenticating as.
 fn join_on_request(
     conn: Res<StdbConnection>,
     mut request: ResMut<ConnectionRequest>,
     mut screen: ResMut<GameScreen>,
     mut failure: ResMut<ConnectionFailure>,
-    mut logging_out: ResMut<LoggingOut>,
+    mut commands: Commands,
+    mut state: ReplicationState,
+    mut auth: AuthResources,
 ) {
-    // A logout already in flight owns the connection until `finish_logout`
-    // replaces it; touching `conn` again here would queue against a socket
-    // that is on its way down.
-    if logging_out.0.is_some() {
-        request.0 = None;
-        return;
-    }
-
     let Some(intent) = request.0.take() else {
         return;
     };
@@ -1647,23 +1648,34 @@ fn join_on_request(
                 }
             }
         }
-        ConnectionIntent::Logout => {
-            // Best-effort: releases the character's row (and its display
-            // name) server-side before the identity that owns it becomes
-            // unreachable. `leave` is a no-op if `join` was never called, so
-            // this is safe to fire from the main menu too.
-            let _ = conn.reducers().leave();
-            if let Err(err) = conn.conn.disconnect() {
-                warn!("could not disconnect during logout: {err}");
+        ConnectionIntent::LeaveCharacter => {
+            // Fire-and-forget, same as `Shutdown`'s: `leave` is a no-op if no
+            // character was active, and there is nothing meaningful to
+            // report back — the character-select screen just repopulates
+            // from the `player` rows this already-open connection keeps
+            // receiving.
+            if let Err(err) = conn.reducers().leave() {
+                error!("leave failed to send: {err}");
             }
-            // Both calls above only *queue* their message — `finish_logout`
-            // holds this connection resource in place across a few more
-            // frames of `pump_connection` so they actually reach the socket
-            // before it's replaced. Swapping the resource here instead would
-            // drop them mid-send almost every time (the same trap
-            // `finish_shutdown` exists to avoid on exit).
-            screen.0 = Screen::Connecting;
-            logging_out.0 = Some(0.0);
+            screen.0 = Screen::MainMenu;
+        }
+        ConnectionIntent::LogoutAccount => {
+            if let Err(err) = conn.reducers().logout() {
+                error!("logout failed to send: {err}");
+            }
+            // Optimistic: unlike `login`/`register` (see `auth_on_request`),
+            // `logout` only ever clears the caller's own `Session` and has
+            // no rejection path worth waiting on.
+            clear_replicated_state(
+                &mut commands,
+                &mut state.map,
+                &mut state.pending,
+                &mut state.local,
+                &mut state.roster,
+            );
+            auth.state.0 = AuthStatus::LoggedOut;
+            auth.failure.0 = None;
+            screen.0 = Screen::MainMenu;
         }
         ConnectionIntent::Disconnect => {}
         // Handled by `begin_shutdown`, which runs in `PreUpdate` and takes the
@@ -1744,10 +1756,13 @@ fn begin_shutdown(
         return;
     }
     if let Some(conn) = conn {
-        // Same reasoning as `join_on_request`'s `Logout` arm: the next
-        // launch discards this identity too, so leaving without releasing
-        // the character here would squat its name forever.
-        let _ = conn.reducers().leave();
+        // No explicit `leave` here: `client_disconnected` on the module
+        // already marks the active character offline and clears the
+        // session the instant this socket actually closes — see
+        // `reducers::lifecycle::client_disconnected`. An earlier version of
+        // this function called `leave` first, back when `leave` deleted the
+        // character; that made closing the game window permanently destroy
+        // whatever character was being played.
         if let Err(err) = conn.conn.disconnect() {
             warn!("could not disconnect during shutdown: {err}");
         }
@@ -1773,72 +1788,6 @@ fn finish_shutdown(
     let drained = conn.map(|c| !c.conn.is_active()).unwrap_or(true);
     if drained || *elapsed >= SHUTDOWN_GRACE_SECONDS {
         exit.write(AppExit::Success);
-    }
-}
-
-/// `Some` once [`join_on_request`]'s `Logout` arm has queued a `leave` and a
-/// disconnect; the value is the elapsed grace period, ticked here.
-#[derive(Resource, Default)]
-struct LoggingOut(Option<f32>);
-
-/// Lets the `leave` call and disconnect queued by `Logout` actually reach the
-/// socket before the old connection resource is replaced with a fresh one.
-///
-/// Mirrors [`finish_shutdown`]'s wait for [`DbContext::is_active`], for the
-/// same reason: swapping the resource on the same frame the messages were
-/// queued would tear the old connection down before `pump_connection` ever
-/// gets to flush them, so `leave` would silently never reach the server and
-/// the abandoned character would linger — the exact bug this system exists
-/// to close.
-fn finish_logout(
-    mut logging_out: ResMut<LoggingOut>,
-    conn: Option<Res<StdbConnection>>,
-    config: Res<StdbConnectionConfig>,
-    time: Res<Time>,
-    mut commands: Commands,
-    mut state: ReplicationState,
-    mut failure: ResMut<ConnectionFailure>,
-    mut screen: ResMut<GameScreen>,
-    mut auth: AuthResources,
-) {
-    let Some(elapsed) = logging_out.0.as_mut() else {
-        return;
-    };
-    *elapsed += time.delta_secs();
-    let drained = conn.as_ref().map(|c| !c.conn.is_active()).unwrap_or(true);
-    if !drained && *elapsed < SHUTDOWN_GRACE_SECONDS {
-        return;
-    }
-    logging_out.0 = None;
-
-    // Only now does the identity actually become unreachable — `leave` had
-    // its chance to fire on the connection this replaces.
-    forget_cached_credentials(&config.uri, &config.module);
-    clear_replicated_state(
-        &mut commands,
-        &mut state.map,
-        &mut state.pending,
-        &mut state.local,
-        &mut state.roster,
-    );
-    // The server drops `Session` on disconnect (see `client_disconnected`), so
-    // the fresh connection this function opens is unauthenticated again —
-    // reflect that immediately rather than waiting for the user to notice the
-    // login form is back.
-    auth.state.0 = AuthStatus::LoggedOut;
-    auth.failure.0 = None;
-
-    match connect(&config.uri, &config.module) {
-        Ok(connection) => {
-            commands.insert_resource(connection);
-            failure.0 = None;
-            screen.0 = Screen::MainMenu;
-        }
-        Err(err) => {
-            error!("SpacetimeDB reconnection after logout failed: {err}");
-            failure.0 = Some(format!("Impossibile riconnettersi: {err}"));
-            screen.0 = Screen::MainMenu;
-        }
     }
 }
 

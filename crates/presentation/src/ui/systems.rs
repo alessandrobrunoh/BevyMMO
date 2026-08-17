@@ -90,12 +90,24 @@ pub fn update_button_actions(
                 screen.0 = Screen::MainMenu;
             }
             UiButtonAction::ReturnToMainMenu => {
-                connection_request.0 = Some(ConnectionIntent::Disconnect);
+                // Previously sent `Disconnect`, which the SpacetimeDB path
+                // treats as a no-op — the character stayed marked online
+                // server-side even though the screen had already left it.
+                // `LeaveCharacter` is what `UiButtonAction::Logout` (pause
+                // menu's "Leave Character") sends for the same reason.
+                connection_request.0 = Some(ConnectionIntent::LeaveCharacter);
                 screen.0 = Screen::MainMenu;
             }
             UiButtonAction::Logout => {
-                connection_request.0 = Some(ConnectionIntent::Logout);
+                // Pause menu's "Leave Character": returns to character
+                // select, stays authenticated as the same account.
+                connection_request.0 = Some(ConnectionIntent::LeaveCharacter);
                 screen.0 = Screen::MainMenu;
+            }
+            UiButtonAction::LogoutAccount => {
+                // Character-select screen's "Logout": ends the account
+                // session so a different one can sign in.
+                connection_request.0 = Some(ConnectionIntent::LogoutAccount);
             }
             UiButtonAction::Resume => {
                 screen.0 = Screen::InGame;
@@ -375,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    fn logout_sets_connection_intent_and_transitions_to_main_menu() {
+    fn logout_button_leaves_character_and_transitions_to_main_menu() {
         use crate::ui::button::{UiButton, UiButtonAction};
 
         let mut app = App::new();
@@ -400,12 +412,13 @@ mod tests {
         // Verify screen transitioned to MainMenu
         assert_eq!(app.world().resource::<GameScreen>().0, Screen::MainMenu);
 
-        // Verify connection request was set to Logout
+        // Verify connection request was set to leave the character (not to
+        // log out of the account — see `UiButtonAction::LogoutAccount` for that).
         let connection_request = app.world().resource::<ConnectionRequest>();
         assert!(connection_request.0.is_some());
         assert!(matches!(
             connection_request.0.as_ref().unwrap(),
-            ConnectionIntent::Logout
+            ConnectionIntent::LeaveCharacter
         ));
 
         // Cleanup

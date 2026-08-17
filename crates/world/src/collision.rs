@@ -9,7 +9,7 @@
 //! authoritative server validation.
 
 use super::manifest::{HeightfieldData, MapManifest, SurfaceKind, WalkableSurface};
-use super::shapes::aabb_for_shape;
+use super::shapes::{aabb_for_shape, CollisionShape};
 
 use crate::manifest::WalkableMeshData;
 
@@ -34,6 +34,25 @@ pub struct CollisionGrid {
     obstacles: Vec<Obstacle>,
 }
 
+/// Axis-aligned bounding box of `shape` at `translation`, scaled about its
+/// own center by (the absolute value of) `scale`.
+///
+/// Shared by both loops in [`CollisionGrid::build`]: props and blockers are
+/// different manifest entries, but "unscaled AABB, then stretch each axis
+/// around its center by the transform's scale" is the same computation for
+/// both.
+fn scaled_aabb(translation: [f32; 3], scale: [f32; 3], shape: CollisionShape) -> Obstacle {
+    let (mut min, mut max) = aabb_for_shape(translation, shape);
+    let scale = scale.map(f32::abs);
+    for axis in 0..3 {
+        let center = translation[axis];
+        let half_extent = (max[axis] - min[axis]) * 0.5 * scale[axis];
+        min[axis] = center - half_extent;
+        max[axis] = center + half_extent;
+    }
+    Obstacle { min, max }
+}
+
 impl CollisionGrid {
     pub fn build(manifest: &MapManifest) -> Self {
         let mut obstacles = Vec::new();
@@ -47,15 +66,11 @@ impl CollisionGrid {
                 continue;
             }
 
-            let (mut min, mut max) = aabb_for_shape(prop.transform.translation, shape);
-            let scale = prop.transform.scale.map(f32::abs);
-            for axis in 0..3 {
-                let center = prop.transform.translation[axis];
-                let half_extent = (max[axis] - min[axis]) * 0.5 * scale[axis];
-                min[axis] = center - half_extent;
-                max[axis] = center + half_extent;
-            }
-            obstacles.push(Obstacle { min, max });
+            obstacles.push(scaled_aabb(
+                prop.transform.translation,
+                prop.transform.scale,
+                shape,
+            ));
         }
 
         // Process blocking blockers
@@ -70,15 +85,7 @@ impl CollisionGrid {
                 continue;
             }
 
-            let (mut min, mut max) = aabb_for_shape(transform.translation, shape);
-            let scale = transform.scale.map(f32::abs);
-            for axis in 0..3 {
-                let center = transform.translation[axis];
-                let half_extent = (max[axis] - min[axis]) * 0.5 * scale[axis];
-                min[axis] = center - half_extent;
-                max[axis] = center + half_extent;
-            }
-            obstacles.push(Obstacle { min, max });
+            obstacles.push(scaled_aabb(transform.translation, transform.scale, shape));
         }
 
         Self { obstacles }
@@ -313,9 +320,18 @@ impl SurfaceQuery {
             let v1 = mesh.vertices[i1];
             let v2 = mesh.vertices[i2];
 
-            // Check if point (x, z) is inside triangle on X/Z plane
+            // Check if point (x, z) is inside triangle on X/Z plane, and get
+            // its barycentric weights in the same pass (both used to need
+            // the same v0/v1/v2/dot*/inv_denom/u/v math, computed twice on
+            // every triangle that actually contained the point).
             let p = [x, z];
-            if !Self::point_in_triangle_2d(p, [v0[0], v0[2]], [v1[0], v1[2]], [v2[0], v2[2]]) {
+            let (inside, (w0, w1, w2)) = Self::triangle_containment_and_barycentric(
+                p,
+                [v0[0], v0[2]],
+                [v1[0], v1[2]],
+                [v2[0], v2[2]],
+            );
+            if !inside {
                 continue;
             }
 
@@ -343,10 +359,6 @@ impl SurfaceQuery {
                 }
             }
 
-            // Compute barycentric coordinates for height interpolation
-            let (w0, w1, w2) =
-                Self::barycentric_coords_2d(p, [v0[0], v0[2]], [v1[0], v1[2]], [v2[0], v2[2]]);
-
             // Interpolate height
             let height = w0 * v0[1] + w1 * v1[1] + w2 * v2[1];
 
@@ -356,43 +368,29 @@ impl SurfaceQuery {
         None // No triangle contains the point
     }
 
-    /// Checks if a point `(x, z)` is inside a triangle on the X/Z plane.
+    /// Checks if a point `(x, z)` is inside a triangle on the X/Z plane and,
+    /// in the same pass, computes its barycentric weights.
     ///
-    /// Uses the sign-of-cross-product method: the point is inside when it
-    /// lies on the same side of all three edges.
-    fn point_in_triangle_2d(p: [f32; 2], a: [f32; 2], b: [f32; 2], c: [f32; 2]) -> bool {
-        // Vectors relative to vertex `a`.
-        let v0 = [c[0] - a[0], c[1] - a[1]];
-        let v1 = [b[0] - a[0], b[1] - a[1]];
-        let v2 = [p[0] - a[0], p[1] - a[1]];
-
-        let dot00 = v0[0] * v0[0] + v0[1] * v0[1];
-        let dot01 = v0[0] * v1[0] + v0[1] * v1[1];
-        let dot02 = v0[0] * v2[0] + v0[1] * v2[1];
-        let dot11 = v1[0] * v1[0] + v1[1] * v1[1];
-        let dot12 = v1[0] * v2[0] + v1[1] * v2[1];
-
-        let inv_denom = 1.0 / (dot00 * dot11 - dot01 * dot01);
-        let u = (dot11 * dot02 - dot01 * dot12) * inv_denom;
-        let v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
-
-        // Use a small epsilon to tolerate floating point inaccuracies on triangle edges
-        // This prevents the player from getting stuck on "invisible walls" when crossing
-        // boundaries between adjacent triangles in a mesh surface.
-        let epsilon = 1e-4;
-        (u >= -epsilon) && (v >= -epsilon) && (u + v <= 1.0 + epsilon)
-    }
-
-    /// Computes barycentric coordinates for a point in a 2D triangle.
+    /// Returns `(inside, (w_a, w_b, w_c))`. `inside` uses the
+    /// sign-of-cross-product method: the point is inside when it lies on
+    /// the same side of all three edges, with a small epsilon to tolerate
+    /// floating point inaccuracies on triangle edges — this prevents the
+    /// player from getting stuck on "invisible walls" when crossing
+    /// boundaries between adjacent triangles in a mesh surface. `(w_a, w_b,
+    /// w_c)` are the weights for vertices `a`, `b`, `c` respectively and sum
+    /// to 1.0 inside the triangle.
     ///
-    /// Returns `(w_a, w_b, w_c)` — the weights for vertices `a`, `b`, `c`
-    /// respectively. The weights sum to 1.0 inside the triangle.
-    fn barycentric_coords_2d(
+    /// Both results fall out of the same `dot00`/`dot01`/`dot02`/`dot11`/
+    /// `dot12`/`inv_denom`/`u`/`v` computation, which used to be duplicated
+    /// across two separate functions that `resolve_triangle_mesh` called
+    /// back to back on every triangle that contained the point.
+    fn triangle_containment_and_barycentric(
         p: [f32; 2],
         a: [f32; 2],
         b: [f32; 2],
         c: [f32; 2],
-    ) -> (f32, f32, f32) {
+    ) -> (bool, (f32, f32, f32)) {
+        // Vectors relative to vertex `a`.
         let v0 = [c[0] - a[0], c[1] - a[1]];
         let v1 = [b[0] - a[0], b[1] - a[1]];
         let v2 = [p[0] - a[0], p[1] - a[1]];
@@ -408,7 +406,10 @@ impl SurfaceQuery {
         let v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
         let w = 1.0 - u - v;
 
-        (w, u, v)
+        let epsilon = 1e-4;
+        let inside = (u >= -epsilon) && (v >= -epsilon) && (u + v <= 1.0 + epsilon);
+
+        (inside, (w, u, v))
     }
 
     /// Resolves ground contact for a specific surface.
@@ -491,6 +492,83 @@ mod tests {
         let ground = GroundContact::flat(2.5);
         assert_eq!(ground.height, 2.5);
         assert_eq!(ground.normal, [0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn scaled_aabb_stretches_the_unscaled_box_around_its_center() {
+        let unscaled = scaled_aabb([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], CollisionShape::Box {
+            half_extents: [1.0, 1.0, 1.0],
+        });
+        let doubled = scaled_aabb([0.0, 0.0, 0.0], [2.0, 2.0, 2.0], CollisionShape::Box {
+            half_extents: [1.0, 1.0, 1.0],
+        });
+        assert_eq!(unscaled.min, [-1.0, -1.0, -1.0]);
+        assert_eq!(unscaled.max, [1.0, 1.0, 1.0]);
+        assert_eq!(doubled.min, [-2.0, -2.0, -2.0]);
+        assert_eq!(doubled.max, [2.0, 2.0, 2.0]);
+    }
+
+    #[test]
+    fn scaled_aabb_recenters_on_a_translated_origin() {
+        let obstacle = scaled_aabb([5.0, 0.0, -3.0], [1.0, 1.0, 1.0], CollisionShape::Box {
+            half_extents: [0.5, 0.5, 0.5],
+        });
+        assert_eq!(obstacle.min, [4.5, -0.5, -3.5]);
+        assert_eq!(obstacle.max, [5.5, 0.5, -2.5]);
+    }
+
+    #[test]
+    fn scaled_aabb_treats_a_negative_scale_the_same_as_its_absolute_value() {
+        let positive = scaled_aabb([0.0, 0.0, 0.0], [3.0, 1.0, 1.0], CollisionShape::Box {
+            half_extents: [1.0, 1.0, 1.0],
+        });
+        let negative = scaled_aabb([0.0, 0.0, 0.0], [-3.0, 1.0, 1.0], CollisionShape::Box {
+            half_extents: [1.0, 1.0, 1.0],
+        });
+        assert_eq!(positive.min, negative.min);
+        assert_eq!(positive.max, negative.max);
+    }
+
+    #[test]
+    fn triangle_containment_reports_a_point_inside_and_its_barycentric_weights() {
+        let (inside, (w_a, w_b, w_c)) = SurfaceQuery::triangle_containment_and_barycentric(
+            [1.0, 1.0],
+            [0.0, 0.0],
+            [3.0, 0.0],
+            [0.0, 3.0],
+        );
+        assert!(inside);
+        // Weights sum to 1 and interpolate the vertices back to the point.
+        assert!((w_a + w_b + w_c - 1.0).abs() < 1e-5);
+        assert!(w_a > 0.0 && w_b > 0.0 && w_c > 0.0);
+    }
+
+    #[test]
+    fn triangle_containment_rejects_a_point_clearly_outside() {
+        let (inside, _) = SurfaceQuery::triangle_containment_and_barycentric(
+            [10.0, 10.0],
+            [0.0, 0.0],
+            [3.0, 0.0],
+            [0.0, 3.0],
+        );
+        assert!(!inside);
+    }
+
+    #[test]
+    fn triangle_containment_accepts_a_point_exactly_on_an_edge() {
+        // Midpoint of the edge from (0,0) to (3,0): must count as inside so
+        // a point sitting on the shared edge between two adjacent triangles
+        // in a mesh does not fall through both.
+        let (inside, (w_a, w_b, w_c)) = SurfaceQuery::triangle_containment_and_barycentric(
+            [1.5, 0.0],
+            [0.0, 0.0],
+            [3.0, 0.0],
+            [0.0, 3.0],
+        );
+        assert!(inside);
+        assert!((w_a - 0.5).abs() < 1e-4);
+        assert!(w_b.abs() < 1e-4);
+        assert!(w_c > 0.4 && w_c < 0.6);
     }
 
     #[test]

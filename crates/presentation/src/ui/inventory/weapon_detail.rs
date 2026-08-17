@@ -50,7 +50,7 @@ pub struct RuneSummary {
     pub used: u32,
     pub capacity: u32,
     pub stability: f32,
-    pub affinity: Option<String>,
+    pub root_word: Option<String>,
 }
 
 impl RuneSummary {
@@ -59,8 +59,8 @@ impl RuneSummary {
             format!("{}/{} capacity", self.used, self.capacity),
             format!("{:.0}% stability", self.stability * 100.0),
         ];
-        if let Some(affinity) = &self.affinity {
-            parts.push(format!("{affinity} affinity"));
+        if let Some(root_word) = &self.root_word {
+            parts.push(format!("Root Word: {root_word}"));
         }
         parts.join("   |   ")
     }
@@ -127,7 +127,7 @@ pub fn summarize_weapon(
         used: 0, // TODO: rune cost for new model when defined
         capacity: profile.capacity,
         stability: profile.stability,
-        affinity: inscription.root_word.as_ref().and_then(|id| {
+        root_word: inscription.root_word.as_ref().and_then(|id| {
             glyphs.root_words.get(id).map(|rw| rw.metadata().display_name.to_string())
         }),
     });
@@ -390,22 +390,19 @@ mod tests {
         assert!(summary.slots.iter().all(|slot| slot.blocked.is_none()));
 
         let runes = summary.runes.expect("conduit_staff_t4 has a rune profile");
-        assert_eq!(runes.capacity, 8);
-        assert!(runes.affinity.is_some());
+        assert_eq!(runes.capacity, 12);
+        assert_eq!(runes.root_word.as_deref(), Some("Danno"));
     }
 
     #[test]
-    fn ultimate_slot_lists_selectable_alternatives() {
+    fn conduit_staff_has_one_ultimate_ability() {
         let app = catalog_app();
         let instance = magic_staff_with_root();
         let summary = summarize(&app, &instance, &KnownAncientLanguage::default());
 
         assert!(summary.slots[0].alternatives.is_none());
         assert!(summary.slots[1].alternatives.is_none());
-        assert_eq!(
-            summary.slots[2].alternatives.as_deref(),
-            Some("Also offers: Lancia Meteora")
-        );
+        assert!(summary.slots[2].alternatives.is_none());
     }
 
     /// A weapon with a root inscription shows the root word name.
@@ -505,23 +502,23 @@ mod tests {
             used: 6,
             capacity: 8,
             stability: 0.96,
-            affinity: Some("Fuoco".to_string()),
+            root_word: Some("Danno".to_string()),
         };
         let line = runes.line();
         assert!(line.contains("6/8 capacity"), "got: {line}");
         assert!(line.contains("96% stability"), "got: {line}");
-        assert!(line.contains("Fuoco affinity"), "got: {line}");
+        assert!(line.contains("Root Word: Danno"), "got: {line}");
     }
 
     #[test]
-    fn rune_line_omits_affinity_when_the_weapon_has_none() {
+    fn rune_line_omits_root_word_when_the_weapon_has_none() {
         let runes = RuneSummary {
             used: 0,
             capacity: 4,
             stability: 1.0,
-            affinity: None,
+            root_word: None,
         };
-        assert!(!runes.line().contains("affinity"));
+        assert!(!runes.line().contains("Root Word"));
     }
 
     #[test]

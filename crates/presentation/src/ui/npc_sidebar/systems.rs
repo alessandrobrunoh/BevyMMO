@@ -153,6 +153,7 @@ fn spawn_npc_sidebar(
         .positioning(CardPositioning::Left)
         .closeable()
         .exclusive()
+        .scrollable()
         .with_body(|body| {
             body.spawn((
                 Text::new("Ciao! Scegli un oggetto:"),

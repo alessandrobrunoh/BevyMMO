@@ -578,16 +578,6 @@ pub struct PlateauTest {
 // ==================== MANIFEST HELPER METHODS ====================
 
 impl MapManifest {
-    /// Returns true if this manifest uses version 2 format with gameplay data.
-    pub fn is_v2(&self) -> bool {
-        self.version >= 2
-    }
-
-    /// Returns true if this manifest uses version 1 format (legacy).
-    pub fn is_v1(&self) -> bool {
-        self.version == 1
-    }
-
     /// Gets the world metrics, using defaults for v1 manifests.
     pub fn get_world_metrics(&self) -> WorldMetrics {
         self.world_metrics.unwrap_or_default()

@@ -1,5 +1,3 @@
-//! Client-side network support types and runtime helpers.
+//! Client-side network support types.
 
-pub mod client;
-pub mod runtime;
 pub mod types;

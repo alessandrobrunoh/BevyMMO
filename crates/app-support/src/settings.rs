@@ -20,20 +20,7 @@ pub struct Settings {
     #[serde(default = "default_tick_rate")]
     pub tick_rate: f64,
 
-    /// PostgreSQL connection URL, in the format
-    /// `postgresql://user:password@host:port/db`.
-    ///
-    /// Required in server mode: provided by `config/<env>.toml`,
-    /// `config/local.toml`, or env var `DATABASE_URL`.
-    #[serde(default)]
-    pub database_url: Option<String>,
-
     /// WebSocket URL of the SpacetimeDB instance.
-    ///
-    /// Set alongside `database_url` rather than replacing it: the migration to
-    /// SpacetimeDB is incremental, and the lightyear/Postgres stack has to keep
-    /// working until the gameplay reducers are ported. `database_url` goes away
-    /// with `crates/server`.
     #[serde(default = "default_spacetime_uri")]
     pub spacetime_uri: String,
 
@@ -42,42 +29,15 @@ pub struct Settings {
     pub spacetime_module: String,
 
     #[serde(default)]
-    pub server: ServerSettings,
-
-    #[serde(default)]
-    pub client: ClientSettings,
-
-    #[serde(default)]
     pub gateway: GatewaySettings,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct ServerSettings {
-    /// Local address the server listens on (bind), as string
-    /// "host:port". Maintained as `String` because `config` crate
-    /// deserializes from TOML/env as string; conversion to `SocketAddr`
-    /// happens at call sites.
-    #[serde(default = "default_server_bind_addr")]
-    pub bind_addr: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct ClientSettings {
-    /// Address of the remote server to connect to ("host:port").
-    #[serde(default = "default_client_server_addr")]
-    pub server_addr: String,
-
-    /// Local address bound by the client (typically "0.0.0.0:0").
-    #[serde(default = "default_client_addr")]
-    pub client_addr: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct GatewaySettings {
     /// Local address the HTTP gateway binds to ("host:port").
     ///
-    /// Kept as `String` for the same reason as `ServerSettings::bind_addr`:
-    /// the `config` crate hands us strings, conversion happens at call sites.
+    /// Kept as `String` because the `config` crate hands us strings;
+    /// conversion happens at call sites.
     #[serde(default = "default_gateway_bind_addr")]
     pub bind_addr: String,
 
@@ -158,18 +118,6 @@ fn default_spacetime_uri() -> String {
 
 fn default_spacetime_module() -> String {
     "bevymmo".to_string()
-}
-
-fn default_server_bind_addr() -> String {
-    "0.0.0.0:5051".to_owned()
-}
-
-fn default_client_server_addr() -> String {
-    "127.0.0.1:5051".to_owned()
-}
-
-fn default_client_addr() -> String {
-    "0.0.0.0:0".to_owned()
 }
 
 fn default_gateway_bind_addr() -> String {

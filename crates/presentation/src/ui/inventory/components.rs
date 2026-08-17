@@ -10,10 +10,6 @@ pub enum InventorySelection {
     Equipment(EquipSlot),
 }
 
-/// Marker component for the Inventory Card window root.
-#[derive(Component, Debug)]
-pub struct InventoryWindow;
-
 /// Button component attached to an inventory grid slot.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct ItemSlotButton {

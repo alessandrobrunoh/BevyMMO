@@ -6,18 +6,6 @@ use bevy::prelude::*;
 #[derive(Component)]
 pub struct TargetFrame;
 
-/// Marker per il testo del nome del target.
-#[derive(Component)]
-pub struct TargetNameText;
-
-/// Marker per il testo della HP del target.
-#[derive(Component)]
-pub struct TargetHpText;
-
-/// Marker per il testo del tipo di entità.
-#[derive(Component)]
-pub struct TargetKindText;
-
 /// Componente che traccia quale target il frame sta seguendo.
 #[derive(Component)]
 pub struct TargetFrameTarget {

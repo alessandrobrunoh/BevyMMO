@@ -3,7 +3,7 @@
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::{ButtonInput, ButtonState};
 use bevy::prelude::*;
-use bevymmo_client::server_feed::ChatLine;
+use bevymmo_client::server_feed::{ChatLine, ServerNotice};
 use bevymmo_client::stdb::{commands, StdbConnection};
 
 use crate::game_state::{GameScreen, Screen};
@@ -65,7 +65,7 @@ fn setup_chat(mut commands: Commands, mut chat: ResMut<ChatUi>, theme: Res<UiThe
                 position_type: PositionType::Absolute,
                 left: Val::Px(16.0),
                 bottom: Val::Px(16.0),
-                width: Val::Px(460.0),
+                width: Val::Px(560.0),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(6.0),
                 ..default()
@@ -78,9 +78,13 @@ fn setup_chat(mut commands: Commands, mut chat: ResMut<ChatUi>, theme: Res<UiThe
             ChatHistory,
             Node {
                 width: Val::Percent(100.0),
-                max_height: Val::Px(240.0),
+                max_height: Val::Px(280.0),
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(2.0),
+                row_gap: Val::Px(4.0),
+                // Without this, lines beyond `max_height` overflow visibly
+                // instead of being clipped — see `scrollbar.rs` for the same
+                // pattern on the other scrollable panels.
+                overflow: Overflow::clip_y(),
                 ..default()
             },
             Pickable::IGNORE,
@@ -210,6 +214,7 @@ fn edit_chat_input(
     chat: Res<ChatUi>,
     mut inputs: Query<&mut ChatInput>,
     conn: Option<Res<StdbConnection>>,
+    mut notices: MessageWriter<ServerNotice>,
 ) {
     if !chat_is_active(&screen) {
         events.clear();
@@ -242,6 +247,21 @@ fn edit_chat_input(
             Key::Enter => {
                 let message = input.value.trim().to_string();
                 if message.is_empty() {
+                    input.focused = false;
+                    continue;
+                }
+                if let Some(command) = message.strip_prefix('/') {
+                    // No slash-command parser exists yet (no `/party` and
+                    // friends), so every command is unrecognized. Refusing
+                    // it locally — logged to console and surfaced as a
+                    // toast — beats the old behavior of silently
+                    // broadcasting "/party" to everyone as literal chat.
+                    let command = command.trim();
+                    warn!("chat command not recognized: /{command}");
+                    notices.write(ServerNotice::error(format!(
+                        "Comando sconosciuto: /{command}"
+                    )));
+                    input.value.clear();
                     input.focused = false;
                     continue;
                 }
@@ -325,7 +345,7 @@ fn collect_chat_lines(
             .spawn((
                 Text::new(line.text.clone()),
                 TextFont {
-                    font_size: FontSize::Px(theme.input_font_size - 2.0),
+                    font_size: FontSize::Px(theme.input_font_size + 4.0),
                     ..default()
                 },
                 TextColor(theme.text_color),

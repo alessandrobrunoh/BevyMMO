@@ -989,11 +989,11 @@ fn drain_events(
                 // `target` of `None` is a broadcast. A targeted message only
                 // reaches this client if the server addressed it here, but the
                 // table is public, so the check is made rather than assumed.
+                // Player chat lives only in the chat panel; routing it
+                // through the notice toast too made every message render
+                // twice in the same screen corner (chat.rs + notices/systems.rs).
                 if row.target.is_none() || row.target == local_identity {
-                    chat_lines.write(ChatLine {
-                        text: row.text.clone(),
-                    });
-                    notices.write(ServerNotice::info(row.text));
+                    chat_lines.write(ChatLine { text: row.text });
                 }
             }
             RowEvent::ReducerRejected(message) => {

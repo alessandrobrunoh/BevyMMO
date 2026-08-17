@@ -6,7 +6,9 @@
 
 use spacetimedb::{reducer, ReducerContext, Table};
 
+use bevymmo_domain::abilities::RootWordId;
 
+use crate::sim::spells;
 use crate::tables::{resonance, Resonance};
 
 /// Awards XP to the caller's resonance for `root_word_id`.
@@ -20,9 +22,7 @@ pub fn award_resonance_xp(
     root_word_id: String,
     xp_amount: u64,
 ) -> Result<(), String> {
-    if root_word_id.is_empty() {
-        return Err("root_word_id must not be empty".to_string());
-    }
+    validate_root_word(&root_word_id)?;
     if xp_amount == 0 {
         return Err("xp_amount must be positive".to_string());
     }
@@ -64,50 +64,28 @@ pub fn award_resonance_xp(
     Ok(())
 }
 
-/// Sets the caller's resonance for `root_word_id` to exact XP and level values.
-///
-/// Creates the row if it does not exist. Intended for administrative corrections
-/// or import; prefer [`award_resonance_xp`] for normal gameplay.
+/// Deprecated client-facing setter. Resonance is progression state and must
+/// only be increased by trusted server gameplay events, never assigned by the
+/// player. Keep the reducer during the migration window so old clients receive
+/// a deterministic rejection instead of mutating progression.
 #[reducer]
 pub fn set_resonance_xp(
-    ctx: &ReducerContext,
-    root_word_id: String,
-    xp: u64,
-    level: u32,
+    _ctx: &ReducerContext,
+    _root_word_id: String,
+    _xp: u64,
+    _level: u32,
 ) -> Result<(), String> {
+    Err("resonance XP can only be awarded by server gameplay events".to_string())
+}
+
+fn validate_root_word(root_word_id: &str) -> Result<(), String> {
     if root_word_id.is_empty() {
         return Err("root_word_id must not be empty".to_string());
     }
-
-    let identity = ctx.sender();
-
-    // Scan for existing row (same pattern as award).
-    let existing = ctx
-        .db
-        .resonance()
-        .iter()
-        .find(|row| row.identity == identity && row.root_word_id == root_word_id);
-
-    match existing {
-        Some(row) => {
-            ctx.db.resonance().id().update(Resonance {
-                id: row.id,
-                xp,
-                level,
-                ..row.clone()
-            });
-        }
-        None => {
-            ctx.db.resonance().insert(Resonance {
-                id: 0, // auto_inc fills this
-                identity: identity.clone(),
-                root_word_id,
-                xp,
-                level,
-            });
-        }
+    let id = RootWordId::new(root_word_id.to_string());
+    if spells::root_words().get(&id).is_none() {
+        return Err(format!("unknown root word {root_word_id:?}"));
     }
-
     Ok(())
 }
 

@@ -35,6 +35,7 @@ impl Plugin for InventoryUiPlugin {
                 drag::start_item_drag,
                 drag::update_item_drag,
                 drag::end_item_drag,
+                drag::handle_destroy_dialog,
             )
                 .chain()
                 .run_if(has_client)

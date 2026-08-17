@@ -9,9 +9,9 @@ import { CommonModule } from '@angular/common';
     <aside class="wiki-callout" [ngClass]="'type-' + type">
       <div class="callout-icon">
         @switch (type) {
-          @case ('tip') { <span>⚡</span> }
-          @case ('warning') { <span>⚠</span> }
-          @default { <span>ᛟ</span> }
+          @case ('tip') { <span class="material-symbols-outlined">auto_awesome</span> }
+          @case ('warning') { <span class="material-symbols-outlined">warning</span> }
+          @default { <span class="rune">ᛟ</span> }
         }
       </div>
       <div class="callout-content">

@@ -61,9 +61,10 @@ use crate::rows::{
     equipment_from_rows, equipment_to_rows, inventory_from_rows, inventory_to_rows,
     known_ancient_language_from_rows, known_glyphs_from_rows, HotbarRow,
 };
+use crate::reducers::lifecycle::caller_entity;
 use crate::tables::{
-    equipment, hotbar, inventory, known_ancient_language, known_glyphs, player, EquipmentTable,
-    Hotbar, InventoryTable,
+    equipment, game_entity, hotbar, inventory, known_ancient_language, known_glyphs, player,
+    EntityKindRow, EquipmentTable, Hotbar, InventoryTable,
 };
 
 // ---------------------------------------------------------------------------
@@ -233,6 +234,66 @@ pub fn move_item(ctx: &ReducerContext, from: u8, to: u8) -> Result<(), String> {
 
     let mut inventory = load_inventory(ctx, identity)?;
     inventory.slots.swap(from_index, to_index);
+    store_inventory(ctx, identity, &inventory);
+    Ok(())
+}
+
+/// Grants a catalogue item through a nearby NPC vendor.
+///
+/// This is intentionally server-authoritative: the caller supplies only an
+/// item id and NPC entity id, while the module verifies the NPC, proximity,
+/// catalogue entry and inventory capacity before creating a new instance.
+#[reducer]
+pub fn claim_npc_item(
+    ctx: &ReducerContext,
+    npc_entity_id: u64,
+    item_id: String,
+) -> Result<(), String> {
+    let player = caller_entity(ctx)?;
+    let npc = ctx
+        .db
+        .game_entity()
+        .entity_id()
+        .find(&npc_entity_id)
+        .ok_or_else(|| "NPC not found".to_string())?;
+    if npc.kind != EntityKindRow::Npc {
+        return Err("that entity is not an NPC vendor".to_string());
+    }
+
+    let dx = player.position.x - npc.position.x;
+    let dy = player.position.y - npc.position.y;
+    let dz = player.position.z - npc.position.z;
+    if dx * dx + dy * dy + dz * dz > 36.0 {
+        return Err("you are too far from that NPC".to_string());
+    }
+
+    grant_item(ctx, ctx.sender(), &item_id)?;
+    Ok(())
+}
+
+/// Permanently destroys an item instance from the caller's inventory.
+///
+/// Equipment cannot be destroyed through this reducer: the UI's drag-out
+/// gesture originates from the inventory, and forcing an explicit unequip
+/// first prevents accidental loss of currently equipped stats/abilities.
+#[reducer]
+pub fn destroy_item(ctx: &ReducerContext, instance_id: u64) -> Result<(), String> {
+    if instance_id == 0 {
+        return Err("item instance is not assigned".to_string());
+    }
+
+    let identity = ctx.sender();
+    let mut inventory = load_inventory(ctx, identity)?;
+    let instance_id = ItemInstanceId(instance_id);
+    let Some(slot) = inventory
+        .slots
+        .iter()
+        .position(|item| item.as_ref().is_some_and(|item| item.instance_id == instance_id))
+    else {
+        return Err("item instance is not in your inventory".to_string());
+    };
+
+    inventory.slots[slot] = None;
     store_inventory(ctx, identity, &inventory);
     Ok(())
 }

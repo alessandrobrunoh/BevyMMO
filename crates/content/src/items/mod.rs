@@ -15,6 +15,7 @@ pub fn default_items() -> ItemRegistry {
     magic_staff::register(&mut registry);
     purity_charm::register(&mut registry);
     weapons::staff::conduit_staff_t4::register(&mut registry);
+    weapons::staff::echo_staff::register(&mut registry);
     registry
 }
 
@@ -35,13 +36,14 @@ mod tests {
         let registry = default_items();
         assert!(registry.contains(&ItemId::new(magic_staff::MagicStaff::ID)));
         assert!(registry.contains(&ItemId::new(weapons::staff::conduit_staff_t4::ConduitStaffT4::ID)));
+        assert!(registry.contains(&ItemId::new(weapons::staff::echo_staff::EchoStaff::ID)));
         // Armor items
         assert!(registry.contains(&ItemId::new(armor::chestplate::robust_cuirass::RobustCuirass::ID)));
         assert!(registry.contains(&ItemId::new(armor::helmet::warding_helm::WardingHelm::ID)));
         assert!(registry.contains(&ItemId::new(armor::boots::swift_boots::SwiftBoots::ID)));
         // Accessory items
         assert!(registry.contains(&ItemId::new(purity_charm::PurityCharm::ID)));
-        assert_eq!(registry.len(), 6); // 2 weapons + 3 armor + 1 accessory
+        assert_eq!(registry.len(), 7); // 3 weapons + 3 armor + 1 accessory
     }
 
     #[test]

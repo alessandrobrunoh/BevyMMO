@@ -30,8 +30,11 @@ use bevymmo_domain::abilities::AbilitySlot;
 use bevymmo_domain::items::EquipSlot;
 use bevymmo_domain::spells::components::HotbarSlot;
 
+use super::module_bindings::armor_cast_reducer::armor_cast as armor_cast_reducer;
+use super::module_bindings::claim_npc_item_reducer::claim_npc_item as claim_npc_item_reducer;
 use super::module_bindings::cast_spell_reducer::cast_spell as cast_spell_reducer;
 use super::module_bindings::eidolon_cast_reducer::eidolon_cast as eidolon_cast_reducer;
+use super::module_bindings::destroy_item_reducer::destroy_item as destroy_item_reducer;
 use super::module_bindings::equip_item_reducer::equip_item as equip_item_reducer;
 use super::module_bindings::move_item_reducer::move_item as move_item_reducer;
 use super::module_bindings::release_cast_reducer::release_cast as release_cast_reducer;
@@ -54,6 +57,21 @@ fn to_row(v: Vec3) -> Vec3Row {
         y: v.y,
         z: v.z,
     }
+}
+
+/// Claims a catalogue item from a nearby NPC vendor.
+pub fn claim_npc_item(conn: &StdbConnection, npc_entity_id: u64, item_id: String) -> Sent {
+    conn.reducers().claim_npc_item_then(
+        npc_entity_id,
+        item_id,
+        conn.report_rejection("could not claim that item"),
+    )
+}
+
+/// Permanently destroys an item instance from the inventory.
+pub fn destroy_item(conn: &StdbConnection, instance_id: u64) -> Sent {
+    conn.reducers()
+        .destroy_item_then(instance_id, conn.report_rejection("could not destroy that item"))
 }
 
 /// Moves an inventory item into the equipment slot its definition allows.
@@ -146,6 +164,24 @@ pub fn eidolon_cast(
         target_entity,
         target_position.map(to_row),
         conn.report_rejection("could not cast that gesture"),
+    )
+}
+
+/// Casts the first active ability supplied by an equipped armor item.
+///
+/// The server resolves the Armor inscription and cast mode; the client only
+/// identifies the equipment slot and target.
+pub fn armor_cast(
+    conn: &StdbConnection,
+    slot: EquipSlot,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3>,
+) -> Sent {
+    conn.reducers().armor_cast_then(
+        slot.label().to_string(),
+        target_entity,
+        target_position.map(to_row),
+        conn.report_rejection("could not cast that armor ability"),
     )
 }
 

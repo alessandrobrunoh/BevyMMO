@@ -1,40 +1,43 @@
-@use 'variables' as *;
+@use '../../../../styles/variables' as *;
 
 .wiki-infobox {
   width: 100%;
   max-width: 340px;
-  background: linear-gradient(180deg, #15324d 0%, #0d1e2e 100%);
-  border: 1px solid var(--border-stone);
-  box-shadow: var(--shadow-medium);
+  background: linear-gradient(180deg, var(--blue-900) 0%, var(--blue-950) 100%);
+  border: 1px solid rgba(208, 174, 97, 0.5);
+  box-shadow: 0 12px 35px rgba(7, 26, 42, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   margin-bottom: 2rem;
 
   .infobox-header {
     padding: 1rem 1.25rem;
     text-align: center;
-    background: rgba(13, 30, 46, 0.75);
-    border-bottom: 1px solid rgba(221, 212, 195, 0.15);
+    background: rgba(6, 23, 38, 0.85);
+    border-bottom: 1px solid rgba(208, 174, 97, 0.3);
 
     .rune-tag {
-      color: var(--color-rune-cyan);
-      font-size: 1.1rem;
+      color: var(--cyan);
+      font-size: 1.2rem;
       display: block;
       margin-bottom: 0.2rem;
+      text-shadow: 0 0 10px rgba(60, 203, 255, 0.6);
     }
 
     .infobox-title {
-      font-family: var(--font-display);
-      font-size: 1.15rem;
-      font-weight: 800;
+      font-family: var(--font-serif);
+      font-size: 1.2rem;
+      font-weight: 700;
       color: #ffffff;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
     .infobox-type {
-      font-size: 0.78rem;
-      color: var(--text-gold);
+      font-family: var(--font-serif);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--gold-light);
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.1em;
       display: block;
       margin-top: 0.2rem;
     }
@@ -43,22 +46,23 @@
   .infobox-media {
     position: relative;
     overflow: hidden;
-    max-height: 180px;
+    max-height: 190px;
+    border-bottom: 1px solid rgba(208, 174, 97, 0.25);
 
     .infobox-img {
       width: 100%;
-      height: 180px;
+      height: 190px;
       object-fit: cover;
-      transition: transform var(--transition-normal);
+      transition: transform var(--transition);
 
       &:hover {
-        transform: scale(1.04);
+        transform: scale(1.05);
       }
     }
   }
 
   .infobox-stats {
-    padding: 0.75rem 1.25rem;
+    padding: 1rem 1.25rem;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -67,28 +71,33 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 0.4rem 0;
-      border-bottom: 1px solid rgba(221, 212, 195, 0.08);
-      font-size: 0.85rem;
+      padding: 0.45rem 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 0.86rem;
 
       &:last-child {
         border-bottom: none;
       }
 
       .stat-label {
-        color: var(--text-muted);
+        font-family: var(--font-serif);
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--gold-light);
       }
 
       .stat-value {
-        color: var(--text-stone);
+        color: #ffffff;
         font-weight: 600;
         text-align: right;
       }
 
       &.highlight {
         .stat-value {
-          color: var(--color-rune-cyan);
-          text-shadow: 0 0 8px rgba(60, 203, 255, 0.4);
+          color: var(--cyan-light);
+          text-shadow: 0 0 10px rgba(60, 203, 255, 0.6);
         }
       }
     }
@@ -96,25 +105,25 @@
 
   .infobox-footer {
     padding: 0.75rem 1.25rem;
-    background: rgba(13, 30, 46, 0.6);
-    border-top: 1px solid rgba(221, 212, 195, 0.12);
+    background: rgba(6, 23, 38, 0.75);
+    border-top: 1px solid rgba(208, 174, 97, 0.25);
     text-align: center;
 
     .rarity-badge {
-      font-family: var(--font-display);
-      font-size: 0.75rem;
+      font-family: var(--font-serif);
+      font-size: 0.78rem;
       font-weight: 700;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.12em;
       text-transform: uppercase;
 
       &.ancient {
-        color: var(--color-gold-light);
+        color: var(--gold-light);
       }
       &.mythic {
-        color: var(--color-rune-cyan);
+        color: var(--cyan-light);
       }
       &.rare {
-        color: var(--color-sky-300);
+        color: var(--sky);
       }
     }
   }

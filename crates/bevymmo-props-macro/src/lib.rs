@@ -879,8 +879,9 @@ impl ItemDef {
         let execution_method = self.execution.as_ref().map(|execution| {
             let execution = match execution.to_string().as_str() {
                 "Charge" => quote! { crate::abilities::BlueprintExecution::Charge },
+                "Echo" => quote! { crate::abilities::BlueprintExecution::Echo },
                 other => {
-                    let message = format!("unknown item execution `{other}` (expected Charge)");
+                    let message = format!("unknown item execution `{other}` (expected Charge or Echo)");
                     return syn::Error::new_spanned(execution, message).to_compile_error();
                 }
             };

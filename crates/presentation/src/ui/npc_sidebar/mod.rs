@@ -9,13 +9,18 @@ pub mod systems;
 use bevy::prelude::*;
 
 use crate::ui::systems::in_gameplay;
-use crate::ui::npc_sidebar::systems::npc_sidebar_on_click;
+use crate::ui::npc_sidebar::systems::{claim_vendor_item, npc_sidebar_on_click};
 
 /// Plugin che registra il sistema di click-to-inspect per gli NPC.
 pub struct NpcSidebarPlugin;
 
 impl Plugin for NpcSidebarPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, npc_sidebar_on_click.run_if(in_gameplay));
+        app.add_systems(
+            Update,
+            (npc_sidebar_on_click, claim_vendor_item)
+                .chain()
+                .run_if(in_gameplay),
+        );
     }
 }

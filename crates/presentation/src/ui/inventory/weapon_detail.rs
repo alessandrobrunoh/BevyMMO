@@ -426,11 +426,16 @@ mod tests {
     }
 
     #[test]
-    fn slots_with_one_gesture_have_no_alternatives() {
+    fn ultimate_slot_lists_selectable_alternatives() {
         let app = catalog_app();
         let summary = summarize(&app, &magic_staff(), &KnownGlyphs::default());
 
-        assert!(summary.slots.iter().all(|slot| slot.alternatives.is_none()));
+        assert!(summary.slots[0].alternatives.is_none());
+        assert!(summary.slots[1].alternatives.is_none());
+        assert_eq!(
+            summary.slots[2].alternatives.as_deref(),
+            Some("Also offers: Lancia Meteora")
+        );
     }
 
     /// The rune line is the shared budget across all three slots, discounted by

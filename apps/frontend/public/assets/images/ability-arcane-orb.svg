@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
+  <defs>
+    <radialGradient id="sunfireGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff8e7"/>
+      <stop offset="25%" stop-color="#ffb703"/>
+      <stop offset="60%" stop-color="#fb8500"/>
+      <stop offset="90%" stop-color="#d00000"/>
+      <stop offset="100%" stop-color="#370617"/>
+    </radialGradient>
+    <filter id="glowFlame">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="80" height="80" rx="40" fill="#08131d"/>
+  <circle cx="40" cy="40" r="38" stroke="#d0ae61" stroke-width="1.5" fill="none" opacity="0.8"/>
+  <circle cx="40" cy="40" r="32" fill="url(#sunfireGrad)" filter="url(#glowFlame)"/>
+  <!-- Solar flare swirls -->
+  <path d="M40 14 Q48 28 40 40 Q32 28 40 14 Z" fill="#ffffff" opacity="0.9"/>
+  <path d="M40 66 Q48 52 40 40 Q32 52 40 66 Z" fill="#ffb703" opacity="0.8"/>
+  <path d="M14 40 Q28 48 40 40 Q28 32 14 40 Z" fill="#ffb703" opacity="0.8"/>
+  <path d="M66 40 Q52 48 40 40 Q52 32 66 40 Z" fill="#ffffff" opacity="0.9"/>
+  <!-- Center Rune Core -->
+  <polygon points="40,26 50,40 40,54 30,40" stroke="#fff" stroke-width="1.5" fill="none"/>
+  <circle cx="40" cy="40" r="4" fill="#ffffff"/>
+</svg>

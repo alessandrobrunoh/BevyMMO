@@ -3,7 +3,7 @@
 //! spell "classiche" — riusa tutta la pipeline di cast/rete esistente.
 
 use super::ancient_word::AncientWordRegistry;
-use super::base_ability::{AbilityParams, ArcBaseAbility, BaseAbilityRegistry};
+use super::base_ability::{AbilityParams, ArcBaseAbility, BaseAbilityRegistry, AbilityTag};
 use super::blueprint::AbilityBlueprint;
 use super::essence::EssenceRegistry;
 use super::inscription::{ArmorInscription, WeaponInscription, WeaponInscriptions};
@@ -58,6 +58,21 @@ pub struct SlotPreview {
     pub blueprint: AbilityBlueprint,
     /// Compatibility view of `blueprint.params` for existing callers.
     pub params: AbilityParams,
+}
+
+fn manifest_blueprint(
+    preview: &SlotPreview,
+    ctx: &mut SpellCastContext,
+) {
+    preview.ability.default_manifestation(&preview.params, ctx);
+    if matches!(preview.blueprint.execution, super::blueprint::BlueprintExecution::Echo)
+        && preview.blueprint.has_tag(AbilityTag::EchoCompatible)
+    {
+        // Echo is a second manifestation of the already-resolved blueprint;
+        // it never re-enters item/root/word resolution, so recursive echoes
+        // are impossible.
+        preview.ability.default_manifestation(&preview.params, ctx);
+    }
 }
 
 /// Prima metà di [`cast_inscribed_slot`]: risolve il gesto attivo, verifica i
@@ -261,7 +276,7 @@ pub fn cast_armor_inscribed_ability(
         ancient_words,
         item,
     )?;
-    preview.ability.default_manifestation(&preview.params, ctx);
+    manifest_blueprint(&preview, ctx);
     Ok(())
 }
 
@@ -289,11 +304,11 @@ pub fn cast_root_inscribed_slot(
         ancient_words,
         item,
     )?;
-    preview.ability.default_manifestation(&preview.params, ctx);
+    manifest_blueprint(&preview, ctx);
     Ok(())
 }
 
-/// Lancia lo slot `slot` dell'arma incisa `inscriptions`.
+/// Lancia lo slot `slot` dell’arma incisa `inscriptions`.
 ///
 /// Risolve prima il gesto EFFETTIVAMENTE attivo per lo slot (per
 /// Primary/Secondary, la scelta del giocatore fra le opzioni offerte —
@@ -320,7 +335,7 @@ pub fn cast_inscribed_slot(
 ) -> Result<(), CastBlockedReason> {
     let SlotPreview {
         ability,
-        blueprint: _,
+        blueprint,
         params,
     } = resolve_slot_preview(
         slot,
@@ -340,6 +355,18 @@ pub fn cast_inscribed_slot(
             essence.manifest(ability.as_ref(), &params, ctx);
         }
         None => ability.default_manifestation(&params, ctx),
+    }
+
+    if matches!(blueprint.execution, super::blueprint::BlueprintExecution::Echo)
+        && blueprint.has_tag(AbilityTag::EchoCompatible)
+    {
+        match &inscription.essence {
+            Some(essence_id) => {
+                let essence = essence_registry.get(essence_id).ok_or(CastBlockedReason::MissingRegistryEntry)?;
+                essence.manifest(ability.as_ref(), &params, ctx);
+            }
+            None => ability.default_manifestation(&params, ctx),
+        }
     }
 
     if let Some(word_id) = &inscription.ancient_word {

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 24" width="300" height="24">
+  <defs>
+    <linearGradient id="goldRuleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#c9a352" stop-opacity="0"/>
+      <stop offset="30%" stop-color="#c9a352" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#fdf0cd"/>
+      <stop offset="70%" stop-color="#c9a352" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#c9a352" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="goldDiamond" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff6db"/>
+      <stop offset="50%" stop-color="#d5a848"/>
+      <stop offset="100%" stop-color="#8a6526"/>
+    </linearGradient>
+  </defs>
+  <!-- Left Wing Line -->
+  <line x1="10" y1="12" x2="132" y2="12" stroke="url(#goldRuleGrad)" stroke-width="1.5"/>
+  <circle cx="120" cy="12" r="1.5" fill="#c9a352"/>
+  <circle cx="128" cy="12" r="2" fill="#d5a848"/>
+  <!-- Center Main Diamond Rune -->
+  <polygon points="150,2 159,12 150,22 141,12" fill="url(#goldDiamond)" stroke="#8a6526" stroke-width="0.75"/>
+  <polygon points="150,6 155,12 150,18 145,12" fill="#082238"/>
+  <circle cx="150" cy="12" r="2" fill="#69e0ff"/>
+  <!-- Right Wing Line -->
+  <line x1="168" y1="12" x2="290" y2="12" stroke="url(#goldRuleGrad)" stroke-width="1.5"/>
+  <circle cx="172" cy="12" r="2" fill="#d5a848"/>
+  <circle cx="180" cy="12" r="1.5" fill="#c9a352"/>
+</svg>

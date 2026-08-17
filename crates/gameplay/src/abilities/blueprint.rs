@@ -10,6 +10,8 @@ use super::base_ability::{AbilityCastMode, AbilityGeometry, AbilityId, AbilityPa
 pub enum BlueprintExecution {
     Base,
     Charge,
+    /// The item repeats an eligible manifestation once after the original.
+    Echo,
 }
 
 #[derive(Debug, Clone, PartialEq)]

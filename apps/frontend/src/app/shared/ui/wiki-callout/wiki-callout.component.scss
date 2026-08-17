@@ -1,57 +1,63 @@
-@use 'variables' as *;
+@use '../../../../styles/variables' as *;
 
 .wiki-callout {
   display: flex;
   align-items: flex-start;
   gap: 1rem;
   padding: 1.15rem 1.4rem;
-  border-radius: var(--radius-sm);
   margin: 1.75rem 0;
-  border: 1px solid var(--border-stone);
-  background: rgba(16, 45, 71, 0.4);
+  border: 1px solid rgba(117, 107, 90, 0.4);
+  background: #eee4d0;
+  box-shadow: 0 4px 15px rgba(7, 26, 42, 0.08);
 
   .callout-icon {
     font-size: 1.25rem;
     line-height: 1;
     margin-top: 0.1rem;
+
+    .material-symbols-outlined {
+      font-size: 22px;
+    }
   }
 
   .callout-content {
     flex: 1;
 
     .callout-title {
-      font-family: var(--font-display);
+      font-family: var(--font-serif);
       font-size: 0.95rem;
       font-weight: 700;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
       margin-bottom: 0.3rem;
     }
 
     .callout-text {
+      font-family: var(--font-serif);
       font-size: 0.92rem;
-      color: var(--text-stone);
-      line-height: 1.55;
+      color: #3b4249;
+      line-height: 1.6;
     }
   }
 
   &.type-info {
-    border-color: rgba(60, 203, 255, 0.35);
-    background: rgba(20, 124, 193, 0.12);
-    .callout-icon { color: var(--color-rune-cyan); }
-    .callout-title { color: var(--color-rune-cyan); }
+    border-color: rgba(20, 77, 111, 0.4);
+    background: rgba(20, 77, 111, 0.08);
+    .callout-icon { color: var(--blue-800); }
+    .callout-title { color: var(--blue-800); }
   }
 
   &.type-tip {
-    border-color: rgba(208, 174, 97, 0.35);
-    background: rgba(208, 174, 97, 0.1);
-    .callout-icon { color: var(--color-gold); }
-    .callout-title { color: var(--color-gold); }
+    border-color: rgba(208, 174, 97, 0.5);
+    background: rgba(208, 174, 97, 0.12);
+    .callout-icon { color: var(--gold-dark); }
+    .callout-title { color: var(--gold-dark); }
   }
 
   &.type-warning {
-    border-color: rgba(216, 150, 53, 0.4);
-    background: rgba(216, 150, 53, 0.12);
-    .callout-icon { color: var(--color-warning); }
-    .callout-title { color: var(--color-warning); }
+    border-color: rgba(196, 82, 82, 0.4);
+    background: rgba(196, 82, 82, 0.08);
+    .callout-icon { color: #b83232; }
+    .callout-title { color: #b83232; }
   }
 }

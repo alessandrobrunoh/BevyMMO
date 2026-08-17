@@ -12,6 +12,7 @@
 #[allow(clippy::all)]
 pub mod module_bindings;
 
+pub mod combat_input;
 pub mod commands;
 pub mod plugin;
 

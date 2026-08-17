@@ -26,6 +26,7 @@ pub mod cast_source_row_type;
 pub mod cast_spell_reducer;
 pub mod cast_state_table;
 pub mod cast_state_type;
+pub mod claim_npc_item_reducer;
 pub mod color_row_type;
 pub mod cooldown_table;
 pub mod cooldown_type;
@@ -34,6 +35,7 @@ pub mod crowd_control_table;
 pub mod crowd_control_type;
 pub mod damage_event_row_type;
 pub mod damage_event_table;
+pub mod destroy_item_reducer;
 pub mod effect_payload_filter_row_type;
 pub mod effect_payload_kind_row_type;
 pub mod effect_payload_row_type;
@@ -128,6 +130,7 @@ pub use cast_source_row_type::CastSourceRow;
 pub use cast_spell_reducer::cast_spell;
 pub use cast_state_table::*;
 pub use cast_state_type::CastState;
+pub use claim_npc_item_reducer::claim_npc_item;
 pub use color_row_type::ColorRow;
 pub use cooldown_table::*;
 pub use cooldown_type::Cooldown;
@@ -136,6 +139,7 @@ pub use crowd_control_table::*;
 pub use crowd_control_type::CrowdControl;
 pub use damage_event_row_type::DamageEventRow;
 pub use damage_event_table::*;
+pub use destroy_item_reducer::destroy_item;
 pub use effect_payload_filter_row_type::EffectPayloadFilterRow;
 pub use effect_payload_kind_row_type::EffectPayloadKindRow;
 pub use effect_payload_row_type::EffectPayloadRow;
@@ -232,6 +236,13 @@ pub enum Reducer {
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
     },
+    ClaimNpcItem {
+        npc_entity_id: u64,
+        item_id: String,
+    },
+    DestroyItem {
+        instance_id: u64,
+    },
     EidolonCast {
         slot: String,
         target_entity: Option<u64>,
@@ -317,6 +328,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::ArmorCast { .. } => "armor_cast",
             Reducer::AwardResonanceXp { .. } => "award_resonance_xp",
             Reducer::CastSpell { .. } => "cast_spell",
+            Reducer::ClaimNpcItem { .. } => "claim_npc_item",
+            Reducer::DestroyItem { .. } => "destroy_item",
             Reducer::EidolonCast { .. } => "eidolon_cast",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::GmClearPropOverride { .. } => "gm_clear_prop_override",
@@ -368,6 +381,18 @@ impl __sdk::Reducer for Reducer {
                 target_entity: target_entity.clone(),
                 target_position: target_position.clone(),
             }),
+            Reducer::ClaimNpcItem {
+                npc_entity_id,
+                item_id,
+            } => __sats::bsatn::to_vec(&claim_npc_item_reducer::ClaimNpcItemArgs {
+                npc_entity_id: npc_entity_id.clone(),
+                item_id: item_id.clone(),
+            }),
+            Reducer::DestroyItem { instance_id } => {
+                __sats::bsatn::to_vec(&destroy_item_reducer::DestroyItemArgs {
+                    instance_id: instance_id.clone(),
+                })
+            }
             Reducer::EidolonCast {
                 slot,
                 target_entity,

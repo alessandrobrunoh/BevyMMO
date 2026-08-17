@@ -83,6 +83,18 @@
     text-shadow: 0 3px 15px rgba(0, 0, 0, 0.7);
   }
 
+  .header-flourish-wrap {
+    display: flex;
+    justify-content: center;
+    margin: 8px 0 16px 0;
+
+    .header-flourish-svg {
+      width: 220px;
+      height: 18px;
+      filter: drop-shadow(0 0 8px rgba(208, 174, 97, 0.4));
+    }
+  }
+
   .page-subtitle {
     margin: 0 auto;
     max-width: 680px;

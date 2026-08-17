@@ -3,12 +3,15 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevymmo_client::stdb::{commands, StdbConnection};
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
+use bevymmo_gameplay::items::registry::ItemRegistry;
 use bevymmo_network::network::protocol::Position;
+use bevymmo_network::world_components::NetworkEntityId;
 
 use crate::ui::card::components::CardPositioning;
 use crate::ui::card::{CardBuilder, CardKind};
-use crate::ui::npc_sidebar::components::NpcSidebar;
+use crate::ui::npc_sidebar::components::{NpcSidebar, VendorItemButton};
 use crate::ui::theme::UiTheme;
 
 /// Distanza massima (in unità di mondo) dal raggio del cursore entro cui un
@@ -51,6 +54,7 @@ pub fn npc_sidebar_on_click(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     theme: Res<UiTheme>,
+    item_registry: Res<ItemRegistry>,
     // Query per le entità game (NPC = GameEntity + Position + EntityKind::Friendly)
     entity_query: Query<(Entity, &Position, &EntityKind), With<GameEntity>>,
     name_query: Query<&PlayerName>,
@@ -100,7 +104,7 @@ pub fn npc_sidebar_on_click(
         .unwrap_or_else(|_| "NPC".to_string());
 
     // Spawn nuova Card
-    spawn_npc_sidebar(&mut commands, &theme, target_entity, &npc_name);
+    spawn_npc_sidebar(&mut commands, &theme, target_entity, &npc_name, &item_registry);
 }
 
 /// Calcola la distanza tra un punto e un raggio (linea infinita).
@@ -131,22 +135,52 @@ fn spawn_npc_sidebar(
     theme: &UiTheme,
     target_entity: Entity,
     npc_name: &str,
+    item_registry: &ItemRegistry,
 ) {
     let card_entity = CardBuilder::new(CardKind::Generic, npc_name)
         .width(Val::Px(320.0))
-        .height(Val::Px(220.0))
+        .height(Val::Px(360.0))
         .positioning(CardPositioning::Left)
         .closeable()
         .exclusive()
         .with_body(|body| {
             body.spawn((
-                Text::new("Ciaoo"),
+                Text::new("Ciao! Scegli un oggetto:"),
                 TextFont {
                     font_size: FontSize::Px(16.0),
                     ..default()
                 },
                 TextColor(theme.text_color),
             ));
+            for (_, item) in item_registry.sorted_items().into_iter()
+                .filter(|(_, item)| item.config().equippable_into.is_some())
+            {
+                body.spawn((
+                    Button,
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(30.0),
+                        margin: UiRect::vertical(Val::Px(2.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(theme.button_bg),
+                    VendorItemButton {
+                        npc: target_entity,
+                        item_id: item.id(),
+                    },
+                )).with_children(|button| {
+                    button.spawn((
+                        Text::new(item.display_name().to_string()),
+                        TextFont {
+                            font_size: FontSize::Px(theme.button_font_size),
+                            ..default()
+                        },
+                        TextColor(theme.text_color),
+                    ));
+                });
+            }
         })
         .spawn(commands, theme);
 
@@ -154,6 +188,34 @@ fn spawn_npc_sidebar(
     commands.entity(card_entity).insert(NpcSidebar {
         target: target_entity,
     });
+}
+
+/// Sends the server-authoritative claim request for a clicked vendor item.
+/// The reducer rechecks NPC type and proximity, so a stale sidebar cannot grant
+/// an item after the player has moved away.
+pub fn claim_vendor_item(
+    interactions: Query<(&Interaction, &VendorItemButton), Changed<Interaction>>,
+    npc_entities: Query<&NetworkEntityId>,
+    connection: Option<Res<StdbConnection>>,
+) {
+    let Some(connection) = connection else {
+        return;
+    };
+    for (interaction, button) in interactions.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let Ok(network_id) = npc_entities.get(button.npc) else {
+            continue;
+        };
+        if let Err(error) = commands::claim_npc_item(
+            &connection,
+            network_id.0,
+            button.item_id.as_str().to_string(),
+        ) {
+            error!("could not claim NPC item: {error}");
+        }
+    }
 }
 
 #[cfg(test)]

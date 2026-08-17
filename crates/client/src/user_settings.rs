@@ -184,13 +184,19 @@ pub enum KeyAction {
     CastSpellQ,
     CastSpellW,
     CastSpellE,
+    CastPrimary,
+    CastSecondary,
+    CastUltimate,
+    CastHelmet,
+    CastChestplate,
+    CastBoots,
     CameraZoomIn,
     CameraZoomOut,
 }
 
 impl KeyAction {
     /// All rebindable actions in display order.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 16] = [
         Self::TogglePause,
         Self::ShowScoreboard,
         Self::ToggleInventory,
@@ -199,6 +205,12 @@ impl KeyAction {
         Self::CastSpellQ,
         Self::CastSpellW,
         Self::CastSpellE,
+        Self::CastPrimary,
+        Self::CastSecondary,
+        Self::CastUltimate,
+        Self::CastHelmet,
+        Self::CastChestplate,
+        Self::CastBoots,
         Self::CameraZoomIn,
         Self::CameraZoomOut,
     ];
@@ -214,6 +226,12 @@ impl KeyAction {
             Self::CastSpellQ => "Cast Spell (Q slot)",
             Self::CastSpellW => "Cast Spell (W slot)",
             Self::CastSpellE => "Cast Spell (E slot)",
+            Self::CastPrimary => "Cast Weapon Primary",
+            Self::CastSecondary => "Cast Weapon Secondary",
+            Self::CastUltimate => "Cast Weapon Ultimate",
+            Self::CastHelmet => "Cast Helmet Ability",
+            Self::CastChestplate => "Cast Chestplate Ability",
+            Self::CastBoots => "Cast Boots Ability",
             Self::CameraZoomIn => "Camera Zoom In",
             Self::CameraZoomOut => "Camera Zoom Out",
         }
@@ -230,6 +248,12 @@ impl KeyAction {
             Self::CastSpellQ => KeyCode::KeyQ,
             Self::CastSpellW => KeyCode::KeyW,
             Self::CastSpellE => KeyCode::KeyE,
+            Self::CastPrimary => KeyCode::Digit1,
+            Self::CastSecondary => KeyCode::Digit2,
+            Self::CastUltimate => KeyCode::Digit3,
+            Self::CastHelmet => KeyCode::KeyZ,
+            Self::CastChestplate => KeyCode::KeyX,
+            Self::CastBoots => KeyCode::KeyC,
             Self::CameraZoomIn => KeyCode::PageUp,
             Self::CameraZoomOut => KeyCode::PageDown,
         }

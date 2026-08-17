@@ -1,0 +1,260 @@
+- generic [ref=f8e3]:
+  - banner [ref=f8e4]:
+    - generic [ref=f8e5]:
+      - link "Eivar Online" [ref=f8e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=f8e8]:
+          - generic [ref=f8e9]: Eivar
+          - generic [ref=f8e10]: Online
+      - navigation [ref=f8e11]:
+        - link "Game" [ref=f8e12] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f8e13]: ◈
+        - link "News" [ref=f8e14] [cursor=pointer]:
+          - /url: /news
+        - generic [ref=f8e15]: ◈
+        - link "Updates" [ref=f8e16] [cursor=pointer]:
+          - /url: /updates
+        - generic [ref=f8e17]: ◈
+        - link "Wiki" [ref=f8e18] [cursor=pointer]:
+          - /url: /wiki
+        - generic [ref=f8e19]: ◈
+        - link "Store" [ref=f8e20] [cursor=pointer]:
+          - /url: /store
+      - generic [ref=f8e21]:
+        - button "search Search" [ref=f8e22] [cursor=pointer]:
+          - generic [ref=f8e23]: search
+          - generic [ref=f8e24]: Search
+        - button "forum Community" [ref=f8e25] [cursor=pointer]:
+          - generic [ref=f8e26]: forum
+          - generic [ref=f8e27]: Community
+        - link "person Login" [ref=f8e28] [cursor=pointer]:
+          - /url: /login
+          - generic [ref=f8e29]: person
+          - generic [ref=f8e30]: Login
+        - link [ref=f8e31] [cursor=pointer]:
+          - /url: /#world
+          - button "Discover Eivar" [ref=f8e32]
+  - main [ref=f8e33]:
+    - generic [ref=f8e34]:
+      - generic [ref=f8e35]:
+        - generic [ref=f8e38]:
+          - img "Eivar Online" [ref=f8e40]
+          - generic [ref=f8e41]: FORGE YOUR WEAPON. SHAPE ITS MAGIC. WRITE YOUR LEGEND.
+          - generic [ref=f8e42]:
+            - button "Discover Eivar" [ref=f8e43] [cursor=pointer]
+            - link [ref=f8e46] [cursor=pointer]:
+              - /url: /news
+              - button "Latest News" [ref=f8e47]
+        - button "Scroll down" [ref=f8e49] [cursor=pointer]: ◇
+      - generic [ref=f8e52]:
+        - generic [ref=f8e53]:
+          - generic [ref=f8e54]:
+            - heading "A World Written in Ancient Words" [level=2] [ref=f8e56]
+            - paragraph [ref=f8e57]: Across floating isles and vast continents, ancient forces stir. From verdant valleys to forgotten ruins, every stone and sigil holds a story—yours to shape.
+          - generic [ref=f8e58]:
+            - article [ref=f8e59]:
+              - img "Explore vast landscapes in Eivar" [ref=f8e61]
+              - img "Explore Badge" [ref=f8e63]
+              - generic [ref=f8e64]:
+                - heading "Explore" [level=3] [ref=f8e65]
+                - paragraph [ref=f8e66]: Vast lands, hidden secrets, and towering wonders await the brave.
+            - article [ref=f8e67]:
+              - img "Weapon forge artistry" [ref=f8e69]
+              - img "Forge Badge" [ref=f8e71]
+              - generic [ref=f8e72]:
+                - heading "Forge" [level=3] [ref=f8e73]
+                - paragraph [ref=f8e74]: Craft powerful weapons and channel the elements with ancient artistry.
+            - article [ref=f8e75]:
+              - img "Ancient runic sigils" [ref=f8e77]
+              - img "Inscribe Badge" [ref=f8e79]
+              - generic [ref=f8e80]:
+                - heading "Inscribe" [level=3] [ref=f8e81]
+                - paragraph [ref=f8e82]: Inscribe runes and words to shape abilities and unleash your vision.
+            - article [ref=f8e83]:
+              - img "Citadel fortress battle" [ref=f8e85]
+              - img "Conquer Badge" [ref=f8e87]
+              - generic [ref=f8e88]:
+                - heading "Conquer" [level=3] [ref=f8e89]
+                - paragraph [ref=f8e90]: Guilds rise, fortresses fall. Write your legend in the age of Eivar.
+        - generic [ref=f8e92]:
+          - generic [ref=f8e93]:
+            - heading "The Runic Weapon System" [level=2] [ref=f8e94]
+            - paragraph [ref=f8e95]: Every weapon is a canvas. Combine Essences, Modifiers, and Ancient Words to create limitless possibilities.
+          - generic [ref=f8e96]:
+            - generic [ref=f8e97]:
+              - generic [ref=f8e104]: ᚠ
+              - generic [ref=f8e105]: ᛉ
+              - generic [ref=f8e106]: ᛇ
+              - generic [ref=f8e107]: ᚱ
+            - generic [ref=f8e108]:
+              - generic [ref=f8e109]:
+                - generic [ref=f8e110]: Weapon
+                - strong [ref=f8e111]: Channeling Staff
+              - generic [ref=f8e112]:
+                - generic [ref=f8e113]: Q
+                - img "Arcane Orb" [ref=f8e116]
+                - strong [ref=f8e118]: Arcane Orb
+                - generic [ref=f8e119]:
+                  - generic [ref=f8e120]: Essence
+                  - text: Fire
+                - generic [ref=f8e121]:
+                  - generic [ref=f8e122]: Modifier
+                  - text: Expand
+              - generic [ref=f8e123]:
+                - generic [ref=f8e124]: W
+                - img "Barrier" [ref=f8e127]
+                - strong [ref=f8e129]: Barrier
+                - generic [ref=f8e130]:
+                  - generic [ref=f8e131]: Essence
+                  - text: Life
+                - generic [ref=f8e132]:
+                  - generic [ref=f8e133]: Modifier
+                  - text: Persistence
+              - generic [ref=f8e134]:
+                - generic [ref=f8e135]: E
+                - img "Great Impact" [ref=f8e138]
+                - strong [ref=f8e140]: Great Impact
+                - generic [ref=f8e141]:
+                  - generic [ref=f8e142]: Essence
+                  - text: Life
+                - generic [ref=f8e143]:
+                  - generic [ref=f8e144]: Modifier
+                  - text: Expand
+                - generic [ref=f8e145]:
+                  - generic [ref=f8e146]: Modifier
+                  - text: Persistence
+                - generic [ref=f8e147]:
+                  - generic [ref=f8e148]: Ancient Word
+                  - text: Echo
+          - text: ᚠ ᚢ ᚦ ᚨ ᚱ ᚲ ᚷ ᚹ ᛁ ᛃ ᛇ ᛈ ᛉ ᛋ ᛏ ᛒ ᛖ ᛗ ᛚ ᛜ ᛟ ᛞ
+        - generic [ref=f8e149]:
+          - heading "Latest News" [level=2] [ref=f8e152]
+          - generic [ref=f8e153]:
+            - article [ref=f8e154] [cursor=pointer]:
+              - generic [ref=f8e155]:
+                - 'img "The World is Being Forged: An Introduction to Eivar Online" [ref=f8e156]'
+                - generic [ref=f8e157]: Featured
+              - generic [ref=f8e158]:
+                - generic [ref=f8e159]: Development · August 14, 2026
+                - 'heading "The World is Being Forged: An Introduction to Eivar Online" [level=3] [ref=f8e160]'
+                - paragraph [ref=f8e161]: Welcome to the official chronicle of Eivar Online. Discover how our floating lands, ancient stone arches, and runic weapon system come together.
+                - generic [ref=f8e162]: Read More →
+            - article [ref=f8e163] [cursor=pointer]:
+              - 'img "Deep Dive: Essences, Modifiers, and Ancient Words" [ref=f8e165]'
+              - generic [ref=f8e166]:
+                - generic [ref=f8e167]: DEVELOPMENT · AUGUST 08, 2026
+                - 'heading "Deep Dive: Essences, Modifiers, and Ancient Words" [level=3] [ref=f8e168]'
+                - paragraph [ref=f8e169]: Explore how combining physical base weapons with elemental essences and runic modifiers yields hundreds of emergent spell behaviors.
+                - generic [ref=f8e170]: Read More →
+            - article [ref=f8e171] [cursor=pointer]:
+              - 'img "Into the Wilds: Floating Islands and Ancient Shrines" [ref=f8e173]'
+              - generic [ref=f8e174]:
+                - generic [ref=f8e175]: ANNOUNCEMENTS · JULY 28, 2026
+                - 'heading "Into the Wilds: Floating Islands and Ancient Shrines" [level=3] [ref=f8e176]'
+                - paragraph [ref=f8e177]: Traverse the highlands where ancient monoliths hum with forgotten energy and waterfalls descend into mist.
+                - generic [ref=f8e178]: Read More →
+            - article [ref=f8e179] [cursor=pointer]:
+              - 'img "Strongholds & Fortresses: Civilizations in Conflict" [ref=f8e181]'
+              - generic [ref=f8e182]:
+                - generic [ref=f8e183]: COMMUNITY · JULY 15, 2026
+                - 'heading "Strongholds & Fortresses: Civilizations in Conflict" [level=3] [ref=f8e184]'
+                - paragraph [ref=f8e185]: Inside the high stone walls and blue banners of Eivar’s capital citadels, players forge alliances and prepare for sieges.
+                - generic [ref=f8e186]: Read More →
+          - link [ref=f8e188] [cursor=pointer]:
+            - /url: /news
+            - button "View All News" [ref=f8e189]
+      - generic [ref=f8e190]:
+        - generic: ᛟ
+        - generic: ᛉ
+        - generic [ref=f8e191]:
+          - heading "The World Is Being Forged" [level=2] [ref=f8e194]
+          - generic [ref=f8e195]:
+            - article [ref=f8e196]:
+              - generic [ref=f8e201]:
+                - heading "Alpha Development" [level=3] [ref=f8e202]
+                - paragraph [ref=f8e203]: Eivar Online is in active development. Many features, regions, and systems are still being crafted. Your feedback helps shape the world.
+                - generic [ref=f8e204] [cursor=pointer]: Learn More →
+            - article [ref=f8e205]:
+              - generic [ref=f8e209]:
+                - heading "Join Our Community" [level=3] [ref=f8e210]
+                - paragraph [ref=f8e211]: Share ideas, get updates, and connect with fellow adventurers. Join our Discord and be part of building Eivar.
+                - generic [ref=f8e212] [cursor=pointer]: Join Discord →
+  - contentinfo [ref=f8e214]:
+    - generic [ref=f8e215]:
+      - generic [ref=f8e216]:
+        - generic [ref=f8e217]:
+          - img "Eivar Online" [ref=f8e218]
+          - paragraph [ref=f8e219]: A fantasy MMORPG where ancient words shape power, and legends are forged.
+          - generic [ref=f8e220]:
+            - link "Discord" [ref=f8e221] [cursor=pointer]:
+              - /url: "#"
+              - generic [ref=f8e222]: forum
+            - link "Community" [ref=f8e223] [cursor=pointer]:
+              - /url: "#"
+              - generic [ref=f8e224]: groups
+            - link "Videos" [ref=f8e225] [cursor=pointer]:
+              - /url: "#"
+              - generic [ref=f8e226]: smart_display
+            - link "Lore" [ref=f8e227] [cursor=pointer]:
+              - /url: "#"
+              - generic [ref=f8e228]: auto_stories
+        - generic [ref=f8e229]:
+          - heading "Game" [level=4] [ref=f8e230]
+          - link "Overview" [ref=f8e231] [cursor=pointer]:
+            - /url: /#world
+          - link "Features" [ref=f8e232] [cursor=pointer]:
+            - /url: /#pillars
+          - link "Classes" [ref=f8e233] [cursor=pointer]:
+            - /url: /wiki/weapons/channeling-staff
+          - link "World" [ref=f8e234] [cursor=pointer]:
+            - /url: /wiki
+          - link "FAQ" [ref=f8e235] [cursor=pointer]:
+            - /url: /wiki
+        - generic [ref=f8e236]:
+          - heading "News" [level=4] [ref=f8e237]
+          - link "Latest News" [ref=f8e238] [cursor=pointer]:
+            - /url: /news
+          - link "Updates" [ref=f8e239] [cursor=pointer]:
+            - /url: /updates
+          - link "Dev Blog" [ref=f8e240] [cursor=pointer]:
+            - /url: /news
+          - link "Patch Notes" [ref=f8e241] [cursor=pointer]:
+            - /url: /updates
+        - generic [ref=f8e242]:
+          - heading "Wiki" [level=4] [ref=f8e243]
+          - link "Getting Started" [ref=f8e244] [cursor=pointer]:
+            - /url: /wiki
+          - link "Guides" [ref=f8e245] [cursor=pointer]:
+            - /url: /wiki
+          - link "Lore" [ref=f8e246] [cursor=pointer]:
+            - /url: /wiki
+          - link "Items" [ref=f8e247] [cursor=pointer]:
+            - /url: /wiki/weapons/channeling-staff
+          - link "Monsters" [ref=f8e248] [cursor=pointer]:
+            - /url: /wiki
+        - generic [ref=f8e249]:
+          - heading "Community" [level=4] [ref=f8e250]
+          - link "Discord" [ref=f8e251] [cursor=pointer]:
+            - /url: "#"
+          - link "Forums" [ref=f8e252] [cursor=pointer]:
+            - /url: "#"
+          - link "Guilds" [ref=f8e253] [cursor=pointer]:
+            - /url: "#"
+          - link "Events" [ref=f8e254] [cursor=pointer]:
+            - /url: "#"
+          - link "Media" [ref=f8e255] [cursor=pointer]:
+            - /url: "#"
+        - generic [ref=f8e256]:
+          - heading "Support" [level=4] [ref=f8e257]
+          - link "Support Center" [ref=f8e258] [cursor=pointer]:
+            - /url: "#"
+          - link "Bug Reports" [ref=f8e259] [cursor=pointer]:
+            - /url: "#"
+          - link "Terms of Service" [ref=f8e260] [cursor=pointer]:
+            - /url: "#"
+          - link "Privacy Policy" [ref=f8e261] [cursor=pointer]:
+            - /url: "#"
+          - link "Code of Conduct" [ref=f8e262] [cursor=pointer]:
+            - /url: "#"
+      - generic [ref=f8e263]: © 2026 Eivar Online. All rights reserved.

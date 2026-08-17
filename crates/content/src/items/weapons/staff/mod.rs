@@ -1,6 +1,7 @@
 //! Staff weapon family.
 
 pub mod conduit_staff_t4;
+pub mod echo_staff;
 
 use bevymmo_props_macro::weapon_family;
 

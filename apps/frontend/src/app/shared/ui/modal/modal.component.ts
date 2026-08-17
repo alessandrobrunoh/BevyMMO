@@ -12,7 +12,7 @@ import { CommonModule } from '@angular/common';
           <header class="modal-header">
             <h3 class="modal-title">{{ title }}</h3>
             <button class="close-btn" (click)="close.emit()" aria-label="Close modal">
-              ✕
+              <span class="material-symbols-outlined">close</span>
             </button>
           </header>
           <div class="modal-body">

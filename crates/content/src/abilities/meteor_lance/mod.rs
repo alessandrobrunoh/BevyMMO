@@ -7,7 +7,7 @@ use crate::abilities::BaseAbilityRegistry;
 #[base_ability(
     id = "meteor_lance",
     name = "Lancia Meteora",
-    tags = [Ranged, Projectile, SingleTarget],
+    tags = [Ranged, Projectile, SingleTarget, EchoCompatible],
     range = 32.0,
     geometry = projectile(speed = 32.0, range = 32.0),
     potency = 620.0,

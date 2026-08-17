@@ -64,3 +64,16 @@ pub enum ItemSlotOrigin {
 /// being dragged.
 #[derive(Component, Debug)]
 pub struct ItemDragGhost;
+
+/// Root of the confirmation dialog shown when an inventory item is dropped
+/// outside the inventory window.
+#[derive(Component, Debug)]
+pub struct DestroyItemDialog;
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct ConfirmDestroyButton {
+    pub instance_id: u64,
+}
+
+#[derive(Component, Debug)]
+pub struct CancelDestroyButton;

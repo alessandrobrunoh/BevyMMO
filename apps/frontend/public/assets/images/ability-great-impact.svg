@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80">
+  <defs>
+    <radialGradient id="impactGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="25%" stop-color="#b7efc5"/>
+      <stop offset="50%" stop-color="#52b788"/>
+      <stop offset="80%" stop-color="#1b4332"/>
+      <stop offset="100%" stop-color="#081c15"/>
+    </radialGradient>
+    <filter id="glowImpact">
+      <feGaussianBlur stdDeviation="3.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="80" height="80" rx="40" fill="#08131d"/>
+  <circle cx="40" cy="40" r="38" stroke="#d0ae61" stroke-width="1.5" fill="none" opacity="0.8"/>
+  <circle cx="40" cy="40" r="32" fill="url(#impactGrad)" filter="url(#glowImpact)"/>
+  <!-- Radiant burst spikes -->
+  <polygon points="40,10 43,35 68,24 47,40 68,56 43,45 40,70 37,45 12,56 33,40 12,24 37,35" fill="#d8f3dc" opacity="0.95"/>
+  <polygon points="40,18 42,36 58,30 44,40 58,50 42,44 40,62 38,44 22,50 36,40 22,30 38,36" fill="#ffffff"/>
+  <circle cx="40" cy="40" r="5" fill="#ffffff"/>
+</svg>

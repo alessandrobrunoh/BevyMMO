@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 48" width="36" height="48" fill="none">
+  <!-- Top and bottom connecting gold rails -->
+  <line x1="0" y1="3" x2="36" y2="3" stroke="#d5a848" stroke-width="2"/>
+  <line x1="0" y1="45" x2="36" y2="45" stroke="#d5a848" stroke-width="2"/>
+  <!-- Celtic/Runic knotwork strands -->
+  <path d="M2 3 L18 24 L2 45" stroke="#c9a352" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M34 3 L18 24 L34 45" stroke="#c9a352" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M10 3 L18 13 L26 3" stroke="#d5a848" stroke-width="1.5"/>
+  <path d="M10 45 L18 35 L26 45" stroke="#d5a848" stroke-width="1.5"/>
+  <!-- Center Diamond Rune Emblem -->
+  <polygon points="18,15 25,24 18,33 11,24" fill="#071b2d" stroke="#fff5db" stroke-width="1.5"/>
+  <circle cx="18" cy="24" r="2.5" fill="#3ccbff" filter="drop-shadow(0 0 4px #3ccbff)"/>
+</svg>

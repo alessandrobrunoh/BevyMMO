@@ -54,6 +54,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use spacetimedb_sdk::{credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey};
 use std::collections::{HashMap, HashSet};
 
+use super::combat_input::send_combat_inputs;
 use super::module_bindings::active_status_table::ActiveStatusTableAccess;
 use super::module_bindings::boss_state_table::BossStateTableAccess;
 use super::module_bindings::cast_ended_table::CastEndedTableAccess;
@@ -338,7 +339,7 @@ impl Plugin for StdbPlugin {
         app.add_systems(Update, finish_logout);
         app.add_systems(
             Update,
-            (join_on_request, send_move_commands, send_heartbeat)
+            (join_on_request, send_move_commands, send_heartbeat, send_combat_inputs)
                 .run_if(resource_exists::<StdbConnection>),
         );
         app.add_systems(Update, predict_and_reconcile);

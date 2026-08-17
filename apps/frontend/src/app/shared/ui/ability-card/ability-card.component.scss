@@ -1,19 +1,14 @@
-@use 'variables' as *;
+@use '../../../../styles/variables' as *;
 
 .ability-card {
+  position: relative;
   display: flex;
-  gap: 1.5rem;
+  gap: 1.25rem;
   padding: 1.5rem;
-  background: linear-gradient(135deg, rgba(20, 45, 68, 0.7) 0%, rgba(13, 30, 46, 0.9) 100%);
-  border: 1px solid var(--border-stone);
-  box-shadow: var(--shadow-subtle);
-  margin-bottom: 1.5rem;
-  transition: all var(--transition-normal);
-
-  &:hover {
-    border-color: var(--color-rune-cyan);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(60, 203, 255, 0.15);
-  }
+  background: linear-gradient(180deg, var(--blue-900) 0%, var(--blue-950) 100%);
+  border: 1px solid rgba(208, 174, 97, 0.45);
+  box-shadow: var(--shadow-runic), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  margin-bottom: 1.25rem;
 
   @media (max-width: 640px) {
     flex-direction: column;
@@ -21,23 +16,22 @@
   }
 
   .ability-slot-badge {
-    width: 54px;
-    height: 54px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, #193854 0%, #0d1e2e 100%);
-    border: 2px solid var(--color-rune-cyan);
-    box-shadow: 0 0 12px rgba(60, 203, 255, 0.4);
-    border-radius: var(--radius-sm);
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    display: grid;
+    place-items: center;
+    background: rgba(7, 26, 42, 0.8);
+    border: 1.5px solid var(--gold);
+    transform: rotate(45deg);
+    margin: 8px 6px;
 
     .slot-letter {
-      font-family: var(--font-display);
-      font-size: 1.6rem;
-      font-weight: 900;
-      color: #ffffff;
-      text-shadow: 0 0 10px rgba(60, 203, 255, 0.8);
+      transform: rotate(-45deg);
+      font-family: var(--font-serif);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--gold-light);
     }
   }
 
@@ -48,101 +42,113 @@
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 0.75rem;
+      margin-bottom: 0.65rem;
+      gap: 1rem;
       flex-wrap: wrap;
-      gap: 0.5rem;
 
       .ability-name {
-        font-family: var(--font-display);
-        font-size: 1.25rem;
-        font-weight: 800;
+        font-family: var(--font-serif);
+        font-size: 1.2rem;
+        font-weight: 600;
         color: #ffffff;
         letter-spacing: 0.04em;
+        margin: 0 0 2px 0;
       }
 
       .ability-type {
-        font-size: 0.8rem;
-        color: var(--text-gold);
+        font-family: var(--font-serif);
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        color: var(--gold-light);
       }
 
       .ability-costs {
         display: flex;
-        gap: 0.65rem;
+        gap: 0.5rem;
 
         .cost-chip {
-          padding: 0.2rem 0.6rem;
-          font-size: 0.78rem;
-          background: rgba(13, 30, 46, 0.6);
-          border: 1px solid rgba(221, 212, 195, 0.15);
-          border-radius: var(--radius-xs);
-          color: var(--text-stone);
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 3px 8px;
+          background: rgba(6, 23, 38, 0.7);
+          border: 1px solid rgba(208, 174, 97, 0.3);
+          font-family: var(--font-serif);
+          font-size: 0.75rem;
+          color: rgba(237, 248, 255, 0.85);
+
+          .cost-ico {
+            font-size: 14px;
+            color: var(--gold-light);
+          }
         }
       }
     }
 
     .ability-desc {
-      font-size: 0.95rem;
-      color: var(--text-stone);
-      line-height: 1.55;
+      font-family: var(--font-serif);
+      font-size: 0.92rem;
+      line-height: 1.6;
+      color: rgba(237, 248, 255, 0.8);
       margin-bottom: 1rem;
     }
 
     .inscriptions-block {
-      padding: 0.85rem 1rem;
-      background: rgba(8, 19, 29, 0.6);
-      border: 1px solid rgba(221, 212, 195, 0.1);
-      border-radius: var(--radius-xs);
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 0.4rem;
+      padding: 0.75rem 1rem;
+      background: rgba(6, 23, 38, 0.6);
+      border: 1px solid rgba(208, 174, 97, 0.25);
 
       .inscription-row {
         display: flex;
         align-items: center;
         gap: 0.75rem;
-        font-size: 0.85rem;
-        flex-wrap: wrap;
+        font-size: 0.82rem;
 
         .ins-label {
-          font-family: var(--font-display);
+          font-family: var(--font-serif);
+          font-size: 0.72rem;
           font-weight: 700;
-          font-size: 0.75rem;
-          color: var(--text-muted);
-          min-width: 105px;
+          letter-spacing: 0.08em;
           text-transform: uppercase;
-        }
-
-        .ins-value {
-          padding: 0.15rem 0.5rem;
-          border-radius: var(--radius-xs);
-          font-size: 0.8rem;
-
-          &.essence-tag {
-            background: rgba(216, 150, 53, 0.15);
-            border: 1px solid rgba(216, 150, 53, 0.4);
-            color: #ffd08a;
-          }
-
-          &.mod-tag {
-            background: rgba(60, 203, 255, 0.12);
-            border: 1px solid rgba(60, 203, 255, 0.35);
-            color: var(--color-rune-cyan);
-          }
-
-          &.word-tag {
-            background: rgba(208, 174, 97, 0.15);
-            border: 1px solid rgba(208, 174, 97, 0.45);
-            color: var(--text-gold);
-            font-weight: 700;
-          }
+          color: var(--gold-light);
+          min-width: 100px;
         }
 
         .tags-group {
           display: flex;
           gap: 0.4rem;
           flex-wrap: wrap;
+        }
+
+        .ins-value {
+          padding: 2px 8px;
+          border-radius: 2px;
+          font-weight: 600;
+          font-size: 0.78rem;
+
+          &.essence-tag {
+            background: rgba(255, 107, 53, 0.2);
+            border: 1px solid rgba(255, 107, 53, 0.4);
+            color: #ffc49b;
+          }
+
+          &.mod-tag {
+            background: rgba(208, 174, 97, 0.15);
+            border: 1px solid rgba(208, 174, 97, 0.35);
+            color: var(--gold-light);
+          }
+
+          &.word-tag {
+            background: rgba(60, 203, 255, 0.2);
+            border: 1px solid var(--cyan);
+            color: var(--cyan-light);
+            text-shadow: 0 0 8px rgba(60, 203, 255, 0.6);
+          }
         }
       }
     }

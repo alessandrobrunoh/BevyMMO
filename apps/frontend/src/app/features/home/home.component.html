@@ -6,17 +6,13 @@
 
   <div class="container">
     <div class="hero-content">
-      <!-- Glowing Diamond Top Rune -->
-      <div class="hero-rune">
-        ◇
-      </div>
-
-      <!-- Main Logo Title -->
-      <h1>EIVAR</h1>
-
-      <!-- Online Subtitle -->
-      <div class="hero-online">
-        ONLINE
+      <!-- Official Vector Brand Logo in Hero -->
+      <div class="hero-logo-wrapper">
+        <img
+          src="assets/branding/eivar-online-logo-vector.svg"
+          alt="Eivar Online"
+          class="hero-brand-logo"
+        />
       </div>
 
       <!-- Tagline -->
@@ -26,22 +22,31 @@
         WRITE YOUR LEGEND.
       </div>
 
-      <!-- Hero Action Buttons -->
-      <div class="hero-buttons">
-        <button class="eivar-button" (click)="scrollToSection('world')">
-          Discover Eivar
+      <!-- Hero Unified Dual CTA Bar -->
+      <div class="hero-dual-cta-bar">
+        <!-- Left: Discover Eivar (Burnished Gold) -->
+        <button class="cta-plate cta-discover" (click)="scrollToSection('world')">
+          <img src="assets/images/cta-end-left.svg" alt="" class="cta-cap cap-left" />
+          <span class="cta-label">Discover Eivar</span>
         </button>
 
-        <a routerLink="/news">
-          <button class="eivar-button secondary">
-            Latest News
+        <!-- Center: Celtic/Runic Knotwork Bridge -->
+        <div class="cta-bridge">
+          <img src="assets/images/cta-knotwork-bridge.svg" alt="" class="bridge-svg" />
+        </div>
+
+        <!-- Right: Latest News (Lapis Lazuli Blue) -->
+        <a routerLink="/news" class="cta-news-link">
+          <button class="cta-plate cta-news">
+            <span class="cta-label">Latest News</span>
+            <img src="assets/images/cta-end-right.svg" alt="" class="cta-cap cap-right" />
           </button>
         </a>
       </div>
     </div>
   </div>
 
-  <!-- Floating Scroll Rune -->
+  <!-- Floating Scroll Rune Indicator -->
   <button class="scroll-rune" (click)="scrollToSection('world')" aria-label="Scroll down">
     ◇
   </button>
@@ -49,20 +54,25 @@
 
 <!-- =======================================================
      MAIN PARCHMENT CONTAINER
-     Contains: A World Written in Ancient Words & Latest News
+     Contains: A World Written in Ancient Words, Runic System & Latest News
      ======================================================= -->
 <div class="parchment-world-wrapper" id="world">
   <div class="container">
-    <!-- Big Stone & Parchment Frame -->
+    <!-- Big Stone & Parchment Manuscript Plate with Ornate Filigree -->
     <div class="parchment-plate">
+      <!-- Ornamental Corner Brackets -->
+      <img src="assets/images/corner-flourish.svg" alt="" class="plate-corner corner-tl" />
+      <img src="assets/images/corner-flourish.svg" alt="" class="plate-corner corner-tr" />
+      <img src="assets/images/corner-flourish.svg" alt="" class="plate-corner corner-bl" />
+      <img src="assets/images/corner-flourish.svg" alt="" class="plate-corner corner-br" />
 
       <!-- ===================================================
            1. WORLD & PILLARS
            =================================================== -->
       <section class="world-section-inner">
         <header class="section-heading">
-          <div class="rune-divider">
-            ◇
+          <div class="flourish-divider-wrap">
+            <img src="assets/images/rune-divider-flourish.svg" alt="" class="heading-flourish-svg" />
           </div>
 
           <h2>
@@ -78,13 +88,13 @@
         <div class="pillar-grid">
           <!-- Explore -->
           <article class="pillar-card">
-            <div class="pillar-image">
-              <img src="assets/images/world-exploration.jpg" alt="Vast landscape of Eivar" />
+            <div class="pillar-image-frame">
+              <img src="assets/images/world-exploration.jpg" alt="Explore vast landscapes in Eivar" />
+            </div>
+            <div class="pillar-badge-wrap">
+              <img src="assets/images/pillar-badge-explore.svg" alt="Explore Badge" class="pillar-badge-svg" />
             </div>
             <div class="pillar-content">
-              <div class="pillar-icon">
-                <span class="material-symbols-outlined">explore</span>
-              </div>
               <h3>Explore</h3>
               <p>
                 Vast lands, hidden secrets, and towering wonders await the brave.
@@ -94,13 +104,13 @@
 
           <!-- Forge -->
           <article class="pillar-card">
-            <div class="pillar-image">
-              <img src="assets/images/channeling-staff.jpg" alt="Weapon forge" />
+            <div class="pillar-image-frame">
+              <img src="assets/images/channeling-staff.jpg" alt="Weapon forge artistry" />
+            </div>
+            <div class="pillar-badge-wrap">
+              <img src="assets/images/pillar-badge-forge.svg" alt="Forge Badge" class="pillar-badge-svg" />
             </div>
             <div class="pillar-content">
-              <div class="pillar-icon">
-                <span class="material-symbols-outlined">hardware</span>
-              </div>
               <h3>Forge</h3>
               <p>
                 Craft powerful weapons and channel the elements with ancient artistry.
@@ -110,13 +120,13 @@
 
           <!-- Inscribe -->
           <article class="pillar-card">
-            <div class="pillar-image">
-              <img src="assets/images/runic-camp.jpg" alt="Ancient runes" />
+            <div class="pillar-image-frame">
+              <img src="assets/images/runic-camp.jpg" alt="Ancient runic sigils" />
+            </div>
+            <div class="pillar-badge-wrap">
+              <img src="assets/images/pillar-badge-inscribe.svg" alt="Inscribe Badge" class="pillar-badge-svg" />
             </div>
             <div class="pillar-content">
-              <div class="pillar-icon">
-                <span class="material-symbols-outlined">auto_fix_high</span>
-              </div>
               <h3>Inscribe</h3>
               <p>
                 Inscribe runes and words to shape abilities and unleash your vision.
@@ -126,13 +136,13 @@
 
           <!-- Conquer -->
           <article class="pillar-card">
-            <div class="pillar-image">
-              <img src="assets/images/ancient-citadel.jpg" alt="Fantasy battle" />
+            <div class="pillar-image-frame">
+              <img src="assets/images/ancient-citadel.jpg" alt="Citadel fortress battle" />
+            </div>
+            <div class="pillar-badge-wrap">
+              <img src="assets/images/pillar-badge-conquer.svg" alt="Conquer Badge" class="pillar-badge-svg" />
             </div>
             <div class="pillar-content">
-              <div class="pillar-icon">
-                <span class="material-symbols-outlined">castle</span>
-              </div>
               <h3>Conquer</h3>
               <p>
                 Guilds rise, fortresses fall. Write your legend in the age of Eivar.
@@ -147,6 +157,12 @@
            =================================================== -->
       <section class="runic-wrap" id="runes">
         <div class="runic-panel">
+          <!-- Corner Filigree for Runic Panel -->
+          <img src="assets/images/corner-flourish.svg" alt="" class="panel-corner corner-tl" />
+          <img src="assets/images/corner-flourish.svg" alt="" class="panel-corner corner-tr" />
+          <img src="assets/images/corner-flourish.svg" alt="" class="panel-corner corner-bl" />
+          <img src="assets/images/corner-flourish.svg" alt="" class="panel-corner corner-br" />
+
           <div class="runic-title-row">
             <h2>The Runic Weapon System</h2>
             <p>
@@ -159,10 +175,10 @@
             <div class="weapon-orbit">
               <div class="weapon-icon-center">
                 <svg viewBox="0 0 100 100" class="staff-svg" fill="none">
-                  <line x1="25" y1="85" x2="75" y2="15" stroke="#d0ae61" stroke-width="4" stroke-linecap="round"/>
+                  <line x1="25" y1="85" x2="75" y2="15" stroke="#d5a848" stroke-width="4" stroke-linecap="round"/>
                   <polygon points="75,15 65,22 82,32" fill="#3ccbff"/>
-                  <circle cx="75" cy="15" r="7" fill="#69e0ff" filter="drop-shadow(0 0 8px #3ccbff)"/>
-                  <circle cx="25" cy="85" r="4" fill="#d0ae61"/>
+                  <circle cx="75" cy="15" r="7" fill="#69e0ff" filter="drop-shadow(0 0 10px #3ccbff)"/>
+                  <circle cx="25" cy="85" r="4" fill="#d5a848"/>
                 </svg>
               </div>
 
@@ -185,8 +201,8 @@
                   <span>Q</span>
                 </div>
 
-                <div class="ability-glyph-icon flame">
-                  <span class="material-symbols-outlined">local_fire_department</span>
+                <div class="ability-glyph-icon">
+                  <img src="assets/images/ability-arcane-orb.svg" alt="Arcane Orb" class="ability-svg-img" />
                 </div>
 
                 <div class="ability-main">
@@ -213,8 +229,8 @@
                   <span>W</span>
                 </div>
 
-                <div class="ability-glyph-icon shield">
-                  <span class="material-symbols-outlined">shield</span>
+                <div class="ability-glyph-icon">
+                  <img src="assets/images/ability-barrier.svg" alt="Barrier" class="ability-svg-img" />
                 </div>
 
                 <div class="ability-main">
@@ -241,8 +257,8 @@
                   <span>E</span>
                 </div>
 
-                <div class="ability-glyph-icon impact">
-                  <span class="material-symbols-outlined">flash_on</span>
+                <div class="ability-glyph-icon">
+                  <img src="assets/images/ability-great-impact.svg" alt="Great Impact" class="ability-svg-img" />
                 </div>
 
                 <div class="ability-main">
@@ -279,8 +295,8 @@
            =================================================== -->
       <section class="news-section-inner" id="news">
         <header class="section-heading">
-          <div class="rune-divider">
-            ◇
+          <div class="flourish-divider-wrap">
+            <img src="assets/images/rune-divider-flourish.svg" alt="" class="heading-flourish-svg" />
           </div>
           <h2>Latest News</h2>
         </header>
@@ -288,13 +304,13 @@
         <div class="news-grid">
           <!-- Featured Card -->
           <article class="news-card news-featured" [routerLink]="['/news', featuredNews()?.slug || 'alpha-development-the-journey-begins']">
-            <div class="news-image">
+            <div class="news-image-frame featured">
               <img [src]="featuredNews()?.image || 'assets/images/world-exploration.jpg'" [alt]="featuredNews()?.title" />
-              <div class="news-label">Featured</div>
+              <div class="news-badge-label">Featured</div>
             </div>
             <div class="news-content">
               <div class="news-meta">
-                {{ featuredNews()?.category || 'Development' }} · {{ featuredNews()?.publishedAt || 'May 20, 2026' }}
+                {{ featuredNews()?.category || 'DEVELOPMENT' }} · {{ featuredNews()?.publishedAt || 'MAY 20, 2026' }}
               </div>
               <h3>{{ featuredNews()?.title || 'Alpha Announcement: The Journey Begins' }}</h3>
               <p>{{ featuredNews()?.excerpt || 'We\'re excited to announce the start of our closed alpha. Thank you for being part of the first chapter.' }}</p>
@@ -305,12 +321,12 @@
           <!-- 3 Regular News Cards -->
           @for (art of recentNews(); track art.id) {
             <article class="news-card" [routerLink]="['/news', art.slug]">
-              <div class="news-image">
+              <div class="news-image-frame">
                 <img [src]="art.image" [alt]="art.title" />
               </div>
               <div class="news-content">
                 <div class="news-meta">
-                  {{ art.category }} · {{ art.publishedAt }}
+                  {{ art.category | uppercase }} · {{ art.publishedAt | uppercase }}
                 </div>
                 <h3>{{ art.title }}</h3>
                 <p>{{ art.excerpt }}</p>
@@ -348,8 +364,8 @@
 
   <div class="container">
     <header class="section-heading dark">
-      <div class="rune-divider gold">
-        ◇
+      <div class="flourish-divider-wrap">
+        <img src="assets/images/rune-divider-flourish.svg" alt="" class="heading-flourish-svg" />
       </div>
       <h2>The World Is Being Forged</h2>
     </header>
@@ -358,7 +374,10 @@
       <!-- Card 1: Alpha Development -->
       <article class="development-card">
         <div class="development-icon">
-          <span class="material-symbols-outlined">terminal</span>
+          <svg viewBox="0 0 60 60" class="dev-star-svg" fill="none">
+            <polygon points="30,8 34,22 48,22 36,32 40,46 30,36 20,46 24,32 12,22 26,22" stroke="#d5a848" stroke-width="2" fill="rgba(60, 203, 255, 0.25)"/>
+            <circle cx="30" cy="30" r="3.5" fill="#69e0ff"/>
+          </svg>
         </div>
         <div>
           <h3>Alpha Development</h3>
@@ -371,10 +390,12 @@
         </div>
       </article>
 
-      <!-- Card 2: Join Community -->
+      <!-- Card 2: Join Community (Discord) -->
       <article class="development-card">
         <div class="development-icon">
-          <span class="material-symbols-outlined">forum</span>
+          <svg viewBox="0 0 48 48" class="discord-svg" fill="currentColor">
+            <path d="M40.2 11.2C37.2 9.8 34 8.8 30.6 8.2C30.2 9 29.7 10 29.3 11C25.7 10.4 22.3 10.4 18.7 11C18.3 10 17.8 9 17.4 8.2C14 8.8 10.8 9.8 7.8 11.2C2.4 19.3 1 27.2 1.7 34.9C5.3 37.6 8.8 39.2 12.2 40.3C13.1 39.1 13.8 37.8 14.5 36.4C13.3 35.9 12.1 35.3 11 34.6C11.3 34.4 11.6 34.1 11.8 33.9C18.8 37.1 29.2 37.1 36.2 33.9C36.4 34.1 36.7 34.4 37 34.6C35.9 35.3 34.7 35.9 33.5 36.4C34.2 37.8 35 39.1 35.8 40.3C39.2 39.2 42.7 37.6 46.3 34.9C47.2 26 44.8 18.2 40.2 11.2ZM16 29C13.8 29 12 27 12 24.5C12 22 13.8 20 16 20C18.2 20 20 22 20 24.5C20 27 18.2 29 16 29ZM32 29C29.8 29 28 27 28 24.5C28 22 29.8 20 32 20C34.2 20 36 22 36 24.5C36 27 34.2 29 32 29Z"/>
+          </svg>
         </div>
         <div>
           <h3>Join Our Community</h3>

@@ -19,10 +19,14 @@ use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_gameplay::items::{
     components::{Equipment, Inventory},
+    instance::ItemInstanceId,
     registry::{ItemId, ItemRegistry},
 };
 
-use super::components::{EquipSlotButton, ItemDragGhost, ItemSlotButton, ItemSlotOrigin};
+use super::components::{
+    CancelDestroyButton, ConfirmDestroyButton, DestroyItemDialog, EquipSlotButton, ItemDragGhost,
+    ItemSlotButton, ItemSlotOrigin,
+};
 use crate::ui::{
     card::components::CardWindow, inventory::detail::despawn_detail_cards, scale::window_to_ui_px,
     theme::UiTheme,
@@ -41,6 +45,7 @@ struct PendingDrag {
     origin: ItemSlotOrigin,
     origin_entity: Entity,
     item_id: ItemId,
+    instance_id: ItemInstanceId,
     ghost: Entity,
 }
 
@@ -93,6 +98,7 @@ pub fn start_item_drag(
                         entity,
                         ItemSlotOrigin::Inventory(btn.index),
                         instance.item_id,
+                        instance.instance_id,
                     )
                 })
         })
@@ -106,12 +112,13 @@ pub fn start_item_drag(
                             entity,
                             ItemSlotOrigin::Equipment(btn.slot),
                             instance.item_id,
+                            instance.instance_id,
                         )
                     })
                 })
         });
 
-    let Some((origin_entity, origin, item_id)) = picked else {
+    let Some((origin_entity, origin, item_id, instance_id)) = picked else {
         return;
     };
 
@@ -166,6 +173,7 @@ pub fn start_item_drag(
         origin,
         origin_entity,
         item_id,
+        instance_id,
         ghost,
     });
 }
@@ -247,7 +255,22 @@ pub fn end_item_drag(
         });
 
     let Some(target) = target else {
-        // Dropped on empty space: cancel, item stays put.
+        // Dropping an inventory item outside every slot opens an explicit,
+        // destructive confirmation instead of silently discarding it.
+        if matches!(pending.origin, ItemSlotOrigin::Inventory(_))
+            && pending.instance_id.is_assigned()
+        {
+            let label = registry
+                .get(&pending.item_id)
+                .map(|item| item.display_name().to_string())
+                .unwrap_or_else(|| pending.item_id.as_str().to_string());
+            spawn_destroy_dialog(
+                &mut commands,
+                &theme,
+                pending.instance_id.0,
+                &label,
+            );
+        }
         return;
     };
     if target == pending.origin {
@@ -298,6 +321,133 @@ pub fn end_item_drag(
 
 /// Cancels an in-progress drag (e.g. the cursor left the window), despawning
 /// its ghost and restoring the origin slot's normal background.
+fn spawn_destroy_dialog(
+    commands: &mut Commands,
+    theme: &UiTheme,
+    instance_id: u64,
+    item_label: &str,
+) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Percent(50.0),
+                top: Val::Percent(50.0),
+                width: Val::Px(360.0),
+                min_height: Val::Px(150.0),
+                margin: UiRect {
+                    left: Val::Px(-180.0),
+                    top: Val::Px(-75.0),
+                    ..default()
+                },
+                padding: UiRect::all(Val::Px(18.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(12.0),
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(theme.panel_bg),
+            GlobalZIndex(2000),
+            DestroyItemDialog,
+        ))
+        .with_children(|dialog| {
+            dialog.spawn((
+                Text::new(format!("Destroy {item_label}?")),
+                TextFont {
+                    font_size: FontSize::Px(theme.title_font_size),
+                    ..default()
+                },
+                TextColor(theme.text_color),
+            ));
+            dialog.spawn((
+                Text::new("This item will be permanently destroyed."),
+                TextFont {
+                    font_size: FontSize::Px(theme.button_font_size),
+                    ..default()
+                },
+                TextColor(theme.muted_text_color),
+            ));
+            dialog
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(10.0),
+                        ..default()
+                    },
+                ))
+                .with_children(|buttons| {
+                    buttons
+                        .spawn((
+                            Button,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.button_pressed_bg),
+                            ConfirmDestroyButton { instance_id },
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new("Destroy"),
+                                TextFont {
+                                    font_size: FontSize::Px(theme.button_font_size),
+                                    ..default()
+                                },
+                                TextColor(theme.text_color),
+                            ));
+                        });
+                    buttons
+                        .spawn((
+                            Button,
+                            Node {
+                                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.button_bg),
+                            CancelDestroyButton,
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new("Cancel"),
+                                TextFont {
+                                    font_size: FontSize::Px(theme.button_font_size),
+                                    ..default()
+                                },
+                                TextColor(theme.text_color),
+                            ));
+                        });
+                });
+        });
+}
+
+/// Handles the irreversible confirmation dialog opened by an outside drop.
+pub fn handle_destroy_dialog(
+    confirm: Query<(&Interaction, &ConfirmDestroyButton), Changed<Interaction>>,
+    cancel: Query<&Interaction, (With<CancelDestroyButton>, Changed<Interaction>)>,
+    dialog: Query<Entity, With<DestroyItemDialog>>,
+    connection: Option<Res<StdbConnection>>,
+    mut commands: Commands,
+) {
+    let confirmed = confirm
+        .iter()
+        .find(|(interaction, _)| **interaction == Interaction::Pressed)
+        .map(|(_, button)| button.instance_id);
+    let cancelled = cancel.iter().any(|interaction| *interaction == Interaction::Pressed);
+
+    if let Some(instance_id) = confirmed {
+        if let Some(connection) = connection {
+            if let Err(error) = stdb_commands::destroy_item(&connection, instance_id) {
+                error!("could not destroy item: {error}");
+            }
+        }
+    }
+    if confirmed.is_some() || cancelled {
+        for entity in dialog.iter() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
 fn cancel_pending_drag(
     drag_state: &mut ItemDragState,
     theme: &UiTheme,

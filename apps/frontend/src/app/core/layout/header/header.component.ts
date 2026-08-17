@@ -13,45 +13,59 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
   template: `
     <header class="navbar" [class.scrolled]="isScrolled()">
       <div class="nav-inner">
-        <!-- Official Vector Brand Logo -->
+        <!-- Compact Horizontal Brand Lockup -->
         <a routerLink="/" class="brand" (click)="closeMobileMenu()">
-          <img
-            src="assets/branding/eivar-online-logo-vector.svg"
-            alt="Eivar Online"
-            class="brand-vector-svg"
-          />
+          <img src="assets/branding/eivar-rune.svg" alt="" class="brand-mark" />
+          <span class="brand-divider"></span>
+          <span class="brand-text">
+            <span class="brand-title">Eivar</span>
+            <span class="brand-subtitle">Online</span>
+          </span>
         </a>
 
         <!-- Desktop Navigation Links -->
         <nav class="desktop-nav">
-          <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-link">Game</a>
+          <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-link">
+            <span>Game</span>
+          </a>
           <span class="nav-sep">◈</span>
-          <a routerLink="/news" routerLinkActive="active" class="nav-link">News</a>
+          <a routerLink="/news" routerLinkActive="active" class="nav-link">
+            <span>News</span>
+          </a>
           <span class="nav-sep">◈</span>
-          <a routerLink="/updates" routerLinkActive="active" class="nav-link">Updates</a>
+          <a routerLink="/updates" routerLinkActive="active" class="nav-link">
+            <span>Updates</span>
+          </a>
           <span class="nav-sep">◈</span>
-          <a routerLink="/wiki" routerLinkActive="active" class="nav-link">Wiki</a>
+          <a routerLink="/wiki" routerLinkActive="active" class="nav-link">
+            <span>Wiki</span>
+          </a>
           <span class="nav-sep">◈</span>
-          <a routerLink="/store" routerLinkActive="active" class="nav-link">Store</a>
+          <a routerLink="/store" routerLinkActive="active" class="nav-link">
+            <span>Store</span>
+          </a>
         </nav>
 
-        <!-- Right Nav Actions with Google Fonts Icons -->
+        <!-- Right Nav Actions Group -->
         <div class="nav-actions">
+          <!-- Search Action -->
           <button class="nav-action search-btn" (click)="searchService.open()" title="Search (Cmd+K)">
             <span class="material-symbols-outlined nav-ico">search</span>
-            <span>Search</span>
+            <span class="action-label">Search</span>
           </button>
 
+          <!-- Community Action -->
           <button class="nav-action" (click)="onCommunityClick()">
             <span class="material-symbols-outlined nav-ico">forum</span>
-            <span>Community</span>
+            <span class="action-label">Community</span>
           </button>
 
+          <!-- Login / Account Action -->
           @if (authService.isLoggedIn()) {
             <div class="account-wrapper">
               <button class="nav-action account-btn" (click)="toggleAccountMenu()">
                 <span class="material-symbols-outlined nav-ico">person</span>
-                <span>{{ authService.currentUser()?.name }}</span>
+                <span class="action-label">{{ authService.currentUser()?.name }}</span>
                 <span class="material-symbols-outlined arrow-ico">expand_more</span>
               </button>
               @if (isAccountMenuOpen()) {
@@ -61,20 +75,22 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
           } @else {
             <a routerLink="/login" class="nav-action">
               <span class="material-symbols-outlined nav-ico">person</span>
-              <span>Login</span>
+              <span class="action-label">Login</span>
             </a>
           }
 
-          <a routerLink="/" fragment="world">
-            <button class="eivar-button">
+          <!-- Discover Eivar Button -->
+          <a routerLink="/" fragment="world" class="cta-link">
+            <button class="header-cta-button">
               Discover Eivar
             </button>
           </a>
 
+          <!-- Mobile Hamburger Toggle -->
           <button
             class="mobile-menu-button"
             (click)="toggleMobileMenu()"
-            aria-label="Open menu"
+            aria-label="Open navigation menu"
           >
             <span class="material-symbols-outlined">menu</span>
           </button>
@@ -82,7 +98,7 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
       </div>
     </header>
 
-    <!-- Mobile Drawer -->
+    <!-- Mobile Navigation Drawer -->
     <nav class="mobile-menu" [class.open]="isMobileMenuOpen()">
       <a routerLink="/" (click)="closeMobileMenu()">Game</a>
       <a routerLink="/news" (click)="closeMobileMenu()">News</a>
@@ -111,7 +127,7 @@ export class HeaderComponent {
 
   @HostListener('window:scroll', [])
   onWindowScroll() {
-    this.isScrolled.set(window.scrollY > 30);
+    this.isScrolled.set(window.scrollY > 20);
   }
 
   @HostListener('document:keydown', ['$event'])

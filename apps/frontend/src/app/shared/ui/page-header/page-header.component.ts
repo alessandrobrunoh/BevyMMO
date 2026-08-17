@@ -33,6 +33,10 @@ import { RouterModule } from '@angular/router';
 
         <h1 class="page-title">{{ title }}</h1>
 
+        <div class="header-flourish-wrap">
+          <img src="assets/images/rune-divider-flourish.svg" alt="" class="header-flourish-svg" />
+        </div>
+
         @if (subtitle) {
           <p class="page-subtitle">{{ subtitle }}</p>
         }

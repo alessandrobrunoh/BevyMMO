@@ -11,7 +11,7 @@ use crate::abilities::BaseAbilityRegistry;
 #[base_ability(
     id = "arcane_orb",
     name = "Sfera Arcana",
-    tags = [Ranged, Projectile, SingleTarget, RepeatCompatible],
+    tags = [Ranged, Projectile, SingleTarget, RepeatCompatible, EchoCompatible],
     range = 22.0,
     geometry = projectile(speed = 24.0),
     potency = 220.0,

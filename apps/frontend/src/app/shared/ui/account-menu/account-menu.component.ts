@@ -30,19 +30,19 @@ import { ToastService } from '../../../core/services/toast.service';
 
       <nav class="menu-links">
         <button class="menu-link-btn" (click)="onAction('Profile')">
-          <span class="btn-icon">👤</span>
+          <span class="material-symbols-outlined btn-icon">person</span>
           <span>Player Profile & Runes</span>
         </button>
         <button class="menu-link-btn" (click)="onAction('Account')">
-          <span class="btn-icon">🛡️</span>
+          <span class="material-symbols-outlined btn-icon">shield</span>
           <span>Alpha Access & Security</span>
         </button>
         <button class="menu-link-btn" (click)="onAction('Settings')">
-          <span class="btn-icon">⚙️</span>
+          <span class="material-symbols-outlined btn-icon">settings</span>
           <span>Game & Display Settings</span>
         </button>
         <button class="menu-link-btn logout-btn" (click)="onLogout()">
-          <span class="btn-icon">🚪</span>
+          <span class="material-symbols-outlined btn-icon">logout</span>
           <span>Sign Out</span>
         </button>
       </nav>

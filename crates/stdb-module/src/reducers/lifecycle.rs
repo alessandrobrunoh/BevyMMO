@@ -1,6 +1,6 @@
 //! Module startup, connections, and character creation.
 
-use spacetimedb::{reducer, ReducerContext, ScheduleAt, Table};
+use spacetimedb::{reducer, ReducerContext, ScheduleAt, Table, Uuid};
 use std::time::Duration;
 
 use crate::reducers::account::caller_session;
@@ -231,8 +231,13 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
     let defaults = bevymmo_domain::stats::defaults::player_defaults();
     let stats = StatsRow::from(&defaults);
 
+    // Minted before the insert: a failure here must not leave an orphaned
+    // `game_entity` row behind, and `insert` takes the value, not a Result.
+    let character_id = ctx
+        .new_uuid_v4()
+        .map_err(|err| format!("failed to mint a character id: {err}"))?;
     let character = ctx.db.player().insert(Player {
-        character_id: 0,
+        character_id,
         account_id,
         normalized_name: normalized,
         display_name,
@@ -240,7 +245,6 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         online: true,
         last_seen: ctx.timestamp,
     });
-    let character_id = character.character_id;
 
     ctx.db.game_entity().entity_id().update(GameEntity {
         owner_character_id: Some(character_id),
@@ -291,7 +295,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
 }
 
 /// Points the caller's `Session` at `character_id`.
-fn select_character(ctx: &ReducerContext, character_id: u64) {
+fn select_character(ctx: &ReducerContext, character_id: Uuid) {
     let identity = ctx.sender();
     if let Some(session_row) = ctx.db.session().identity().find(&identity) {
         ctx.db.session().identity().update(Session {
@@ -350,7 +354,7 @@ pub fn leave(ctx: &ReducerContext) -> Result<(), String> {
 /// any authenticated connection could delete anyone's character by guessing
 /// or enumerating ids.
 #[reducer]
-pub fn delete_character(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+pub fn delete_character(ctx: &ReducerContext, character_id: Uuid) -> Result<(), String> {
     let session_row = caller_session(ctx)?;
     let character = ctx
         .db

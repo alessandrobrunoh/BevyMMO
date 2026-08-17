@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Player {
-    pub character_id: u64,
+    pub character_id: __sdk::Uuid,
     pub account_id: u64,
     pub normalized_name: String,
     pub display_name: String,
@@ -24,7 +24,7 @@ impl __sdk::InModule for Player {
 ///
 /// Provides typed access to columns for query building.
 pub struct PlayerCols {
-    pub character_id: __sdk::__query_builder::Col<Player, u64>,
+    pub character_id: __sdk::__query_builder::Col<Player, __sdk::Uuid>,
     pub account_id: __sdk::__query_builder::Col<Player, u64>,
     pub normalized_name: __sdk::__query_builder::Col<Player, String>,
     pub display_name: __sdk::__query_builder::Col<Player, String>,
@@ -53,7 +53,7 @@ impl __sdk::__query_builder::HasCols for Player {
 /// Provides typed access to indexed columns for query building.
 pub struct PlayerIxCols {
     pub account_id: __sdk::__query_builder::IxCol<Player, u64>,
-    pub character_id: __sdk::__query_builder::IxCol<Player, u64>,
+    pub character_id: __sdk::__query_builder::IxCol<Player, __sdk::Uuid>,
     pub entity_id: __sdk::__query_builder::IxCol<Player, u64>,
     pub normalized_name: __sdk::__query_builder::IxCol<Player, String>,
 }

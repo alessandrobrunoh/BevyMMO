@@ -9,7 +9,7 @@ use super::hotbar_row_type::HotbarRow;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Hotbar {
-    pub character_id: u64,
+    pub character_id: __sdk::Uuid,
     pub slots: HotbarRow,
 }
 
@@ -21,7 +21,7 @@ impl __sdk::InModule for Hotbar {
 ///
 /// Provides typed access to columns for query building.
 pub struct HotbarCols {
-    pub character_id: __sdk::__query_builder::Col<Hotbar, u64>,
+    pub character_id: __sdk::__query_builder::Col<Hotbar, __sdk::Uuid>,
     pub slots: __sdk::__query_builder::Col<Hotbar, HotbarRow>,
 }
 
@@ -39,7 +39,7 @@ impl __sdk::__query_builder::HasCols for Hotbar {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct HotbarIxCols {
-    pub character_id: __sdk::__query_builder::IxCol<Hotbar, u64>,
+    pub character_id: __sdk::__query_builder::IxCol<Hotbar, __sdk::Uuid>,
 }
 
 impl __sdk::__query_builder::HasIxCols for Hotbar {

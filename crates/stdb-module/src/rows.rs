@@ -586,7 +586,7 @@ pub fn known_glyphs_from_rows(
 /// use tuple structs.
 #[derive(SpacetimeType, Clone, Debug, PartialEq)]
 pub struct ResonanceRow {
-    pub character_id: u64,
+    pub character_id: spacetimedb::Uuid,
     pub root_word_id: String,
     pub xp: u64,
     pub level: u32,

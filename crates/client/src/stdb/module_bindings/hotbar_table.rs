@@ -165,40 +165,9 @@ impl<'ctx> __sdk::WithUpdate for HotbarTableHandle<'ctx> {
     }
 }
 
-/// Access to the `character_id` unique index on the table `hotbar`,
-/// which allows point queries on the field of the same name
-/// via the [`HotbarCharacterIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.hotbar().character_id().find(...)`.
-pub struct HotbarCharacterIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<Hotbar, u64>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> HotbarTableHandle<'ctx> {
-    /// Get a handle on the `character_id` unique index on the table `hotbar`.
-    pub fn character_id(&self) -> HotbarCharacterIdUnique<'ctx> {
-        HotbarCharacterIdUnique {
-            imp: self.imp.get_unique_constraint::<u64>("character_id"),
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'ctx> HotbarCharacterIdUnique<'ctx> {
-    /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u64) -> Option<Hotbar> {
-        self.imp.find(col_val)
-    }
-}
-
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<Hotbar>("hotbar");
-    _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
 }
 
 #[doc(hidden)]

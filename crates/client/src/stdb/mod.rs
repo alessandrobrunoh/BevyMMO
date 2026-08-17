@@ -19,3 +19,8 @@ pub mod plugin;
 pub use plugin::{
     CharacterRoster, RosterCharacter, StdbAuthoritative, StdbConnection, StdbEntityMap, StdbPlugin,
 };
+
+/// The id type of a character row (`player.character_id`). Re-exported so
+/// presentation crates can name it without depending on `spacetimedb-sdk`
+/// directly.
+pub use spacetimedb_sdk::Uuid;

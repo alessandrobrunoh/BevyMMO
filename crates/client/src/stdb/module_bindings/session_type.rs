@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct Session {
     pub identity: __sdk::Identity,
     pub account_id: u64,
-    pub character_id: Option<u64>,
+    pub character_id: Option<__sdk::Uuid>,
     pub authenticated_at: __sdk::Timestamp,
 }
 
@@ -23,7 +23,7 @@ impl __sdk::InModule for Session {
 pub struct SessionCols {
     pub identity: __sdk::__query_builder::Col<Session, __sdk::Identity>,
     pub account_id: __sdk::__query_builder::Col<Session, u64>,
-    pub character_id: __sdk::__query_builder::Col<Session, Option<u64>>,
+    pub character_id: __sdk::__query_builder::Col<Session, Option<__sdk::Uuid>>,
     pub authenticated_at: __sdk::__query_builder::Col<Session, __sdk::Timestamp>,
 }
 
@@ -44,7 +44,7 @@ impl __sdk::__query_builder::HasCols for Session {
 /// Provides typed access to indexed columns for query building.
 pub struct SessionIxCols {
     pub account_id: __sdk::__query_builder::IxCol<Session, u64>,
-    pub character_id: __sdk::__query_builder::IxCol<Session, Option<u64>>,
+    pub character_id: __sdk::__query_builder::IxCol<Session, Option<__sdk::Uuid>>,
     pub identity: __sdk::__query_builder::IxCol<Session, __sdk::Identity>,
 }
 

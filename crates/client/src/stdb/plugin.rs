@@ -52,7 +52,7 @@ use bevymmo_network::world_components::{
     EntityColor, LookDirection, NetworkEntityId, Position, ProjectileVisual,
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use spacetimedb_sdk::{credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey};
+use spacetimedb_sdk::{credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey, Uuid};
 use std::collections::{HashMap, HashSet};
 
 use super::combat_input::send_combat_inputs;
@@ -182,13 +182,13 @@ struct PendingRows {
     /// scratch once [`LocalCharacter::account_id`] becomes known, since
     /// `player` rows and the `session` row that reveals the account id have
     /// no guaranteed delivery order — see `RowEvent::Session`'s comment.
-    players: HashMap<u64, Player>,
-    offline_players: HashSet<u64>,
+    players: HashMap<Uuid, Player>,
+    offline_players: HashSet<Uuid>,
     stats: HashMap<u64, EntityStats>,
-    inventory: HashMap<u64, InventoryTable>,
-    equipment: HashMap<u64, EquipmentTable>,
-    hotbar: HashMap<u64, Hotbar>,
-    known_glyphs: HashMap<u64, KnownGlyphsTable>,
+    inventory: HashMap<Uuid, InventoryTable>,
+    equipment: HashMap<Uuid, EquipmentTable>,
+    hotbar: HashMap<Uuid, Hotbar>,
+    known_glyphs: HashMap<Uuid, KnownGlyphsTable>,
     boss_state: HashMap<u64, BossState>,
     /// Keyed by `active_status.id`, not by entity: one entity can carry several.
     active_status: HashMap<u64, ActiveStatus>,
@@ -319,7 +319,7 @@ pub struct StdbEntityMap {
     by_entity_id: HashMap<u64, Entity>,
     /// Which server entity belongs to which character, so the per-character
     /// tables (inventory, equipment, hotbar) can find the entity to attach to.
-    entity_of_character: HashMap<u64, u64>,
+    entity_of_character: HashMap<Uuid, u64>,
     /// Projectiles live in their own id space — `projectile.id` counts
     /// separately from `game_entity.entity_id` — so they get their own map
     /// rather than colliding in the one above.
@@ -342,7 +342,7 @@ impl StdbEntityMap {
 #[derive(Resource, Default)]
 struct LocalCharacter {
     account_id: Option<u64>,
-    character_id: Option<u64>,
+    character_id: Option<Uuid>,
 }
 
 /// One of the caller's own characters, for the character-select screen.
@@ -351,7 +351,7 @@ struct LocalCharacter {
 /// [`crate::app_state::MAX_CHARACTERS_PER_ACCOUNT`] of them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RosterCharacter {
-    pub character_id: u64,
+    pub character_id: Uuid,
     pub display_name: String,
     pub online: bool,
 }
@@ -365,7 +365,7 @@ pub struct RosterCharacter {
 /// the only place its name and id are still available.
 #[derive(Resource, Default)]
 pub struct CharacterRoster {
-    characters: HashMap<u64, RosterCharacter>,
+    characters: HashMap<Uuid, RosterCharacter>,
 }
 
 impl CharacterRoster {
@@ -434,7 +434,7 @@ struct AuthResources<'w> {
 impl LocalCharacter {
     /// Whether `character_id` (from a `game_entity` row's `owner_character_id`,
     /// or a `player` row's own id) is this connection's active character.
-    fn is(&self, character_id: Option<u64>) -> bool {
+    fn is(&self, character_id: Option<Uuid>) -> bool {
         matches!((self.character_id, character_id), (Some(a), Some(b)) if a == b)
     }
 }
@@ -778,7 +778,7 @@ fn drain_events(
                 // Everything keyed by this entity goes with it — including the
                 // per-character rows, which are keyed by `character_id` and so
                 // were outliving the character they belonged to.
-                let owners: Vec<u64> = state.map
+                let owners: Vec<Uuid> = state.map
                     .entity_of_character
                     .iter()
                     .filter(|(_, id)| **id == entity_id)
@@ -1069,8 +1069,8 @@ fn replay_character(
     commands: &mut Commands,
     map: &StdbEntityMap,
     pending: &PendingRows,
-    character_id: u64,
-    local_character_id: Option<u64>,
+    character_id: Uuid,
+    local_character_id: Option<Uuid>,
 ) {
     let Some(entity) = entity_for(map, character_id) else {
         return;
@@ -1092,7 +1092,7 @@ fn replay_character(
     }
 }
 
-fn entity_for(map: &StdbEntityMap, character_id: u64) -> Option<Entity> {
+fn entity_for(map: &StdbEntityMap, character_id: Uuid) -> Option<Entity> {
     map.entity_of_character
         .get(&character_id)
         .and_then(|id| map.get(*id))
@@ -1913,7 +1913,7 @@ mod tests {
     #[test]
     fn known_glyph_row_becomes_domain_component() {
         let row = KnownGlyphsTable {
-            character_id: 0,
+            character_id: Uuid::NIL,
             essences: vec!["fire".to_string()],
             modifiers: vec!["amplify".to_string()],
             ancient_words: vec!["eternity".to_string()],

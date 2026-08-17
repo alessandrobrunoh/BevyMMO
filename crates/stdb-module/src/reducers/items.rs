@@ -57,7 +57,7 @@ use bevymmo_domain::items::registry::{ItemId, ItemRegistry};
 use bevymmo_domain::items::{compute_available_choices, AvailableSpellChoices};
 use bevymmo_domain::spells::components::{HotbarSlot, SpellHotbar};
 use bevymmo_domain::spells::registry::SpellId;
-use spacetimedb::{reducer, ReducerContext, Table};
+use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
 use crate::rows::{
     equipment_from_rows, equipment_to_rows, inventory_from_rows, inventory_to_rows,
@@ -335,7 +335,7 @@ pub fn set_hotbar_spell(
 /// the computation is a walk over ten slots.
 pub fn assign_hotbar_spell(
     ctx: &ReducerContext,
-    character_id: u64,
+    character_id: Uuid,
     slot: &str,
     spell_id: Option<String>,
 ) -> Result<(), String> {
@@ -751,7 +751,7 @@ pub fn set_ability_selection(
 /// `entity_stats` row (falling back to the base row on first computation) and
 /// re-clamped to the new maxima. Taking them from `player_stats` instead would
 /// silently full-heal a character every time they swapped a helmet.
-pub fn recompute_effective_stats(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+pub fn recompute_effective_stats(ctx: &ReducerContext, character_id: Uuid) -> Result<(), String> {
     let player = ctx
         .db
         .player()
@@ -778,7 +778,7 @@ pub fn recompute_effective_stats(ctx: &ReducerContext, character_id: u64) -> Res
 /// Silent when the character has no hotbar row: that is a state `join` does not
 /// produce, and failing an otherwise valid equip over it would be worse than
 /// ignoring it.
-fn prune_hotbar_to_available(ctx: &ReducerContext, character_id: u64, equipment: &Equipment) {
+fn prune_hotbar_to_available(ctx: &ReducerContext, character_id: Uuid, equipment: &Equipment) {
     let Some(row) = ctx.db.hotbar().character_id().find(&character_id) else {
         return;
     };
@@ -824,7 +824,7 @@ fn available_choices(equipment: &Equipment) -> AvailableSpellChoices {
 ///
 /// The `item_id` is checked against the registry: an inventory holding an id
 /// nothing can look up is a slot the player can never equip or drop.
-pub fn grant_item(ctx: &ReducerContext, character_id: u64, item_id: &str) -> Result<u8, String> {
+pub fn grant_item(ctx: &ReducerContext, character_id: Uuid, item_id: &str) -> Result<u8, String> {
     let id = ItemId::new(item_id.to_string());
     if !item_registry().contains(&id) {
         return Err(format!("unknown item {item_id:?}"));
@@ -901,7 +901,7 @@ fn check_equip_requirements(requirements: &[EquipRequirement]) -> Result<(), Str
 // Row access
 // ---------------------------------------------------------------------------
 
-fn load_inventory(ctx: &ReducerContext, character_id: u64) -> Result<Inventory, String> {
+fn load_inventory(ctx: &ReducerContext, character_id: Uuid) -> Result<Inventory, String> {
     ctx.db
         .inventory()
         .character_id()
@@ -910,14 +910,14 @@ fn load_inventory(ctx: &ReducerContext, character_id: u64) -> Result<Inventory, 
         .ok_or_else(|| "no character for this identity; call `join` first".to_string())
 }
 
-fn store_inventory(ctx: &ReducerContext, character_id: u64, inventory: &Inventory) {
+fn store_inventory(ctx: &ReducerContext, character_id: Uuid, inventory: &Inventory) {
     ctx.db.inventory().character_id().update(InventoryTable {
         character_id,
         slots: inventory_to_rows(inventory),
     });
 }
 
-fn load_equipment(ctx: &ReducerContext, character_id: u64) -> Result<Equipment, String> {
+fn load_equipment(ctx: &ReducerContext, character_id: Uuid) -> Result<Equipment, String> {
     ctx.db
         .equipment()
         .character_id()
@@ -926,7 +926,7 @@ fn load_equipment(ctx: &ReducerContext, character_id: u64) -> Result<Equipment, 
         .ok_or_else(|| "no character for this identity; call `join` first".to_string())
 }
 
-fn store_equipment(ctx: &ReducerContext, character_id: u64, equipment: &Equipment) {
+fn store_equipment(ctx: &ReducerContext, character_id: Uuid, equipment: &Equipment) {
     ctx.db.equipment().character_id().update(EquipmentTable {
         character_id,
         slots: equipment_to_rows(equipment),
@@ -935,7 +935,7 @@ fn store_equipment(ctx: &ReducerContext, character_id: u64, equipment: &Equipmen
 
 fn load_known_glyphs(
     ctx: &ReducerContext,
-    character_id: u64,
+    character_id: Uuid,
 ) -> Result<bevymmo_domain::abilities::KnownGlyphs, String> {
     ctx.db
         .known_glyphs()

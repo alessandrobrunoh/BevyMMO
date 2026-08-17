@@ -23,7 +23,7 @@
 //! scan. `game_entity` carries a `cell_x`/`cell_z` grid index for exactly that:
 //! a linear scan per mob per tick does not survive contact with a populated map.
 
-use spacetimedb::{table, Identity, SpacetimeType, Timestamp};
+use spacetimedb::{table, Identity, SpacetimeType, Timestamp, Uuid};
 
 use crate::rows::{EffectPayloadRow, HotbarRow, ItemInstanceRow, StatsRow, Vec3Row};
 
@@ -111,7 +111,7 @@ pub struct Session {
     pub account_id: u64,
     /// `None` until `join` selects or creates a character for this session.
     #[index(btree)]
-    pub character_id: Option<u64>,
+    pub character_id: Option<Uuid>,
     pub authenticated_at: Timestamp,
 }
 
@@ -129,9 +129,13 @@ pub struct Session {
 /// stop existing just because nobody is connected as it right now.
 #[table(accessor = player, public)]
 pub struct Player {
+    /// Random UUID (v4, from `ReducerContext::new_uuid_v4`), minted once at
+    /// `join` and never reused. Not `#[auto_inc]`: sequential ids leak how
+    /// many characters exist and invite enumeration; a UUID is safe to show
+    /// to other clients, which is exactly what the public `player` table and
+    /// the gateway's `/public/accounts/*` do.
     #[primary_key]
-    #[auto_inc]
-    pub character_id: u64,
+    pub character_id: Uuid,
     #[index(btree)]
     pub account_id: u64,
     #[unique]
@@ -151,28 +155,28 @@ pub struct Player {
 #[table(accessor = player_stats, public)]
 pub struct PlayerStats {
     #[primary_key]
-    pub character_id: u64,
+    pub character_id: Uuid,
     pub stats: StatsRow,
 }
 
 #[table(accessor = hotbar, public)]
 pub struct Hotbar {
     #[primary_key]
-    pub character_id: u64,
+    pub character_id: Uuid,
     pub slots: HotbarRow,
 }
 
 #[table(accessor = inventory, public)]
 pub struct InventoryTable {
     #[primary_key]
-    pub character_id: u64,
+    pub character_id: Uuid,
     pub slots: Vec<Option<ItemInstanceRow>>,
 }
 
 #[table(accessor = equipment, public)]
 pub struct EquipmentTable {
     #[primary_key]
-    pub character_id: u64,
+    pub character_id: Uuid,
     /// Ten slots in `rows::EQUIP_SLOTS` order.
     pub slots: Vec<Option<ItemInstanceRow>>,
 }
@@ -180,7 +184,7 @@ pub struct EquipmentTable {
 #[table(accessor = known_glyphs, public)]
 pub struct KnownGlyphsTable {
     #[primary_key]
-    pub character_id: u64,
+    pub character_id: Uuid,
     pub essences: Vec<String>,
     pub modifiers: Vec<String>,
     pub ancient_words: Vec<String>,
@@ -192,7 +196,7 @@ pub struct KnownGlyphsTable {
 #[table(accessor = known_ancient_language, public)]
 pub struct KnownAncientLanguageTable {
     #[primary_key]
-    pub character_id: u64,
+    pub character_id: Uuid,
     pub root_words: Vec<String>,
     pub ancient_words: Vec<String>,
     pub base_abilities: Vec<String>,
@@ -212,7 +216,7 @@ pub struct Resonance {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
-    pub character_id: u64,
+    pub character_id: Uuid,
     pub root_word_id: String,
     pub xp: u64,
     pub level: u32,
@@ -305,7 +309,7 @@ pub struct GameEntity {
     /// Set for player characters, so a reducer can map this entity back to
     /// the character that owns it (see `Player::character_id`).
     #[index(btree)]
-    pub owner_character_id: Option<u64>,
+    pub owner_character_id: Option<Uuid>,
     pub display_name: String,
     pub color: ColorRow,
     pub position: Vec3Row,

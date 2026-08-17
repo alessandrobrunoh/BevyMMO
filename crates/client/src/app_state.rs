@@ -116,7 +116,7 @@ pub const MAX_CHARACTERS_PER_ACCOUNT: usize = 3;
 /// resource from [`ConnectionRequest`]/[`AuthRequest`]: deleting a character
 /// is neither a connection-lifecycle action nor an account-auth action.
 #[derive(Resource, Debug, Default)]
-pub struct DeleteCharacterRequest(pub Option<u64>);
+pub struct DeleteCharacterRequest(pub Option<spacetimedb_sdk::Uuid>);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AuthIntent {

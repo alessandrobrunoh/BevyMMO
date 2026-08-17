@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct KnownAncientLanguageTable {
-    pub character_id: u64,
+    pub character_id: __sdk::Uuid,
     pub root_words: Vec<String>,
     pub ancient_words: Vec<String>,
     pub base_abilities: Vec<String>,
@@ -21,7 +21,7 @@ impl __sdk::InModule for KnownAncientLanguageTable {
 ///
 /// Provides typed access to columns for query building.
 pub struct KnownAncientLanguageTableCols {
-    pub character_id: __sdk::__query_builder::Col<KnownAncientLanguageTable, u64>,
+    pub character_id: __sdk::__query_builder::Col<KnownAncientLanguageTable, __sdk::Uuid>,
     pub root_words: __sdk::__query_builder::Col<KnownAncientLanguageTable, Vec<String>>,
     pub ancient_words: __sdk::__query_builder::Col<KnownAncientLanguageTable, Vec<String>>,
     pub base_abilities: __sdk::__query_builder::Col<KnownAncientLanguageTable, Vec<String>>,
@@ -43,7 +43,7 @@ impl __sdk::__query_builder::HasCols for KnownAncientLanguageTable {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct KnownAncientLanguageTableIxCols {
-    pub character_id: __sdk::__query_builder::IxCol<KnownAncientLanguageTable, u64>,
+    pub character_id: __sdk::__query_builder::IxCol<KnownAncientLanguageTable, __sdk::Uuid>,
 }
 
 impl __sdk::__query_builder::HasIxCols for KnownAncientLanguageTable {

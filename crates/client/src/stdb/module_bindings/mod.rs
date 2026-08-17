@@ -260,7 +260,7 @@ pub enum Reducer {
         item_id: String,
     },
     DeleteCharacter {
-        character_id: u64,
+        character_id: __sdk::Uuid,
     },
     DestroyItem {
         instance_id: u64,

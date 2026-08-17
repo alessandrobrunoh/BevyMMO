@@ -9,7 +9,7 @@ use super::item_instance_row_type::ItemInstanceRow;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct EquipmentTable {
-    pub character_id: u64,
+    pub character_id: __sdk::Uuid,
     pub slots: Vec<Option<ItemInstanceRow>>,
 }
 
@@ -21,7 +21,7 @@ impl __sdk::InModule for EquipmentTable {
 ///
 /// Provides typed access to columns for query building.
 pub struct EquipmentTableCols {
-    pub character_id: __sdk::__query_builder::Col<EquipmentTable, u64>,
+    pub character_id: __sdk::__query_builder::Col<EquipmentTable, __sdk::Uuid>,
     pub slots: __sdk::__query_builder::Col<EquipmentTable, Vec<Option<ItemInstanceRow>>>,
 }
 
@@ -39,7 +39,7 @@ impl __sdk::__query_builder::HasCols for EquipmentTable {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct EquipmentTableIxCols {
-    pub character_id: __sdk::__query_builder::IxCol<EquipmentTable, u64>,
+    pub character_id: __sdk::__query_builder::IxCol<EquipmentTable, __sdk::Uuid>,
 }
 
 impl __sdk::__query_builder::HasIxCols for EquipmentTable {

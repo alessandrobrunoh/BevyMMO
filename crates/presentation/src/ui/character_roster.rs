@@ -35,8 +35,8 @@ struct RosterPlayButton(String);
 /// `Idle`, since every row is despawned and respawned from scratch.
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum RosterDeleteButton {
-    Idle(u64),
-    Confirming(u64),
+    Idle(bevymmo_client::stdb::Uuid),
+    Confirming(bevymmo_client::stdb::Uuid),
 }
 
 /// Spawns the (initially empty) roster column, attached to `parent`.

@@ -1,537 +1,391 @@
-<!-- ============================================================ -->
-<!-- 1. HERO SECTION -->
-<!-- ============================================================ -->
-<section class="hero-section">
-  <!-- Hero Background Artwork -->
+<!-- =======================================================
+     HERO SECTION
+     ======================================================= -->
+<section class="hero" id="home">
   <div class="hero-art-layer" style="background-image: url('assets/images/hero-cover.png');"></div>
-  <div class="hero-gradient-overlay"></div>
-  <div class="hero-particles">
-    <span class="particle p1">✦</span>
-    <span class="particle p2">ᛟ</span>
-    <span class="particle p3">✦</span>
-    <span class="particle p4">ᚹ</span>
+
+  <div class="container">
+    <div class="hero-content">
+      <!-- Glowing Diamond Top Rune -->
+      <div class="hero-rune">
+        ◇
+      </div>
+
+      <!-- Main Logo Title -->
+      <h1>EIVAR</h1>
+
+      <!-- Online Subtitle -->
+      <div class="hero-online">
+        ONLINE
+      </div>
+
+      <!-- Tagline -->
+      <div class="hero-tagline">
+        FORGE YOUR WEAPON.<br />
+        SHAPE ITS MAGIC.<br />
+        WRITE YOUR LEGEND.
+      </div>
+
+      <!-- Hero Action Buttons -->
+      <div class="hero-buttons">
+        <button class="eivar-button" (click)="scrollToSection('world')">
+          Discover Eivar
+        </button>
+
+        <a routerLink="/news">
+          <button class="eivar-button secondary">
+            Latest News
+          </button>
+        </a>
+      </div>
+    </div>
   </div>
 
-  <div class="container hero-content">
-    <div class="hero-badge-wrapper">
-      <div class="hero-badge">
-        <span class="badge-rune">ᛟ</span>
-        <span>AN ONLINE FANTASY WORLD IN DEVELOPMENT</span>
-      </div>
-    </div>
-
-    <!-- Official Logo Typography -->
-    <div class="hero-logo-box">
-      <div class="top-rune-emblem">
-        <svg viewBox="0 0 100 160" class="hero-rune-svg" fill="none">
-          <path d="M50 14 L54 30 L50 26 L46 30 Z" fill="#69e0ff" />
-          <line x1="50" y1="14" x2="50" y2="40" stroke="#69e0ff" stroke-width="3" />
-          <path d="M50 35 L68 56 L50 78 L32 56 Z" stroke="#69e0ff" stroke-width="4" fill="none" stroke-linejoin="round" />
-          <line x1="22" y1="56" x2="78" y2="56" stroke="#69e0ff" stroke-width="3" stroke-linecap="round" />
-          <circle cx="50" cy="80" r="4.5" fill="#e6cb86" />
-          <path d="M50 82 L68 104 L50 126 L32 104 Z" stroke="#69e0ff" stroke-width="4" fill="none" stroke-linejoin="round" />
-          <line x1="22" y1="104" x2="78" y2="104" stroke="#69e0ff" stroke-width="3" stroke-linecap="round" />
-          <line x1="50" y1="120" x2="50" y2="148" stroke="#69e0ff" stroke-width="3" stroke-linecap="round" />
-        </svg>
-      </div>
-
-      <h1 class="hero-main-title">EIVAR</h1>
-      <div class="hero-subtitle-bar">
-        <span class="sub-line"></span>
-        <span class="hero-online-text">ONLINE</span>
-        <span class="sub-line"></span>
-      </div>
-    </div>
-
-    <p class="hero-tagline">
-      Forge your weapon. Shape its magic. Write your legend.
-    </p>
-
-    <p class="hero-description">
-      Step into an expansive living world of floating archipelagos, ancient stone arches, and deep runic weapon customization.
-    </p>
-
-    <!-- CTAs -->
-    <div class="hero-cta-group">
-      <app-eivar-button variant="cyan" size="lg" (onClick)="scrollToSection('world-intro')">
-        <span>Discover Eivar</span>
-      </app-eivar-button>
-
-      <app-eivar-button variant="secondary" size="lg" (onClick)="scrollToSection('weapon-system')">
-        <span>Runic System</span>
-      </app-eivar-button>
-
-      <a routerLink="/news" class="hero-news-link">
-        <app-eivar-button variant="ghost" size="lg">
-          <span>Latest News →</span>
-        </app-eivar-button>
-      </a>
-    </div>
-
-    <!-- Scroll Indicator -->
-    <button class="scroll-down-hint" (click)="scrollToSection('world-intro')" aria-label="Scroll to introduction">
-      <span class="scroll-text">EXPLORE WORLD</span>
-      <span class="scroll-arrow">↓</span>
-    </button>
-  </div>
+  <!-- Floating Scroll Rune -->
+  <button class="scroll-rune" (click)="scrollToSection('world')" aria-label="Scroll down">
+    ◇
+  </button>
 </section>
 
-<!-- ============================================================ -->
-<!-- 2. WORLD INTRODUCTION -->
-<!-- ============================================================ -->
-<section id="world-intro" class="section-padding intro-section">
+<!-- =======================================================
+     MAIN PARCHMENT CONTAINER
+     Contains: A World Written in Ancient Words & Latest News
+     ======================================================= -->
+<div class="parchment-world-wrapper" id="world">
   <div class="container">
-    <div class="intro-grid">
-      <div class="intro-text-col">
-        <app-section-heading
-          badge="A World in the Sky"
-          title="A World Written in Ancient Words"
-          align="left"
-        ></app-section-heading>
+    <!-- Big Stone & Parchment Frame -->
+    <div class="parchment-plate">
 
-        <p class="lead-text">
-          High above the mist, the landmasses of Eivar drift silently across an infinite azure sky. Ancient stone arches span the sky, carved with glowing cyan glyphs left behind by forgotten civilizations.
-        </p>
-
-        <p class="body-text">
-          In Eivar, you do not simply follow predetermined quest paths. Travel between mountain citadels, cross suspended rope bridges to floating crags, and uncover primal altars where celestial magic still pulses through the rock.
-        </p>
-
-        <div class="intro-stats-row">
-          <div class="mini-stat">
-            <span class="stat-num">100%</span>
-            <span class="stat-label">Authoritative World</span>
+      <!-- ===================================================
+           1. WORLD & PILLARS
+           =================================================== -->
+      <section class="world-section-inner">
+        <header class="section-heading">
+          <div class="rune-divider">
+            ◇
           </div>
-          <div class="mini-stat">
-            <span class="stat-num">300+</span>
-            <span class="stat-label">Runic Inscriptions</span>
-          </div>
-          <div class="mini-stat">
-            <span class="stat-num">0</span>
-            <span class="stat-label">Rigid Class Locks</span>
-          </div>
-        </div>
-      </div>
 
-      <div class="intro-media-col">
-        <div class="media-frame chamfer-box">
-          <img src="assets/images/world-exploration.jpg" alt="Vast landscape of Eivar Online" class="intro-img" />
-          <div class="media-caption">
-            <span class="caption-rune">ᚹ</span>
-            <span>The High Highlands & Standing Monoliths</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
+          <h2>
+            A World Written in Ancient Words
+          </h2>
 
-<app-rune-divider styleVariant="cyan"></app-rune-divider>
-
-<!-- ============================================================ -->
-<!-- 3. GAME PILLARS (4 Differentiated Feature Cards) -->
-<!-- ============================================================ -->
-<section class="section-padding pillars-section">
-  <div class="container">
-    <app-section-heading
-      badge="Core Experience"
-      title="The Foundations of Eivar"
-      subtitle="Four distinct gameplay pillars designed to provide deep agency, tactical combat, and true discovery."
-      align="center"
-    ></app-section-heading>
-
-    <div class="pillars-grid">
-      <!-- Pillar 1: Explore -->
-      <article class="pillar-card chamfer-box">
-        <div class="pillar-img-wrap">
-          <img src="assets/images/world-exploration.jpg" alt="Exploration in Eivar" class="pillar-img" />
-          <div class="pillar-overlay"></div>
-          <div class="pillar-badge">
-            <span class="rune">ᚹ</span>
-            <span>EXPLORE</span>
-          </div>
-        </div>
-        <div class="pillar-body">
-          <h3 class="pillar-title">Chart Unexplored Realms</h3>
-          <p class="pillar-desc">
-            Travel across fortified mountain citadels, dense pine wilderness, floating islands, and subterranean ruins etched with ancient history.
+          <p>
+            Across floating isles and vast continents, ancient forces stir. From verdant valleys to
+            forgotten ruins, every stone and sigil holds a story—yours to shape.
           </p>
-          <a routerLink="/wiki" class="pillar-link">Read World Codex →</a>
-        </div>
-      </article>
+        </header>
 
-      <!-- Pillar 2: Forge -->
-      <article class="pillar-card chamfer-box">
-        <div class="pillar-img-wrap">
-          <img src="assets/images/channeling-staff.jpg" alt="Weapon Forging" class="pillar-img" />
-          <div class="pillar-overlay"></div>
-          <div class="pillar-badge">
-            <span class="rune">ᛏ</span>
-            <span>FORGE</span>
-          </div>
-        </div>
-        <div class="pillar-body">
-          <h3 class="pillar-title">Choose Physical Archetypes</h3>
-          <p class="pillar-desc">
-            Weapons establish kinetic cadence, range, attack weight, and channel stability. You are never locked into predefined class skill trees.
-          </p>
-          <a routerLink="/wiki/weapons/channeling-staff" class="pillar-link">Explore Weapon Classes →</a>
-        </div>
-      </article>
-
-      <!-- Pillar 3: Inscribe -->
-      <article class="pillar-card chamfer-box">
-        <div class="pillar-img-wrap">
-          <img src="assets/images/runic-camp.jpg" alt="Runic Inscription" class="pillar-img" />
-          <div class="pillar-overlay"></div>
-          <div class="pillar-badge">
-            <span class="rune">ᛟ</span>
-            <span>INSCRIBE</span>
-          </div>
-        </div>
-        <div class="pillar-body">
-          <h3 class="pillar-title">Shape Custom Spell Magic</h3>
-          <p class="pillar-desc">
-            Engrave Essences for elemental affinity, Modifiers for kinetic geometry, and Ancient Words to trigger catastrophic harmonic shifts.
-          </p>
-          <a routerLink="/wiki/essences/essences-overview" class="pillar-link">Learn Inscription Rules →</a>
-        </div>
-      </article>
-
-      <!-- Pillar 4: Conquer -->
-      <article class="pillar-card chamfer-box">
-        <div class="pillar-img-wrap">
-          <img src="assets/images/ancient-citadel.jpg" alt="Combat and Sieges" class="pillar-img" />
-          <div class="pillar-overlay"></div>
-          <div class="pillar-badge">
-            <span class="rune">ᛉ</span>
-            <span>CONQUER</span>
-          </div>
-        </div>
-        <div class="pillar-body">
-          <h3 class="pillar-title">Defend Cities & Fortresses</h3>
-          <p class="pillar-desc">
-            Engage in high-stakes PvP fortress battles, territorial sieges, world bosses, and dungeon encounters demanding synchronized tactics.
-          </p>
-          <a routerLink="/wiki" class="pillar-link">Combat Mechanics →</a>
-        </div>
-      </article>
-    </div>
-  </div>
-</section>
-
-<app-rune-divider styleVariant="gold"></app-rune-divider>
-
-<!-- ============================================================ -->
-<!-- 4. RUNIC WEAPON SYSTEM SHOWCASE (Interactive Conduit) -->
-<!-- ============================================================ -->
-<section id="weapon-system" class="section-padding weapon-showcase-section">
-  <div class="container">
-    <app-section-heading
-      badge="Signature Mechanic"
-      title="The Runic Weapon System"
-      subtitle="Eivar discards rigid class restrictions. Your weapon provides the physical conduit; your inscribed runes define the magic."
-      align="center"
-    ></app-section-heading>
-
-    <div class="weapon-interactive-console stone-panel">
-      <div class="console-grid">
-        <!-- Left: Weapon Artwork & Technical Schematic -->
-        <div class="weapon-art-column">
-          <div class="staff-preview-box chamfer-box">
-            <img src="assets/images/channeling-staff.jpg" alt="Channeling Staff Concept" class="staff-img" />
-            <div class="staff-badge">
-              <span class="rune">ᛟ</span>
-              <span>WEAPON CONDUIT: CHANNELING STAFF</span>
+        <div class="pillar-grid">
+          <!-- Explore -->
+          <article class="pillar-card">
+            <div class="pillar-image">
+              <img src="assets/images/world-exploration.jpg" alt="Vast landscape of Eivar" />
             </div>
-          </div>
-
-          <div class="weapon-stats-strip">
-            <div class="wstat">
-              <span class="wlabel">Resonance</span>
-              <span class="wval text-cyan">94%</span>
-            </div>
-            <div class="wstat">
-              <span class="wlabel">Cast Cadence</span>
-              <span class="wval">1.20s</span>
-            </div>
-            <div class="wstat">
-              <span class="wlabel">Range</span>
-              <span class="wval">24.0m</span>
-            </div>
-            <div class="wstat">
-              <span class="wlabel">Active Sockets</span>
-              <span class="wval text-gold">3 (Q, W, E)</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right: Interactive Inscription Slots -->
-        <div class="weapon-slots-column">
-          <div class="slots-header">
-            <h3 class="conduit-title">ENGRAVED ABILITY CONDUITS</h3>
-            <p class="conduit-sub">Click a slot to inspect its active Essence, Modifiers, and Ancient Word:</p>
-          </div>
-
-          <!-- Slot Selector Tabs -->
-          <div class="slot-buttons-row">
-            <button
-              class="slot-tab-btn"
-              [class.active]="activeSlot() === 'Q'"
-              (click)="selectSlot('Q')"
-            >
-              <span class="key">Q</span>
-              <span class="name">Arcane Orb</span>
-            </button>
-            <button
-              class="slot-tab-btn"
-              [class.active]="activeSlot() === 'W'"
-              (click)="selectSlot('W')"
-            >
-              <span class="key">W</span>
-              <span class="name">Runic Barrier</span>
-            </button>
-            <button
-              class="slot-tab-btn"
-              [class.active]="activeSlot() === 'E'"
-              (click)="selectSlot('E')"
-            >
-              <span class="key">E</span>
-              <span class="name">Great Impact</span>
-              <span class="star-badge">✦</span>
-            </button>
-          </div>
-
-          <!-- Selected Slot Live Inscriptions Inspector -->
-          <div class="slot-details-card chamfer-box">
-            @let slotData = weaponSlots[activeSlot()];
-            <div class="slot-card-header">
-              <div class="slot-key-indicator">{{ slotData.slot }}</div>
-              <div>
-                <h4 class="slot-spell-name">{{ slotData.name }}</h4>
-                <span class="slot-spell-type">{{ slotData.type }}</span>
+            <div class="pillar-content">
+              <div class="pillar-icon">
+                <span class="material-symbols-outlined">explore</span>
               </div>
-            </div>
-
-            <!-- Inscribed Sockets -->
-            <div class="engraved-sockets-list">
-              <app-rune-slot
-                type="essence"
-                label="Primary Essence"
-                [value]="slotData.essence"
-                [runeGlyph]="slotData.essenceRune"
-                [active]="true"
-              ></app-rune-slot>
-
-              @for (mod of slotData.modifiers; track mod.name) {
-                <app-rune-slot
-                  type="modifier"
-                  label="Kinetic Modifier"
-                  [value]="mod.name"
-                  [runeGlyph]="mod.rune"
-                  [active]="true"
-                ></app-rune-slot>
-              }
-
-              @if (slotData.ancientWord) {
-                <app-rune-slot
-                  type="ancient-word"
-                  label="Ancient Word (Mythic)"
-                  [value]="slotData.ancientWord.name"
-                  [runeGlyph]="slotData.ancientWord.rune"
-                  [active]="true"
-                ></app-rune-slot>
-              }
-            </div>
-
-            <!-- Resulting Emergent Effect -->
-            <div class="manifestation-box">
-              <span class="m-label">ACTIVE MANIFESTATION:</span>
-              <p class="m-desc">{{ slotData.effectSummary }}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================ -->
-<!-- 5. LIVING WORLD & CIVILIZATIONS -->
-<!-- ============================================================ -->
-<section class="section-padding living-world-section">
-  <div class="container">
-    <div class="world-showcase-grid">
-      <div class="showcase-img-box chamfer-box">
-        <img src="assets/images/ancient-citadel.jpg" alt="Capital Citadel of Eivar" class="showcase-img" />
-        <div class="showcase-caption">
-          <span class="rune">ᛉ</span>
-          <span>Capital Citadel · Stronghold of the First Vanguard</span>
-        </div>
-      </div>
-
-      <div class="showcase-content-box">
-        <app-section-heading
-          badge="Civilization & Territories"
-          title="The World Does Not End at the City Walls"
-          align="left"
-        ></app-section-heading>
-
-        <p class="showcase-lead">
-          From bustling player markets under blue heraldic banners to fortified mountain outposts contested during guild warfare, civilization in Eivar is shaped directly by player actions.
-        </p>
-
-        <div class="features-checklist">
-          <div class="check-item">
-            <span class="check-icon">✓</span>
-            <div>
-              <h5 class="check-title">Dynamic City Fortifications</h5>
-              <p class="check-desc">Contribute resources to upgrade defensive turrets, magical barriers, and municipal forges.</p>
-            </div>
-          </div>
-
-          <div class="check-item">
-            <span class="check-icon">✓</span>
-            <div>
-              <h5 class="check-title">Territory Influence & Outposts</h5>
-              <p class="check-desc">Control strategic celestial conduits across floating highlands to secure regional crafting bonuses.</p>
-            </div>
-          </div>
-
-          <div class="check-item">
-            <span class="check-icon">✓</span>
-            <div>
-              <h5 class="check-title">Emergent Open-World Encounters</h5>
-              <p class="check-desc">Face wandering celestial colossi, rival guild patrols, and ancient shrine attunement challenges.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<app-rune-divider styleVariant="cyan"></app-rune-divider>
-
-<!-- ============================================================ -->
-<!-- 6. LATEST NEWS & CHRONICLES -->
-<!-- ============================================================ -->
-<section class="section-padding news-preview-section">
-  <div class="container">
-    <div class="news-section-header flex-between">
-      <app-section-heading
-        badge="Chronicles of Eivar"
-        title="Latest News & Dispatches"
-        subtitle="Stay updated with our ongoing development milestones and community events."
-        align="left"
-      ></app-section-heading>
-
-      <a routerLink="/news" class="view-all-news-link">
-        <app-eivar-button variant="secondary" size="md">
-          <span>View All News →</span>
-        </app-eivar-button>
-      </a>
-    </div>
-
-    <div class="news-preview-grid">
-      <!-- 1 Large Featured Article -->
-      @if (featuredNews(); as feat) {
-        <article class="featured-news-card stone-panel" [routerLink]="['/news', feat.slug]">
-          <div class="feat-img-wrap">
-            <img [src]="feat.image" [alt]="feat.title" class="feat-img" />
-            <div class="feat-tag">{{ feat.category }}</div>
-          </div>
-          <div class="feat-content">
-            <div class="meta-row">
-              <span class="date">{{ feat.publishedAt }}</span>
-              <span class="dot">·</span>
-              <span class="time">{{ feat.readingTime }} min read</span>
-            </div>
-            <h3 class="feat-title">{{ feat.title }}</h3>
-            <p class="feat-excerpt">{{ feat.excerpt }}</p>
-            <span class="read-more-btn">Read Article →</span>
-          </div>
-        </article>
-      }
-
-      <!-- 3 Supporting News Articles -->
-      <div class="supporting-news-col">
-        @for (art of recentNews(); track art.id) {
-          <article class="support-news-card stone-panel" [routerLink]="['/news', art.slug]">
-            <div class="supp-img-wrap">
-              <img [src]="art.image" [alt]="art.title" class="supp-img" />
-            </div>
-            <div class="supp-content">
-              <div class="meta-row">
-                <span class="category-chip">{{ art.category }}</span>
-                <span class="date">{{ art.publishedAt }}</span>
-              </div>
-              <h4 class="supp-title">{{ art.title }}</h4>
-              <span class="supp-link">Read More →</span>
+              <h3>Explore</h3>
+              <p>
+                Vast lands, hidden secrets, and towering wonders await the brave.
+              </p>
             </div>
           </article>
-        }
-      </div>
-    </div>
-  </div>
-</section>
 
-<!-- ============================================================ -->
-<!-- 7. DEVELOPMENT STATUS -->
-<!-- ============================================================ -->
-<section class="section-padding dev-status-section">
-  <div class="container">
-    <div class="dev-banner stone-panel chamfer-box">
-      <div class="dev-banner-content">
-        <div class="dev-tag">
-          <span class="rune">ᛉ</span>
-          <span>ALPHA PHASE ACTIVE</span>
+          <!-- Forge -->
+          <article class="pillar-card">
+            <div class="pillar-image">
+              <img src="assets/images/channeling-staff.jpg" alt="Weapon forge" />
+            </div>
+            <div class="pillar-content">
+              <div class="pillar-icon">
+                <span class="material-symbols-outlined">hardware</span>
+              </div>
+              <h3>Forge</h3>
+              <p>
+                Craft powerful weapons and channel the elements with ancient artistry.
+              </p>
+            </div>
+          </article>
+
+          <!-- Inscribe -->
+          <article class="pillar-card">
+            <div class="pillar-image">
+              <img src="assets/images/runic-camp.jpg" alt="Ancient runes" />
+            </div>
+            <div class="pillar-content">
+              <div class="pillar-icon">
+                <span class="material-symbols-outlined">auto_fix_high</span>
+              </div>
+              <h3>Inscribe</h3>
+              <p>
+                Inscribe runes and words to shape abilities and unleash your vision.
+              </p>
+            </div>
+          </article>
+
+          <!-- Conquer -->
+          <article class="pillar-card">
+            <div class="pillar-image">
+              <img src="assets/images/ancient-citadel.jpg" alt="Fantasy battle" />
+            </div>
+            <div class="pillar-content">
+              <div class="pillar-icon">
+                <span class="material-symbols-outlined">castle</span>
+              </div>
+              <h3>Conquer</h3>
+              <p>
+                Guilds rise, fortresses fall. Write your legend in the age of Eivar.
+              </p>
+            </div>
+          </article>
         </div>
-        <h2 class="dev-title">THE WORLD IS BEING FORGED</h2>
-        <p class="dev-desc">
-          Eivar Online is developed with an authoritative server tick architecture. We are running closed alpha playtests with our core community to calibrate combat cadence, weapon conduits, and world navigation.
-        </p>
+      </section>
 
-        <div class="dev-actions">
-          <app-eivar-button variant="cyan" size="md" (onClick)="onJoinPlaytest()">
-            <span>Request Alpha Access</span>
-          </app-eivar-button>
+      <!-- ===================================================
+           2. RUNIC WEAPON SYSTEM
+           =================================================== -->
+      <section class="runic-wrap" id="runes">
+        <div class="runic-panel">
+          <div class="runic-title-row">
+            <h2>The Runic Weapon System</h2>
+            <p>
+              Every weapon is a canvas. Combine Essences, Modifiers, and Ancient Words to create limitless possibilities.
+            </p>
+          </div>
 
-          <a routerLink="/updates">
-            <app-eivar-button variant="secondary" size="md">
-              <span>View Patch Notes (Alpha 0.2.1)</span>
-            </app-eivar-button>
+          <div class="runic-layout">
+            <!-- Weapon Visualization -->
+            <div class="weapon-orbit">
+              <div class="weapon-icon-center">
+                <svg viewBox="0 0 100 100" class="staff-svg" fill="none">
+                  <line x1="25" y1="85" x2="75" y2="15" stroke="#d0ae61" stroke-width="4" stroke-linecap="round"/>
+                  <polygon points="75,15 65,22 82,32" fill="#3ccbff"/>
+                  <circle cx="75" cy="15" r="7" fill="#69e0ff" filter="drop-shadow(0 0 8px #3ccbff)"/>
+                  <circle cx="25" cy="85" r="4" fill="#d0ae61"/>
+                </svg>
+              </div>
+
+              <span class="orbit-node node-top">ᚠ</span>
+              <span class="orbit-node node-right">ᛉ</span>
+              <span class="orbit-node node-bottom">ᛇ</span>
+              <span class="orbit-node node-left">ᚱ</span>
+            </div>
+
+            <!-- Ability Configuration Rows -->
+            <div class="abilities-table-side">
+              <div class="weapon-heading">
+                <span>Weapon</span>
+                <strong>Channeling Staff</strong>
+              </div>
+
+              <!-- Q Ability Row -->
+              <div class="ability">
+                <div class="key">
+                  <span>Q</span>
+                </div>
+
+                <div class="ability-glyph-icon flame">
+                  <span class="material-symbols-outlined">local_fire_department</span>
+                </div>
+
+                <div class="ability-main">
+                  <strong>Arcane Orb</strong>
+                </div>
+
+                <div class="ability-stat">
+                  <small>Essence</small>
+                  Fire
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Expand
+                </div>
+
+                <div class="ability-stat"></div>
+                <div class="ability-stat"></div>
+              </div>
+
+              <!-- W Ability Row -->
+              <div class="ability">
+                <div class="key">
+                  <span>W</span>
+                </div>
+
+                <div class="ability-glyph-icon shield">
+                  <span class="material-symbols-outlined">shield</span>
+                </div>
+
+                <div class="ability-main">
+                  <strong>Barrier</strong>
+                </div>
+
+                <div class="ability-stat">
+                  <small>Essence</small>
+                  Life
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Persistence
+                </div>
+
+                <div class="ability-stat"></div>
+                <div class="ability-stat"></div>
+              </div>
+
+              <!-- E Ability Row -->
+              <div class="ability">
+                <div class="key">
+                  <span>E</span>
+                </div>
+
+                <div class="ability-glyph-icon impact">
+                  <span class="material-symbols-outlined">flash_on</span>
+                </div>
+
+                <div class="ability-main">
+                  <strong>Great Impact</strong>
+                </div>
+
+                <div class="ability-stat">
+                  <small>Essence</small>
+                  Life
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Expand
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Persistence
+                </div>
+
+                <div class="ability-stat ancient-word">
+                  <small>Ancient Word</small>
+                  Echo
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================
+           3. LATEST NEWS SECTION
+           =================================================== -->
+      <section class="news-section-inner" id="news">
+        <header class="section-heading">
+          <div class="rune-divider">
+            ◇
+          </div>
+          <h2>Latest News</h2>
+        </header>
+
+        <div class="news-grid">
+          <!-- Featured Card -->
+          <article class="news-card news-featured" [routerLink]="['/news', featuredNews()?.slug || 'alpha-development-the-journey-begins']">
+            <div class="news-image">
+              <img [src]="featuredNews()?.image || 'assets/images/world-exploration.jpg'" [alt]="featuredNews()?.title" />
+              <div class="news-label">Featured</div>
+            </div>
+            <div class="news-content">
+              <div class="news-meta">
+                {{ featuredNews()?.category || 'Development' }} · {{ featuredNews()?.publishedAt || 'May 20, 2026' }}
+              </div>
+              <h3>{{ featuredNews()?.title || 'Alpha Announcement: The Journey Begins' }}</h3>
+              <p>{{ featuredNews()?.excerpt || 'We\'re excited to announce the start of our closed alpha. Thank you for being part of the first chapter.' }}</p>
+              <span class="read-more">Read More →</span>
+            </div>
+          </article>
+
+          <!-- 3 Regular News Cards -->
+          @for (art of recentNews(); track art.id) {
+            <article class="news-card" [routerLink]="['/news', art.slug]">
+              <div class="news-image">
+                <img [src]="art.image" [alt]="art.title" />
+              </div>
+              <div class="news-content">
+                <div class="news-meta">
+                  {{ art.category }} · {{ art.publishedAt }}
+                </div>
+                <h3>{{ art.title }}</h3>
+                <p>{{ art.excerpt }}</p>
+                <span class="read-more">Read More →</span>
+              </div>
+            </article>
+          }
+        </div>
+
+        <div class="news-more">
+          <a routerLink="/news">
+            <button class="eivar-button secondary">
+              View All News
+            </button>
           </a>
         </div>
-      </div>
+      </section>
+
     </div>
   </div>
-</section>
+</div>
 
-<!-- ============================================================ -->
-<!-- 8. FINAL CINEMATIC CTA -->
-<!-- ============================================================ -->
-<section class="final-cta-section">
-  <div class="final-cta-art" style="background-image: url('assets/images/hero-cover.png');"></div>
-  <div class="final-cta-overlay"></div>
+<!-- =======================================================
+     DEVELOPMENT SECTION
+     "THE WORLD IS BEING FORGED"
+     ======================================================= -->
+<section class="development" id="updates">
+  <!-- Glowing standing monoliths on the sides -->
+  <div class="monolith-left">
+    <span class="rune-glyph">ᛟ</span>
+  </div>
+  <div class="monolith-right">
+    <span class="rune-glyph">ᛉ</span>
+  </div>
 
-  <div class="container final-cta-content">
-    <div class="cta-rune-symbol">ᛟ</div>
-    <h2 class="final-cta-title">YOUR STORY HAS NOT YET BEEN WRITTEN.</h2>
-    <p class="final-cta-subtitle">
-      Join our growing community of vanguard adventurers, shape the evolution of Eivar Online, and master the ancient runic language.
-    </p>
+  <div class="container">
+    <header class="section-heading dark">
+      <div class="rune-divider gold">
+        ◇
+      </div>
+      <h2>The World Is Being Forged</h2>
+    </header>
 
-    <div class="final-cta-buttons">
-      <app-eivar-button variant="cyan" size="lg" (onClick)="onJoinPlaytest()">
-        <span>Join the Community</span>
-      </app-eivar-button>
+    <div class="development-grid">
+      <!-- Card 1: Alpha Development -->
+      <article class="development-card">
+        <div class="development-icon">
+          <span class="material-symbols-outlined">terminal</span>
+        </div>
+        <div>
+          <h3>Alpha Development</h3>
+          <p>
+            Eivar Online is in active development. Many features, regions, and systems are still being crafted. Your feedback helps shape the world.
+          </p>
+          <a (click)="onLearnMore()" class="read-more-light">
+            Learn More →
+          </a>
+        </div>
+      </article>
 
-      <a routerLink="/wiki">
-        <app-eivar-button variant="secondary" size="lg">
-          <span>Explore the Archives</span>
-        </app-eivar-button>
-      </a>
+      <!-- Card 2: Join Community -->
+      <article class="development-card">
+        <div class="development-icon">
+          <span class="material-symbols-outlined">forum</span>
+        </div>
+        <div>
+          <h3>Join Our Community</h3>
+          <p>
+            Share ideas, get updates, and connect with fellow adventurers. Join our Discord and be part of building Eivar.
+          </p>
+          <a (click)="onJoinDiscord()" class="read-more-light">
+            Join Discord →
+          </a>
+        </div>
+      </article>
     </div>
   </div>
 </section>

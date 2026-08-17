@@ -1,4 +1,4 @@
-@use '../../../../styles/variables' as *;
+@use '../../../styles/variables' as *;
 
 .auth-page-wrapper {
   position: relative;
@@ -14,14 +14,14 @@
     inset: 0;
     background-size: cover;
     background-position: center 25%;
-    filter: brightness(0.6) blur(2px);
+    filter: brightness(0.4) blur(3px);
     z-index: 1;
   }
 
   .auth-overlay {
     position: absolute;
     inset: 0;
-    background: radial-gradient(ellipse at 50% 50%, rgba(13, 30, 46, 0.75) 0%, rgba(8, 19, 29, 0.95) 100%);
+    background: radial-gradient(ellipse at 50% 50%, rgba(13, 30, 46, 0.75) 0%, rgba(6, 23, 38, 0.98) 100%);
     z-index: 2;
   }
 
@@ -34,9 +34,9 @@
 
   .auth-panel {
     padding: 2.5rem 2.25rem;
-    background: linear-gradient(180deg, rgba(20, 45, 68, 0.85) 0%, rgba(13, 30, 46, 0.96) 100%);
-    border: 1px solid var(--border-stone);
-    box-shadow: var(--shadow-deep), 0 0 30px rgba(60, 203, 255, 0.15);
+    background: linear-gradient(180deg, var(--blue-900) 0%, var(--blue-950) 100%);
+    border: 1px solid rgba(208, 174, 97, 0.5);
+    box-shadow: var(--shadow-runic), 0 0 35px rgba(60, 203, 255, 0.12);
 
     @media (max-width: 480px) {
       padding: 1.75rem 1.25rem;
@@ -60,18 +60,19 @@
     }
 
     .auth-title {
-      font-family: var(--font-display);
-      font-size: 1.5rem;
-      font-weight: 900;
+      font-family: var(--font-serif);
+      font-size: 1.6rem;
+      font-weight: 500;
       color: #ffffff;
       letter-spacing: 0.08em;
     }
 
     .auth-subtitle {
-      font-size: 0.88rem;
-      color: var(--text-stone);
+      font-family: var(--font-serif);
+      font-size: 0.9rem;
+      color: rgba(237, 248, 255, 0.75);
       margin-top: 0.4rem;
-      line-height: 1.45;
+      line-height: 1.5;
     }
   }
 
@@ -82,7 +83,7 @@
     padding: 0.75rem 1rem;
     background: rgba(196, 82, 82, 0.15);
     border: 1px solid var(--color-danger);
-    border-radius: var(--radius-xs);
+    border-radius: 2px;
     margin-bottom: 1.25rem;
     color: #ff9e9e;
     font-size: 0.85rem;
@@ -107,18 +108,18 @@
       }
 
       .form-label {
-        font-family: var(--font-display);
+        font-family: var(--font-serif);
         font-size: 0.78rem;
         font-weight: 700;
-        color: var(--text-gold);
+        color: var(--gold-light);
         letter-spacing: 0.08em;
         text-transform: uppercase;
       }
 
       .forgot-link {
         font-size: 0.75rem;
-        color: var(--text-dim);
-        &:hover { color: var(--color-rune-cyan); }
+        color: rgba(255, 255, 255, 0.6);
+        &:hover { color: var(--cyan-light); }
       }
 
       .input-wrap {
@@ -126,13 +127,13 @@
         align-items: center;
         gap: 0.65rem;
         padding: 0.65rem 0.9rem;
-        background: rgba(8, 19, 29, 0.85);
-        border: 1px solid var(--border-stone);
-        border-radius: var(--radius-xs);
-        transition: all var(--transition-fast);
+        background: rgba(6, 23, 38, 0.85);
+        border: 1px solid rgba(208, 174, 97, 0.35);
+        border-radius: 2px;
+        transition: all var(--transition);
 
         &:focus-within {
-          border-color: var(--color-rune-cyan);
+          border-color: var(--cyan);
           box-shadow: 0 0 12px rgba(60, 203, 255, 0.35);
         }
 
@@ -146,17 +147,17 @@
           border: none;
           outline: none;
           color: #ffffff;
-          font-family: var(--font-body);
+          font-family: var(--font-sans);
           font-size: 0.95rem;
 
           &::placeholder {
-            color: var(--text-dim);
+            color: rgba(255, 255, 255, 0.35);
           }
         }
 
         .password-toggle-btn {
           font-size: 0.9rem;
-          color: var(--text-dim);
+          color: rgba(255, 255, 255, 0.6);
           &:hover { color: #ffffff; }
         }
       }
@@ -168,11 +169,11 @@
         align-items: center;
         gap: 0.5rem;
         font-size: 0.85rem;
-        color: var(--text-stone);
+        color: rgba(237, 248, 255, 0.8);
         cursor: pointer;
 
         input[type="checkbox"] {
-          accent-color: var(--color-sky-500);
+          accent-color: var(--gold);
           width: 15px;
           height: 15px;
         }
@@ -186,16 +187,17 @@
     .mode-switch-footer {
       text-align: center;
       font-size: 0.85rem;
-      color: var(--text-muted);
+      color: rgba(255, 255, 255, 0.7);
 
       .switch-link {
-        font-family: var(--font-display);
+        font-family: var(--font-serif);
         font-weight: 700;
-        color: var(--color-rune-cyan);
+        color: var(--gold-light);
         letter-spacing: 0.05em;
         margin-left: 0.3rem;
 
         &:hover {
+          color: #ffffff;
           text-decoration: underline;
         }
       }

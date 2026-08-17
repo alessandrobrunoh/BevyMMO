@@ -10,7 +10,7 @@ import { WikiCategory, WikiArticle } from '../../../shared/models/wiki.model';
 @Component({
   selector: 'app-wiki-landing',
   standalone: true,
-  imports: [CommonModule, RouterModule, PageHeaderComponent, EivarButtonComponent, RuneDividerComponent],
+  imports: [CommonModule, RouterModule, PageHeaderComponent, RuneDividerComponent],
   templateUrl: './wiki-landing.component.html',
   styleUrls: ['./wiki-landing.component.scss']
 })

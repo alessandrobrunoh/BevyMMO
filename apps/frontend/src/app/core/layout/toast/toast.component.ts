@@ -16,10 +16,10 @@ import { ToastService, ToastMessage } from '../../services/toast.service';
         >
           <div class="toast-icon">
             @switch (toast.type) {
-              @case ('success') { <span>✓</span> }
-              @case ('warning') { <span>⚠</span> }
+              @case ('success') { <span class="material-symbols-outlined">check_circle</span> }
+              @case ('warning') { <span class="material-symbols-outlined">warning</span> }
               @case ('rune') { <span class="rune-glyph">ᛟ</span> }
-              @default { <span>ℹ</span> }
+              @default { <span class="material-symbols-outlined">info</span> }
             }
           </div>
           <div class="toast-body">
@@ -28,8 +28,8 @@ import { ToastService, ToastMessage } from '../../services/toast.service';
             }
             <p class="toast-msg">{{ toast.message }}</p>
           </div>
-          <button class="toast-close" (click)="toastService.dismiss(toast.id); $event.stopPropagation()">
-            ✕
+          <button class="toast-close" (click)="toastService.dismiss(toast.id); $event.stopPropagation()" aria-label="Close notification">
+            <span class="material-symbols-outlined">close</span>
           </button>
         </div>
       }

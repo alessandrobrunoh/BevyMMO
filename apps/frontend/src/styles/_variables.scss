@@ -1,125 +1,74 @@
 // ============================================================
 // EIVAR ONLINE — DESIGN SYSTEM TOKENS & VARIABLES
+// Matching exact aesthetic from inspiration.html & reference
 // ============================================================
 
 :root {
-  // Sky Blue Palette (Primary Environmental)
-  --color-sky-50: #eef8fd;
-  --color-sky-100: #d6effa;
-  --color-sky-200: #b0e0f6;
-  --color-sky-300: #75c4e8;
-  --color-sky-400: #3ea4d9;
-  --color-sky-500: #1c91d0;
-  --color-sky-600: #147cc1;
-  --color-sky-700: #0f629c;
-  --color-sky-800: #0e4f7c;
-  --color-sky-900: #102d47;
+  // Primary Environmental Skies & Blues
+  --sky: #1c91d0;
+  --sky-light: #75c4e8;
 
-  // Deep Eivar Blue Palette (Backgrounds & Overlays)
-  --color-deep-950: #08131d;
-  --color-deep-900: #0d1e2e;
-  --color-deep-850: #102538;
-  --color-deep-800: #142d44;
-  --color-deep-700: #193854;
-  --color-deep-600: #1f4566;
-  --color-deep-500: #29577f;
+  --blue-950: #071a2a;
+  --blue-900: #0c2236;
+  --blue-850: #102d47;
+  --blue-800: #163b58;
+  --blue-700: #1d4b6c;
 
-  // Ancient Stone Palette (Borders, Slabs & Accents)
-  --color-stone-100: #f4f0e8;
-  --color-stone-200: #ddd4c3;
-  --color-stone-300: #c8bca5;
-  --color-stone-400: #a89b84;
-  --color-stone-500: #756b5a;
-  --color-stone-600: #554d3f;
-  --color-stone-700: #3c362b;
-  --color-stone-800: #26221b;
+  // Magical Rune Cyans
+  --cyan: #3ccbff;
+  --cyan-light: #a4eeff;
 
-  // Warm Parchment (Readable content & Codex panels)
-  --color-parchment-50: #faf6ee;
-  --color-parchment-100: #f1e8d6;
-  --color-parchment-200: #e7d6b9;
-  --color-parchment-300: #c9b58d;
-  --color-parchment-400: #ab956b;
-  --color-parchment-dark: #1b1915;
+  // Ancient Golds
+  --gold: #d0ae61;
+  --gold-dark: #9b742e;
+  --gold-light: #e6cb86;
+  --gold-deep: #805c1e;
 
-  // Ancient Gold (Restrained Secondary Accent)
-  --color-gold-light: #e6cb86;
-  --color-gold: #d0ae61;
-  --color-gold-dark: #b88b38;
-  --color-gold-deep: #805c1e;
+  // Ancient Stones
+  --stone: #c8bca5;
+  --stone-dark: #756b5a;
 
-  // Rune Cyan (Magical Glow & Energy)
-  --color-rune-cyan-light: #a4eeff;
-  --color-rune-cyan: #69e0ff;
-  --color-rune-cyan-base: #3ccbff;
-  --color-rune-cyan-dark: #0f9ecb;
-  --color-rune-glow: rgba(60, 203, 255, 0.45);
-  --color-rune-glow-soft: rgba(60, 203, 255, 0.18);
+  // Warm Parchments
+  --parchment: #f1e8d6;
+  --parchment-2: #e7d6b9;
+  --parchment-card: #ded2bb;
+  --parchment-news: #eee4d0;
 
-  // Semantic
-  --color-success: #4ea873;
-  --color-success-bg: rgba(78, 168, 115, 0.15);
-  --color-warning: #d89635;
-  --color-warning-bg: rgba(216, 150, 53, 0.15);
-  --color-danger: #c45252;
-  --color-danger-bg: rgba(196, 82, 82, 0.15);
+  // Readable Texts
+  --text-dark: #17283a;
+  --text-dark-muted: #5f625f;
+  --text-dark-dim: #68675f;
+  --text-light: #fffdf7;
+  --text-light-muted: rgba(255, 255, 255, 0.75);
 
-  // UI Theme Mapping
-  --bg-app: var(--color-deep-950);
-  --bg-surface: var(--color-deep-900);
-  --bg-surface-elevated: var(--color-deep-850);
-  --bg-surface-overlay: rgba(13, 30, 46, 0.92);
-  --bg-stone-card: rgba(26, 46, 68, 0.6);
-  --bg-parchment-card: rgba(241, 232, 214, 0.04);
+  // Typography
+  --font-serif: Georgia, 'Times New Roman', 'Cinzel', serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
 
-  --border-subtle: rgba(221, 212, 195, 0.12);
-  --border-stone: rgba(200, 188, 165, 0.28);
-  --border-gold: rgba(208, 174, 97, 0.4);
-  --border-cyan: rgba(60, 203, 255, 0.4);
+  // Layout
+  --container-max: 1280px;
+  --header-height: 76px;
 
-  --text-main: #e8eff5;
-  --text-muted: #94a9be;
-  --text-dim: #657b91;
-  --text-stone: #d4cbba;
-  --text-gold: #e6cb86;
-  --text-cyan: #7be1ff;
-
-  // Typography Tokens
-  --font-display: 'Cinzel', 'Marcellus', Georgia, serif;
-  --font-body: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  --font-rune: 'Cinzel Decorative', 'Cinzel', serif;
-
-  // Layout Spacing & Radii
-  --radius-xs: 3px;
-  --radius-sm: 5px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 18px;
-
-  --container-max: 1360px;
-  --container-narrow: 980px;
-  --header-height: 80px;
-
-  // Elevation & Shadows
-  --shadow-subtle: 0 4px 16px rgba(0, 0, 0, 0.25);
-  --shadow-medium: 0 8px 30px rgba(0, 0, 0, 0.4);
-  --shadow-deep: 0 16px 48px rgba(0, 0, 0, 0.65);
-  --shadow-rune-glow: 0 0 20px rgba(60, 203, 255, 0.35);
-  --shadow-gold-glow: 0 0 18px rgba(208, 174, 97, 0.3);
+  // Shadows
+  --shadow: 0 18px 45px rgba(6, 19, 31, 0.16), 0 4px 14px rgba(6, 19, 31, 0.12);
+  --shadow-deep: 0 24px 55px rgba(7, 26, 42, 0.22);
+  --shadow-runic: 0 30px 70px rgba(7, 26, 42, 0.25);
 
   // Transitions
-  --transition-fast: 160ms cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-normal: 280ms cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-slow: 480ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition: 220ms ease;
 }
 
-// SCSS Variables for mixins
-$sky-blue: #1c91d0;
-$sky-dark: #147cc1;
-$deep-blue: #102d47;
-$deep-dark: #08131d;
-$ancient-stone: #c8bca5;
-$stone-dark: #756b5a;
+// SCSS variables
+$blue-950: #071a2a;
+$blue-900: #0c2236;
+$blue-850: #102d47;
+$blue-800: #163b58;
+$cyan: #3ccbff;
+$cyan-light: #a4eeff;
+$gold: #d0ae61;
+$gold-dark: #9b742e;
+$gold-light: #e6cb86;
 $parchment: #f1e8d6;
-$ancient-gold: #d0ae61;
-$rune-cyan: #3ccbff;
+$parchment-2: #e7d6b9;
+$stone: #c8bca5;
+$stone-dark: #756b5a;

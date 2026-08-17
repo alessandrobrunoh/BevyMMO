@@ -25,7 +25,7 @@
 
       <!-- Quick Search -->
       <div class="news-search-box">
-        <span class="search-ico">🔍</span>
+        <span class="material-symbols-outlined search-ico">search</span>
         <input
           type="text"
           placeholder="Filter news..."
@@ -34,7 +34,9 @@
           class="news-input"
         />
         @if (searchQuery()) {
-          <button class="clear-btn" (click)="searchQuery.set('')">✕</button>
+          <button class="clear-btn" (click)="searchQuery.set('')">
+            <span class="material-symbols-outlined">close</span>
+          </button>
         }
       </div>
     </div>

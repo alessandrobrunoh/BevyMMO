@@ -29,14 +29,16 @@
 use std::sync::OnceLock;
 
 use bevymmo_domain::abilities::{
-    AncientWordRegistry, BaseAbilityRegistry, EssenceRegistry, ModifierRegistry,
+    AbilityLoadout, AncientWordRegistry, BaseAbilityRegistry, EssenceRegistry, ModifierRegistry,
 };
 
 use bevymmo_domain::effects::{
     ApplyStatusEffect, CleanseEffect, DamageEffect, EffectBundle, EffectContext, EffectSpec,
     HealEffect, PurgeEffect, StatusFilter, StatusId, StatusSelection,
 };
+use bevymmo_domain::items::definition::Item;
 use bevymmo_domain::items::registry::ItemRegistry;
+use bevymmo_domain::items::WeaponFamilyRegistry;
 use bevymmo_domain::spells::components::MOVEMENT_INTERRUPT_EPSILON;
 use bevymmo_domain::spells::context::{
     AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ProjectileSpawnRequest, Spell,
@@ -61,6 +63,19 @@ use crate::tables::{
     CastEndedEvent, CastKindRow, CastSourceRow, CastState, Cooldown, EntityStateRow,
     GameEntity, ModifierKindRow, Projectile, SpellVisualEffectEvent,
 };
+
+/// Resolves an item's ability pools, falling back to its weapon family when
+/// the concrete item intentionally only defines variant-specific behavior.
+pub fn ability_loadout_for_item<'a>(item: &'a dyn Item) -> Option<&'a AbilityLoadout> {
+    if let Some(loadout) = item.ability_loadout() {
+        return Some(loadout);
+    }
+
+    static FAMILIES: OnceLock<WeaponFamilyRegistry> = OnceLock::new();
+    let families = FAMILIES.get_or_init(bevymmo_domain::content::items::default_weapon_families);
+    let family_id = item.weapon_family()?;
+    families.get(&family_id)?.ability_loadout.as_ref()
+}
 
 /// How long a projectile may stay in the air before it gives up, in seconds.
 ///
@@ -350,7 +365,7 @@ pub fn fire_eidolon_ability(
         CastSourceRow::Eidolon => {
             let weapon = equipment.weapon.as_ref()?;
             let item = items().get(&weapon.item_id)?;
-            let weapon_abilities = item.ability_loadout()?;
+            let weapon_abilities = ability_loadout_for_item(item.as_ref())?;
             let slot = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate]
                 .into_iter()
                 .find(|&s| {
@@ -394,18 +409,17 @@ pub fn fire_eidolon_ability(
             };
             (item, preview, None)
         }
-        armor_source => {
+        armor_source @ (CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes) => {
             use bevymmo_domain::items::EquipSlot;
             let slot = match armor_source {
                 CastSourceRow::Helmet => EquipSlot::Helmet,
                 CastSourceRow::Armor => EquipSlot::Armor,
                 CastSourceRow::Shoes => EquipSlot::Shoes,
-                CastSourceRow::Spell => return None,
-                CastSourceRow::Eidolon => unreachable!(),
+                _ => unreachable!(),
             };
             let armor = equipment.get(slot).as_ref()?;
             let item = items().get(&armor.item_id)?;
-            item.ability_loadout()?.primary.iter().find(|id| id.as_str() == ability_id.as_str())?;
+            ability_loadout_for_item(item.as_ref())?.primary.iter().find(|id| id.as_str() == ability_id.as_str())?;
             let language_row = ctx.db.known_ancient_language().identity().find(&identity)?;
             let language = known_ancient_language_from_rows(
                 &language_row.root_words,
@@ -448,7 +462,7 @@ pub fn fire_eidolon_ability(
             let equip_row = ctx.db.equipment().identity().find(&identity)?;
             let equipment = equipment_from_rows(&equip_row.slots);
             let weapon = equipment.weapon.as_ref()?;
-            let weapon_abilities = item.ability_loadout()?;
+            let weapon_abilities = ability_loadout_for_item(item.as_ref())?;
             let slot = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate]
                 .into_iter()
                 .find(|&s| {
@@ -855,7 +869,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                     // Resolution may fail if equipment/selection changed during wind-up.
                     // Treat as interrupted: no effect, no cooldown (client shows cancelled bar).
                     match fire_eidolon_ability(
-                        ctx, &caster, &cast.spell_id, target_position, cast.target_entity, cast.source,
+                        ctx, &caster, &cast.spell_id, target_position, cast.target_entity, source,
                     ) {
                         Some(cd) => {
                             start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
@@ -884,7 +898,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                     // Tick failures are logged but don't interrupt the channel:
                     // the player may have moved out of range or the target died,
                     // but the channel itself is still valid.
-                    if fire_eidolon_ability(ctx, &caster, &cast.spell_id, target_position, cast.target_entity, cast.source).is_none() {
+                    if fire_eidolon_ability(ctx, &caster, &cast.spell_id, target_position, cast.target_entity, source).is_none() {
                         log::debug!(
                             "Eidolon channel tick {:?} for entity {} failed to resolve",
                             cast.spell_id, cast.entity_id
@@ -893,7 +907,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
-            (source @ (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes), CastKindRow::Charge) => {
+            (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes, CastKindRow::Charge) => {
                 // Charge accumulates while held but does NOT auto-fire.
                 // The ability fires when the player releases (release_cast reducer).
                 // If elapsed exceeds required_seconds, the charge is "full" but

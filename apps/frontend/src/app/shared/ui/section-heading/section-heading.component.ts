@@ -6,23 +6,26 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="section-heading-container" [ngClass]="['align-' + align]">
+    <header class="section-heading" [ngClass]="['align-' + align, theme]">
+      <div class="rune-divider" [ngClass]="theme === 'dark' ? 'gold' : ''">
+        <span>◇</span>
+      </div>
+
       @if (badge) {
-        <div class="category-badge">
-          <span class="badge-rune">ᛟ</span>
-          <span class="badge-text">{{ badge }}</span>
-        </div>
+        <span class="eyebrow">{{ badge }}</span>
       }
-      <h2 class="main-title">
-        <ng-content select="[title]"></ng-content>
+
+      <h2>
         @if (title) {
           {{ title }}
         }
+        <ng-content select="[title]"></ng-content>
       </h2>
+
       @if (subtitle) {
-        <p class="subtitle">{{ subtitle }}</p>
+        <p>{{ subtitle }}</p>
       }
-    </div>
+    </header>
   `,
   styleUrls: ['./section-heading.component.scss']
 })
@@ -31,4 +34,5 @@ export class SectionHeadingComponent {
   @Input() subtitle?: string;
   @Input() badge?: string;
   @Input() align: 'left' | 'center' | 'right' = 'center';
+  @Input() theme: 'light' | 'dark' = 'light';
 }

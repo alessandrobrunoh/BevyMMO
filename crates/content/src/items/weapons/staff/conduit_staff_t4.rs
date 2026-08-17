@@ -3,6 +3,8 @@
 use bevymmo_props_macro::item;
 
 use crate::ability_definitions::arcane_orb::ArcaneOrb;
+use crate::ability_definitions::astral_nova::AstralNova;
+use crate::ability_definitions::meteor_lance::MeteorLance;
 use crate::items::ItemRegistry;
 
 
@@ -19,7 +21,7 @@ use crate::items::ItemRegistry;
     abilities(
         primary = [ArcaneOrb],
         secondary = [ArcaneOrb],
-        ultimate = [ArcaneOrb],
+        ultimate = [AstralNova, MeteorLance],
     ),
     rune_profile(capacity = 12, stability = 0.85, affinity = fuoco),
 )]

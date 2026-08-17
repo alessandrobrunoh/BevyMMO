@@ -40,7 +40,7 @@ use crate::reducers::lifecycle::caller_entity;
 use crate::rows::{
     equipment_from_rows, known_ancient_language_from_rows, known_glyphs_from_rows, Vec3Row,
 };
-use crate::sim::spells::{self, fire_eidolon_ability};
+use crate::sim::spells::{self, ability_loadout_for_item, fire_eidolon_ability};
 use crate::tables::{
     cast_state, equipment, game_entity, hotbar, known_ancient_language, known_glyphs, CastKindRow,
     CastSourceRow, CastState, EntityStateRow, GameEntity,
@@ -262,8 +262,7 @@ pub fn eidolon_cast(
     let item = spells::items()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let weapon_abilities = item
-        .ability_loadout()
+    let weapon_abilities = ability_loadout_for_item(item.as_ref())
         .ok_or_else(|| format!("{} has no Eidolon gestures", item.display_name()))?;
 
     let ability_id = resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)
@@ -535,8 +534,7 @@ pub fn armor_cast(
     let item = spells::items()
         .get(&armor.item_id)
         .ok_or_else(|| format!("unknown item {:?}", armor.item_id.as_str()))?;
-    let abilities = item
-        .ability_loadout()
+    let abilities = ability_loadout_for_item(item.as_ref())
         .ok_or_else(|| format!("{} has no armor abilities", item.display_name()))?;
     let ability_id = abilities
         .primary

@@ -38,7 +38,7 @@
         <!-- Error Message Callout -->
         @if (errorMessage()) {
           <div class="auth-error-banner">
-            <span class="err-ico">⚠</span>
+            <span class="material-symbols-outlined err-ico">warning</span>
             <span class="err-text">{{ errorMessage() }}</span>
           </div>
         }
@@ -47,7 +47,7 @@
         <div class="form-group">
           <label class="form-label" for="email">Account Email</label>
           <div class="input-wrap">
-            <span class="field-icon">✉️</span>
+            <span class="material-symbols-outlined field-icon">mail</span>
             <input
               id="email"
               type="email"
@@ -71,7 +71,7 @@
               }
             </div>
             <div class="input-wrap">
-              <span class="field-icon">🔒</span>
+              <span class="material-symbols-outlined field-icon">lock</span>
               <input
                 id="password"
                 [type]="showPassword() ? 'text' : 'password'"
@@ -88,7 +88,7 @@
                 (click)="toggleShowPassword()"
                 title="Toggle password visibility"
               >
-                {{ showPassword() ? '👁️' : '👁️‍🗨️' }}
+                <span class="material-symbols-outlined">{{ showPassword() ? 'visibility_off' : 'visibility' }}</span>
               </button>
             </div>
           </div>

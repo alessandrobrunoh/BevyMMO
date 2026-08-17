@@ -1,88 +1,44 @@
 // ============================================================
-// EIVAR ONLINE — TYPOGRAPHY SYSTEM
+// EIVAR ONLINE — TYPOGRAPHY
 // ============================================================
 
-h1, h2, h3, h4, h5, h6,
-.font-display {
-  font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: 0.04em;
+@use 'variables' as *;
+
+h1, h2, h3, h4, h5, h6, .fantasy-title {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  color: var(--text-dark);
+}
+
+.eyebrow {
+  color: var(--gold-dark);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--text-main);
-  line-height: 1.2;
-  margin: 0;
+  display: block;
 }
 
-h1 {
-  font-size: clamp(2.2rem, 5vw, 3.8rem);
-  letter-spacing: 0.06em;
-}
+.section-heading {
+  max-width: 760px;
+  margin: 0 auto 55px;
+  text-align: center;
 
-h2 {
-  font-size: clamp(1.6rem, 3.5vw, 2.4rem);
-  letter-spacing: 0.05em;
-}
+  h2 {
+    margin: 10px 0 15px;
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    font-weight: 500;
+    line-height: 1.1;
+    color: var(--text-dark);
+  }
 
-h3 {
-  font-size: clamp(1.25rem, 2.5vw, 1.75rem);
-  letter-spacing: 0.04em;
-}
-
-h4 {
-  font-size: 1.2rem;
-  letter-spacing: 0.03em;
-}
-
-h5 {
-  font-size: 1.05rem;
-  letter-spacing: 0.03em;
-}
-
-p, span, a, button, input, textarea, select, li {
-  font-family: var(--font-body);
-}
-
-.text-gold {
-  color: var(--text-gold);
-}
-
-.text-cyan {
-  color: var(--text-cyan);
-}
-
-.text-stone {
-  color: var(--text-stone);
-}
-
-.text-muted {
-  color: var(--text-muted);
-}
-
-.text-dim {
-  color: var(--text-dim);
-}
-
-.font-rune {
-  font-family: var(--font-rune);
-  letter-spacing: 0.12em;
-}
-
-.leading-relaxed {
-  line-height: 1.65;
-}
-
-.leading-loose {
-  line-height: 1.8;
-}
-
-.tracking-wide {
-  letter-spacing: 0.08em;
-}
-
-.tracking-wider {
-  letter-spacing: 0.14em;
-}
-
-.tracking-widest {
-  letter-spacing: 0.22em;
+  p {
+    max-width: 650px;
+    margin: auto;
+    color: var(--text-dark-muted);
+    font-family: var(--font-serif);
+    font-size: 1.03rem;
+    line-height: 1.8;
+  }
 }

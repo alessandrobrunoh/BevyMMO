@@ -7,6 +7,8 @@
 use bevymmo_props_macro::item;
 
 use crate::ability_definitions::arcane_orb::ArcaneOrb;
+use crate::ability_definitions::astral_nova::AstralNova;
+use crate::ability_definitions::meteor_lance::MeteorLance;
 use crate::items::ItemRegistry;
 
 #[item(
@@ -21,7 +23,7 @@ use crate::items::ItemRegistry;
     abilities(
         primary = [ArcaneOrb],
         secondary = [ArcaneOrb],
-        ultimate = [ArcaneOrb],
+        ultimate = [AstralNova, MeteorLance],
     ),
     rune_profile(capacity = 8, stability = 0.96, affinity = fuoco),
 )]
@@ -56,16 +58,17 @@ mod tests {
     }
 
     #[test]
-    fn offers_arcane_orb_for_every_slot() {
+    fn offers_arcane_orb_and_selectable_ultimates() {
         let staff = MagicStaff;
         let abilities = staff
                     .ability_loadout()
                     .expect("magic_staff must grant weapon abilities");
-        let expected = [ArcaneOrb::ID.into()];
+        let arcane_orb = [ArcaneOrb::ID.into()];
+        let ultimate = [AstralNova::ID.into(), MeteorLance::ID.into()];
 
-        assert_eq!(abilities.options_for(AbilitySlot::Primary), expected);
-        assert_eq!(abilities.options_for(AbilitySlot::Secondary), expected);
-        assert_eq!(abilities.options_for(AbilitySlot::Ultimate), expected);
+        assert_eq!(abilities.options_for(AbilitySlot::Primary), arcane_orb);
+        assert_eq!(abilities.options_for(AbilitySlot::Secondary), arcane_orb);
+        assert_eq!(abilities.options_for(AbilitySlot::Ultimate), ultimate);
     }
 
     #[test]

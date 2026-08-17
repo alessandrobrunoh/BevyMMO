@@ -46,7 +46,10 @@
             <img [src]="item.image" [alt]="item.name" class="item-img" />
             <div class="rarity-badge">{{ item.rarity }}</div>
             @if (item.featured) {
-              <div class="featured-badge">★ Featured</div>
+              <div class="featured-badge">
+                <span class="material-symbols-outlined star-ico">star</span>
+                <span>Featured</span>
+              </div>
             }
           </div>
 

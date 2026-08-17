@@ -1,150 +1,121 @@
 // ============================================================
-// EIVAR ONLINE — UTILITIES & REUSABLE STYLES
+// EIVAR ONLINE — UTILITIES & DESIGN SYSTEM COMPONENTS
 // ============================================================
 
+@use 'variables' as *;
+
 .container {
-  width: 100%;
-  max-width: var(--container-max);
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
-
-  @media (max-width: 768px) {
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
+  width: min(calc(100% - 40px), var(--container-max));
+  margin-inline: auto;
 }
 
-.container-narrow {
-  width: 100%;
-  max-width: var(--container-narrow);
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
-}
-
-// Stone Chamfered Box & Surface
-.stone-panel {
-  background: linear-gradient(135deg, rgba(20, 45, 68, 0.75) 0%, rgba(13, 30, 46, 0.9) 100%);
-  border: 1px solid var(--border-stone);
-  box-shadow: var(--shadow-medium), inset 0 1px 0 rgba(221, 212, 195, 0.15);
-  border-radius: var(--radius-md);
+.section {
   position: relative;
-  overflow: hidden;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(221, 212, 195, 0.35), transparent);
-  }
+  padding: 90px 0;
 }
 
-.parchment-panel {
-  background: linear-gradient(180deg, rgba(241, 232, 214, 0.08) 0%, rgba(200, 188, 165, 0.03) 100%);
-  border: 1px solid rgba(221, 212, 195, 0.16);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-subtle);
-}
-
-.rune-glow-box {
-  border: 1px solid var(--border-cyan);
-  box-shadow: 0 0 16px var(--color-rune-glow-soft);
-}
-
-// Chamfered Fantasy Corner effect
-.chamfer-box {
-  clip-path: polygon(
-    0 12px,
-    12px 0,
-    calc(100% - 12px) 0,
-    100% 12px,
-    100% calc(100% - 12px),
-    calc(100% - 12px) 100%,
-    12px 100%,
-    0 calc(100% - 12px)
-  );
-}
-
-.gold-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem 0.65rem;
-  background: rgba(208, 174, 97, 0.12);
-  border: 1px solid rgba(208, 174, 97, 0.35);
-  color: var(--text-gold);
-  font-family: var(--font-display);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  border-radius: var(--radius-xs);
-}
-
-.cyan-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem 0.65rem;
-  background: rgba(60, 203, 255, 0.1);
-  border: 1px solid rgba(60, 203, 255, 0.35);
-  color: var(--text-cyan);
-  font-family: var(--font-display);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border-radius: var(--radius-xs);
-}
-
-.stone-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem 0.65rem;
-  background: rgba(200, 188, 165, 0.1);
-  border: 1px solid rgba(200, 188, 165, 0.2);
-  color: var(--text-stone);
-  font-family: var(--font-display);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  border-radius: var(--radius-xs);
-}
-
-.grid-auto-fit {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 1.5rem;
-}
-
-.flex-center {
+// Rune Divider with diamond and gradient lines
+.rune-divider {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 14px;
+  margin-bottom: 10px;
+  color: var(--gold-dark);
+  font-size: 1.1rem;
+
+  &::before,
+  &::after {
+    width: 90px;
+    height: 1px;
+    content: "";
+    background: linear-gradient(90deg, transparent, var(--gold-dark));
+  }
+
+  &::after {
+    background: linear-gradient(90deg, var(--gold-dark), transparent);
+  }
+
+  &.cyan {
+    color: var(--cyan);
+    &::before { background: linear-gradient(90deg, transparent, var(--cyan)); }
+    &::after { background: linear-gradient(90deg, var(--cyan), transparent); }
+  }
+
+  &.gold {
+    color: var(--gold-light);
+    &::before { background: linear-gradient(90deg, transparent, var(--gold-light)); }
+    &::after { background: linear-gradient(90deg, var(--gold-light), transparent); }
+  }
 }
 
-.flex-between {
-  display: flex;
+// Authentic Chamfered Button
+.eivar-button {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-}
+  justify-content: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 0 24px;
+  overflow: hidden;
+  color: #fff7df;
+  border: 1px solid #c09a4e;
+  background: linear-gradient(180deg, #87662d, #5e451f);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.2), 0 5px 15px rgba(0, 0, 0, 0.2);
+  clip-path: polygon(
+    8px 0,
+    calc(100% - 8px) 0,
+    100% 8px,
+    100% calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    8px 100%,
+    0 calc(100% - 8px),
+    0 8px
+  );
+  cursor: pointer;
+  font-family: var(--font-serif);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: transform var(--transition), filter var(--transition), box-shadow var(--transition);
 
-.section-padding {
-  padding-top: 5rem;
-  padding-bottom: 5rem;
+  &::before {
+    position: absolute;
+    z-index: -1;
+    inset: 2px;
+    content: "";
+    border: 1px solid rgba(230, 203, 134, 0.45);
+    pointer-events: none;
+  }
 
-  @media (max-width: 768px) {
-    padding-top: 3.5rem;
-    padding-bottom: 3.5rem;
+  &:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.12);
+    box-shadow: 0 9px 26px rgba(0, 0, 0, 0.25), 0 0 18px rgba(208, 174, 97, 0.13);
+  }
+
+  &.secondary {
+    color: white;
+    border-color: rgba(164, 238, 255, 0.45);
+    background: linear-gradient(180deg, rgba(20, 77, 111, 0.95), rgba(11, 45, 70, 0.98));
+
+    &::before {
+      border-color: rgba(164, 238, 255, 0.3);
+    }
+  }
+
+  &.sm {
+    min-height: 36px;
+    padding: 0 16px;
+    font-size: 0.68rem;
+  }
+
+  &.lg {
+    min-height: 52px;
+    padding: 0 32px;
+    font-size: 0.82rem;
   }
 }

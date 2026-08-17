@@ -11,6 +11,12 @@ pub enum CastSourceRow {
     Spell,
 
     Eidolon,
+
+    Helmet,
+
+    Armor,
+
+    Shoes,
 }
 
 impl __sdk::InModule for CastSourceRow {

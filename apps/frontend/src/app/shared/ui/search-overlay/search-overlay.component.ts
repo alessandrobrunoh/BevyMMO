@@ -13,7 +13,7 @@ import { SearchService, SearchResultItem } from '../../../core/services/search.s
         <div class="search-modal chamfer-box">
           <!-- Search Input Bar -->
           <div class="search-input-wrapper">
-            <span class="search-icon">🔍</span>
+            <span class="material-symbols-outlined search-icon">search</span>
             <input
               #searchInput
               type="text"

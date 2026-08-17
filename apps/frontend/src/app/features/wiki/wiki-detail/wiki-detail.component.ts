@@ -17,7 +17,6 @@ import { WikiArticle, WikiCategory } from '../../../shared/models/wiki.model';
     CommonModule,
     RouterModule,
     PageHeaderComponent,
-    EivarButtonComponent,
     WikiInfoBoxComponent,
     WikiCalloutComponent,
     AbilityCardComponent,

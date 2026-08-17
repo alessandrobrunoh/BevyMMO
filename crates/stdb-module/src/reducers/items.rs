@@ -333,7 +333,7 @@ pub fn set_inscription(
     let item = item_registry()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let (Some(abilities), Some(profile)) = (item.ability_loadout(), item.rune_profile()) else {
+    let (Some(abilities), Some(profile)) = (crate::sim::spells::ability_loadout_for_item(item.as_ref()), item.rune_profile()) else {
         return Err(format!(
             "{:?} is not an Eidolon weapon and cannot be inscribed",
             weapon.item_id.as_str()
@@ -402,8 +402,7 @@ pub fn set_root_inscription(
     let item = item_registry()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let abilities = item
-        .ability_loadout()
+    let abilities = crate::sim::spells::ability_loadout_for_item(item.as_ref())
         .ok_or_else(|| format!("{:?} has no ability loadout", weapon.item_id.as_str()))?;
     let profile = item
         .rune_profile()
@@ -521,8 +520,7 @@ pub fn set_armor_inscription(
     let item = item_registry()
         .get(&item_instance.item_id)
         .ok_or_else(|| format!("unknown item {:?}", item_instance.item_id.as_str()))?;
-    let abilities = item
-        .ability_loadout()
+    let abilities = crate::sim::spells::ability_loadout_for_item(item.as_ref())
         .ok_or_else(|| format!("{:?} has no armor abilities", item_instance.item_id.as_str()))?;
     let profile = item
         .rune_profile()
@@ -624,7 +622,7 @@ pub fn set_ability_selection(
     let item = item_registry()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let (Some(abilities), Some(profile)) = (item.ability_loadout(), item.rune_profile()) else {
+    let (Some(abilities), Some(profile)) = (crate::sim::spells::ability_loadout_for_item(item.as_ref()), item.rune_profile()) else {
         return Err(format!(
             "{:?} offers no gestures to choose from",
             weapon.item_id.as_str()

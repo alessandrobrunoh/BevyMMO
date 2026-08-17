@@ -276,9 +276,28 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
 
     ctx.db.known_ancient_language().insert(KnownAncientLanguageTable {
         character_id,
-        root_words: vec!["damage".to_string()],
-        ancient_words: vec!["amplia".to_string()],
-        base_abilities: vec!["arcane_orb".to_string()],
+        root_words: vec![
+            "damage".to_string(),
+            "flame".to_string(),
+            "frost".to_string(),
+            "storm".to_string(),
+            "life".to_string(),
+            "void".to_string(),
+            "stone".to_string(),
+        ],
+        ancient_words: vec![
+            "echo".to_string(),
+            "twin".to_string(),
+            "return".to_string(),
+            "hunger".to_string(),
+            "anchor".to_string(),
+            "reversal".to_string(),
+        ],
+        base_abilities: vec![
+            "arcane_bolt".to_string(),
+            "arcane_wave".to_string(),
+            "great_manifestation".to_string(),
+        ],
     });
 
     set_active_character(ctx, Some(character_id));

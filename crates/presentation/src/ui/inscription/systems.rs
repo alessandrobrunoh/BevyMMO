@@ -635,9 +635,26 @@ fn send_full_update(conn: Option<&StdbConnection>, inscription: &WeaponInscripti
     let Some(conn) = conn else {
         return;
     };
-    // TODO: replace with actual stdb command when available
-    let _ = (conn, inscription);
-    info!("root inscription update not yet wired to server command");
+
+    let words_for = |slot: &bevymmo_gameplay::abilities::inscription::SlotInscription| {
+        slot.secondary_words
+            .iter()
+            .map(|word| word.word_id.as_str().to_string())
+            .collect()
+    };
+
+    if let Err(error) = stdb_commands::set_root_inscription(
+        conn,
+        inscription
+            .root_word
+            .as_ref()
+            .map(|word| word.as_str().to_string()),
+        words_for(&inscription.primary),
+        words_for(&inscription.secondary),
+        words_for(&inscription.ultimate),
+    ) {
+        error!("could not update Root Word inscription: {error}");
+    }
 }
 
 fn despawn_windows(commands: &mut Commands, window_query: &Query<Entity, With<InscriptionWindow>>) {

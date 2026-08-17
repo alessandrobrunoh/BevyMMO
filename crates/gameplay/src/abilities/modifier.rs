@@ -10,12 +10,12 @@
 //! ma rimane un tipo distinto per evitare accoppiamenti non necessari.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use super::base_ability::{AbilityParams, AbilityTag};
+use crate::registry::Registry;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ModifierId(Cow<'static, str>);
@@ -108,7 +108,7 @@ pub type ArcModifier = Arc<dyn Modifier>;
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::resource::Resource))]
 #[derive(Default)]
 pub struct ModifierRegistry {
-    modifiers: HashMap<ModifierId, ArcModifier>,
+    modifiers: Registry<ModifierId, ArcModifier>,
 }
 
 impl ModifierRegistry {
@@ -119,7 +119,7 @@ impl ModifierRegistry {
         self.modifiers.get(id).cloned()
     }
     pub fn contains(&self, id: &ModifierId) -> bool {
-        self.modifiers.contains_key(id)
+        self.modifiers.contains(id)
     }
     pub fn len(&self) -> usize {
         self.modifiers.len()

@@ -12,12 +12,12 @@
 use crate::EntityId;
 use glam::Vec3;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use crate::effects::{DamageEffect, EffectSpec, StatusId};
+use crate::registry::Registry;
 use crate::spells::context::{AoeShape, SpellCastContext};
 
 /// Raggio d'impatto di una palla lanciata da un gesto `Projectile`.
@@ -446,7 +446,7 @@ pub type ArcBaseAbility = Arc<dyn BaseAbility>;
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::resource::Resource))]
 #[derive(Default)]
 pub struct BaseAbilityRegistry {
-    abilities: HashMap<AbilityId, ArcBaseAbility>,
+    abilities: Registry<AbilityId, ArcBaseAbility>,
 }
 
 impl BaseAbilityRegistry {
@@ -457,7 +457,7 @@ impl BaseAbilityRegistry {
         self.abilities.get(id).cloned()
     }
     pub fn contains(&self, id: &AbilityId) -> bool {
-        self.abilities.contains_key(id)
+        self.abilities.contains(id)
     }
     pub fn len(&self) -> usize {
         self.abilities.len()

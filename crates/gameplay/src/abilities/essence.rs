@@ -12,12 +12,12 @@
 
 use crate::math::Rgba;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use super::base_ability::{AbilityParams, BaseAbility};
+use crate::registry::Registry;
 use crate::spells::context::{AoeTargeting, SpellCastContext};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -65,7 +65,7 @@ pub type ArcEssence = Arc<dyn Essence>;
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::resource::Resource))]
 #[derive(Default)]
 pub struct EssenceRegistry {
-    essences: HashMap<EssenceId, ArcEssence>,
+    essences: Registry<EssenceId, ArcEssence>,
 }
 
 impl EssenceRegistry {
@@ -76,7 +76,7 @@ impl EssenceRegistry {
         self.essences.get(id).cloned()
     }
     pub fn contains(&self, id: &EssenceId) -> bool {
-        self.essences.contains_key(id)
+        self.essences.contains(id)
     }
     pub fn len(&self) -> usize {
         self.essences.len()

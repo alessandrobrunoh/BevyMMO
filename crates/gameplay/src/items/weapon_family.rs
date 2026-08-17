@@ -5,11 +5,11 @@
 //! and execution-specific behavior.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
 use crate::abilities::AbilityLoadout;
+use crate::registry::Registry;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct WeaponFamilyId(Cow<'static, str>);
@@ -44,7 +44,7 @@ pub trait WeaponFamily: Send + Sync + 'static {
 
 #[derive(Debug, Default)]
 pub struct WeaponFamilyRegistry {
-    families: HashMap<WeaponFamilyId, WeaponFamilyMetadata>,
+    families: Registry<WeaponFamilyId, WeaponFamilyMetadata>,
 }
 
 impl WeaponFamilyRegistry {
@@ -57,7 +57,7 @@ impl WeaponFamilyRegistry {
     }
 
     pub fn contains(&self, id: &WeaponFamilyId) -> bool {
-        self.families.contains_key(id)
+        self.families.contains(id)
     }
 
     pub fn len(&self) -> usize {

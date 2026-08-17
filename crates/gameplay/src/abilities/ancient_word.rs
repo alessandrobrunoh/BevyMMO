@@ -12,13 +12,13 @@
 //! continua a compilare senza modifiche.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use super::base_ability::{AbilityParams, AbilityTag, BaseAbility};
 use super::blueprint::AbilityBlueprint;
+use crate::registry::Registry;
 use crate::spells::context::SpellCastContext;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -123,7 +123,7 @@ pub type ArcAncientWord = Arc<dyn AncientWord>;
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::resource::Resource))]
 #[derive(Default)]
 pub struct AncientWordRegistry {
-    words: HashMap<AncientWordId, ArcAncientWord>,
+    words: Registry<AncientWordId, ArcAncientWord>,
 }
 
 impl AncientWordRegistry {
@@ -134,7 +134,7 @@ impl AncientWordRegistry {
         self.words.get(id).cloned()
     }
     pub fn contains(&self, id: &AncientWordId) -> bool {
-        self.words.contains_key(id)
+        self.words.contains(id)
     }
     pub fn len(&self) -> usize {
         self.words.len()

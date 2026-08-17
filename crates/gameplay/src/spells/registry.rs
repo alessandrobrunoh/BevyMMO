@@ -4,10 +4,10 @@
 
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::context::Spell;
+use crate::registry::Registry;
 
 /// Unique identifier for a spell type.
 ///
@@ -39,7 +39,7 @@ impl From<&'static str> for SpellId {
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::resource::Resource))]
 #[derive(Default)]
 pub struct SpellRegistry {
-    spells: HashMap<SpellId, Arc<dyn Spell>>,
+    spells: Registry<SpellId, Arc<dyn Spell>>,
 }
 
 impl SpellRegistry {
@@ -70,17 +70,12 @@ impl SpellRegistry {
 
     /// Check if a spell exists in the registry.
     pub fn contains(&self, id: &SpellId) -> bool {
-        self.spells.contains_key(id)
+        self.spells.contains(id)
     }
 
     /// Get all registered spells, sorted alphabetically by display name.
     pub fn sorted_spells(&self) -> Vec<(SpellId, Arc<dyn Spell>)> {
-        let mut list: Vec<_> = self
-            .spells
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        list.sort_by(|a, b| a.1.display_name().cmp(b.1.display_name()));
-        list
+        self.spells
+            .sorted_by(|a, b| a.display_name().cmp(b.display_name()))
     }
 }

@@ -1,11 +1,11 @@
 //! Static status definitions and the registry shared by content, client and server.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::registry::Registry;
 use crate::stats::events::{ModifierOp, StatField};
 
 use super::spec::EffectSpec;
@@ -161,7 +161,7 @@ pub type ArcStatus = Arc<StatusDefinition>;
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::resource::Resource))]
 #[derive(Default, Clone)]
 pub struct StatusRegistry {
-    definitions: HashMap<StatusId, ArcStatus>,
+    definitions: Registry<StatusId, ArcStatus>,
 }
 
 /// Replicated status snapshot used by client presentation and future status UI.
@@ -195,7 +195,7 @@ impl StatusRegistry {
     }
 
     pub fn contains(&self, id: &StatusId) -> bool {
-        self.definitions.contains_key(id)
+        self.definitions.contains(id)
     }
 
     pub fn len(&self) -> usize {

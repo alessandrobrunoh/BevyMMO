@@ -8,13 +8,13 @@
 //! effect hook scritto a mano, registry centralizzato.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use super::base_ability::AbilityParams;
 use super::AbilityBlueprint;
+use crate::registry::Registry;
 
 /// Identificatore unico di una Root Word.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -75,7 +75,7 @@ pub type ArcRootWord = Arc<dyn RootWord>;
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::resource::Resource))]
 #[derive(Default)]
 pub struct RootWordRegistry {
-    words: HashMap<RootWordId, ArcRootWord>,
+    words: Registry<RootWordId, ArcRootWord>,
 }
 
 impl RootWordRegistry {
@@ -91,7 +91,7 @@ impl RootWordRegistry {
 
     /// Verifica se una Root Word è registrata.
     pub fn contains(&self, id: &RootWordId) -> bool {
-        self.words.contains_key(id)
+        self.words.contains(id)
     }
 
     /// Numero di Root Words registrate.

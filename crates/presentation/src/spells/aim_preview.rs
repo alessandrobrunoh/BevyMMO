@@ -20,8 +20,8 @@ use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::base_ability::FORWARD_LANE_HALF_WIDTH;
 use bevymmo_gameplay::abilities::{
-    resolve_slot_preview, AbilityAim, AbilityGeometry, BaseAbilityRegistry, KnownGlyphs,
-    ModifierRegistry, SlotPreview,
+    resolve_active_ability, resolve_root_inscribed_slot, AbilityAim, AbilityGeometry,
+    AncientWordRegistry, BaseAbilityRegistry, KnownAncientLanguage, RootWordRegistry, SlotPreview,
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -53,10 +53,16 @@ const CONE_ARC_SEGMENTS: usize = 32;
 pub fn draw_ability_aim_preview(
     mut gizmos: Gizmos,
     aim: Res<AbilityAim>,
-    players: Query<(&Equipment, &KnownGlyphs, &Position, &LookDirection), With<LocalPlayer>>,
+    players: Query<(
+        &Equipment,
+        &KnownAncientLanguage,
+        &Position,
+        &LookDirection,
+    ), With<LocalPlayer>>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
-    modifier_registry: Res<ModifierRegistry>,
+    root_word_registry: Res<RootWordRegistry>,
+    ancient_word_registry: Res<AncientWordRegistry>,
     hud_state: Res<SpellHudState>,
 ) {
     let Some(slot) = aim.slot else {
@@ -78,18 +84,35 @@ pub fn draw_ability_aim_preview(
     let Some(weapon_abilities) = item.ability_loadout() else {
         return;
     };
-    let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-
-    let preview = resolve_slot_preview(
-        slot,
-        weapon_abilities,
-        &weapon.ability_selection,
-        &inscriptions,
-        known,
-        &ability_registry,
-        &modifier_registry,
-        Some(item.as_ref()),
-    );
+    let preview = weapon
+        .root_inscription
+        .as_ref()
+        .map(|inscription| {
+            resolve_root_inscribed_slot(
+                slot,
+                weapon_abilities,
+                &weapon.ability_selection,
+                inscription,
+                known,
+                &ability_registry,
+                &root_word_registry,
+                &ancient_word_registry,
+                Some(item.as_ref()),
+            )
+        })
+        .unwrap_or_else(|| {
+            let ability_id = resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)
+                .ok_or(bevymmo_gameplay::abilities::CastBlockedReason::MissingRegistryEntry)?;
+            let ability = ability_registry
+                .get(ability_id)
+                .ok_or(bevymmo_gameplay::abilities::CastBlockedReason::MissingRegistryEntry)?;
+            let blueprint = item.ability_blueprint(ability.as_ref());
+            Ok(SlotPreview {
+                params: blueprint.params,
+                blueprint,
+                ability,
+            })
+        });
 
     // Slot bloccato (Glifo sconosciuto, o dati incoerenti): niente forma da
     // disegnare, ma un cerchietto rosso ai piedi del personaggio è meglio del

@@ -18,7 +18,7 @@ use crate::items::ItemRegistry;
         secondary = [PurgeAbility],
         ultimate = [CleanseAbility],
     ),
-    rune_profile(capacity = 4, stability = 0.98, affinity = sacro),
+    rune_profile(capacity = 4, stability = 0.98),
 )]
 pub struct PurityCharm;
 
@@ -75,15 +75,12 @@ mod tests {
     }
 
     #[test]
-    fn has_a_rune_profile_with_holy_affinity() {
+    fn has_a_rune_profile_with_stability() {
         let item = PurityCharm;
         let profile = item
             .rune_profile()
             .expect("purity_charm must grant a rune profile");
         assert_eq!(profile.capacity, 4);
-        assert_eq!(
-            profile.affinity.as_ref().map(|id| id.as_str()),
-            Some("sacro")
-        );
+        assert!((profile.stability - 0.98).abs() < f32::EPSILON);
     }
 }

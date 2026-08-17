@@ -4,9 +4,9 @@ use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_gameplay::abilities::{
-    resolve_active_ability, AbilitySelection, AbilitySlot, BaseAbilityRegistry, EssenceId,
-    EssenceRegistry, Inscription, KnownGlyphs, ModifierId, ModifierRegistry, WeaponAbilities,
-    WeaponInscriptions,
+    inscription::{SecondaryWord, WeaponInscription},
+    resolve_active_ability, AbilitySelection, AbilitySlot, AncientWordId, AncientWordRegistry,
+    BaseAbilityRegistry, KnownAncientLanguage, RootWordId, RootWordRegistry, WeaponAbilities,
 };
 use bevymmo_gameplay::items::components::{EquipSlot, Equipment};
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -53,9 +53,9 @@ pub fn toggle_inscription_window(
     theme: Res<UiTheme>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
-    essence_registry: Res<EssenceRegistry>,
-    modifier_registry: Res<ModifierRegistry>,
-    player_query: Query<(&Equipment, &KnownGlyphs), With<LocalPlayer>>,
+    root_word_registry: Res<RootWordRegistry>,
+    ancient_word_registry: Res<AncientWordRegistry>,
+    player_query: Query<(&Equipment, &KnownAncientLanguage), With<LocalPlayer>>,
 ) {
     if !settings.just_pressed(KeyAction::ToggleSpellbook, &keys) {
         return;
@@ -83,8 +83,8 @@ pub fn toggle_inscription_window(
         known,
         &item_registry,
         &ability_registry,
-        &essence_registry,
-        &modifier_registry,
+        &root_word_registry,
+        &ancient_word_registry,
     );
 }
 
@@ -100,9 +100,9 @@ pub fn refresh_inscription_window_on_equipment_change(
     theme: Res<UiTheme>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
-    essence_registry: Res<EssenceRegistry>,
-    modifier_registry: Res<ModifierRegistry>,
-    player_query: Query<(&Equipment, &KnownGlyphs), (With<LocalPlayer>, Changed<Equipment>)>,
+    root_word_registry: Res<RootWordRegistry>,
+    ancient_word_registry: Res<AncientWordRegistry>,
+    player_query: Query<(&Equipment, &KnownAncientLanguage), (With<LocalPlayer>, Changed<Equipment>)>,
 ) {
     if !state.is_open {
         return;
@@ -125,8 +125,8 @@ pub fn refresh_inscription_window_on_equipment_change(
         known,
         &item_registry,
         &ability_registry,
-        &essence_registry,
-        &modifier_registry,
+        &root_word_registry,
+        &ancient_word_registry,
     );
 }
 
@@ -135,11 +135,11 @@ fn spawn_window(
     commands: &mut Commands,
     theme: &UiTheme,
     equipment: &Equipment,
-    known: &KnownGlyphs,
+    known: &KnownAncientLanguage,
     item_registry: &ItemRegistry,
     ability_registry: &BaseAbilityRegistry,
-    essence_registry: &EssenceRegistry,
-    modifier_registry: &ModifierRegistry,
+    root_word_registry: &RootWordRegistry,
+    ancient_word_registry: &AncientWordRegistry,
 ) {
     let Some(weapon) = &equipment.weapon else {
         return;
@@ -150,7 +150,7 @@ fn spawn_window(
     let Some(weapon_abilities) = item.ability_loadout() else {
         return;
     };
-    let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
+    let inscription = weapon.root_inscription.clone().unwrap_or_default();
 
     commands
         .spawn((
@@ -194,11 +194,11 @@ fn spawn_window(
                             slot,
                             weapon_abilities,
                             &weapon.ability_selection,
-                            &inscriptions,
+                            &inscription,
                             known,
                             ability_registry,
-                            essence_registry,
-                            modifier_registry,
+                            root_word_registry,
+                            ancient_word_registry,
                         );
                     }
                 });
@@ -352,11 +352,11 @@ fn spawn_slot_column(
     slot: AbilitySlot,
     weapon_abilities: &WeaponAbilities,
     selection: &AbilitySelection,
-    inscriptions: &WeaponInscriptions,
-    known: &KnownGlyphs,
+    inscription: &WeaponInscription,
+    known: &KnownAncientLanguage,
     ability_registry: &BaseAbilityRegistry,
-    essence_registry: &EssenceRegistry,
-    modifier_registry: &ModifierRegistry,
+    root_word_registry: &RootWordRegistry,
+    ancient_word_registry: &AncientWordRegistry,
 ) {
     let Some(ability_id) = resolve_active_ability(slot, weapon_abilities, selection) else {
         return;
@@ -364,7 +364,7 @@ fn spawn_slot_column(
     let Some(ability) = ability_registry.get(ability_id) else {
         return;
     };
-    let inscription = inscriptions.get(slot);
+    let slot_ins = inscription.get(slot);
 
     parent
         .spawn((Node {
@@ -376,7 +376,7 @@ fn spawn_slot_column(
         .with_children(|column| {
             column.spawn((
                 Text(format!(
-                    "{} \u{2014} {}",
+                "{} \u{2014} {}",
                     slot_key_label(slot),
                     ability.display_name()
                 )),
@@ -415,61 +415,61 @@ fn spawn_slot_column(
                 }
             }
 
+            // Root Word (shared across all slots, shown once)
             column.spawn((
-                Text("Essenza".to_string()),
+                Text("Root Word".to_string()),
                 TextFont {
                     font_size: FontSize::Px(theme.button_font_size * 0.85),
                     ..default()
                 },
                 TextColor(theme.muted_text_color),
             ));
-            if known.essences.is_empty() {
-                spawn_muted_line(column, theme, "No Essenza known yet");
+            if known.root_words.is_empty() {
+                spawn_muted_line(column, theme, "No Root Word known yet");
             }
-            for essence_id in &known.essences {
-                let Some(essence) = essence_registry.get(essence_id) else {
+            for root_id in &known.root_words {
+                let Some(root) = root_word_registry.get(root_id) else {
                     continue;
                 };
-                let is_active = inscription.essence.as_ref() == Some(essence_id);
+                let is_active = inscription.root_word.as_ref() == Some(root_id);
                 spawn_toggle_button(
                     column,
                     theme,
-                    essence.display_name(),
+                    root.metadata().display_name,
                     is_active,
-                    EssenceToggleButton {
-                        slot,
-                        essence_id: essence_id.as_str().to_string(),
+                    RootWordToggleButton {
+                        root_word_id: root_id.as_str().to_string(),
                     },
                 );
             }
 
             column.spawn((
-                Text("Modificatori".to_string()),
+                Text("Ancient Words".to_string()),
                 TextFont {
                     font_size: FontSize::Px(theme.button_font_size * 0.85),
                     ..default()
                 },
                 TextColor(theme.muted_text_color),
             ));
-            let compatible_modifiers: Vec<_> = known
-                .modifiers
-                .iter()
-                .filter_map(|id| modifier_registry.get(id).map(|m| (id.clone(), m)))
-                .filter(|(_, modifier)| ability.has_tag(modifier.required_tag()))
-                .collect();
-            if compatible_modifiers.is_empty() {
-                spawn_muted_line(column, theme, "No compatible Modificatore known");
+            if known.ancient_words.is_empty() {
+                spawn_muted_line(column, theme, "No Ancient Word known yet");
             }
-            for (modifier_id, modifier) in compatible_modifiers {
-                let is_active = inscription.modifiers.contains(&modifier_id);
+            for word_id in &known.ancient_words {
+                let Some(word) = ancient_word_registry.get(word_id) else {
+                    continue;
+                };
+                let is_active = slot_ins
+                    .secondary_words
+                    .iter()
+                    .any(|w| w.word_id == *word_id);
                 spawn_toggle_button(
                     column,
                     theme,
-                    modifier.display_name(),
+                    word.display_name(),
                     is_active,
-                    ModifierToggleButton {
+                    AncientWordToggleButton {
                         slot,
-                        modifier_id: modifier_id.as_str().to_string(),
+                        word_id: word_id.as_str().to_string(),
                     },
                 );
             }
@@ -532,12 +532,12 @@ fn spawn_toggle_button(
 #[allow(clippy::type_complexity)]
 pub fn handle_inscription_interactions(
     mut state: ResMut<InscriptionUiState>,
-    essence_interactions: Query<
-        (&Interaction, &EssenceToggleButton),
+    ancient_word_interactions: Query<
+        (&Interaction, &AncientWordToggleButton),
         (Changed<Interaction>, With<Button>),
     >,
-    modifier_interactions: Query<
-        (&Interaction, &ModifierToggleButton),
+    root_word_interactions: Query<
+        (&Interaction, &RootWordToggleButton),
         (Changed<Interaction>, With<Button>),
     >,
     ability_interactions: Query<
@@ -565,7 +565,7 @@ pub fn handle_inscription_interactions(
     let Some(weapon) = &equipment.weapon else {
         return;
     };
-    let current = weapon.inscriptions.clone().unwrap_or_default();
+    let current = weapon.root_inscription.clone().unwrap_or_default();
 
     for (interaction, pick) in ability_interactions.iter() {
         if *interaction != Interaction::Pressed {
@@ -589,64 +589,55 @@ pub fn handle_inscription_interactions(
         }
     }
 
-    for (interaction, toggle) in essence_interactions.iter() {
+    for (interaction, toggle) in root_word_interactions.iter() {
         if *interaction != Interaction::Pressed {
             continue;
         }
-        let mut inscription = current.get(toggle.slot).clone();
-        let toggled_off =
-            inscription.essence.as_ref().map(|id| id.as_str()) == Some(toggle.essence_id.as_str());
-        inscription.essence = if toggled_off {
+        let toggled_off = current.root_word.as_ref().map(|id| id.as_str()) == Some(toggle.root_word_id.as_str());
+        let new_root = if toggled_off {
             None
         } else {
-            Some(EssenceId::new(toggle.essence_id.clone()))
+            Some(RootWordId::new(toggle.root_word_id.clone()))
         };
-        send_update(conn.as_deref(), toggle.slot, &inscription);
+        send_root_update(conn.as_deref(), new_root, &current);
     }
 
-    for (interaction, toggle) in modifier_interactions.iter() {
+    for (interaction, toggle) in ancient_word_interactions.iter() {
         if *interaction != Interaction::Pressed {
             continue;
         }
-        let mut inscription = current.get(toggle.slot).clone();
-        if let Some(pos) = inscription
-            .modifiers
+        let mut updated = current.clone();
+        let slot_ins = updated.get_mut(toggle.slot);
+        let word_id = AncientWordId::new(toggle.word_id.clone());
+        if let Some(pos) = slot_ins
+            .secondary_words
             .iter()
-            .position(|id| id.as_str() == toggle.modifier_id.as_str())
+            .position(|w| w.word_id == word_id)
         {
-            inscription.modifiers.remove(pos);
+            slot_ins.secondary_words.remove(pos);
         } else {
-            inscription
-                .modifiers
-                .push(ModifierId::new(toggle.modifier_id.clone()));
+            slot_ins.secondary_words.push(SecondaryWord::new(word_id));
         }
-        send_update(conn.as_deref(), toggle.slot, &inscription);
+        send_full_update(conn.as_deref(), &updated);
     }
 }
 
-fn send_update(conn: Option<&StdbConnection>, slot: AbilitySlot, inscription: &Inscription) {
+fn send_root_update(conn: Option<&StdbConnection>, root_word: Option<RootWordId>, current: &WeaponInscription) {
     let Some(conn) = conn else {
         return;
     };
-    if let Err(err) = stdb_commands::set_inscription(
-        conn,
-        slot,
-        inscription
-            .essence
-            .as_ref()
-            .map(|id| id.as_str().to_string()),
-        inscription
-            .modifiers
-            .iter()
-            .map(|id| id.as_str().to_string())
-            .collect(),
-        inscription
-            .ancient_word
-            .as_ref()
-            .map(|id| id.as_str().to_string()),
-    ) {
-        error!("could not set inscription: {err}");
-    }
+    let mut updated = current.clone();
+    updated.root_word = root_word;
+    send_full_update(Some(conn), &updated);
+}
+
+fn send_full_update(conn: Option<&StdbConnection>, inscription: &WeaponInscription) {
+    let Some(conn) = conn else {
+        return;
+    };
+    // TODO: replace with actual stdb command when available
+    let _ = (conn, inscription);
+    info!("root inscription update not yet wired to server command");
 }
 
 fn despawn_windows(commands: &mut Commands, window_query: &Query<Entity, With<InscriptionWindow>>) {

@@ -4,19 +4,17 @@ use bevymmo_gameplay::abilities::AbilitySlot;
 #[derive(Component)]
 pub struct InscriptionWindow;
 
-/// Toggles whether `essence_id` is the inscribed Essenza for `slot` — clicking
-/// the already-active Essenza clears it (empty essence = "no essence").
+/// Toggles whether `root_word_id` is the weapon's Root Word.
 #[derive(Component)]
-pub struct EssenceToggleButton {
-    pub slot: AbilitySlot,
-    pub essence_id: String,
+pub struct RootWordToggleButton {
+    pub root_word_id: String,
 }
 
-/// Toggles whether `modifier_id` is present among `slot`'s Modificatori.
+/// Toggles whether `word_id` is present among `slot`'s secondary Ancient Words.
 #[derive(Component)]
-pub struct ModifierToggleButton {
+pub struct AncientWordToggleButton {
     pub slot: AbilitySlot,
-    pub modifier_id: String,
+    pub word_id: String,
 }
 
 /// Makes `ability_id` the active gesture on `slot`. Only spawned for slots

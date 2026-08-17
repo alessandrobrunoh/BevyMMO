@@ -2,9 +2,9 @@
 
 use bevymmo_props_macro::item;
 
-use crate::ability_definitions::arcane_orb::ArcaneOrb;
-use crate::ability_definitions::astral_nova::AstralNova;
-use crate::ability_definitions::meteor_lance::MeteorLance;
+use crate::ability_definitions::arcane_bolt::ArcaneBolt;
+use crate::ability_definitions::arcane_wave::ArcaneWave;
+use crate::ability_definitions::great_manifestation::GreatManifestation;
 use crate::items::ItemRegistry;
 
 #[item(
@@ -18,11 +18,11 @@ use crate::items::ItemRegistry;
     execution = Echo,
     effects = [stat_bonus(field = AttackPower, op = Add, value = 55.0)],
     abilities(
-        primary = [ArcaneOrb],
-        secondary = [ArcaneOrb],
-        ultimate = [MeteorLance, AstralNova],
+        primary = [ArcaneBolt],
+        secondary = [ArcaneWave],
+        ultimate = [GreatManifestation],
     ),
-    rune_profile(capacity = 14, stability = 0.78, affinity = fuoco),
+    rune_profile(capacity = 14, stability = 0.78),
 )]
 pub struct EchoStaff;
 
@@ -33,24 +33,15 @@ pub fn register(registry: &mut ItemRegistry) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevymmo_gameplay::abilities::{AbilitySlot, BlueprintExecution};
+    use bevymmo_gameplay::abilities::BlueprintExecution;
     use bevymmo_gameplay::items::Item;
 
     #[test]
     fn marks_the_blueprint_as_echo_execution() {
-        let blueprint = EchoStaff.ability_blueprint(&ArcaneOrb);
+        let blueprint = EchoStaff.ability_blueprint(&ArcaneBolt);
         assert_eq!(blueprint.execution, BlueprintExecution::Echo);
         assert!(blueprint.has_tag(bevymmo_gameplay::abilities::AbilityTag::EchoCompatible));
     }
 
-    #[test]
-    fn offers_two_ultimate_choices() {
-        let abilities = EchoStaff
-            .ability_loadout()
-            .expect("Echo Staff has abilities");
-        assert_eq!(
-            abilities.options_for(AbilitySlot::Ultimate),
-            [MeteorLance::ID.into(), AstralNova::ID.into()]
-        );
-    }
+
 }

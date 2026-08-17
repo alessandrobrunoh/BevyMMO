@@ -133,8 +133,7 @@ fn build_app(config: &AppConfig) -> App {
     app.insert_resource(bevymmo_content::spell_definitions::default_spells());
     app.insert_resource(bevymmo_content::item_definitions::default_items());
     app.insert_resource(bevymmo_content::ability_definitions::default_base_abilities());
-    app.insert_resource(bevymmo_content::essence_definitions::default_essences());
-    app.insert_resource(bevymmo_content::modifier_definitions::default_modifiers());
+
     app.insert_resource(bevymmo_content::ancient_word_definitions::default_ancient_words());
 
     #[cfg(feature = "client")]

@@ -46,7 +46,8 @@ use super::module_bindings::respawn_reducer::respawn as respawn_reducer;
 use super::module_bindings::send_chat_message_reducer::send_chat_message as send_chat_message_reducer;
 use super::module_bindings::set_ability_selection_reducer::set_ability_selection as set_ability_selection_reducer;
 use super::module_bindings::set_hotbar_spell_reducer::set_hotbar_spell as set_hotbar_spell_reducer;
-use super::module_bindings::set_inscription_reducer::set_inscription as set_inscription_reducer;
+use super::module_bindings::set_root_inscription_reducer::set_root_inscription as set_root_inscription_reducer;
+use super::module_bindings::set_armor_inscription_reducer::set_armor_inscription as set_armor_inscription_reducer;
 use super::module_bindings::unequip_item_reducer::unequip_item as unequip_item_reducer;
 use super::module_bindings::Vec3Row;
 use super::plugin::StdbConnection;
@@ -109,21 +110,35 @@ pub fn set_hotbar_spell(conn: &StdbConnection, slot: HotbarSlot, spell_id: Optio
     )
 }
 
-/// Rewrites one ability slot's inscription: an essence, some modifiers, and an
-/// optional ancient word.
-pub fn set_inscription(
+/// Writes the equipped weapon's shared Root Word and per-slot Ancient Words.
+pub fn set_root_inscription(
     conn: &StdbConnection,
-    slot: AbilitySlot,
-    essence: Option<String>,
-    modifiers: Vec<String>,
-    ancient_word: Option<String>,
+    root_word: Option<String>,
+    primary_words: Vec<String>,
+    secondary_words: Vec<String>,
+    ultimate_words: Vec<String>,
 ) -> Sent {
-    conn.reducers().set_inscription_then(
-        ability_label(slot).to_string(),
-        essence,
-        modifiers,
-        ancient_word,
-        conn.report_rejection("could not write that inscription"),
+    conn.reducers().set_root_inscription_then(
+        root_word,
+        primary_words,
+        secondary_words,
+        ultimate_words,
+        conn.report_rejection("could not write that Root Word inscription"),
+    )
+}
+
+/// Writes an armor item's independent Root Word inscription.
+pub fn set_armor_inscription(
+    conn: &StdbConnection,
+    slot: EquipSlot,
+    root_word: Option<String>,
+    secondary_words: Vec<String>,
+) -> Sent {
+    conn.reducers().set_armor_inscription_then(
+        slot.label().to_string(),
+        root_word,
+        secondary_words,
+        conn.report_rejection("could not write that armor inscription"),
     )
 }
 

@@ -11,7 +11,7 @@ use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::server_feed::SpellCooldownState;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::{
-    resolve_active_ability, AbilityId, AbilitySlot, BaseAbilityRegistry, EssenceRegistry,
+    resolve_active_ability, AbilityId, AbilitySlot, BaseAbilityRegistry,
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -140,7 +140,6 @@ fn eidolon_hud_entry(
     equipment: &Equipment,
     item_registry: &ItemRegistry,
     ability_registry: &BaseAbilityRegistry,
-    essence_registry: &EssenceRegistry,
 ) -> Option<(AbilityId, String)> {
     let weapon = equipment.weapon.as_ref()?;
     let item = item_registry.get(&weapon.item_id)?;
@@ -148,17 +147,7 @@ fn eidolon_hud_entry(
     let ability_id = resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)?;
     let ability = ability_registry.get(ability_id)?;
 
-    let essence_name = weapon
-        .inscriptions
-        .as_ref()
-        .and_then(|inscriptions| inscriptions.get(slot).essence.as_ref())
-        .and_then(|essence_id| essence_registry.get(essence_id))
-        .map(|essence| essence.display_name().to_string());
-
-    let label = match essence_name {
-        Some(name) => format!("{} ({name})", ability.display_name()),
-        None => ability.display_name().to_string(),
-    };
+    let label = ability.display_name().to_string();
     Some((ability_id.clone(), label))
 }
 
@@ -171,7 +160,6 @@ fn sync_spell_hud(
     player_query: Query<&Equipment, With<LocalPlayer>>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
-    essence_registry: Res<EssenceRegistry>,
     hud_query: Query<Entity, With<SpellHudRoot>>,
 ) {
     let Ok(equipment) = player_query.single() else {
@@ -196,7 +184,6 @@ fn sync_spell_hud(
             equipment,
             &item_registry,
             &ability_registry,
-            &essence_registry,
         );
 
         let (cooldown_key, display_name) = match &eidolon {

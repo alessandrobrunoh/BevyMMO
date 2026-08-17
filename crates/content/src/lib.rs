@@ -4,12 +4,10 @@
 pub mod ability_definitions;
 #[path = "ancient_words/mod.rs"]
 pub mod ancient_word_definitions;
-#[path = "essences/mod.rs"]
-pub mod essence_definitions;
+
 #[path = "items/mod.rs"]
 pub mod item_definitions;
-#[path = "modifiers/mod.rs"]
-pub mod modifier_definitions;
+
 #[path = "placeables/mod.rs"]
 pub mod placeable_definitions;
 #[path = "root_words/mod.rs"]

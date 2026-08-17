@@ -1,5 +1,6 @@
 //! Base-ability content and its registry.
 
+// Existing abilities
 pub mod arcane_orb;
 pub mod astral_nova;
 pub mod bulwark_strike;
@@ -12,11 +13,43 @@ pub mod purge;
 pub mod swift_kick;
 pub mod warding_bolt;
 
+// Staff family (Q/W/E)
+pub mod arcane_bolt;
+pub mod arcane_wave;
+pub mod great_manifestation;
+
+// Bow family (Q/W/E)
+pub mod power_shot;
+pub mod volley;
+pub mod piercing_barrage;
+
+// Sword family (Q/W/E)
+pub mod cleave;
+pub mod lunge;
+pub mod blade_storm;
+
+// Hammer family (Q/W/E)
+pub mod crushing_blow;
+pub mod ground_slam;
+pub mod cataclysm;
+
+// Focus family (Q/W/E)
+pub mod orb;
+pub mod field;
+pub mod domain;
+
+// Gauntlets family (Q/W/E)
+pub mod strike;
+pub mod rush;
+pub mod impact;
+
 use crate::abilities::BaseAbilityRegistry;
 
 /// Builds the registry containing every base ability shipped by this game build.
 pub fn default_base_abilities() -> BaseAbilityRegistry {
     let mut registry = BaseAbilityRegistry::default();
+
+    // Original abilities
     arcane_orb::register(&mut registry);
     astral_nova::register(&mut registry);
     bulwark_strike::register(&mut registry);
@@ -28,6 +61,37 @@ pub fn default_base_abilities() -> BaseAbilityRegistry {
     purge::register(&mut registry);
     swift_kick::register(&mut registry);
     warding_bolt::register(&mut registry);
+
+    // Staff family
+    arcane_bolt::register(&mut registry);
+    arcane_wave::register(&mut registry);
+    great_manifestation::register(&mut registry);
+
+    // Bow family
+    power_shot::register(&mut registry);
+    volley::register(&mut registry);
+    piercing_barrage::register(&mut registry);
+
+    // Sword family
+    cleave::register(&mut registry);
+    lunge::register(&mut registry);
+    blade_storm::register(&mut registry);
+
+    // Hammer family
+    crushing_blow::register(&mut registry);
+    ground_slam::register(&mut registry);
+    cataclysm::register(&mut registry);
+
+    // Focus family
+    orb::register(&mut registry);
+    field::register(&mut registry);
+    domain::register(&mut registry);
+
+    // Gauntlets family
+    strike::register(&mut registry);
+    rush::register(&mut registry);
+    impact::register(&mut registry);
+
     registry
 }
 
@@ -38,7 +102,9 @@ mod tests {
     #[test]
     fn default_base_abilities_contains_core_abilities() {
         let registry = default_base_abilities();
-        assert_eq!(registry.len(), 11); // weapon, armor and utility abilities
+        assert_eq!(registry.len(), 29); // 11 original + 18 new weapon abilities
+
+        // Original abilities
         assert!(registry.contains(&crate::abilities::AbilityId::new("arcane_orb")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("astral_nova")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("cleanse")));
@@ -50,5 +116,35 @@ mod tests {
         assert!(registry.contains(&crate::abilities::AbilityId::new("ground_break")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("meteor_lance")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("purge")));
+
+        // Staff family
+        assert!(registry.contains(&crate::abilities::AbilityId::new("arcane_bolt")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("arcane_wave")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("great_manifestation")));
+
+        // Bow family
+        assert!(registry.contains(&crate::abilities::AbilityId::new("power_shot")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("volley")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("piercing_barrage")));
+
+        // Sword family
+        assert!(registry.contains(&crate::abilities::AbilityId::new("cleave")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("lunge")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("blade_storm")));
+
+        // Hammer family
+        assert!(registry.contains(&crate::abilities::AbilityId::new("crushing_blow")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("ground_slam")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("cataclysm")));
+
+        // Focus family
+        assert!(registry.contains(&crate::abilities::AbilityId::new("orb")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("field")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("domain")));
+
+        // Gauntlets family
+        assert!(registry.contains(&crate::abilities::AbilityId::new("strike")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("rush")));
+        assert!(registry.contains(&crate::abilities::AbilityId::new("impact")));
     }
 }

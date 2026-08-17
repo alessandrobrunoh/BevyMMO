@@ -7,14 +7,12 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 use super::ability_selection_row_type::AbilitySelectionRow;
 use super::armor_inscription_row_type::ArmorInscriptionRow;
 use super::weapon_inscription_row_type::WeaponInscriptionRow;
-use super::weapon_inscriptions_row_type::WeaponInscriptionsRow;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ItemInstanceRow {
     pub instance_id: u64,
     pub item_id: String,
-    pub inscriptions: Option<WeaponInscriptionsRow>,
     pub ability_selection: AbilitySelectionRow,
     pub root_inscription: Option<WeaponInscriptionRow>,
     pub armor_inscription: Option<ArmorInscriptionRow>,

@@ -23,7 +23,7 @@ use crate::items::ItemRegistry;
         secondary = [GroundBreak],
         ultimate = [ArcaneOrb],
     ),
-    rune_profile(capacity = 5, stability = 0.94, affinity = fuoco),
+    rune_profile(capacity = 5, stability = 0.94),
 )]
 pub struct SwiftBoots;
 
@@ -75,16 +75,13 @@ mod tests {
     }
 
     #[test]
-    fn has_a_rune_profile_with_fire_affinity() {
+    fn has_a_rune_profile_with_stability() {
         let item = SwiftBoots;
         let profile = item
             .rune_profile()
             .expect("swift_boots must grant a rune profile");
         assert_eq!(profile.capacity, 5);
-        assert_eq!(
-            profile.affinity.as_ref().map(|id| id.as_str()),
-            Some("fuoco")
-        );
+        assert!((profile.stability - 0.94).abs() < f32::EPSILON);
     }
 
     #[test]

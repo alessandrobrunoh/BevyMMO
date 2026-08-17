@@ -21,9 +21,9 @@
 //!   is the same function the hotbar path ends in.
 
 use bevymmo_domain::abilities::{
-    cast_armor_inscribed_ability, cast_inscribed_slot, cast_root_inscribed_slot,
+    cast_armor_inscribed_ability, cast_root_inscribed_slot,
     resolve_active_ability, resolve_armor_inscribed_ability, resolve_root_inscribed_slot,
-    resolve_slot_preview, AbilityCastMode,
+    AbilityCastMode,
     AbilitySlot, BlueprintExecution, CastBlockedReason, ChannelMovementPolicy as EidolonChannelMovementPolicy,
 };
 // Legacy spell channeling uses spells::context::ChannelMovementPolicy.
@@ -38,11 +38,11 @@ use spacetimedb::{reducer, ReducerContext, Table};
 
 use crate::reducers::lifecycle::{caller_character, caller_entity};
 use crate::rows::{
-    equipment_from_rows, known_ancient_language_from_rows, known_glyphs_from_rows, Vec3Row,
+    equipment_from_rows, known_ancient_language_from_rows, Vec3Row,
 };
 use crate::sim::spells::{self, ability_loadout_for_item, fire_eidolon_ability};
 use crate::tables::{
-    cast_state, equipment, game_entity, hotbar, known_ancient_language, known_glyphs, CastKindRow,
+    cast_state, equipment, game_entity, hotbar, known_ancient_language, CastKindRow,
     CastSourceRow, CastState, EntityStateRow, GameEntity,
 };
 
@@ -278,54 +278,34 @@ pub fn eidolon_cast(
         return Err("you cannot cast right now".to_string());
     }
 
-    let known = ctx
+    let root_inscription = weapon
+        .root_inscription
+        .as_ref()
+        .ok_or_else(|| "weapon has no Root Word inscription".to_string())?;
+    let known_language = ctx
         .db
-        .known_glyphs()
+        .known_ancient_language()
         .character_id()
         .find(&character_id)
-        .map(|row| known_glyphs_from_rows(&row.essences, &row.modifiers, &row.ancient_words))
-        .unwrap_or_default();
-    let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-
-    // RootWord inscriptions use the new knowledge and blueprint pipeline;
-    // legacy instances keep the old path during migration.
-    let preview = if let Some(root_inscription) = weapon.root_inscription.as_ref() {
-        let known_language = ctx
-            .db
-            .known_ancient_language()
-            .character_id()
-            .find(&character_id)
-            .map(|row| {
-                known_ancient_language_from_rows(
-                    &row.root_words,
-                    &row.ancient_words,
-                    &row.base_abilities,
-                )
-            })
-            .ok_or_else(|| "ancient language has not been initialized".to_string())?;
-        resolve_root_inscribed_slot(
-            slot,
-            weapon_abilities,
-            &weapon.ability_selection,
-            root_inscription,
-            &known_language,
-            spells::base_abilities(),
-            spells::root_words(),
-            spells::ancient_words(),
-            Some(item.as_ref()),
-        )
-    } else {
-        resolve_slot_preview(
-            slot,
-            weapon_abilities,
-            &weapon.ability_selection,
-            &inscriptions,
-            &known,
-            spells::base_abilities(),
-            spells::modifiers(),
-            Some(item.as_ref()),
-        )
-    }
+        .map(|row| {
+            known_ancient_language_from_rows(
+                &row.root_words,
+                &row.ancient_words,
+                &row.base_abilities,
+            )
+        })
+        .ok_or_else(|| "ancient language has not been initialized".to_string())?;
+    let preview = resolve_root_inscribed_slot(
+        slot,
+        weapon_abilities,
+        &weapon.ability_selection,
+        root_inscription,
+        &known_language,
+        spells::base_abilities(),
+        spells::root_words(),
+        spells::ancient_words(),
+        Some(item.as_ref()),
+    )
     .map_err(describe_block)?;
     let caster = face_target(ctx, caster, target_position.map(Vec3::from));
     cancel_active_cast(ctx, caster.entity_id);
@@ -357,47 +337,31 @@ pub fn eidolon_cast(
                 &targets,
             );
 
-            if let Some(root_inscription) = weapon.root_inscription.as_ref() {
-                let known_language = ctx
-                    .db
-                    .known_ancient_language()
-                    .character_id()
-                    .find(&character_id)
-                    .map(|row| {
-                        known_ancient_language_from_rows(
-                            &row.root_words,
-                            &row.ancient_words,
-                            &row.base_abilities,
-                        )
-                    })
-                    .ok_or_else(|| "ancient language has not been initialized".to_string())?;
-                cast_root_inscribed_slot(
-                    slot,
-                    weapon_abilities,
-                    &weapon.ability_selection,
-                    root_inscription,
-                    &known_language,
-                    spells::base_abilities(),
-                    spells::root_words(),
-                    spells::ancient_words(),
-                    &mut cast_ctx,
-                    Some(item.as_ref()),
-                )
-            } else {
-                cast_inscribed_slot(
-                    slot,
-                    weapon_abilities,
-                    &weapon.ability_selection,
-                    &inscriptions,
-                    &known,
-                    spells::base_abilities(),
-                    spells::essences(),
-                    spells::modifiers(),
-                    spells::ancient_words(),
-                    &mut cast_ctx,
-                    Some(item.as_ref()),
-                )
-            }
+            let known_language = ctx
+                .db
+                .known_ancient_language()
+                .character_id()
+                .find(&character_id)
+                .map(|row| {
+                    known_ancient_language_from_rows(
+                        &row.root_words,
+                        &row.ancient_words,
+                        &row.base_abilities,
+                    )
+                })
+                .ok_or_else(|| "ancient language has not been initialized".to_string())?;
+            cast_root_inscribed_slot(
+                slot,
+                weapon_abilities,
+                &weapon.ability_selection,
+                root_inscription,
+                &known_language,
+                spells::base_abilities(),
+                spells::root_words(),
+                spells::ancient_words(),
+                &mut cast_ctx,
+                Some(item.as_ref()),
+            )
             .map_err(describe_block)?;
 
             spells::apply_pending(
@@ -716,9 +680,7 @@ fn parse_slot(slot: &str) -> Result<AbilitySlot, String> {
 
 fn describe_block(reason: CastBlockedReason) -> String {
     match reason {
-        CastBlockedReason::UnknownGlyph => {
-            "you do not know every glyph inscribed on that slot".to_string()
-        }
+
         CastBlockedReason::MissingRegistryEntry => {
             "that gesture no longer exists in the registry".to_string()
         }

@@ -23,7 +23,7 @@ use crate::items::ItemRegistry;
         secondary = [MindWard],
         ultimate = [ArcaneOrb],
     ),
-    rune_profile(capacity = 7, stability = 0.90, affinity = fuoco),
+    rune_profile(capacity = 7, stability = 0.90),
 )]
 pub struct WardingHelm;
 
@@ -75,16 +75,13 @@ mod tests {
     }
 
     #[test]
-    fn has_a_rune_profile_with_fire_affinity() {
+    fn has_a_rune_profile_with_stability() {
         let item = WardingHelm;
         let profile = item
             .rune_profile()
             .expect("warding_helm must grant a rune profile");
         assert_eq!(profile.capacity, 7);
-        assert_eq!(
-            profile.affinity.as_ref().map(|id| id.as_str()),
-            Some("fuoco")
-        );
+        assert!((profile.stability - 0.90).abs() < f32::EPSILON);
     }
 
     #[test]

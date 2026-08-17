@@ -59,15 +59,12 @@ pub mod heartbeat_reducer;
 pub mod hotbar_row_type;
 pub mod hotbar_table;
 pub mod hotbar_type;
-pub mod inscription_row_type;
 pub mod inventory_table;
 pub mod inventory_table_type;
 pub mod item_instance_row_type;
 pub mod join_reducer;
 pub mod known_ancient_language_table;
 pub mod known_ancient_language_table_type;
-pub mod known_glyphs_table;
-pub mod known_glyphs_table_type;
 pub mod leave_reducer;
 pub mod login_reducer;
 pub mod logout_reducer;
@@ -111,7 +108,6 @@ pub mod session_type;
 pub mod set_ability_selection_reducer;
 pub mod set_armor_inscription_reducer;
 pub mod set_hotbar_spell_reducer;
-pub mod set_inscription_reducer;
 pub mod set_resonance_xp_reducer;
 pub mod set_root_inscription_reducer;
 pub mod slot_inscription_row_type;
@@ -129,7 +125,6 @@ pub mod tick_stats_type;
 pub mod unequip_item_reducer;
 pub mod vec_3_row_type;
 pub mod weapon_inscription_row_type;
-pub mod weapon_inscriptions_row_type;
 
 pub use ability_selection_row_type::AbilitySelectionRow;
 pub use account_type::Account;
@@ -184,15 +179,12 @@ pub use heartbeat_reducer::heartbeat;
 pub use hotbar_row_type::HotbarRow;
 pub use hotbar_table::*;
 pub use hotbar_type::Hotbar;
-pub use inscription_row_type::InscriptionRow;
 pub use inventory_table::*;
 pub use inventory_table_type::InventoryTable;
 pub use item_instance_row_type::ItemInstanceRow;
 pub use join_reducer::join;
 pub use known_ancient_language_table::*;
 pub use known_ancient_language_table_type::KnownAncientLanguageTable;
-pub use known_glyphs_table::*;
-pub use known_glyphs_table_type::KnownGlyphsTable;
 pub use leave_reducer::leave;
 pub use login_reducer::login;
 pub use logout_reducer::logout;
@@ -236,7 +228,6 @@ pub use session_type::Session;
 pub use set_ability_selection_reducer::set_ability_selection;
 pub use set_armor_inscription_reducer::set_armor_inscription;
 pub use set_hotbar_spell_reducer::set_hotbar_spell;
-pub use set_inscription_reducer::set_inscription;
 pub use set_resonance_xp_reducer::set_resonance_xp;
 pub use set_root_inscription_reducer::set_root_inscription;
 pub use slot_inscription_row_type::SlotInscriptionRow;
@@ -254,7 +245,6 @@ pub use tick_stats_type::TickStats;
 pub use unequip_item_reducer::unequip_item;
 pub use vec_3_row_type::Vec3Row;
 pub use weapon_inscription_row_type::WeaponInscriptionRow;
-pub use weapon_inscriptions_row_type::WeaponInscriptionsRow;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -366,12 +356,6 @@ pub enum Reducer {
         slot: String,
         spell_id: Option<String>,
     },
-    SetInscription {
-        slot: String,
-        essence: Option<String>,
-        modifiers: Vec<String>,
-        ancient_word: Option<String>,
-    },
     SetResonanceXp {
         root_word_id: String,
         xp: u64,
@@ -426,7 +410,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetAbilitySelection { .. } => "set_ability_selection",
             Reducer::SetArmorInscription { .. } => "set_armor_inscription",
             Reducer::SetHotbarSpell { .. } => "set_hotbar_spell",
-            Reducer::SetInscription { .. } => "set_inscription",
             Reducer::SetResonanceXp { .. } => "set_resonance_xp",
             Reducer::SetRootInscription { .. } => "set_root_inscription",
             Reducer::Stop => "stop",
@@ -599,17 +582,6 @@ impl __sdk::Reducer for Reducer {
                     spell_id: spell_id.clone(),
                 })
             }
-            Reducer::SetInscription {
-                slot,
-                essence,
-                modifiers,
-                ancient_word,
-            } => __sats::bsatn::to_vec(&set_inscription_reducer::SetInscriptionArgs {
-                slot: slot.clone(),
-                essence: essence.clone(),
-                modifiers: modifiers.clone(),
-                ancient_word: ancient_word.clone(),
-            }),
             Reducer::SetResonanceXp {
                 root_word_id,
                 xp,
@@ -657,7 +629,6 @@ pub struct DbUpdate {
     hotbar: __sdk::TableUpdate<Hotbar>,
     inventory: __sdk::TableUpdate<InventoryTable>,
     known_ancient_language: __sdk::TableUpdate<KnownAncientLanguageTable>,
-    known_glyphs: __sdk::TableUpdate<KnownGlyphsTable>,
     party: __sdk::TableUpdate<PartyRow>,
     party_member: __sdk::TableUpdate<PartyMemberRow>,
     party_request: __sdk::TableUpdate<PartyRequestRow>,
@@ -723,9 +694,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "known_ancient_language" => db_update.known_ancient_language.append(
                     known_ancient_language_table::parse_table_update(table_update)?,
                 ),
-                "known_glyphs" => db_update
-                    .known_glyphs
-                    .append(known_glyphs_table::parse_table_update(table_update)?),
                 "party" => db_update
                     .party
                     .append(party_table::parse_table_update(table_update)?),
@@ -838,9 +806,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.known_ancient_language,
             )
             .with_updates_by_pk(|row| &row.character_id);
-        diff.known_glyphs = cache
-            .apply_diff_to_table::<KnownGlyphsTable>("known_glyphs", &self.known_glyphs)
-            .with_updates_by_pk(|row| &row.character_id);
         diff.party = cache
             .apply_diff_to_table::<PartyRow>("party", &self.party)
             .with_updates_by_pk(|row| &row.party_id);
@@ -930,9 +895,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "known_ancient_language" => db_update
                     .known_ancient_language
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "known_glyphs" => db_update
-                    .known_glyphs
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party" => db_update
                     .party
@@ -1034,9 +996,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "known_ancient_language" => db_update
                     .known_ancient_language
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "known_glyphs" => db_update
-                    .known_glyphs
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party" => db_update
                     .party
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -1111,7 +1070,6 @@ pub struct AppliedDiff<'r> {
     hotbar: __sdk::TableAppliedDiff<'r, Hotbar>,
     inventory: __sdk::TableAppliedDiff<'r, InventoryTable>,
     known_ancient_language: __sdk::TableAppliedDiff<'r, KnownAncientLanguageTable>,
-    known_glyphs: __sdk::TableAppliedDiff<'r, KnownGlyphsTable>,
     party: __sdk::TableAppliedDiff<'r, PartyRow>,
     party_member: __sdk::TableAppliedDiff<'r, PartyMemberRow>,
     party_request: __sdk::TableAppliedDiff<'r, PartyRequestRow>,
@@ -1176,11 +1134,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<KnownAncientLanguageTable>(
             "known_ancient_language",
             &self.known_ancient_language,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<KnownGlyphsTable>(
-            "known_glyphs",
-            &self.known_glyphs,
             event,
         );
         callbacks.invoke_table_row_callbacks::<PartyRow>("party", &self.party, event);
@@ -1904,7 +1857,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         hotbar_table::register_table(client_cache);
         inventory_table::register_table(client_cache);
         known_ancient_language_table::register_table(client_cache);
-        known_glyphs_table::register_table(client_cache);
         party_table::register_table(client_cache);
         party_member_table::register_table(client_cache);
         party_request_table::register_table(client_cache);
@@ -1936,7 +1888,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "hotbar",
         "inventory",
         "known_ancient_language",
-        "known_glyphs",
         "party",
         "party_member",
         "party_request",

@@ -1,23 +1,13 @@
-//! `ItemInstance` — un esemplare fisico di un item, distinto dal semplice
-//! riferimento di catalogo `ItemId`.
+//! `ItemInstance` — one physical item copy with its Root Word inscription state.
 //!
-//! Fino a questo punto un `ItemId` bastava: gli item non avevano stato
-//! proprio (decisione esplicita "1 item = 1 slot", nessuna istanza). Da
-//! quando un'arma può portare una propria [`crate::abilities::WeaponInscriptions`]
-//! incisa dal giocatore, due copie dello stesso tipo di arma (due Flame
-//! Staff) devono poter essere diverse fra loro — serve un identificatore
-//! stabile per esemplare, non solo per tipo.
-//!
-//! `instance_id` segue l'oggetto ovunque vada (inventario, equipaggiato,
-//! eventualmente scambiato/droppato in futuro); `inscriptions` è `None` per
-//! qualunque item che non ha `ability_loadout()` nel proprio catalogo
-//! (armor, pozioni, ...).
+//! `instance_id` follows the item through inventory and equipment. Weapon and
+//! armor inscriptions are separate because they have different slot policies.
 
 use serde::{Deserialize, Serialize};
 
 use crate::abilities::{
     inscription::{ArmorInscription, WeaponInscription},
-    AbilitySelection, WeaponInscriptions,
+    AbilitySelection,
 };
 
 use super::registry::ItemId;
@@ -57,14 +47,12 @@ impl ItemInstanceId {
 pub struct ItemInstance {
     pub instance_id: ItemInstanceId,
     pub item_id: ItemId,
-    pub inscriptions: Option<WeaponInscriptions>,
     /// Which of `Item::ability_loadout()`'s Primary/Secondary options is
     /// active on THIS esemplare — `Default` (nothing picked yet) resolves to
     /// the first offered option via `abilities::resolve_active_ability`.
     #[serde(default)]
     pub ability_selection: AbilitySelection,
-    /// New RootWord-based inscription model (additive to legacy inscriptions).
-    /// `None` means no root inscription has been applied yet.
+    /// RootWord-based weapon inscription. `None` means uninscribed.
     #[serde(default)]
     pub root_inscription: Option<WeaponInscription>,
     /// Independent inscription for armor items. Kept separate during the
@@ -81,7 +69,6 @@ impl ItemInstance {
         Self {
             instance_id: ItemInstanceId::unassigned(),
             item_id,
-            inscriptions: None,
             ability_selection: AbilitySelection::default(),
             root_inscription: None,
             armor_inscription: None,
@@ -99,8 +86,8 @@ mod tests {
         // minted a random UUID. Ids are now issued by the database, so the
         // guarantee moved: a fresh instance has *no* id, and anything that
         // needs to tell two copies apart must store them first.
-        let a = ItemInstance::new(ItemId::new("magic_staff"));
-        let b = ItemInstance::new(ItemId::new("magic_staff"));
+        let a = ItemInstance::new(ItemId::new("conduit_staff_t4"));
+        let b = ItemInstance::new(ItemId::new("conduit_staff_t4"));
         assert_eq!(a.item_id, b.item_id);
         assert!(!a.instance_id.is_assigned());
         assert!(!b.instance_id.is_assigned());

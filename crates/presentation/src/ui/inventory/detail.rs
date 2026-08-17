@@ -10,7 +10,7 @@ use bevymmo_gameplay::{
     stats::events::{ModifierOp, StatField},
 };
 
-use bevymmo_gameplay::abilities::KnownGlyphs;
+use bevymmo_gameplay::abilities::KnownAncientLanguage;
 
 use super::components::*;
 use super::weapon_detail::{meta_line, summarize_weapon, GlyphRegistries, SlotSummary};
@@ -40,7 +40,7 @@ pub fn spawn_item_detail_card(
     theme: &UiTheme,
     registry: &ItemRegistry,
     glyphs: &GlyphRegistries,
-    known: &KnownGlyphs,
+    known: &KnownAncientLanguage,
     inventory: &Inventory,
     equipment: &Equipment,
     selection: InventorySelection,

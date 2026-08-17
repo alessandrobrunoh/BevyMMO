@@ -181,14 +181,6 @@ pub struct EquipmentTable {
     pub slots: Vec<Option<ItemInstanceRow>>,
 }
 
-#[table(accessor = known_glyphs, public)]
-pub struct KnownGlyphsTable {
-    #[primary_key]
-    pub character_id: Uuid,
-    pub essences: Vec<String>,
-    pub modifiers: Vec<String>,
-    pub ancient_words: Vec<String>,
-}
 
 /// New vocabulary for Root Words and universal Ancient Words. This table is
 /// additive to `KnownGlyphsTable` so existing characters remain readable while

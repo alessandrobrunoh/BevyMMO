@@ -8,7 +8,7 @@ use bevymmo_gameplay::items::{
     registry::ItemRegistry,
 };
 
-use bevymmo_gameplay::abilities::KnownGlyphs;
+use bevymmo_gameplay::abilities::KnownAncientLanguage;
 
 use super::weapon_detail::GlyphRegistries;
 use super::{components::*, detail::*, InventoryUiState};
@@ -398,7 +398,7 @@ pub fn handle_inventory_interactions(
     equip_clicks: EquipClicksQuery,
     unequip_clicks: UnequipClicksQuery,
     conn: Option<Res<StdbConnection>>,
-    player_query: Query<(&Inventory, &Equipment, Option<&KnownGlyphs>), With<LocalPlayer>>,
+    player_query: Query<(&Inventory, &Equipment, Option<&KnownAncientLanguage>), With<LocalPlayer>>,
     registry: Res<ItemRegistry>,
     glyphs: GlyphRegistries,
     theme: Res<UiTheme>,

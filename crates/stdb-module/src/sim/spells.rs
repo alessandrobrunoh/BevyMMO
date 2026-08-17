@@ -28,9 +28,7 @@
 
 use std::sync::OnceLock;
 
-use bevymmo_domain::abilities::{
-    AbilityLoadout, AncientWordRegistry, BaseAbilityRegistry, EssenceRegistry, ModifierRegistry,
-};
+use bevymmo_domain::abilities::{AbilityLoadout, AncientWordRegistry, BaseAbilityRegistry};
 
 use bevymmo_domain::effects::{
     ApplyStatusEffect, CleanseEffect, DamageEffect, EffectBundle, EffectContext, EffectSpec,
@@ -120,15 +118,6 @@ pub fn base_abilities() -> &'static BaseAbilityRegistry {
     REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
 }
 
-pub fn essences() -> &'static EssenceRegistry {
-    static REGISTRY: OnceLock<EssenceRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::content::essences::default_essences)
-}
-
-pub fn modifiers() -> &'static ModifierRegistry {
-    static REGISTRY: OnceLock<ModifierRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::content::modifiers::default_modifiers)
-}
 
 pub fn ancient_words() -> &'static AncientWordRegistry {
     static REGISTRY: OnceLock<AncientWordRegistry> = OnceLock::new();
@@ -335,13 +324,13 @@ pub fn fire_eidolon_ability(
     source: CastSourceRow,
 ) -> Option<f32> {
     use bevymmo_domain::abilities::{
-        cast_inscribed_slot, cast_root_inscribed_slot, resolve_active_ability,
-        resolve_root_inscribed_slot, resolve_slot_preview, AbilitySlot,
+        cast_root_inscribed_slot, resolve_active_ability, resolve_root_inscribed_slot,
+        AbilitySlot,
     };
     use crate::rows::{
-        equipment_from_rows, known_ancient_language_from_rows, known_glyphs_from_rows,
+        equipment_from_rows, known_ancient_language_from_rows,
     };
-    use crate::tables::{equipment, known_ancient_language, known_glyphs};
+    use crate::tables::{equipment, known_ancient_language};
 
     let combat = combat_stats(ctx, caster.entity_id)?;
     let caster_position = Vec3::from(caster.position);
@@ -372,41 +361,24 @@ pub fn fire_eidolon_ability(
                     resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
                         .map_or(false, |id| id.as_str() == ability_id.as_str())
                 })?;
-            let known_row = ctx.db.known_glyphs().character_id().find(&character_id);
-            let known = known_row
-                .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
-                .unwrap_or_default();
-            let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-            let preview = if let Some(root_inscription) = weapon.root_inscription.as_ref() {
-                let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
-                let language = known_ancient_language_from_rows(
-                    &language_row.root_words,
-                    &language_row.ancient_words,
-                    &language_row.base_abilities,
-                );
-                resolve_root_inscribed_slot(
-                    slot,
-                    weapon_abilities,
-                    &weapon.ability_selection,
-                    root_inscription,
-                    &language,
-                    base_abilities(),
-                    root_words(),
-                    ancient_words(),
-                    Some(item.as_ref()),
-                ).ok()?
-            } else {
-                resolve_slot_preview(
-                    slot,
-                    weapon_abilities,
-                    &weapon.ability_selection,
-                    &inscriptions,
-                    &known,
-                    base_abilities(),
-                    modifiers(),
-                    Some(item.as_ref()),
-                ).ok()?
-            };
+            let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
+            let language = known_ancient_language_from_rows(
+                &language_row.root_words,
+                &language_row.ancient_words,
+                &language_row.base_abilities,
+            );
+            let root_inscription = weapon.root_inscription.as_ref()?;
+            let preview = resolve_root_inscribed_slot(
+                slot,
+                weapon_abilities,
+                &weapon.ability_selection,
+                root_inscription,
+                &language,
+                base_abilities(),
+                root_words(),
+                ancient_words(),
+                Some(item.as_ref()),
+            ).ok()?;
             (item, preview, None)
         }
         armor_source @ (CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes) => {
@@ -469,29 +441,18 @@ pub fn fire_eidolon_ability(
                     resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
                         .map_or(false, |id| id.as_str() == ability_id.as_str())
                 })?;
-            let known = ctx.db.known_glyphs().character_id().find(&character_id)
-                .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
-                .unwrap_or_default();
-            let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-            if let Some(root_inscription) = weapon.root_inscription.as_ref() {
-                let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
-                let language = known_ancient_language_from_rows(
-                    &language_row.root_words,
-                    &language_row.ancient_words,
-                    &language_row.base_abilities,
-                );
-                cast_root_inscribed_slot(
-                    slot, weapon_abilities, &weapon.ability_selection, root_inscription,
-                    &language, base_abilities(), root_words(), ancient_words(),
-                    &mut cast_ctx, Some(item.as_ref()),
-                ).ok()?;
-            } else {
-                cast_inscribed_slot(
-                    slot, weapon_abilities, &weapon.ability_selection, &inscriptions, &known,
-                    base_abilities(), essences(), modifiers(), ancient_words(), &mut cast_ctx,
-                    Some(item.as_ref()),
-                ).ok()?;
-            }
+            let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
+            let language = known_ancient_language_from_rows(
+                &language_row.root_words,
+                &language_row.ancient_words,
+                &language_row.base_abilities,
+            );
+            let root_inscription = weapon.root_inscription.as_ref()?;
+            cast_root_inscribed_slot(
+                slot, weapon_abilities, &weapon.ability_selection, root_inscription,
+                &language, base_abilities(), root_words(), ancient_words(),
+                &mut cast_ctx, Some(item.as_ref()),
+            ).ok()?;
         }
         CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes => {
             let inscription = armor_inscription.as_ref();

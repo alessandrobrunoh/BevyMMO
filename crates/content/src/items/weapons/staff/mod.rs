@@ -5,16 +5,16 @@ pub mod echo_staff;
 
 use bevymmo_props_macro::weapon_family;
 
-use crate::ability_definitions::arcane_orb::ArcaneOrb;
-use crate::ability_definitions::astral_nova::AstralNova;
-use crate::ability_definitions::meteor_lance::MeteorLance;
+use crate::ability_definitions::arcane_bolt::ArcaneBolt;
+use crate::ability_definitions::arcane_wave::ArcaneWave;
+use crate::ability_definitions::great_manifestation::GreatManifestation;
 
 #[weapon_family(
     id = "staff",
     name = "Staff",
-    primary = [ArcaneOrb],
-    secondary = [ArcaneOrb],
-    ultimate = [AstralNova, MeteorLance],
+    primary = [ArcaneBolt],
+    secondary = [ArcaneWave],
+    ultimate = [GreatManifestation],
 )]
 pub struct StaffFamily;
 

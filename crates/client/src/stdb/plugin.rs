@@ -40,7 +40,7 @@ use bevymmo_domain::stats::modifiers::{
     ActiveStatModifiers, ModifierEffectInstance, ModifierId as StatModifierId, StatModifierInstance,
 };
 use bevymmo_domain::EntityId;
-use bevymmo_gameplay::abilities::{AncientWordId, EssenceId, KnownGlyphs, ModifierId};
+use bevymmo_gameplay::abilities::{AncientWordId, KnownAncientLanguage};
 use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
 use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
 use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
@@ -72,7 +72,7 @@ use super::module_bindings::heartbeat_reducer::heartbeat;
 use super::module_bindings::hotbar_table::HotbarTableAccess;
 use super::module_bindings::inventory_table::InventoryTableAccess;
 use super::module_bindings::join_reducer::join;
-use super::module_bindings::known_glyphs_table::KnownGlyphsTableAccess;
+use super::module_bindings::known_ancient_language_table::KnownAncientLanguageTableAccess;
 use super::module_bindings::leave_reducer::leave;
 use super::module_bindings::login_reducer::login;
 use super::module_bindings::logout_reducer::logout;
@@ -89,7 +89,7 @@ use super::module_bindings::{
     ActiveStatus, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState, ColorRow,
     Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow,
     EntityStats, EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable, ItemInstanceRow,
-    KnownGlyphsTable, ModifierKindRow, PeriodicEffect, Player, PlayerMessageEvent, Projectile,
+    KnownAncientLanguageTable, ModifierKindRow, PeriodicEffect, Player, PlayerMessageEvent, Projectile,
     ReducerEventContext, RemoteReducers, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
 };
 
@@ -144,7 +144,7 @@ enum RowEvent {
     Inventory(InventoryTable),
     Equipment(EquipmentTable),
     Hotbar(Hotbar),
-    KnownGlyphs(KnownGlyphsTable),
+    KnownAncientLanguage(KnownAncientLanguageTable),
     CastState(CastState),
     CastEnded(CastEndedEvent),
     SpellVisualEffect(SpellVisualEffectEvent),
@@ -190,7 +190,7 @@ struct PendingRows {
     inventory: HashMap<Uuid, InventoryTable>,
     equipment: HashMap<Uuid, EquipmentTable>,
     hotbar: HashMap<Uuid, Hotbar>,
-    known_glyphs: HashMap<Uuid, KnownGlyphsTable>,
+    known_ancient_language: HashMap<Uuid, KnownAncientLanguageTable>,
     boss_state: HashMap<u64, BossState>,
     /// Keyed by `active_status.id`, not by entity: one entity can carry several.
     active_status: HashMap<u64, ActiveStatus>,
@@ -625,7 +625,7 @@ fn connect(
             "SELECT * FROM inventory",
             "SELECT * FROM equipment",
             "SELECT * FROM hotbar",
-            "SELECT * FROM known_glyphs",
+            "SELECT * FROM known_ancient_language",
             "SELECT * FROM cast_state",
             "SELECT * FROM boss_state",
             "SELECT * FROM active_status",
@@ -711,7 +711,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(inventory, Inventory);
     mirror!(equipment, Equipment);
     mirror!(hotbar, Hotbar);
-    mirror!(known_glyphs, KnownGlyphs);
+    mirror!(known_ancient_language, KnownAncientLanguage);
     mirror!(cast_state, CastState);
     mirror!(boss_state, BossState);
     mirror!(active_status, ActiveStatus);
@@ -836,7 +836,7 @@ fn drain_events(
                     state.pending.inventory.remove(&character_id);
                     state.pending.equipment.remove(&character_id);
                     state.pending.hotbar.remove(&character_id);
-                    state.pending.known_glyphs.remove(&character_id);
+                    state.pending.known_ancient_language.remove(&character_id);
                     state.pending.players.remove(&character_id);
                     state.roster.characters.remove(&character_id);
                     if state.local.character_id == Some(character_id) {
@@ -938,9 +938,9 @@ fn drain_events(
                     state.local.character_id,
                 );
             }
-            RowEvent::KnownGlyphs(row) => {
+            RowEvent::KnownAncientLanguage(row) => {
                 let character_id = row.character_id;
-                state.pending.known_glyphs.insert(character_id, row);
+                state.pending.known_ancient_language.insert(character_id, row);
                 if state.local.character_id == Some(character_id) {
                     replay_character(
                         &mut commands,
@@ -1172,8 +1172,8 @@ fn replay_character(
         commands.entity(entity).insert(hotbar_from(row));
     }
     if local_character_id == Some(character_id) {
-        if let Some(row) = pending.known_glyphs.get(&character_id) {
-            commands.entity(entity).insert(known_glyphs_from(row));
+        if let Some(row) = pending.known_ancient_language.get(&character_id) {
+            commands.entity(entity).insert(known_ancient_language_from(row));
         }
     }
 }
@@ -1211,16 +1211,11 @@ fn hotbar_from(row: &Hotbar) -> SpellHotbar {
     }
 }
 
-fn known_glyphs_from(row: &KnownGlyphsTable) -> KnownGlyphs {
-    KnownGlyphs {
-        essences: row.essences.iter().cloned().map(EssenceId::new).collect(),
-        modifiers: row.modifiers.iter().cloned().map(ModifierId::new).collect(),
-        ancient_words: row
-            .ancient_words
-            .iter()
-            .cloned()
-            .map(AncientWordId::new)
-            .collect(),
+fn known_ancient_language_from(row: &KnownAncientLanguageTable) -> KnownAncientLanguage {
+    KnownAncientLanguage {
+        root_words: row.root_words.iter().cloned().map(bevymmo_gameplay::abilities::RootWordId::new).collect(),
+        ancient_words: row.ancient_words.iter().cloned().map(AncientWordId::new).collect(),
+        base_abilities: row.base_abilities.iter().cloned().map(bevymmo_gameplay::abilities::AbilityId::new).collect(),
     }
 }
 
@@ -1595,20 +1590,14 @@ fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
 
 fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instance::ItemInstance {
     use bevymmo_gameplay::abilities::inscription::{
-        ArmorInscription, Inscription, SecondaryWord, SlotInscription, WeaponInscription,
-        WeaponInscriptions,
+        ArmorInscription, SecondaryWord, SlotInscription, WeaponInscription,
     };
     use bevymmo_gameplay::abilities::root_word::RootWordId;
     use bevymmo_gameplay::abilities::weapon_abilities::AbilitySelection;
-    use bevymmo_gameplay::abilities::{AbilityId, AncientWordId, EssenceId, ModifierId};
+    use bevymmo_gameplay::abilities::{AbilityId, AncientWordId};
     use bevymmo_gameplay::items::instance::{ItemInstance, ItemInstanceId};
     use bevymmo_gameplay::items::registry::ItemId;
 
-    let inscription = |i: &super::module_bindings::InscriptionRow| Inscription {
-        essence: i.essence.clone().map(EssenceId::new),
-        modifiers: i.modifiers.iter().cloned().map(ModifierId::new).collect(),
-        ancient_word: i.ancient_word.clone().map(AncientWordId::new),
-    };
 
     let secondary_word = |s: &super::module_bindings::SecondaryWordRow| SecondaryWord {
         word_id: AncientWordId::new(s.word_id.clone()),
@@ -1622,11 +1611,6 @@ fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instanc
     ItemInstance {
         instance_id: ItemInstanceId(row.instance_id),
         item_id: ItemId::new(row.item_id.clone()),
-        inscriptions: row.inscriptions.as_ref().map(|w| WeaponInscriptions {
-            primary: inscription(&w.primary),
-            secondary: inscription(&w.secondary),
-            ultimate: inscription(&w.ultimate),
-        }),
         ability_selection: AbilitySelection {
             primary: row.ability_selection.primary.clone().map(AbilityId::new),
             secondary: row.ability_selection.secondary.clone().map(AbilityId::new),
@@ -2157,21 +2141,19 @@ mod tests {
     }
 
     #[test]
-    fn known_glyph_row_becomes_domain_component() {
-        let row = KnownGlyphsTable {
+    fn known_language_row_becomes_domain_component() {
+        let row = KnownAncientLanguageTable {
             character_id: Uuid::NIL,
-            essences: vec!["fire".to_string()],
-            modifiers: vec!["amplify".to_string()],
-            ancient_words: vec!["eternity".to_string()],
+            root_words: vec!["damage".to_string()],
+            ancient_words: vec!["echo".to_string()],
+            base_abilities: vec!["arcane_orb".to_string()],
         };
 
-        let glyphs = known_glyphs_from(&row);
+        let language = known_ancient_language_from(&row);
 
-        assert!(glyphs.essences.contains(&EssenceId::new("fire")));
-        assert!(glyphs.modifiers.contains(&ModifierId::new("amplify")));
-        assert!(glyphs
-            .ancient_words
-            .contains(&AncientWordId::new("eternity")));
+        assert!(language.root_words.contains(&bevymmo_gameplay::abilities::RootWordId::new("damage")));
+        assert!(language.ancient_words.contains(&AncientWordId::new("echo")));
+        assert!(language.base_abilities.contains(&bevymmo_gameplay::abilities::AbilityId::new("arcane_orb")));
     }
 
     #[test]

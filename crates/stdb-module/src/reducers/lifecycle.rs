@@ -7,11 +7,11 @@ use crate::reducers::account::caller_session;
 use crate::rows::{equipment_to_rows, inventory_to_rows, HotbarRow, StatsRow, Vec3Row};
 use crate::tables::{
     active_status, aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats, equipment,
-    game_entity, grid_cell, hotbar, inventory, known_ancient_language, known_glyphs, periodic_effect,
+    game_entity, grid_cell, hotbar, inventory, known_ancient_language, periodic_effect,
     player, player_stats,
     projectile, resonance, session, stat_modifier, threat, tick_schedule, tick_stats, ColorRow, EntityKindRow,
     EntityStateRow, EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownAncientLanguageTable,
-    KnownGlyphsTable, Player,
+    Player,
     PlayerStats, Session, TickSchedule,
 };
 use crate::{normalize_name, world, DEFAULT_SPEED_PER_SECOND, MAX_CHARACTERS_PER_ACCOUNT, TICK_INTERVAL_MS};
@@ -268,21 +268,12 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         character_id,
         slots: inventory_to_rows(&Default::default()),
     });
-    crate::reducers::items::grant_item(ctx, character_id, "magic_staff")?;
+    crate::reducers::items::grant_item(ctx, character_id, "conduit_staff_t4")?;
     ctx.db.equipment().insert(EquipmentTable {
         character_id,
         slots: equipment_to_rows(&Default::default()),
     });
-    ctx.db.known_glyphs().insert(KnownGlyphsTable {
-        character_id,
-        essences: vec!["fuoco".to_string(), "gelo".to_string(), "terra".to_string()],
-        modifiers: vec![
-            "espandere".to_string(),
-            "amplificare".to_string(),
-            "concentrare".to_string(),
-        ],
-        ancient_words: Vec::new(),
-    });
+
     ctx.db.known_ancient_language().insert(KnownAncientLanguageTable {
         character_id,
         root_words: vec!["damage".to_string()],
@@ -463,7 +454,7 @@ fn delete_character_rows(ctx: &ReducerContext, character: &Player) {
     ctx.db.entity_stats().entity_id().delete(&entity_id);
     ctx.db.game_entity().entity_id().delete(&entity_id);
 
-    ctx.db.known_glyphs().character_id().delete(&character_id);
+
     ctx.db.equipment().character_id().delete(&character_id);
     ctx.db.inventory().character_id().delete(&character_id);
     ctx.db.hotbar().character_id().delete(&character_id);

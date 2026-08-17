@@ -704,20 +704,19 @@ impl AbilitiesDef {
     }
 }
 
-/// Parsed `rune_profile(capacity = ..., stability = ..., affinity = ...)`.
+/// Parsed `rune_profile(capacity = ..., stability = ...)`.
 /// Required alongside `abilities(...)` — un'arma "Eidolon" senza profilo
 /// runico non potrebbe mai essere incisa.
 struct RuneProfileDef {
     capacity: LitInt,
     stability: LitFloat,
-    affinity: Option<Ident>,
+
 }
 
 impl RuneProfileDef {
     fn parse_from(content: ParseStream) -> syn::Result<Self> {
         let mut capacity = None;
         let mut stability = None;
-        let mut affinity = None;
 
         while !content.is_empty() {
             let key: Ident = content.parse()?;
@@ -725,11 +724,11 @@ impl RuneProfileDef {
             match key.to_string().as_str() {
                 "capacity" => capacity = Some(content.parse::<LitInt>()?),
                 "stability" => stability = Some(content.parse::<LitFloat>()?),
-                "affinity" => affinity = Some(content.parse::<Ident>()?),
+
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in rune_profile(...) (expected capacity, stability, affinity)"),
+                        format!("unknown key `{other}` in rune_profile(...) (expected capacity, stability)"),
                     ))
                 }
             }
@@ -745,7 +744,7 @@ impl RuneProfileDef {
                 .ok_or_else(|| content.error("rune_profile(...) requires `capacity = ...`"))?,
             stability: stability
                 .ok_or_else(|| content.error("rune_profile(...) requires `stability = ...`"))?,
-            affinity,
+
         })
     }
 }
@@ -966,20 +965,12 @@ impl ItemDef {
         let rune_profile_method = self.rune_profile.as_ref().map(|profile| {
             let capacity = &profile.capacity;
             let stability = &profile.stability;
-            let affinity_tokens = match &profile.affinity {
-                Some(essence_ident) => {
-                    let essence_id_lit = essence_ident.to_string();
-                    quote! { Some(crate::abilities::EssenceId::new(#essence_id_lit)) }
-                }
-                None => quote! { None },
-            };
             quote! {
                 fn rune_profile(&self) -> Option<&crate::abilities::RuneProfile> {
                     static PROFILE: std::sync::OnceLock<crate::abilities::RuneProfile> = std::sync::OnceLock::new();
                     Some(PROFILE.get_or_init(|| crate::abilities::RuneProfile {
                         capacity: #capacity,
                         stability: #stability,
-                        affinity: #affinity_tokens,
                     }))
                 }
             }

@@ -1,7 +1,7 @@
 //! Item content and its registry.
 
 pub mod armor;
-pub mod magic_staff;
+
 pub mod purity_charm;
 pub mod weapons;
 
@@ -11,11 +11,34 @@ use crate::items::WeaponFamilyRegistry;
 /// Builds the registry containing every item shipped by this game build.
 pub fn default_items() -> ItemRegistry {
     let mut registry = ItemRegistry::default();
+
+    // Existing items
     armor::register(&mut registry);
-    magic_staff::register(&mut registry);
+
     purity_charm::register(&mut registry);
     weapons::staff::conduit_staff_t4::register(&mut registry);
     weapons::staff::echo_staff::register(&mut registry);
+
+    // Bow family
+    weapons::bow::longbow::register(&mut registry);
+    weapons::bow::swiftbow::register(&mut registry);
+
+    // Sword family
+    weapons::sword::arming_sword::register(&mut registry);
+    weapons::sword::greatsword::register(&mut registry);
+
+    // Hammer family
+    weapons::hammer::warhammer::register(&mut registry);
+    weapons::hammer::maul::register(&mut registry);
+
+    // Focus family
+    weapons::focus::arcane_focus::register(&mut registry);
+    weapons::focus::primal_focus::register(&mut registry);
+
+    // Gauntlets family
+    weapons::gauntlets::battle_gauntlets::register(&mut registry);
+    weapons::gauntlets::iron_fists::register(&mut registry);
+
     registry
 }
 
@@ -23,6 +46,11 @@ pub fn default_items() -> ItemRegistry {
 pub fn default_weapon_families() -> WeaponFamilyRegistry {
     let mut registry = WeaponFamilyRegistry::default();
     weapons::staff::register(&mut registry);
+    weapons::bow::register(&mut registry);
+    weapons::sword::register(&mut registry);
+    weapons::hammer::register(&mut registry);
+    weapons::focus::register(&mut registry);
+    weapons::gauntlets::register(&mut registry);
     registry
 }
 
@@ -32,9 +60,10 @@ mod tests {
     use crate::items::registry::ItemId;
 
     #[test]
-    fn default_items_contains_staff_items() {
+    fn default_items_contains_all_items() {
         let registry = default_items();
-        assert!(registry.contains(&ItemId::new(magic_staff::MagicStaff::ID)));
+
+        // Staff variants
         assert!(registry.contains(&ItemId::new(
             weapons::staff::conduit_staff_t4::ConduitStaffT4::ID
         )));
@@ -47,7 +76,25 @@ mod tests {
         assert!(registry.contains(&ItemId::new(armor::boots::swift_boots::SwiftBoots::ID)));
         // Accessory items
         assert!(registry.contains(&ItemId::new(purity_charm::PurityCharm::ID)));
-        assert_eq!(registry.len(), 7); // 3 weapons + 3 armor + 1 accessory
+
+        // New weapon items (12)
+        // Bow family
+        assert!(registry.contains(&ItemId::new(weapons::bow::longbow::Longbow::ID)));
+        assert!(registry.contains(&ItemId::new(weapons::bow::swiftbow::Swiftbow::ID)));
+        // Sword family
+        assert!(registry.contains(&ItemId::new(weapons::sword::arming_sword::ArmingSword::ID)));
+        assert!(registry.contains(&ItemId::new(weapons::sword::greatsword::Greatsword::ID)));
+        // Hammer family
+        assert!(registry.contains(&ItemId::new(weapons::hammer::warhammer::Warhammer::ID)));
+        assert!(registry.contains(&ItemId::new(weapons::hammer::maul::Maul::ID)));
+        // Focus family
+        assert!(registry.contains(&ItemId::new(weapons::focus::arcane_focus::ArcaneFocus::ID)));
+        assert!(registry.contains(&ItemId::new(weapons::focus::primal_focus::PrimalFocus::ID)));
+        // Gauntlets family
+        assert!(registry.contains(&ItemId::new(weapons::gauntlets::battle_gauntlets::BattleGauntlets::ID)));
+        assert!(registry.contains(&ItemId::new(weapons::gauntlets::iron_fists::IronFists::ID)));
+
+        assert_eq!(registry.len(), 16); // 4 non-weapons + 12 weapon variants
     }
 
     #[test]
@@ -74,9 +121,14 @@ mod tests {
     }
 
     #[test]
-    fn default_weapon_families_contains_staff() {
+    fn default_weapon_families_contains_all_families() {
         let registry = default_weapon_families();
         assert!(registry.contains(&crate::items::WeaponFamilyId::new("staff")));
-        assert_eq!(registry.len(), 1);
+        assert!(registry.contains(&crate::items::WeaponFamilyId::new("bow")));
+        assert!(registry.contains(&crate::items::WeaponFamilyId::new("sword")));
+        assert!(registry.contains(&crate::items::WeaponFamilyId::new("hammer")));
+        assert!(registry.contains(&crate::items::WeaponFamilyId::new("focus")));
+        assert!(registry.contains(&crate::items::WeaponFamilyId::new("gauntlets")));
+        assert_eq!(registry.len(), 6); // 1 original + 5 new families
     }
 }

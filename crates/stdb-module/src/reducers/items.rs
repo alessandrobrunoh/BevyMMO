@@ -41,14 +41,10 @@
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use bevymmo_domain::abilities::inscription::{
-    validate_weapon_inscriptions, ArmorInscription, Inscription, SecondaryWord, SlotInscription,
-    WeaponInscription,
-};
+use bevymmo_domain::abilities::inscription::{ArmorInscription, SecondaryWord, SlotInscription, WeaponInscription};
 use bevymmo_domain::abilities::{
     resolve_active_ability, AbilityId, AbilitySlot, AncientWordId, AncientWordRegistry,
-    BaseAbilityRegistry, EssenceId,
-    EssenceRegistry, ModifierId, ModifierRegistry, RootWordId, RootWordRegistry,
+    BaseAbilityRegistry, RootWordId, RootWordRegistry,
 };
 use bevymmo_domain::items::components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY};
 use bevymmo_domain::items::definition::EquipRequirement;
@@ -61,11 +57,11 @@ use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
 use crate::rows::{
     equipment_from_rows, equipment_to_rows, inventory_from_rows, inventory_to_rows,
-    known_ancient_language_from_rows, known_glyphs_from_rows, HotbarRow,
+    known_ancient_language_from_rows, HotbarRow,
 };
 use crate::reducers::lifecycle::caller_character;
 use crate::tables::{
-    equipment, game_entity, hotbar, inventory, known_ancient_language, known_glyphs, player,
+    equipment, game_entity, hotbar, inventory, known_ancient_language, player,
     EntityKindRow, EquipmentTable, Hotbar, InventoryTable,
 };
 
@@ -95,15 +91,6 @@ fn ability_registry() -> &'static BaseAbilityRegistry {
     REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
 }
 
-fn essence_registry() -> &'static EssenceRegistry {
-    static REGISTRY: OnceLock<EssenceRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::content::essences::default_essences)
-}
-
-fn modifier_registry() -> &'static ModifierRegistry {
-    static REGISTRY: OnceLock<ModifierRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::content::modifiers::default_modifiers)
-}
 
 fn ancient_word_registry() -> &'static AncientWordRegistry {
     static REGISTRY: OnceLock<AncientWordRegistry> = OnceLock::new();
@@ -377,81 +364,6 @@ pub fn assign_hotbar_spell(
     Ok(())
 }
 
-/// Inscribes one slot (`"primary"`, `"secondary"`, `"ultimate"`) of the equipped
-/// Eidolon weapon.
-///
-/// Rejects wholesale — never partially — when there is no Eidolon weapon
-/// equipped, when the character does not know one of the requested Glifi, when a
-/// Modificatore or Parola Antica does not match the *selected* gesture's tags,
-/// or when the whole Incisione would exceed the weapon's Capacità Runica. This
-/// is `validate_weapon_inscriptions` doing the work, exactly as in
-/// `handle_update_inscription_requests`; the only thing that moved is where the
-/// registries come from.
-#[reducer]
-pub fn set_inscription(
-    ctx: &ReducerContext,
-    slot: String,
-    essence: Option<String>,
-    modifiers: Vec<String>,
-    ancient_word: Option<String>,
-) -> Result<(), String> {
-    let character_id = caller_character(ctx)?.character_id;
-    let target = parse_ability_slot(&slot)?;
-    let mut equipment = load_equipment(ctx, character_id)?;
-
-    let weapon = equipment
-        .get(EquipSlot::Weapon)
-        .clone()
-        .ok_or_else(|| "no weapon equipped".to_string())?;
-    let item = item_registry()
-        .get(&weapon.item_id)
-        .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let (Some(abilities), Some(profile)) = (crate::sim::spells::ability_loadout_for_item(item.as_ref()), item.rune_profile()) else {
-        return Err(format!(
-            "{:?} is not an Eidolon weapon and cannot be inscribed",
-            weapon.item_id.as_str()
-        ));
-    };
-
-    let candidate_slot = Inscription {
-        essence: essence.map(EssenceId::new),
-        modifiers: modifiers.into_iter().map(ModifierId::new).collect(),
-        ancient_word: ancient_word.map(AncientWordId::new),
-    };
-
-    // The Vocabolario is per character and survives losing the weapon, so it is
-    // checked against `known_glyphs`, not against anything on the item.
-    let known = load_known_glyphs(ctx, character_id)?;
-    if !known.fully_knows(&candidate_slot) {
-        return Err("that Incisione uses a Glifo you do not know".to_string());
-    }
-
-    let mut inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-    *inscriptions.get_mut(target) = candidate_slot;
-
-    // Capacità Runica is shared across the three slots, so the whole set has to
-    // be validated even though only one slot changed.
-    validate_weapon_inscriptions(
-        &inscriptions,
-        abilities,
-        &weapon.ability_selection,
-        profile,
-        ability_registry(),
-        essence_registry(),
-        modifier_registry(),
-        ancient_word_registry(),
-    )
-    .map_err(|reason| format!("Incisione rejected: {reason:?}"))?;
-
-    let mut updated = weapon;
-    updated.inscriptions = Some(inscriptions);
-    *equipment.get_mut(EquipSlot::Weapon) = Some(updated);
-    store_equipment(ctx, character_id, &equipment);
-
-    // Nothing derived changes: an Incisione alters what a gesture manifests, not
-    // the item's passive stat bonuses nor which spells it offers.
-    Ok(())
-}
 
 /// Writes the new RootWord-based inscription for the equipped weapon.
 ///
@@ -695,7 +607,7 @@ pub fn set_ability_selection(
     let item = item_registry()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let (Some(abilities), Some(profile)) = (crate::sim::spells::ability_loadout_for_item(item.as_ref()), item.rune_profile()) else {
+    let Some(abilities) = crate::sim::spells::ability_loadout_for_item(item.as_ref()) else {
         return Err(format!(
             "{:?} offers no gestures to choose from",
             weapon.item_id.as_str()
@@ -713,25 +625,8 @@ pub fn set_ability_selection(
     let mut selection = weapon.ability_selection.clone();
     selection.assign(target, Some(requested));
 
-    let mut inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-    if validate_weapon_inscriptions(
-        &inscriptions,
-        abilities,
-        &selection,
-        profile,
-        ability_registry(),
-        essence_registry(),
-        modifier_registry(),
-        ancient_word_registry(),
-    )
-    .is_err()
-    {
-        *inscriptions.get_mut(target) = Inscription::default();
-    }
-
     let mut updated = weapon;
     updated.ability_selection = selection;
-    updated.inscriptions = Some(inscriptions);
     *equipment.get_mut(EquipSlot::Weapon) = Some(updated);
     store_equipment(ctx, character_id, &equipment);
     Ok(())
@@ -941,17 +836,6 @@ fn store_equipment(ctx: &ReducerContext, character_id: Uuid, equipment: &Equipme
     });
 }
 
-fn load_known_glyphs(
-    ctx: &ReducerContext,
-    character_id: Uuid,
-) -> Result<bevymmo_domain::abilities::KnownGlyphs, String> {
-    ctx.db
-        .known_glyphs()
-        .character_id()
-        .find(&character_id)
-        .map(|row| known_glyphs_from_rows(&row.essences, &row.modifiers, &row.ancient_words))
-        .ok_or_else(|| "no character for this identity; call `join` first".to_string())
-}
 
 // ---------------------------------------------------------------------------
 // Parsing the string parameters

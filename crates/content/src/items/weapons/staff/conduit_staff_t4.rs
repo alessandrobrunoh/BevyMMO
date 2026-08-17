@@ -2,9 +2,9 @@
 
 use bevymmo_props_macro::item;
 
-use crate::ability_definitions::arcane_orb::ArcaneOrb;
-use crate::ability_definitions::astral_nova::AstralNova;
-use crate::ability_definitions::meteor_lance::MeteorLance;
+use crate::ability_definitions::arcane_bolt::ArcaneBolt;
+use crate::ability_definitions::arcane_wave::ArcaneWave;
+use crate::ability_definitions::great_manifestation::GreatManifestation;
 use crate::items::ItemRegistry;
 
 #[item(
@@ -18,11 +18,11 @@ use crate::items::ItemRegistry;
     execution = Charge,
     effects = [stat_bonus(field = AttackPower, op = Add, value = 80.0)],
     abilities(
-        primary = [ArcaneOrb],
-        secondary = [ArcaneOrb],
-        ultimate = [AstralNova, MeteorLance],
+        primary = [ArcaneBolt],
+        secondary = [ArcaneWave],
+        ultimate = [GreatManifestation],
     ),
-    rune_profile(capacity = 12, stability = 0.85, affinity = fuoco),
+    rune_profile(capacity = 12, stability = 0.85),
 )]
 pub struct ConduitStaffT4;
 
@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn transforms_the_base_blueprint_into_charge_execution() {
-        let blueprint = ConduitStaffT4.ability_blueprint(&ArcaneOrb);
+        let blueprint = ConduitStaffT4.ability_blueprint(&ArcaneBolt);
         assert_eq!(blueprint.execution, BlueprintExecution::Charge);
     }
 }

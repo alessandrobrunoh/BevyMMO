@@ -135,6 +135,7 @@ fn build_app(config: &AppConfig) -> App {
     app.insert_resource(bevymmo_content::ability_definitions::default_base_abilities());
 
     app.insert_resource(bevymmo_content::ancient_word_definitions::default_ancient_words());
+    app.insert_resource(bevymmo_content::root_word_definitions::default_root_words());
 
     #[cfg(feature = "client")]
     if config.mode.has_client() {

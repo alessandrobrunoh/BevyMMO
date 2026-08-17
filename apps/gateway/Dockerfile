@@ -47,9 +47,9 @@ COPY --from=builder /usr/src/app/config/ ./config/
 COPY --from=builder /usr/src/app/target/release/gateway /app/gateway
 
 ENV APP_ENV=production
-ENV GATEWAY__BIND_ADDR=0.0.0.0:8001
+ENV GATEWAY__BIND_ADDR=0.0.0.0:8081
 ENV GATEWAY__LOG_FORMAT=json
 
-EXPOSE 8001
+EXPOSE 8081
 
 ENTRYPOINT ["/app/gateway"]

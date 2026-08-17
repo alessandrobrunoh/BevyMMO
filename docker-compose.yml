@@ -8,5 +8,32 @@ services:
     volumes:
       - spacetime_data:/stdb
 
+  gateway:
+    image: ghcr.io/alessandrobrunoh/eivar_backend:${TAG:-0.0.22}
+    build:
+      context: .
+      dockerfile: apps/gateway/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - APP_ENV=production
+      - GATEWAY__BIND_ADDR=0.0.0.0:8001
+      - GATEWAY__LOG_FORMAT=json
+      - SPACETIME_URI=ws://spacetimedb:3000
+    depends_on:
+      - spacetimedb
+
+  frontend:
+    image: ghcr.io/alessandrobrunoh/eivar_frontend:${TAG:-0.0.22}
+    build:
+      context: apps/frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5001:80"
+    depends_on:
+      - gateway
+
 volumes:
   spacetime_data:

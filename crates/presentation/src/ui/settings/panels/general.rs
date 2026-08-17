@@ -80,11 +80,3 @@ pub fn spawn_general_panel(
 
     panel
 }
-
-/// Reflects `GameSettingsResource` onto the panel widgets when values change
-/// outside the UI (e.g. reset to defaults).
-pub fn refresh_general_panel(_settings: Res<GameSettingsResource>, _root: Query<&GeneralRoot>) {
-    // Widgets are stateless and read their own component state; no work needed
-    // today. Hook left in place so future settings (with non-trivial sync)
-    // have a clear extension point.
-}

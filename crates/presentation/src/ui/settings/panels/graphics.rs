@@ -129,8 +129,3 @@ fn available_resolutions(monitors: &Query<&Monitor>) -> Vec<DropdownItem> {
         })
         .collect()
 }
-
-/// Reflects `GameSettingsResource` onto the panel widgets when values change
-/// outside the UI. Currently a no-op: the graphics widgets are stateless and
-/// read their own component state on click.
-pub fn refresh_graphics_panel(_settings: Res<GameSettingsResource>, _root: Query<&GraphicsRoot>) {}

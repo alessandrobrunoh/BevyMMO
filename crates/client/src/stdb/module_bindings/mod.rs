@@ -7,9 +7,16 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod ability_selection_row_type;
+pub mod account_type;
+pub mod active_status_table;
+pub mod active_status_type;
 pub mod aoe_region_table;
 pub mod aoe_region_type;
 pub mod aoe_shape_row_type;
+pub mod aoe_targeting_row_type;
+pub mod armor_cast_reducer;
+pub mod armor_inscription_row_type;
+pub mod award_resonance_xp_reducer;
 pub mod boss_phase_row_type;
 pub mod boss_state_table;
 pub mod boss_state_type;
@@ -20,6 +27,7 @@ pub mod cast_source_row_type;
 pub mod cast_spell_reducer;
 pub mod cast_state_table;
 pub mod cast_state_type;
+pub mod claim_npc_item_reducer;
 pub mod color_row_type;
 pub mod cooldown_table;
 pub mod cooldown_type;
@@ -28,6 +36,12 @@ pub mod crowd_control_table;
 pub mod crowd_control_type;
 pub mod damage_event_row_type;
 pub mod damage_event_table;
+pub mod delete_character_reducer;
+pub mod destroy_item_reducer;
+pub mod effect_payload_filter_row_type;
+pub mod effect_payload_kind_row_type;
+pub mod effect_payload_row_type;
+pub mod effect_payload_selection_row_type;
 pub mod eidolon_cast_reducer;
 pub mod entity_kind_row_type;
 pub mod entity_state_row_type;
@@ -50,11 +64,28 @@ pub mod inventory_table;
 pub mod inventory_table_type;
 pub mod item_instance_row_type;
 pub mod join_reducer;
+pub mod known_ancient_language_table;
+pub mod known_ancient_language_table_type;
 pub mod known_glyphs_table;
 pub mod known_glyphs_table_type;
+pub mod leave_reducer;
+pub mod login_reducer;
+pub mod logout_reducer;
 pub mod modifier_kind_row_type;
 pub mod move_item_reducer;
 pub mod move_to_reducer;
+pub mod party_accept_reducer;
+pub mod party_decline_reducer;
+pub mod party_invite_reducer;
+pub mod party_join_reducer;
+pub mod party_leave_reducer;
+pub mod party_member_row_type;
+pub mod party_member_table;
+pub mod party_request_kind_type;
+pub mod party_request_row_type;
+pub mod party_request_table;
+pub mod party_row_type;
+pub mod party_table;
 pub mod periodic_effect_table;
 pub mod periodic_effect_type;
 pub mod player_message_event_type;
@@ -67,11 +98,23 @@ pub mod projectile_table;
 pub mod projectile_type;
 pub mod prop_override_table;
 pub mod prop_override_type;
+pub mod register_reducer;
 pub mod release_cast_reducer;
+pub mod resonance_table;
+pub mod resonance_type;
 pub mod respawn_reducer;
+pub mod role_row_type;
+pub mod secondary_word_row_type;
+pub mod send_chat_message_reducer;
+pub mod session_table;
+pub mod session_type;
 pub mod set_ability_selection_reducer;
+pub mod set_armor_inscription_reducer;
 pub mod set_hotbar_spell_reducer;
 pub mod set_inscription_reducer;
+pub mod set_resonance_xp_reducer;
+pub mod set_root_inscription_reducer;
+pub mod slot_inscription_row_type;
 pub mod spell_visual_effect_event_type;
 pub mod spell_visual_effect_table;
 pub mod stat_modifier_table;
@@ -85,12 +128,20 @@ pub mod tick_stats_table;
 pub mod tick_stats_type;
 pub mod unequip_item_reducer;
 pub mod vec_3_row_type;
+pub mod weapon_inscription_row_type;
 pub mod weapon_inscriptions_row_type;
 
 pub use ability_selection_row_type::AbilitySelectionRow;
+pub use account_type::Account;
+pub use active_status_table::*;
+pub use active_status_type::ActiveStatus;
 pub use aoe_region_table::*;
 pub use aoe_region_type::AoeRegion;
 pub use aoe_shape_row_type::AoeShapeRow;
+pub use aoe_targeting_row_type::AoeTargetingRow;
+pub use armor_cast_reducer::armor_cast;
+pub use armor_inscription_row_type::ArmorInscriptionRow;
+pub use award_resonance_xp_reducer::award_resonance_xp;
 pub use boss_phase_row_type::BossPhaseRow;
 pub use boss_state_table::*;
 pub use boss_state_type::BossState;
@@ -101,6 +152,7 @@ pub use cast_source_row_type::CastSourceRow;
 pub use cast_spell_reducer::cast_spell;
 pub use cast_state_table::*;
 pub use cast_state_type::CastState;
+pub use claim_npc_item_reducer::claim_npc_item;
 pub use color_row_type::ColorRow;
 pub use cooldown_table::*;
 pub use cooldown_type::Cooldown;
@@ -109,6 +161,12 @@ pub use crowd_control_table::*;
 pub use crowd_control_type::CrowdControl;
 pub use damage_event_row_type::DamageEventRow;
 pub use damage_event_table::*;
+pub use delete_character_reducer::delete_character;
+pub use destroy_item_reducer::destroy_item;
+pub use effect_payload_filter_row_type::EffectPayloadFilterRow;
+pub use effect_payload_kind_row_type::EffectPayloadKindRow;
+pub use effect_payload_row_type::EffectPayloadRow;
+pub use effect_payload_selection_row_type::EffectPayloadSelectionRow;
 pub use eidolon_cast_reducer::eidolon_cast;
 pub use entity_kind_row_type::EntityKindRow;
 pub use entity_state_row_type::EntityStateRow;
@@ -131,11 +189,28 @@ pub use inventory_table::*;
 pub use inventory_table_type::InventoryTable;
 pub use item_instance_row_type::ItemInstanceRow;
 pub use join_reducer::join;
+pub use known_ancient_language_table::*;
+pub use known_ancient_language_table_type::KnownAncientLanguageTable;
 pub use known_glyphs_table::*;
 pub use known_glyphs_table_type::KnownGlyphsTable;
+pub use leave_reducer::leave;
+pub use login_reducer::login;
+pub use logout_reducer::logout;
 pub use modifier_kind_row_type::ModifierKindRow;
 pub use move_item_reducer::move_item;
 pub use move_to_reducer::move_to;
+pub use party_accept_reducer::party_accept;
+pub use party_decline_reducer::party_decline;
+pub use party_invite_reducer::party_invite;
+pub use party_join_reducer::party_join;
+pub use party_leave_reducer::party_leave;
+pub use party_member_row_type::PartyMemberRow;
+pub use party_member_table::*;
+pub use party_request_kind_type::PartyRequestKind;
+pub use party_request_row_type::PartyRequestRow;
+pub use party_request_table::*;
+pub use party_row_type::PartyRow;
+pub use party_table::*;
 pub use periodic_effect_table::*;
 pub use periodic_effect_type::PeriodicEffect;
 pub use player_message_event_type::PlayerMessageEvent;
@@ -148,11 +223,23 @@ pub use projectile_table::*;
 pub use projectile_type::Projectile;
 pub use prop_override_table::*;
 pub use prop_override_type::PropOverride;
+pub use register_reducer::register;
 pub use release_cast_reducer::release_cast;
+pub use resonance_table::*;
+pub use resonance_type::Resonance;
 pub use respawn_reducer::respawn;
+pub use role_row_type::RoleRow;
+pub use secondary_word_row_type::SecondaryWordRow;
+pub use send_chat_message_reducer::send_chat_message;
+pub use session_table::*;
+pub use session_type::Session;
 pub use set_ability_selection_reducer::set_ability_selection;
+pub use set_armor_inscription_reducer::set_armor_inscription;
 pub use set_hotbar_spell_reducer::set_hotbar_spell;
 pub use set_inscription_reducer::set_inscription;
+pub use set_resonance_xp_reducer::set_resonance_xp;
+pub use set_root_inscription_reducer::set_root_inscription;
+pub use slot_inscription_row_type::SlotInscriptionRow;
 pub use spell_visual_effect_event_type::SpellVisualEffectEvent;
 pub use spell_visual_effect_table::*;
 pub use stat_modifier_table::*;
@@ -166,6 +253,7 @@ pub use tick_stats_table::*;
 pub use tick_stats_type::TickStats;
 pub use unequip_item_reducer::unequip_item;
 pub use vec_3_row_type::Vec3Row;
+pub use weapon_inscription_row_type::WeaponInscriptionRow;
 pub use weapon_inscriptions_row_type::WeaponInscriptionsRow;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -176,10 +264,30 @@ pub use weapon_inscriptions_row_type::WeaponInscriptionsRow;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
+    ArmorCast {
+        armor_slot: String,
+        ability_slot: String,
+        target_entity: Option<u64>,
+        target_position: Option<Vec3Row>,
+    },
+    AwardResonanceXp {
+        root_word_id: String,
+        xp_amount: u64,
+    },
     CastSpell {
         spell_id: String,
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
+    },
+    ClaimNpcItem {
+        npc_entity_id: u64,
+        item_id: String,
+    },
+    DeleteCharacter {
+        character_id: __sdk::Uuid,
+    },
+    DestroyItem {
+        instance_id: u64,
     },
     EidolonCast {
         slot: String,
@@ -206,6 +314,12 @@ pub enum Reducer {
     Join {
         display_name: String,
     },
+    Leave,
+    Login {
+        email: String,
+        password: String,
+    },
+    Logout,
     MoveItem {
         from: u8,
         to: u8,
@@ -215,13 +329,38 @@ pub enum Reducer {
         y: f32,
         z: f32,
     },
+    PartyAccept {
+        name: String,
+    },
+    PartyDecline {
+        name: String,
+    },
+    PartyInvite {
+        target_name: String,
+    },
+    PartyJoin {
+        leader_name: String,
+    },
+    PartyLeave,
+    Register {
+        email: String,
+        password: String,
+    },
     ReleaseCast {
         spell_id: String,
     },
     Respawn,
+    SendChatMessage {
+        text: String,
+    },
     SetAbilitySelection {
         slot: String,
         ability_id: String,
+    },
+    SetArmorInscription {
+        slot: String,
+        root_word: Option<String>,
+        secondary_words: Vec<String>,
     },
     SetHotbarSpell {
         slot: String,
@@ -232,6 +371,17 @@ pub enum Reducer {
         essence: Option<String>,
         modifiers: Vec<String>,
         ancient_word: Option<String>,
+    },
+    SetResonanceXp {
+        root_word_id: String,
+        xp: u64,
+        level: u32,
+    },
+    SetRootInscription {
+        root_word: Option<String>,
+        primary_words: Vec<String>,
+        secondary_words: Vec<String>,
+        ultimate_words: Vec<String>,
     },
     Stop,
     UnequipItem {
@@ -246,7 +396,12 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
+            Reducer::ArmorCast { .. } => "armor_cast",
+            Reducer::AwardResonanceXp { .. } => "award_resonance_xp",
             Reducer::CastSpell { .. } => "cast_spell",
+            Reducer::ClaimNpcItem { .. } => "claim_npc_item",
+            Reducer::DeleteCharacter { .. } => "delete_character",
+            Reducer::DestroyItem { .. } => "destroy_item",
             Reducer::EidolonCast { .. } => "eidolon_cast",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::GmClearPropOverride { .. } => "gm_clear_prop_override",
@@ -254,13 +409,26 @@ impl __sdk::Reducer for Reducer {
             Reducer::GmSetPropOverride { .. } => "gm_set_prop_override",
             Reducer::Heartbeat => "heartbeat",
             Reducer::Join { .. } => "join",
+            Reducer::Leave => "leave",
+            Reducer::Login { .. } => "login",
+            Reducer::Logout => "logout",
             Reducer::MoveItem { .. } => "move_item",
             Reducer::MoveTo { .. } => "move_to",
+            Reducer::PartyAccept { .. } => "party_accept",
+            Reducer::PartyDecline { .. } => "party_decline",
+            Reducer::PartyInvite { .. } => "party_invite",
+            Reducer::PartyJoin { .. } => "party_join",
+            Reducer::PartyLeave => "party_leave",
+            Reducer::Register { .. } => "register",
             Reducer::ReleaseCast { .. } => "release_cast",
             Reducer::Respawn => "respawn",
+            Reducer::SendChatMessage { .. } => "send_chat_message",
             Reducer::SetAbilitySelection { .. } => "set_ability_selection",
+            Reducer::SetArmorInscription { .. } => "set_armor_inscription",
             Reducer::SetHotbarSpell { .. } => "set_hotbar_spell",
             Reducer::SetInscription { .. } => "set_inscription",
+            Reducer::SetResonanceXp { .. } => "set_resonance_xp",
+            Reducer::SetRootInscription { .. } => "set_root_inscription",
             Reducer::Stop => "stop",
             Reducer::UnequipItem { .. } => "unequip_item",
             _ => unreachable!(),
@@ -269,6 +437,24 @@ impl __sdk::Reducer for Reducer {
     #[allow(clippy::clone_on_copy)]
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
+            Reducer::ArmorCast {
+                armor_slot,
+                ability_slot,
+                target_entity,
+                target_position,
+            } => __sats::bsatn::to_vec(&armor_cast_reducer::ArmorCastArgs {
+                armor_slot: armor_slot.clone(),
+                ability_slot: ability_slot.clone(),
+                target_entity: target_entity.clone(),
+                target_position: target_position.clone(),
+            }),
+            Reducer::AwardResonanceXp {
+                root_word_id,
+                xp_amount,
+            } => __sats::bsatn::to_vec(&award_resonance_xp_reducer::AwardResonanceXpArgs {
+                root_word_id: root_word_id.clone(),
+                xp_amount: xp_amount.clone(),
+            }),
             Reducer::CastSpell {
                 spell_id,
                 target_entity,
@@ -278,6 +464,23 @@ impl __sdk::Reducer for Reducer {
                 target_entity: target_entity.clone(),
                 target_position: target_position.clone(),
             }),
+            Reducer::ClaimNpcItem {
+                npc_entity_id,
+                item_id,
+            } => __sats::bsatn::to_vec(&claim_npc_item_reducer::ClaimNpcItemArgs {
+                npc_entity_id: npc_entity_id.clone(),
+                item_id: item_id.clone(),
+            }),
+            Reducer::DeleteCharacter { character_id } => {
+                __sats::bsatn::to_vec(&delete_character_reducer::DeleteCharacterArgs {
+                    character_id: character_id.clone(),
+                })
+            }
+            Reducer::DestroyItem { instance_id } => {
+                __sats::bsatn::to_vec(&destroy_item_reducer::DestroyItemArgs {
+                    instance_id: instance_id.clone(),
+                })
+            }
             Reducer::EidolonCast {
                 slot,
                 target_entity,
@@ -320,6 +523,14 @@ impl __sdk::Reducer for Reducer {
             Reducer::Join { display_name } => __sats::bsatn::to_vec(&join_reducer::JoinArgs {
                 display_name: display_name.clone(),
             }),
+            Reducer::Leave => __sats::bsatn::to_vec(&leave_reducer::LeaveArgs {}),
+            Reducer::Login { email, password } => {
+                __sats::bsatn::to_vec(&login_reducer::LoginArgs {
+                    email: email.clone(),
+                    password: password.clone(),
+                })
+            }
+            Reducer::Logout => __sats::bsatn::to_vec(&logout_reducer::LogoutArgs {}),
             Reducer::MoveItem { from, to } => {
                 __sats::bsatn::to_vec(&move_item_reducer::MoveItemArgs {
                     from: from.clone(),
@@ -331,18 +542,57 @@ impl __sdk::Reducer for Reducer {
                 y: y.clone(),
                 z: z.clone(),
             }),
+            Reducer::PartyAccept { name } => {
+                __sats::bsatn::to_vec(&party_accept_reducer::PartyAcceptArgs { name: name.clone() })
+            }
+            Reducer::PartyDecline { name } => {
+                __sats::bsatn::to_vec(&party_decline_reducer::PartyDeclineArgs {
+                    name: name.clone(),
+                })
+            }
+            Reducer::PartyInvite { target_name } => {
+                __sats::bsatn::to_vec(&party_invite_reducer::PartyInviteArgs {
+                    target_name: target_name.clone(),
+                })
+            }
+            Reducer::PartyJoin { leader_name } => {
+                __sats::bsatn::to_vec(&party_join_reducer::PartyJoinArgs {
+                    leader_name: leader_name.clone(),
+                })
+            }
+            Reducer::PartyLeave => __sats::bsatn::to_vec(&party_leave_reducer::PartyLeaveArgs {}),
+            Reducer::Register { email, password } => {
+                __sats::bsatn::to_vec(&register_reducer::RegisterArgs {
+                    email: email.clone(),
+                    password: password.clone(),
+                })
+            }
             Reducer::ReleaseCast { spell_id } => {
                 __sats::bsatn::to_vec(&release_cast_reducer::ReleaseCastArgs {
                     spell_id: spell_id.clone(),
                 })
             }
             Reducer::Respawn => __sats::bsatn::to_vec(&respawn_reducer::RespawnArgs {}),
+            Reducer::SendChatMessage { text } => {
+                __sats::bsatn::to_vec(&send_chat_message_reducer::SendChatMessageArgs {
+                    text: text.clone(),
+                })
+            }
             Reducer::SetAbilitySelection { slot, ability_id } => {
                 __sats::bsatn::to_vec(&set_ability_selection_reducer::SetAbilitySelectionArgs {
                     slot: slot.clone(),
                     ability_id: ability_id.clone(),
                 })
             }
+            Reducer::SetArmorInscription {
+                slot,
+                root_word,
+                secondary_words,
+            } => __sats::bsatn::to_vec(&set_armor_inscription_reducer::SetArmorInscriptionArgs {
+                slot: slot.clone(),
+                root_word: root_word.clone(),
+                secondary_words: secondary_words.clone(),
+            }),
             Reducer::SetHotbarSpell { slot, spell_id } => {
                 __sats::bsatn::to_vec(&set_hotbar_spell_reducer::SetHotbarSpellArgs {
                     slot: slot.clone(),
@@ -360,6 +610,26 @@ impl __sdk::Reducer for Reducer {
                 modifiers: modifiers.clone(),
                 ancient_word: ancient_word.clone(),
             }),
+            Reducer::SetResonanceXp {
+                root_word_id,
+                xp,
+                level,
+            } => __sats::bsatn::to_vec(&set_resonance_xp_reducer::SetResonanceXpArgs {
+                root_word_id: root_word_id.clone(),
+                xp: xp.clone(),
+                level: level.clone(),
+            }),
+            Reducer::SetRootInscription {
+                root_word,
+                primary_words,
+                secondary_words,
+                ultimate_words,
+            } => __sats::bsatn::to_vec(&set_root_inscription_reducer::SetRootInscriptionArgs {
+                root_word: root_word.clone(),
+                primary_words: primary_words.clone(),
+                secondary_words: secondary_words.clone(),
+                ultimate_words: ultimate_words.clone(),
+            }),
             Reducer::Stop => __sats::bsatn::to_vec(&stop_reducer::StopArgs {}),
             Reducer::UnequipItem { slot } => {
                 __sats::bsatn::to_vec(&unequip_item_reducer::UnequipItemArgs { slot: slot.clone() })
@@ -373,6 +643,7 @@ impl __sdk::Reducer for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
+    active_status: __sdk::TableUpdate<ActiveStatus>,
     aoe_region: __sdk::TableUpdate<AoeRegion>,
     boss_state: __sdk::TableUpdate<BossState>,
     cast_ended: __sdk::TableUpdate<CastEndedEvent>,
@@ -385,13 +656,19 @@ pub struct DbUpdate {
     game_entity: __sdk::TableUpdate<GameEntity>,
     hotbar: __sdk::TableUpdate<Hotbar>,
     inventory: __sdk::TableUpdate<InventoryTable>,
+    known_ancient_language: __sdk::TableUpdate<KnownAncientLanguageTable>,
     known_glyphs: __sdk::TableUpdate<KnownGlyphsTable>,
+    party: __sdk::TableUpdate<PartyRow>,
+    party_member: __sdk::TableUpdate<PartyMemberRow>,
+    party_request: __sdk::TableUpdate<PartyRequestRow>,
     periodic_effect: __sdk::TableUpdate<PeriodicEffect>,
     player: __sdk::TableUpdate<Player>,
     player_message: __sdk::TableUpdate<PlayerMessageEvent>,
     player_stats: __sdk::TableUpdate<PlayerStats>,
     projectile: __sdk::TableUpdate<Projectile>,
     prop_override: __sdk::TableUpdate<PropOverride>,
+    resonance: __sdk::TableUpdate<Resonance>,
+    session: __sdk::TableUpdate<Session>,
     spell_visual_effect: __sdk::TableUpdate<SpellVisualEffectEvent>,
     stat_modifier: __sdk::TableUpdate<StatModifier>,
     threat: __sdk::TableUpdate<Threat>,
@@ -404,6 +681,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
+                "active_status" => db_update
+                    .active_status
+                    .append(active_status_table::parse_table_update(table_update)?),
                 "aoe_region" => db_update
                     .aoe_region
                     .append(aoe_region_table::parse_table_update(table_update)?),
@@ -440,9 +720,21 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "inventory" => db_update
                     .inventory
                     .append(inventory_table::parse_table_update(table_update)?),
+                "known_ancient_language" => db_update.known_ancient_language.append(
+                    known_ancient_language_table::parse_table_update(table_update)?,
+                ),
                 "known_glyphs" => db_update
                     .known_glyphs
                     .append(known_glyphs_table::parse_table_update(table_update)?),
+                "party" => db_update
+                    .party
+                    .append(party_table::parse_table_update(table_update)?),
+                "party_member" => db_update
+                    .party_member
+                    .append(party_member_table::parse_table_update(table_update)?),
+                "party_request" => db_update
+                    .party_request
+                    .append(party_request_table::parse_table_update(table_update)?),
                 "periodic_effect" => db_update
                     .periodic_effect
                     .append(periodic_effect_table::parse_table_update(table_update)?),
@@ -461,6 +753,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "prop_override" => db_update
                     .prop_override
                     .append(prop_override_table::parse_table_update(table_update)?),
+                "resonance" => db_update
+                    .resonance
+                    .append(resonance_table::parse_table_update(table_update)?),
+                "session" => db_update
+                    .session
+                    .append(session_table::parse_table_update(table_update)?),
                 "spell_visual_effect" => db_update
                     .spell_visual_effect
                     .append(spell_visual_effect_table::parse_table_update(table_update)?),
@@ -499,6 +797,9 @@ impl __sdk::DbUpdate for DbUpdate {
     ) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.active_status = cache
+            .apply_diff_to_table::<ActiveStatus>("active_status", &self.active_status)
+            .with_updates_by_pk(|row| &row.id);
         diff.aoe_region = cache
             .apply_diff_to_table::<AoeRegion>("aoe_region", &self.aoe_region)
             .with_updates_by_pk(|row| &row.id);
@@ -521,35 +822,56 @@ impl __sdk::DbUpdate for DbUpdate {
             .with_updates_by_pk(|row| &row.entity_id);
         diff.equipment = cache
             .apply_diff_to_table::<EquipmentTable>("equipment", &self.equipment)
-            .with_updates_by_pk(|row| &row.identity);
+            .with_updates_by_pk(|row| &row.character_id);
         diff.game_entity = cache
             .apply_diff_to_table::<GameEntity>("game_entity", &self.game_entity)
             .with_updates_by_pk(|row| &row.entity_id);
         diff.hotbar = cache
             .apply_diff_to_table::<Hotbar>("hotbar", &self.hotbar)
-            .with_updates_by_pk(|row| &row.identity);
+            .with_updates_by_pk(|row| &row.character_id);
         diff.inventory = cache
             .apply_diff_to_table::<InventoryTable>("inventory", &self.inventory)
-            .with_updates_by_pk(|row| &row.identity);
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.known_ancient_language = cache
+            .apply_diff_to_table::<KnownAncientLanguageTable>(
+                "known_ancient_language",
+                &self.known_ancient_language,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
         diff.known_glyphs = cache
             .apply_diff_to_table::<KnownGlyphsTable>("known_glyphs", &self.known_glyphs)
-            .with_updates_by_pk(|row| &row.identity);
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.party = cache
+            .apply_diff_to_table::<PartyRow>("party", &self.party)
+            .with_updates_by_pk(|row| &row.party_id);
+        diff.party_member = cache
+            .apply_diff_to_table::<PartyMemberRow>("party_member", &self.party_member)
+            .with_updates_by_pk(|row| &row.character_id);
+        diff.party_request = cache
+            .apply_diff_to_table::<PartyRequestRow>("party_request", &self.party_request)
+            .with_updates_by_pk(|row| &row.request_id);
         diff.periodic_effect = cache
             .apply_diff_to_table::<PeriodicEffect>("periodic_effect", &self.periodic_effect)
             .with_updates_by_pk(|row| &row.id);
         diff.player = cache
             .apply_diff_to_table::<Player>("player", &self.player)
-            .with_updates_by_pk(|row| &row.identity);
+            .with_updates_by_pk(|row| &row.character_id);
         diff.player_message = self.player_message.into_event_diff();
         diff.player_stats = cache
             .apply_diff_to_table::<PlayerStats>("player_stats", &self.player_stats)
-            .with_updates_by_pk(|row| &row.identity);
+            .with_updates_by_pk(|row| &row.character_id);
         diff.projectile = cache
             .apply_diff_to_table::<Projectile>("projectile", &self.projectile)
             .with_updates_by_pk(|row| &row.id);
         diff.prop_override = cache
             .apply_diff_to_table::<PropOverride>("prop_override", &self.prop_override)
             .with_updates_by_pk(|row| &row.id);
+        diff.resonance = cache
+            .apply_diff_to_table::<Resonance>("resonance", &self.resonance)
+            .with_updates_by_pk(|row| &row.id);
+        diff.session = cache
+            .apply_diff_to_table::<Session>("session", &self.session)
+            .with_updates_by_pk(|row| &row.identity);
         diff.spell_visual_effect = self.spell_visual_effect.into_event_diff();
         diff.stat_modifier = cache
             .apply_diff_to_table::<StatModifier>("stat_modifier", &self.stat_modifier)
@@ -567,6 +889,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "active_status" => db_update
+                    .active_status
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "aoe_region" => db_update
                     .aoe_region
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -603,8 +928,20 @@ impl __sdk::DbUpdate for DbUpdate {
                 "inventory" => db_update
                     .inventory
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "known_ancient_language" => db_update
+                    .known_ancient_language
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "known_glyphs" => db_update
                     .known_glyphs
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party" => db_update
+                    .party
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_member" => db_update
+                    .party_member
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_request" => db_update
+                    .party_request
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "periodic_effect" => db_update
                     .periodic_effect
@@ -623,6 +960,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "prop_override" => db_update
                     .prop_override
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "resonance" => db_update
+                    .resonance
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "session" => db_update
+                    .session
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "spell_visual_effect" => db_update
                     .spell_visual_effect
@@ -649,6 +992,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "active_status" => db_update
+                    .active_status
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "aoe_region" => db_update
                     .aoe_region
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -685,8 +1031,20 @@ impl __sdk::DbUpdate for DbUpdate {
                 "inventory" => db_update
                     .inventory
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "known_ancient_language" => db_update
+                    .known_ancient_language
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "known_glyphs" => db_update
                     .known_glyphs
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party" => db_update
+                    .party
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_member" => db_update
+                    .party_member
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_request" => db_update
+                    .party_request
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "periodic_effect" => db_update
                     .periodic_effect
@@ -705,6 +1063,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "prop_override" => db_update
                     .prop_override
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "resonance" => db_update
+                    .resonance
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "session" => db_update
+                    .session
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "spell_visual_effect" => db_update
                     .spell_visual_effect
@@ -733,6 +1097,7 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
+    active_status: __sdk::TableAppliedDiff<'r, ActiveStatus>,
     aoe_region: __sdk::TableAppliedDiff<'r, AoeRegion>,
     boss_state: __sdk::TableAppliedDiff<'r, BossState>,
     cast_ended: __sdk::TableAppliedDiff<'r, CastEndedEvent>,
@@ -745,13 +1110,19 @@ pub struct AppliedDiff<'r> {
     game_entity: __sdk::TableAppliedDiff<'r, GameEntity>,
     hotbar: __sdk::TableAppliedDiff<'r, Hotbar>,
     inventory: __sdk::TableAppliedDiff<'r, InventoryTable>,
+    known_ancient_language: __sdk::TableAppliedDiff<'r, KnownAncientLanguageTable>,
     known_glyphs: __sdk::TableAppliedDiff<'r, KnownGlyphsTable>,
+    party: __sdk::TableAppliedDiff<'r, PartyRow>,
+    party_member: __sdk::TableAppliedDiff<'r, PartyMemberRow>,
+    party_request: __sdk::TableAppliedDiff<'r, PartyRequestRow>,
     periodic_effect: __sdk::TableAppliedDiff<'r, PeriodicEffect>,
     player: __sdk::TableAppliedDiff<'r, Player>,
     player_message: __sdk::TableAppliedDiff<'r, PlayerMessageEvent>,
     player_stats: __sdk::TableAppliedDiff<'r, PlayerStats>,
     projectile: __sdk::TableAppliedDiff<'r, Projectile>,
     prop_override: __sdk::TableAppliedDiff<'r, PropOverride>,
+    resonance: __sdk::TableAppliedDiff<'r, Resonance>,
+    session: __sdk::TableAppliedDiff<'r, Session>,
     spell_visual_effect: __sdk::TableAppliedDiff<'r, SpellVisualEffectEvent>,
     stat_modifier: __sdk::TableAppliedDiff<'r, StatModifier>,
     threat: __sdk::TableAppliedDiff<'r, Threat>,
@@ -769,6 +1140,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         event: &EventContext,
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
+        callbacks.invoke_table_row_callbacks::<ActiveStatus>(
+            "active_status",
+            &self.active_status,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<AoeRegion>("aoe_region", &self.aoe_region, event);
         callbacks.invoke_table_row_callbacks::<BossState>("boss_state", &self.boss_state, event);
         callbacks.invoke_table_row_callbacks::<CastEndedEvent>(
@@ -797,9 +1173,25 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<GameEntity>("game_entity", &self.game_entity, event);
         callbacks.invoke_table_row_callbacks::<Hotbar>("hotbar", &self.hotbar, event);
         callbacks.invoke_table_row_callbacks::<InventoryTable>("inventory", &self.inventory, event);
+        callbacks.invoke_table_row_callbacks::<KnownAncientLanguageTable>(
+            "known_ancient_language",
+            &self.known_ancient_language,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<KnownGlyphsTable>(
             "known_glyphs",
             &self.known_glyphs,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<PartyRow>("party", &self.party, event);
+        callbacks.invoke_table_row_callbacks::<PartyMemberRow>(
+            "party_member",
+            &self.party_member,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<PartyRequestRow>(
+            "party_request",
+            &self.party_request,
             event,
         );
         callbacks.invoke_table_row_callbacks::<PeriodicEffect>(
@@ -824,6 +1216,8 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.prop_override,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<Resonance>("resonance", &self.resonance, event);
+        callbacks.invoke_table_row_callbacks::<Session>("session", &self.session, event);
         callbacks.invoke_table_row_callbacks::<SpellVisualEffectEvent>(
             "spell_visual_effect",
             &self.spell_visual_effect,
@@ -1496,6 +1890,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        active_status_table::register_table(client_cache);
         aoe_region_table::register_table(client_cache);
         boss_state_table::register_table(client_cache);
         cast_ended_table::register_table(client_cache);
@@ -1508,19 +1903,26 @@ impl __sdk::SpacetimeModule for RemoteModule {
         game_entity_table::register_table(client_cache);
         hotbar_table::register_table(client_cache);
         inventory_table::register_table(client_cache);
+        known_ancient_language_table::register_table(client_cache);
         known_glyphs_table::register_table(client_cache);
+        party_table::register_table(client_cache);
+        party_member_table::register_table(client_cache);
+        party_request_table::register_table(client_cache);
         periodic_effect_table::register_table(client_cache);
         player_table::register_table(client_cache);
         player_message_table::register_table(client_cache);
         player_stats_table::register_table(client_cache);
         projectile_table::register_table(client_cache);
         prop_override_table::register_table(client_cache);
+        resonance_table::register_table(client_cache);
+        session_table::register_table(client_cache);
         spell_visual_effect_table::register_table(client_cache);
         stat_modifier_table::register_table(client_cache);
         threat_table::register_table(client_cache);
         tick_stats_table::register_table(client_cache);
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
+        "active_status",
         "aoe_region",
         "boss_state",
         "cast_ended",
@@ -1533,13 +1935,19 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "game_entity",
         "hotbar",
         "inventory",
+        "known_ancient_language",
         "known_glyphs",
+        "party",
+        "party_member",
+        "party_request",
         "periodic_effect",
         "player",
         "player_message",
         "player_stats",
         "projectile",
         "prop_override",
+        "resonance",
+        "session",
         "spell_visual_effect",
         "stat_modifier",
         "threat",

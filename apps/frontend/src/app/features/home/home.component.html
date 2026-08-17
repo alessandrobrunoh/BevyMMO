@@ -1,0 +1,411 @@
+<!-- =======================================================
+     HERO SECTION
+     ======================================================= -->
+<section class="hero" id="home">
+  <div class="hero-art-layer" style="background-image: url('assets/images/hero-cover.png');"></div>
+
+  <div class="container">
+    <div class="hero-content">
+      <!-- Official Vector Brand Logo in Hero -->
+      <div class="hero-logo-wrapper">
+        <img
+          src="assets/branding/eivar-online-logo-vector.svg"
+          alt="Eivar Online"
+          class="hero-brand-logo"
+        />
+      </div>
+
+      <!-- Tagline -->
+      <div class="hero-tagline">
+        FORGE YOUR WEAPON.<br />
+        SHAPE ITS MAGIC.<br />
+        WRITE YOUR LEGEND.
+      </div>
+
+      <!-- Hero Action Buttons -->
+      <div class="hero-cta-group">
+        <!-- Primary: Discover Eivar (Radiant Gilded Gold) -->
+        <button class="hero-btn hero-btn-discover" (click)="scrollToSection('world')">
+          <span class="btn-shimmer"></span>
+          <span class="btn-rune-spark">✦</span>
+          <span class="btn-text">Discover Eivar</span>
+        </button>
+
+        <span class="hero-cta-sep">◈</span>
+
+        <!-- Secondary: Latest News (Arcane Celestial Blue) -->
+        <a routerLink="/news" class="hero-news-link">
+          <button class="hero-btn hero-btn-news">
+            <span class="btn-shimmer"></span>
+            <span class="btn-text">Latest News</span>
+            <span class="btn-arrow">→</span>
+          </button>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Scroll Rune Indicator -->
+  <button class="scroll-rune" (click)="scrollToSection('world')" aria-label="Scroll down">
+    ◇
+  </button>
+</section>
+
+<!-- =======================================================
+     MAIN PARCHMENT CONTAINER
+     Contains: A World Written in Ancient Words, Runic System & Latest News
+     ======================================================= -->
+<div class="parchment-world-wrapper" id="world">
+  <div class="container">
+    <!-- Big Stone & Parchment Manuscript Plate with Ornate Filigree -->
+    <div class="parchment-plate">
+      <!-- Ornamental Corner Brackets -->
+      <img src="assets/images/corner-flourish.svg" alt="" class="plate-corner corner-tl" />
+      <img src="assets/images/corner-flourish.svg" alt="" class="plate-corner corner-tr" />
+      <img src="assets/images/corner-flourish.svg" alt="" class="plate-corner corner-bl" />
+      <img src="assets/images/corner-flourish.svg" alt="" class="plate-corner corner-br" />
+
+      <!-- ===================================================
+           1. WORLD & PILLARS
+           =================================================== -->
+      <section class="world-section-inner">
+        <header class="section-heading">
+          <div class="flourish-divider-wrap">
+            <img src="assets/images/rune-divider-flourish.svg" alt="" class="heading-flourish-svg" />
+          </div>
+
+          <h2>
+            A World Written in Ancient Words
+          </h2>
+
+          <p>
+            Across floating isles and vast continents, ancient forces stir. From verdant valleys to
+            forgotten ruins, every stone and sigil holds a story—yours to shape.
+          </p>
+        </header>
+
+        <div class="pillar-grid">
+          <!-- Explore -->
+          <article class="pillar-card">
+            <div class="pillar-image-frame">
+              <img src="assets/images/world-exploration.jpg" alt="Explore vast landscapes in Eivar" />
+            </div>
+            <div class="pillar-badge-wrap">
+              <img src="assets/images/pillar-badge-explore.svg" alt="Explore Badge" class="pillar-badge-svg" />
+            </div>
+            <div class="pillar-content">
+              <h3>Explore</h3>
+              <p>
+                Vast lands, hidden secrets, and towering wonders await the brave.
+              </p>
+            </div>
+          </article>
+
+          <!-- Forge -->
+          <article class="pillar-card">
+            <div class="pillar-image-frame">
+              <img src="assets/images/channeling-staff.jpg" alt="Weapon forge artistry" />
+            </div>
+            <div class="pillar-badge-wrap">
+              <img src="assets/images/pillar-badge-forge.svg" alt="Forge Badge" class="pillar-badge-svg" />
+            </div>
+            <div class="pillar-content">
+              <h3>Forge</h3>
+              <p>
+                Craft powerful weapons and channel the elements with ancient artistry.
+              </p>
+            </div>
+          </article>
+
+          <!-- Inscribe -->
+          <article class="pillar-card">
+            <div class="pillar-image-frame">
+              <img src="assets/images/runic-camp.jpg" alt="Ancient runic sigils" />
+            </div>
+            <div class="pillar-badge-wrap">
+              <img src="assets/images/pillar-badge-inscribe.svg" alt="Inscribe Badge" class="pillar-badge-svg" />
+            </div>
+            <div class="pillar-content">
+              <h3>Inscribe</h3>
+              <p>
+                Inscribe runes and words to shape abilities and unleash your vision.
+              </p>
+            </div>
+          </article>
+
+          <!-- Conquer -->
+          <article class="pillar-card">
+            <div class="pillar-image-frame">
+              <img src="assets/images/ancient-citadel.jpg" alt="Citadel fortress battle" />
+            </div>
+            <div class="pillar-badge-wrap">
+              <img src="assets/images/pillar-badge-conquer.svg" alt="Conquer Badge" class="pillar-badge-svg" />
+            </div>
+            <div class="pillar-content">
+              <h3>Conquer</h3>
+              <p>
+                Guilds rise, fortresses fall. Write your legend in the age of Eivar.
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ===================================================
+           2. RUNIC WEAPON SYSTEM
+           =================================================== -->
+      <section class="runic-wrap" id="runes">
+        <div class="runic-panel">
+          <!-- Corner Filigree for Runic Panel -->
+          <img src="assets/images/corner-flourish.svg" alt="" class="panel-corner corner-tl" />
+          <img src="assets/images/corner-flourish.svg" alt="" class="panel-corner corner-tr" />
+          <img src="assets/images/corner-flourish.svg" alt="" class="panel-corner corner-bl" />
+          <img src="assets/images/corner-flourish.svg" alt="" class="panel-corner corner-br" />
+
+          <div class="runic-title-row">
+            <h2>The Runic Weapon System</h2>
+            <p>
+              Every weapon is a canvas. Combine Essences, Modifiers, and Ancient Words to create limitless possibilities.
+            </p>
+          </div>
+
+          <div class="runic-layout">
+            <!-- Weapon Visualization -->
+            <div class="weapon-orbit">
+              <div class="weapon-icon-center">
+                <svg viewBox="0 0 100 100" class="staff-svg" fill="none">
+                  <line x1="25" y1="85" x2="75" y2="15" stroke="#d5a848" stroke-width="4" stroke-linecap="round"/>
+                  <polygon points="75,15 65,22 82,32" fill="#3ccbff"/>
+                  <circle cx="75" cy="15" r="7" fill="#69e0ff" filter="drop-shadow(0 0 10px #3ccbff)"/>
+                  <circle cx="25" cy="85" r="4" fill="#d5a848"/>
+                </svg>
+              </div>
+
+              <span class="orbit-node node-top">ᚠ</span>
+              <span class="orbit-node node-right">ᛉ</span>
+              <span class="orbit-node node-bottom">ᛇ</span>
+              <span class="orbit-node node-left">ᚱ</span>
+            </div>
+
+            <!-- Ability Configuration Rows -->
+            <div class="abilities-table-side">
+              <div class="weapon-heading">
+                <span>Weapon</span>
+                <strong>Channeling Staff</strong>
+              </div>
+
+              <!-- Q Ability Row -->
+              <div class="ability">
+                <div class="key">
+                  <span>Q</span>
+                </div>
+
+                <div class="ability-glyph-icon">
+                  <img src="assets/images/ability-arcane-orb.svg" alt="Arcane Orb" class="ability-svg-img" />
+                </div>
+
+                <div class="ability-main">
+                  <strong>Arcane Orb</strong>
+                </div>
+
+                <div class="ability-stat">
+                  <small>Essence</small>
+                  Fire
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Expand
+                </div>
+
+                <div class="ability-stat"></div>
+                <div class="ability-stat"></div>
+              </div>
+
+              <!-- W Ability Row -->
+              <div class="ability">
+                <div class="key">
+                  <span>W</span>
+                </div>
+
+                <div class="ability-glyph-icon">
+                  <img src="assets/images/ability-barrier.svg" alt="Barrier" class="ability-svg-img" />
+                </div>
+
+                <div class="ability-main">
+                  <strong>Barrier</strong>
+                </div>
+
+                <div class="ability-stat">
+                  <small>Essence</small>
+                  Life
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Persistence
+                </div>
+
+                <div class="ability-stat"></div>
+                <div class="ability-stat"></div>
+              </div>
+
+              <!-- E Ability Row -->
+              <div class="ability">
+                <div class="key">
+                  <span>E</span>
+                </div>
+
+                <div class="ability-glyph-icon">
+                  <img src="assets/images/ability-great-impact.svg" alt="Great Impact" class="ability-svg-img" />
+                </div>
+
+                <div class="ability-main">
+                  <strong>Great Impact</strong>
+                </div>
+
+                <div class="ability-stat">
+                  <small>Essence</small>
+                  Life
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Expand
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Persistence
+                </div>
+
+                <div class="ability-stat ancient-word">
+                  <small>Ancient Word</small>
+                  Echo
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================
+           3. LATEST NEWS SECTION
+           =================================================== -->
+      <section class="news-section-inner" id="news">
+        <header class="section-heading">
+          <div class="flourish-divider-wrap">
+            <img src="assets/images/rune-divider-flourish.svg" alt="" class="heading-flourish-svg" />
+          </div>
+          <h2>Latest News</h2>
+        </header>
+
+        <div class="news-grid">
+          <!-- Featured Card -->
+          <article class="news-card news-featured" [routerLink]="['/news', featuredNews()?.slug || 'alpha-development-the-journey-begins']">
+            <div class="news-image-frame featured">
+              <img [src]="featuredNews()?.image || 'assets/images/world-exploration.jpg'" [alt]="featuredNews()?.title" />
+              <div class="news-badge-label">Featured</div>
+            </div>
+            <div class="news-content">
+              <div class="news-meta">
+                {{ featuredNews()?.category || 'DEVELOPMENT' }} · {{ featuredNews()?.publishedAt || 'MAY 20, 2026' }}
+              </div>
+              <h3>{{ featuredNews()?.title || 'Alpha Announcement: The Journey Begins' }}</h3>
+              <p>{{ featuredNews()?.excerpt || 'We\'re excited to announce the start of our closed alpha. Thank you for being part of the first chapter.' }}</p>
+              <span class="read-more">Read More →</span>
+            </div>
+          </article>
+
+          <!-- 3 Regular News Cards -->
+          @for (art of recentNews(); track art.id) {
+            <article class="news-card" [routerLink]="['/news', art.slug]">
+              <div class="news-image-frame">
+                <img [src]="art.image" [alt]="art.title" />
+              </div>
+              <div class="news-content">
+                <div class="news-meta">
+                  {{ art.category | uppercase }} · {{ art.publishedAt | uppercase }}
+                </div>
+                <h3>{{ art.title }}</h3>
+                <p>{{ art.excerpt }}</p>
+                <span class="read-more">Read More →</span>
+              </div>
+            </article>
+          }
+        </div>
+
+        <div class="news-more">
+          <a routerLink="/news">
+            <button class="eivar-button secondary">
+              View All News
+            </button>
+          </a>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- =======================================================
+     DEVELOPMENT SECTION
+     "THE WORLD IS BEING FORGED"
+     ======================================================= -->
+<section class="development" id="updates">
+  <!-- Glowing standing monoliths on the sides -->
+  <div class="monolith-left">
+    <span class="rune-glyph">ᛟ</span>
+  </div>
+  <div class="monolith-right">
+    <span class="rune-glyph">ᛉ</span>
+  </div>
+
+  <div class="container">
+    <header class="section-heading dark">
+      <div class="flourish-divider-wrap">
+        <img src="assets/images/rune-divider-flourish.svg" alt="" class="heading-flourish-svg" />
+      </div>
+      <h2>The World Is Being Forged</h2>
+    </header>
+
+    <div class="development-grid">
+      <!-- Card 1: Alpha Development -->
+      <article class="development-card">
+        <div class="development-icon">
+          <svg viewBox="0 0 60 60" class="dev-star-svg" fill="none">
+            <polygon points="30,8 34,22 48,22 36,32 40,46 30,36 20,46 24,32 12,22 26,22" stroke="#d5a848" stroke-width="2" fill="rgba(60, 203, 255, 0.25)"/>
+            <circle cx="30" cy="30" r="3.5" fill="#69e0ff"/>
+          </svg>
+        </div>
+        <div>
+          <h3>Alpha Development</h3>
+          <p>
+            Eivar Online is in active development. Many features, regions, and systems are still being crafted. Your feedback helps shape the world.
+          </p>
+          <a (click)="onLearnMore()" class="read-more-light">
+            Learn More →
+          </a>
+        </div>
+      </article>
+
+      <!-- Card 2: Join Community (Discord) -->
+      <article class="development-card">
+        <div class="development-icon">
+          <svg viewBox="0 0 48 48" class="discord-svg" fill="currentColor">
+            <path d="M40.2 11.2C37.2 9.8 34 8.8 30.6 8.2C30.2 9 29.7 10 29.3 11C25.7 10.4 22.3 10.4 18.7 11C18.3 10 17.8 9 17.4 8.2C14 8.8 10.8 9.8 7.8 11.2C2.4 19.3 1 27.2 1.7 34.9C5.3 37.6 8.8 39.2 12.2 40.3C13.1 39.1 13.8 37.8 14.5 36.4C13.3 35.9 12.1 35.3 11 34.6C11.3 34.4 11.6 34.1 11.8 33.9C18.8 37.1 29.2 37.1 36.2 33.9C36.4 34.1 36.7 34.4 37 34.6C35.9 35.3 34.7 35.9 33.5 36.4C34.2 37.8 35 39.1 35.8 40.3C39.2 39.2 42.7 37.6 46.3 34.9C47.2 26 44.8 18.2 40.2 11.2ZM16 29C13.8 29 12 27 12 24.5C12 22 13.8 20 16 20C18.2 20 20 22 20 24.5C20 27 18.2 29 16 29ZM32 29C29.8 29 28 27 28 24.5C28 22 29.8 20 32 20C34.2 20 36 22 36 24.5C36 27 34.2 29 32 29Z"/>
+          </svg>
+        </div>
+        <div>
+          <h3>Join Our Community</h3>
+          <p>
+            Share ideas, get updates, and connect with fellow adventurers. Join our Discord and be part of building Eivar.
+          </p>
+          <a (click)="onJoinDiscord()" class="read-more-light">
+            Join Discord →
+          </a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>

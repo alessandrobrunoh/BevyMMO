@@ -62,6 +62,12 @@ impl ServerNotice {
     }
 }
 
+/// A line delivered by the global server chat or a system message.
+#[derive(Clone, Debug, PartialEq, Message)]
+pub struct ChatLine {
+    pub text: String,
+}
+
 /// The authoritative state of one cooldown on one entity.
 ///
 /// The HUD used to start its own timers the moment a key was pressed, which is

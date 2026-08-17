@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="cornerGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff8e7"/>
+      <stop offset="50%" stop-color="#d5a848"/>
+      <stop offset="100%" stop-color="#8a6526"/>
+    </linearGradient>
+  </defs>
+  <path d="M 2 30 L 2 6 C 2 3.8 3.8 2 6 2 L 30 2" fill="none" stroke="url(#cornerGold)" stroke-width="2"/>
+  <path d="M 6 30 L 6 8 C 6 6.9 6.9 6 8 6 L 30 6" fill="none" stroke="url(#cornerGold)" stroke-width="1" opacity="0.6"/>
+  <polygon points="6,6 9,2 6,6 2,9" stroke="url(#cornerGold)" stroke-width="1" fill="#d5a848"/>
+  <circle cx="6" cy="6" r="2" fill="#3ccbff"/>
+</svg>

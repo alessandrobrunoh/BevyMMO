@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn transform_grows_area_at_the_cost_of_cast_time_and_energy() {
-        let mut params = AbilityParams { power: 100.0, area: 4.0, range: 0.0, cast_time: 0.5, cooldown: 5.0, energy_cost: 10.0 };
+        let mut params = AbilityParams { potency: 100.0, area: 4.0, range: 0.0, cast_time: 0.5, cooldown: 5.0, energy_cost: 10.0 };
         EspandereModifier.transform(&mut params);
         assert!((params.area - 5.4).abs() < 0.001);
         assert!((params.cast_time - 0.7).abs() < 0.001);

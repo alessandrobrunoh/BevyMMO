@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 48" width="20" height="48" fill="none">
+  <!-- Pointed Left Chevron Tip -->
+  <path d="M 18 3 L 8 16 L 2 24 L 8 32 L 18 45" stroke="#d5a848" stroke-width="2" stroke-linejoin="round"/>
+  <!-- Inner accent line -->
+  <path d="M 19 8 L 11 18 L 6 24 L 11 30 L 19 40" stroke="#fdf0cd" stroke-width="1" opacity="0.6"/>
+  <!-- Corner Finials -->
+  <circle cx="2" cy="24" r="1.5" fill="#3ccbff"/>
+  <circle cx="18" cy="3" r="1.5" fill="#d5a848"/>
+  <circle cx="18" cy="45" r="1.5" fill="#d5a848"/>
+</svg>

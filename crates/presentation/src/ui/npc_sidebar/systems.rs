@@ -3,12 +3,26 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevymmo_client::stdb::{commands, StdbConnection};
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
+use bevymmo_gameplay::items::registry::ItemRegistry;
 use bevymmo_network::network::protocol::Position;
+use bevymmo_network::world_components::NetworkEntityId;
 
-use crate::ui::card::{CardBuilder, CardExclusivityPolicy, CardKind, CardPositioning};
-use crate::ui::npc_sidebar::components::NpcSidebar;
+use crate::ui::card::components::CardPositioning;
+use crate::ui::card::{CardBuilder, CardKind};
+use crate::ui::npc_sidebar::components::{NpcSidebar, VendorItemButton};
 use crate::ui::theme::UiTheme;
+
+/// Distanza massima (in unità di mondo) dal raggio del cursore entro cui un
+/// NPC può essere selezionato.
+///
+/// Senza questa soglia, `closest_friendly_hit` sceglie sempre l'NPC più
+/// vicino alla retta del raggio, non importa quanto lontano dal cursore
+/// stesso — un click ovunque sullo schermo aprirebbe la sidebar. Stesso
+/// raggio usato da `select_target_with_left_click` per coerenza visiva tra
+/// le due selezioni.
+const NPC_SELECT_RADIUS: f32 = 1.2;
 
 /// Rappresenta un potenziale hit di un'entità durante il raycast.
 ///
@@ -40,6 +54,7 @@ pub fn npc_sidebar_on_click(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     theme: Res<UiTheme>,
+    item_registry: Res<ItemRegistry>,
     // Query per le entità game (NPC = GameEntity + Position + EntityKind::Friendly)
     entity_query: Query<(Entity, &Position, &EntityKind), With<GameEntity>>,
     name_query: Query<&PlayerName>,
@@ -66,6 +81,9 @@ pub fn npc_sidebar_on_click(
         // Distanza approssimativa: distanza dal punto più vicino sul raggio
         // all'entità (proiezione del punto sull'asse del raggio)
         let distance = point_to_ray_distance(position.0, ray.origin, *ray.direction);
+        if distance > NPC_SELECT_RADIUS {
+            continue;
+        }
         hits.push(EntityHit { entity, distance });
     }
 
@@ -83,10 +101,10 @@ pub fn npc_sidebar_on_click(
     let npc_name = name_query
         .get(target_entity)
         .map(|name| name.0.clone())
-        .unwrap_or_else(|| "NPC".to_string());
+        .unwrap_or_else(|_| "NPC".to_string());
 
     // Spawn nuova Card
-    spawn_npc_sidebar(&mut commands, &theme, target_entity, &npc_name);
+    spawn_npc_sidebar(&mut commands, &theme, target_entity, &npc_name, &item_registry);
 }
 
 /// Calcola la distanza tra un punto e un raggio (linea infinita).
@@ -95,8 +113,8 @@ pub fn npc_sidebar_on_click(
 /// distanza lungo il raggio. Questo favorisce i NPC vicini alla linea di mira.
 fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> f32 {
     let to_point = point - ray_origin;
-    let projection = to_point.dot(*ray_direction);
-    let closest_on_ray = ray_origin + *ray_direction * projection.clamp(0.0, f32::MAX);
+    let projection = to_point.dot(ray_direction);
+    let closest_on_ray = ray_origin + ray_direction * projection.clamp(0.0, f32::MAX);
     point.distance(closest_on_ray)
 }
 
@@ -117,22 +135,52 @@ fn spawn_npc_sidebar(
     theme: &UiTheme,
     target_entity: Entity,
     npc_name: &str,
+    item_registry: &ItemRegistry,
 ) {
     let card_entity = CardBuilder::new(CardKind::Generic, npc_name)
         .width(Val::Px(320.0))
-        .height(Val::Px(220.0))
+        .height(Val::Px(360.0))
         .positioning(CardPositioning::Left)
         .closeable()
         .exclusive()
         .with_body(|body| {
             body.spawn((
-                Text::new("Ciaoo"),
+                Text::new("Ciao! Scegli un oggetto:"),
                 TextFont {
-                    font_size: 16.0,
+                    font_size: FontSize::Px(16.0),
                     ..default()
                 },
                 TextColor(theme.text_color),
             ));
+            for (_, item) in item_registry.sorted_items().into_iter()
+                .filter(|(_, item)| item.config().equippable_into.is_some())
+            {
+                body.spawn((
+                    Button,
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(30.0),
+                        margin: UiRect::vertical(Val::Px(2.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(theme.button_bg),
+                    VendorItemButton {
+                        npc: target_entity,
+                        item_id: item.id(),
+                    },
+                )).with_children(|button| {
+                    button.spawn((
+                        Text::new(item.display_name().to_string()),
+                        TextFont {
+                            font_size: FontSize::Px(theme.button_font_size),
+                            ..default()
+                        },
+                        TextColor(theme.text_color),
+                    ));
+                });
+            }
         })
         .spawn(commands, theme);
 
@@ -140,6 +188,34 @@ fn spawn_npc_sidebar(
     commands.entity(card_entity).insert(NpcSidebar {
         target: target_entity,
     });
+}
+
+/// Sends the server-authoritative claim request for a clicked vendor item.
+/// The reducer rechecks NPC type and proximity, so a stale sidebar cannot grant
+/// an item after the player has moved away.
+pub fn claim_vendor_item(
+    interactions: Query<(&Interaction, &VendorItemButton), Changed<Interaction>>,
+    npc_entities: Query<&NetworkEntityId>,
+    connection: Option<Res<StdbConnection>>,
+) {
+    let Some(connection) = connection else {
+        return;
+    };
+    for (interaction, button) in interactions.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let Ok(network_id) = npc_entities.get(button.npc) else {
+            continue;
+        };
+        if let Err(error) = commands::claim_npc_item(
+            &connection,
+            network_id.0,
+            button.item_id.as_str().to_string(),
+        ) {
+            error!("could not claim NPC item: {error}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -166,8 +242,8 @@ mod tests {
 
     #[test]
     fn closest_friendly_hit_returns_closest_entity() {
-        let far = Entity::from_raw(1);
-        let close = Entity::from_raw(2);
+        let far = Entity::from_raw_u32(1).expect("valid entity index");
+        let close = Entity::from_raw_u32(2).expect("valid entity index");
         let hits = vec![
             EntityHit { entity: far, distance: 100.0 },
             EntityHit { entity: close, distance: 10.0 },
@@ -177,8 +253,8 @@ mod tests {
 
     #[test]
     fn closest_friendly_hit_handles_equal_distances() {
-        let a = Entity::from_raw(1);
-        let b = Entity::from_raw(2);
+        let a = Entity::from_raw_u32(1).expect("valid entity index");
+        let b = Entity::from_raw_u32(2).expect("valid entity index");
         let hits = vec![
             EntityHit { entity: a, distance: 50.0 },
             EntityHit { entity: b, distance: 50.0 },

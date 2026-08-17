@@ -14,7 +14,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{not_typing, GameScreen, Screen};
 use crate::renderer::RenderSync;
 
 pub struct BaseScenePlugin;
@@ -26,7 +26,13 @@ impl Plugin for BaseScenePlugin {
                 Update,
                 (
                     systems::update_game_scene_lifecycle,
-                    systems::handle_camera_zoom,
+                    // Previously ungated entirely — not even by screen — so
+                    // PageUp/PageDown zoomed the (invisible, not-yet-spawned)
+                    // camera from the main menu, and would also have fired
+                    // while typing.
+                    systems::handle_camera_zoom
+                        .run_if(in_game_or_paused)
+                        .run_if(not_typing),
                     occlusion::tag_occludables,
                     occlusion::update_camera_occlusion.run_if(in_game_or_paused),
                     occlusion::animate_occluder_fade.run_if(in_game_or_paused),

@@ -21,11 +21,14 @@
 //!   is the same function the hotbar path ends in.
 
 use bevymmo_domain::abilities::{
-    cast_inscribed_slot, resolve_active_ability, resolve_slot_preview, AbilityCastMode,
-    AbilitySlot, CastBlockedReason, ChannelMovementPolicy as EidolonChannelMovementPolicy,
+    cast_armor_inscribed_ability, cast_inscribed_slot, cast_root_inscribed_slot,
+    resolve_active_ability, resolve_armor_inscribed_ability, resolve_root_inscribed_slot,
+    resolve_slot_preview, AbilityCastMode,
+    AbilitySlot, BlueprintExecution, CastBlockedReason, ChannelMovementPolicy as EidolonChannelMovementPolicy,
 };
 // Legacy spell channeling uses spells::context::ChannelMovementPolicy.
 use bevymmo_domain::spells::context::ChannelMovementPolicy as SpellChannelMovementPolicy;
+use bevymmo_domain::items::components::EquipSlot;
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::context::{CastKind, SpellCastContext};
 use bevymmo_domain::spells::registry::SpellId;
@@ -33,12 +36,14 @@ use bevymmo_domain::EntityId;
 use glam::Vec3;
 use spacetimedb::{reducer, ReducerContext, Table};
 
-use crate::reducers::lifecycle::caller_entity;
-use crate::rows::{equipment_from_rows, known_glyphs_from_rows, Vec3Row};
-use crate::sim::spells;
+use crate::reducers::lifecycle::{caller_character, caller_entity};
+use crate::rows::{
+    equipment_from_rows, known_ancient_language_from_rows, known_glyphs_from_rows, Vec3Row,
+};
+use crate::sim::spells::{self, ability_loadout_for_item, fire_eidolon_ability};
 use crate::tables::{
-    cast_state, equipment, game_entity, hotbar, known_glyphs, CastKindRow, CastSourceRow, CastState,
-    EntityStateRow, GameEntity,
+    cast_state, equipment, game_entity, hotbar, known_ancient_language, known_glyphs, CastKindRow,
+    CastSourceRow, CastState, EntityStateRow, GameEntity,
 };
 
 /// Casts a spell from the caller's hotbar.
@@ -56,6 +61,7 @@ pub fn cast_spell(
     target_entity: Option<u64>,
     target_position: Option<Vec3Row>,
 ) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
     let caster = caller_entity(ctx)?;
     if caster.state == EntityStateRow::Dead {
         return Err("dead characters do not cast".to_string());
@@ -70,8 +76,8 @@ pub fn cast_spell(
     let hotbar: SpellHotbar = ctx
         .db
         .hotbar()
-        .identity()
-        .find(&ctx.sender())
+        .character_id()
+        .find(&character_id)
         .map(|row| (&row.slots).into())
         .unwrap_or_default();
     if !hotbar.contains(&SpellId::new(spell_id.clone())) {
@@ -136,6 +142,11 @@ pub fn cast_spell(
                 spells::start_cooldown(ctx, caster.entity_id, &spell_id, config.cooldown_seconds);
             }
 
+            let caster = if matches!(kind, CastKind::CastTime) {
+                stop_movement(ctx, caster)
+            } else {
+                caster
+            };
             ctx.db.cast_state().insert(CastState {
                 entity_id: caster.entity_id,
                 spell_id,
@@ -176,8 +187,43 @@ pub fn release_cast(ctx: &ReducerContext, spell_id: String) -> Result<(), String
         return Ok(());
     }
 
-    let interrupted = !matches!(cast.kind, CastKindRow::Channeling);
-    spells::end_cast(ctx, caster.entity_id, cast.spell_id, interrupted);
+    match cast.kind {
+        CastKindRow::Channeling => {
+            // Channeling ends without interruption (ran full duration or player released).
+            spells::end_cast(ctx, caster.entity_id, cast.spell_id, false);
+        }
+        CastKindRow::Charge => {
+            // Charge fires on release. Resolve and fire the ability now.
+            if let Some(caster_entity) = ctx.db.game_entity().entity_id().find(&caster.entity_id) {
+                let target_position = cast.target_position.map(Vec3::from);
+                match fire_eidolon_ability(
+                    ctx,
+                    &caster_entity,
+                    &cast.spell_id,
+                    target_position,
+                    cast.target_entity,
+                    cast.source,
+                ) {
+                    Some(cd) => {
+                        spells::start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
+                        spells::end_cast(ctx, caster.entity_id, cast.spell_id, false);
+                    }
+                    None => {
+                        // Resolution failed (equipment changed, etc.) — interrupt.
+                        spells::end_cast(ctx, caster.entity_id, cast.spell_id, true);
+                    }
+                }
+            } else {
+                spells::end_cast(ctx, caster.entity_id, cast.spell_id, true);
+            }
+        }
+        // CastTime or Instant should not normally receive release_cast (Instant
+        // doesn't open a cast_state; CastTime auto-fires in advance_casts). Treat
+        // as interruption for safety.
+        _ => {
+            spells::end_cast(ctx, caster.entity_id, cast.spell_id, true);
+        }
+    }
     Ok(())
 }
 
@@ -197,6 +243,7 @@ pub fn eidolon_cast(
     target_entity: Option<u64>,
     target_position: Option<Vec3Row>,
 ) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
     let caster = caller_entity(ctx)?;
     if caster.state == EntityStateRow::Dead {
         return Err("dead characters do not cast".to_string());
@@ -206,8 +253,8 @@ pub fn eidolon_cast(
     let equipment = ctx
         .db
         .equipment()
-        .identity()
-        .find(&ctx.sender())
+        .character_id()
+        .find(&character_id)
         .map(|row| equipment_from_rows(&row.slots))
         .unwrap_or_default();
     let weapon = equipment
@@ -217,8 +264,7 @@ pub fn eidolon_cast(
     let item = spells::items()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let weapon_abilities = item
-        .weapon_abilities()
+    let weapon_abilities = ability_loadout_for_item(item.as_ref())
         .ok_or_else(|| format!("{} has no Eidolon gestures", item.display_name()))?;
 
     let ability_id = resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)
@@ -235,33 +281,61 @@ pub fn eidolon_cast(
     let known = ctx
         .db
         .known_glyphs()
-        .identity()
-        .find(&ctx.sender())
+        .character_id()
+        .find(&character_id)
         .map(|row| known_glyphs_from_rows(&row.essences, &row.modifiers, &row.ancient_words))
         .unwrap_or_default();
     let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
 
-    // Resolved first for its `params`, which say how far and how wide the
-    // gesture reaches — the radius the target query needs. `cast_inscribed_slot`
-    // resolves the same way a line later, which is the point: preview,
-    // validation and the cast itself cannot drift apart.
-    let preview = resolve_slot_preview(
-        slot,
-        weapon_abilities,
-        &weapon.ability_selection,
-        &inscriptions,
-        &known,
-        spells::base_abilities(),
-        spells::modifiers(),
-    )
+    // RootWord inscriptions use the new knowledge and blueprint pipeline;
+    // legacy instances keep the old path during migration.
+    let preview = if let Some(root_inscription) = weapon.root_inscription.as_ref() {
+        let known_language = ctx
+            .db
+            .known_ancient_language()
+            .character_id()
+            .find(&character_id)
+            .map(|row| {
+                known_ancient_language_from_rows(
+                    &row.root_words,
+                    &row.ancient_words,
+                    &row.base_abilities,
+                )
+            })
+            .ok_or_else(|| "ancient language has not been initialized".to_string())?;
+        resolve_root_inscribed_slot(
+            slot,
+            weapon_abilities,
+            &weapon.ability_selection,
+            root_inscription,
+            &known_language,
+            spells::base_abilities(),
+            spells::root_words(),
+            spells::ancient_words(),
+            Some(item.as_ref()),
+        )
+    } else {
+        resolve_slot_preview(
+            slot,
+            weapon_abilities,
+            &weapon.ability_selection,
+            &inscriptions,
+            &known,
+            spells::base_abilities(),
+            spells::modifiers(),
+            Some(item.as_ref()),
+        )
+    }
     .map_err(describe_block)?;
     let caster = face_target(ctx, caster, target_position.map(Vec3::from));
     cancel_active_cast(ctx, caster.entity_id);
 
-    // Branch on the resolved ability's cast mode.
+    // Branch on the resolved ability's cast mode and execution.
     let cast_mode = preview.ability.cast_mode();
-    match cast_mode {
-        AbilityCastMode::Instant => {
+    let is_charge = preview.blueprint.execution == BlueprintExecution::Charge;
+
+    match (cast_mode, is_charge) {
+        (AbilityCastMode::Instant, _) => {
             // Original path: execute immediately.
             let combat = spells::combat_stats(ctx, caster.entity_id)
                 .ok_or_else(|| "caster has no stats".to_string())?;
@@ -283,18 +357,47 @@ pub fn eidolon_cast(
                 &targets,
             );
 
-            cast_inscribed_slot(
-                slot,
-                weapon_abilities,
-                &weapon.ability_selection,
-                &inscriptions,
-                &known,
-                spells::base_abilities(),
-                spells::essences(),
-                spells::modifiers(),
-                spells::ancient_words(),
-                &mut cast_ctx,
-            )
+            if let Some(root_inscription) = weapon.root_inscription.as_ref() {
+                let known_language = ctx
+                    .db
+                    .known_ancient_language()
+                    .character_id()
+                    .find(&character_id)
+                    .map(|row| {
+                        known_ancient_language_from_rows(
+                            &row.root_words,
+                            &row.ancient_words,
+                            &row.base_abilities,
+                        )
+                    })
+                    .ok_or_else(|| "ancient language has not been initialized".to_string())?;
+                cast_root_inscribed_slot(
+                    slot,
+                    weapon_abilities,
+                    &weapon.ability_selection,
+                    root_inscription,
+                    &known_language,
+                    spells::base_abilities(),
+                    spells::root_words(),
+                    spells::ancient_words(),
+                    &mut cast_ctx,
+                    Some(item.as_ref()),
+                )
+            } else {
+                cast_inscribed_slot(
+                    slot,
+                    weapon_abilities,
+                    &weapon.ability_selection,
+                    &inscriptions,
+                    &known,
+                    spells::base_abilities(),
+                    spells::essences(),
+                    spells::modifiers(),
+                    spells::ancient_words(),
+                    &mut cast_ctx,
+                    Some(item.as_ref()),
+                )
+            }
             .map_err(describe_block)?;
 
             spells::apply_pending(
@@ -312,10 +415,12 @@ pub fn eidolon_cast(
             );
             Ok(())
         }
-        AbilityCastMode::CastTime => {
+        (AbilityCastMode::CastTime, false) => {
+            // Standard CastTime wind-up (auto-fires when elapsed >= required).
             let required_seconds = preview.params.cast_time;
             let target_position = target_position.map(Vec3::from);
 
+            let caster = stop_movement(ctx, caster);
             ctx.db.cast_state().insert(CastState {
                 entity_id: caster.entity_id,
                 spell_id: ability_id.as_str().to_string(),
@@ -334,7 +439,32 @@ pub fn eidolon_cast(
             });
             Ok(())
         }
-        AbilityCastMode::Channeling { tick_interval_seconds, movement_policy } => {
+        (AbilityCastMode::CastTime, true) => {
+            // Charge execution: hold-to-charge, fires on release (not auto-fire).
+            // required_seconds is the max charge duration; the ability scales with
+            // how long the player held before releasing.
+            let required_seconds = preview.params.cast_time;
+            let target_position = target_position.map(Vec3::from);
+
+            let caster = stop_movement(ctx, caster);
+            ctx.db.cast_state().insert(CastState {
+                entity_id: caster.entity_id,
+                spell_id: ability_id.as_str().to_string(),
+                kind: CastKindRow::Charge,
+                source: CastSourceRow::Eidolon,
+                elapsed_seconds: 0.0,
+                required_seconds,
+                start_position: caster.position,
+                target_position: target_position.map(Vec3Row::from),
+                target_entity,
+                channel_tick_accumulator: 0.0,
+                tick_interval_seconds: 0.0,
+                // Charge interrupts on movement (same as CastTime).
+                channel_movement_interrupts: true,
+            });
+            Ok(())
+        }
+        (AbilityCastMode::Channeling { tick_interval_seconds, movement_policy }, _) => {
             let required_seconds = preview.params.cast_time.max(0.1);
             let target_position = target_position.map(Vec3::from);
 
@@ -369,6 +499,163 @@ pub fn eidolon_cast(
         }
     }
 }
+
+/// Casts the first Primary ability supplied by an equipped armor item.
+///
+/// Armor abilities intentionally use a separate API from weapon Eidolon slots.
+/// This initial reducer handles instant armor abilities; timed armor casts will
+/// reuse the same source-aware resolver in the scheduler.
+#[reducer]
+pub fn armor_cast(
+    ctx: &ReducerContext,
+    armor_slot: String,
+    ability_slot: String,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3Row>,
+) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
+    let caster = caller_entity(ctx)?;
+    if caster.state == EntityStateRow::Dead {
+        return Err("dead characters do not cast".to_string());
+    }
+    let target_slot = match armor_slot.to_ascii_lowercase().as_str() {
+        "helmet" => EquipSlot::Helmet,
+        "armor" | "chest" | "chestplate" => EquipSlot::Armor,
+        "shoes" | "boots" => EquipSlot::Shoes,
+        other => return Err(format!("unknown armor slot {other:?}")),
+    };
+    let equipment = ctx
+        .db
+        .equipment()
+        .character_id()
+        .find(&character_id)
+        .map(|row| equipment_from_rows(&row.slots))
+        .unwrap_or_default();
+    let armor = equipment
+        .get(target_slot)
+        .as_ref()
+        .ok_or_else(|| format!("armor slot {armor_slot:?} is empty"))?;
+    let item = spells::items()
+        .get(&armor.item_id)
+        .ok_or_else(|| format!("unknown item {:?}", armor.item_id.as_str()))?;
+    let abilities = ability_loadout_for_item(item.as_ref())
+        .ok_or_else(|| format!("{} has no armor abilities", item.display_name()))?;
+    let ability_slot = parse_slot(&ability_slot)?;
+    let ability_id = abilities
+        .options_for(ability_slot)
+        .first()
+        .cloned()
+        .ok_or_else(|| format!("armor has no {ability_slot:?} ability"))?;
+    if spells::is_on_cooldown(ctx, caster.entity_id, ability_id.as_str()) {
+        return Err(format!("{:?} is on cooldown", ability_id.as_str()));
+    }
+    if spells::casting_blocked(ctx, caster.entity_id) {
+        return Err("you cannot cast right now".to_string());
+    }
+
+    let language_row = ctx
+        .db
+        .known_ancient_language()
+        .character_id()
+        .find(&character_id)
+        .ok_or_else(|| "ancient language has not been initialized".to_string())?;
+    let language = known_ancient_language_from_rows(
+        &language_row.root_words,
+        &language_row.ancient_words,
+        &language_row.base_abilities,
+    );
+    let preview = resolve_armor_inscribed_ability(
+        &ability_id,
+        armor.armor_inscription.as_ref(),
+        &language,
+        spells::base_abilities(),
+        spells::root_words(),
+        spells::ancient_words(),
+        Some(item.as_ref()),
+    )
+    .map_err(describe_block)?;
+    let cast_mode = preview.ability.cast_mode();
+    let is_charge = preview.blueprint.execution == BlueprintExecution::Charge;
+    let source = match target_slot {
+        EquipSlot::Helmet => CastSourceRow::Helmet,
+        EquipSlot::Armor => CastSourceRow::Armor,
+        EquipSlot::Shoes => CastSourceRow::Shoes,
+        _ => return Err("invalid armor source".to_string()),
+    };
+
+    let caster = face_target(ctx, caster, target_position.map(Vec3::from));
+    cancel_active_cast(ctx, caster.entity_id);
+    if matches!(cast_mode, AbilityCastMode::Instant) {
+        return cast_armor_instant(
+            ctx, caster, target_position, target_entity, &ability_id, &preview,
+            armor, &language, item.as_ref(),
+        );
+    }
+
+    let target_position = target_position.map(Vec3::from);
+    let caster = stop_movement(ctx, caster);
+    let (kind, required_seconds, tick_interval_seconds, channel_movement_interrupts) = match cast_mode {
+        AbilityCastMode::CastTime if is_charge => (CastKindRow::Charge, preview.params.cast_time, 0.0, true),
+        AbilityCastMode::CastTime => (CastKindRow::CastTime, preview.params.cast_time, 0.0, true),
+        AbilityCastMode::Channeling { tick_interval_seconds, movement_policy } => (
+            CastKindRow::Channeling,
+            preview.params.cast_time.max(0.1),
+            tick_interval_seconds,
+            matches!(movement_policy, EidolonChannelMovementPolicy::InterruptOnMove),
+        ),
+        AbilityCastMode::Instant => unreachable!(),
+    };
+    if matches!(kind, CastKindRow::Channeling) {
+        spells::start_cooldown(ctx, caster.entity_id, ability_id.as_str(), preview.ability.base_params().cooldown);
+    }
+    ctx.db.cast_state().insert(CastState {
+        entity_id: caster.entity_id,
+        spell_id: ability_id.as_str().to_string(),
+        kind,
+        source,
+        elapsed_seconds: 0.0,
+        required_seconds,
+        start_position: caster.position,
+        target_position: target_position.map(Vec3Row::from),
+        target_entity,
+        channel_tick_accumulator: if matches!(kind, CastKindRow::Channeling) { tick_interval_seconds } else { 0.0 },
+        tick_interval_seconds,
+        channel_movement_interrupts,
+    });
+    Ok(())
+}
+
+fn cast_armor_instant(
+    ctx: &ReducerContext,
+    caster: crate::tables::GameEntity,
+    target_position: Option<Vec3Row>,
+    target_entity: Option<u64>,
+    ability_id: &bevymmo_domain::abilities::AbilityId,
+    preview: &bevymmo_domain::abilities::SlotPreview,
+    armor: &bevymmo_domain::items::instance::ItemInstance,
+    language: &bevymmo_domain::abilities::KnownAncientLanguage,
+    item: &dyn bevymmo_domain::items::definition::Item,
+) -> Result<(), String> {
+    let combat = spells::combat_stats(ctx, caster.entity_id)
+        .ok_or_else(|| "caster has no stats".to_string())?;
+    let caster_position = Vec3::from(caster.position);
+    let targets = spells::potential_targets(ctx, caster_position, preview.params.range + preview.params.area + spells::TARGET_QUERY_MARGIN);
+    let mut cast_ctx = SpellCastContext::new(
+        EntityId::new(caster.entity_id), caster_position, &combat,
+        Vec3::from(caster.look), target_position.map(Vec3::from),
+        target_entity.map(EntityId::new), &targets,
+    );
+    cast_armor_inscribed_ability(
+        ability_id, armor.armor_inscription.as_ref(), language,
+        spells::base_abilities(), spells::root_words(), spells::ancient_words(),
+        &mut cast_ctx, Some(item),
+    ).map_err(describe_block)?;
+    spells::apply_pending(ctx, caster.entity_id, caster_position, ability_id.as_str(), &mut cast_ctx);
+    spells::start_cooldown(ctx, caster.entity_id, ability_id.as_str(), preview.ability.base_params().cooldown);
+    Ok(())
+}
+
+
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -406,6 +693,16 @@ fn cancel_active_cast(ctx: &ReducerContext, entity_id: u64) {
     }
 }
 
+/// Cast-time spells root the caster for their wind-up rather than allowing a
+/// movement command to advance one tick and then cancel the cast.
+fn stop_movement(ctx: &ReducerContext, caster: GameEntity) -> GameEntity {
+    ctx.db.game_entity().entity_id().update(GameEntity {
+        move_target: None,
+        state: EntityStateRow::Idle,
+        ..caster
+    })
+}
+
 fn parse_slot(slot: &str) -> Result<AbilitySlot, String> {
     match slot.to_ascii_lowercase().as_str() {
         "primary" => Ok(AbilitySlot::Primary),
@@ -424,6 +721,15 @@ fn describe_block(reason: CastBlockedReason) -> String {
         }
         CastBlockedReason::MissingRegistryEntry => {
             "that gesture no longer exists in the registry".to_string()
+        }
+        CastBlockedReason::UnknownRootWord => {
+            "that slot uses an unknown or unavailable Root Word".to_string()
+        }
+        CastBlockedReason::UnknownAncientWord => {
+            "that slot uses an unknown or unavailable Ancient Word".to_string()
+        }
+        CastBlockedReason::IncompatibleAncientWord => {
+            "an Ancient Word is incompatible with the selected gesture".to_string()
         }
     }
 }

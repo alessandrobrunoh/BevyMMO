@@ -207,6 +207,8 @@ mod tests {
         // whole schedule, taking every test in this module with it.
         app.init_resource::<ButtonInput<KeyCode>>();
         app.init_resource::<bevymmo_client::user_settings::GameSettingsResource>();
+        // `handle_camera_zoom` is now also gated by `not_typing`, which reads this.
+        app.init_resource::<bevymmo_client::app_state::TypingFocus>();
         app.init_resource::<Time>();
         // `sync_transforms` reads the fixed-step overstep to interpolate.
         app.init_resource::<Time<Fixed>>();

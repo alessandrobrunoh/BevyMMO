@@ -1,6 +1,6 @@
 //! Sistemi per il target frame (UI panel con info sul target selezionato).
 
-use crate::ui::bar::spawn_bar;
+use crate::ui::bar::{get_hp_fill_color, spawn_bar};
 use crate::ui::target_frame::components::{TargetFrame, TargetFrameParts, TargetFrameTarget};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
@@ -241,16 +241,6 @@ pub fn cleanup_target_frames(
 }
 
 /// Determina il colore della barra HP in base al tipo di entità.
-fn get_hp_fill_color(entity_kind: Option<&EntityKind>, theme: &UiTheme) -> Color {
-    match entity_kind {
-        Some(EntityKind::Player) => Color::srgb(0.3, 0.8, 0.5),
-        Some(EntityKind::Friendly) => Color::srgb(0.2, 0.9, 0.3),
-        Some(EntityKind::Neutral) => Color::srgb(0.9, 0.9, 0.2),
-        Some(EntityKind::Hostile) => Color::srgb(0.9, 0.1, 0.1),
-        None => theme.hp_fill,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

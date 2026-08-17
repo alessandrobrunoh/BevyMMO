@@ -56,11 +56,3 @@ pub fn spawn_keybinds_panel(
 
     scroll_wrapper
 }
-
-/// Reflects `KeybindSettings` onto the panel widgets when values change
-/// outside the UI (e.g. reset to defaults).
-pub fn refresh_keybinds_panel(
-    _settings: Res<crate::ui::settings::state::GameSettingsResource>,
-    _root: Query<&KeybindsRoot>,
-) {
-}

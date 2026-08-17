@@ -414,7 +414,7 @@ fn spawn_entity(
     ctx.db.game_entity().insert(GameEntity {
         entity_id: 0,
         kind,
-        owner: None,
+        owner_character_id: None,
         display_name: display_name.to_string(),
         color: ColorRow::for_kind(kind),
         position,
@@ -593,7 +593,7 @@ pub fn gm_reseed_world(ctx: &ReducerContext) -> Result<(), String> {
         .db
         .game_entity()
         .iter()
-        .filter(|entity| entity.owner.is_none())
+        .filter(|entity| entity.owner_character_id.is_none())
         .map(|entity| entity.entity_id)
         .collect();
     for entity_id in seeded {

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 160" fill="none">
+  <defs>
+    <linearGradient id="runeGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a4eeff" />
+      <stop offset="50%" stop-color="#3ccbff" />
+      <stop offset="100%" stop-color="#147cc1" />
+    </linearGradient>
+    <linearGradient id="goldAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e6cb86" />
+      <stop offset="100%" stop-color="#b88b38" />
+    </linearGradient>
+    <filter id="cyanBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Soft Aura -->
+  <circle cx="50" cy="80" r="45" fill="#3ccbff" opacity="0.12" />
+
+  <!-- Top Point Spear -->
+  <path d="M50 12 L54 30 L50 26 L46 30 Z" fill="url(#runeGlow)" />
+  <line x1="50" y1="12" x2="50" y2="40" stroke="url(#runeGlow)" stroke-width="2.5" stroke-linecap="round" />
+
+  <!-- Upper Diamond with Cross -->
+  <path d="M50 35 L68 56 L50 78 L32 56 Z" stroke="url(#runeGlow)" stroke-width="3" fill="none" stroke-linejoin="round" filter="url(#cyanBlur)" />
+  <line x1="22" y1="56" x2="78" y2="56" stroke="url(#runeGlow)" stroke-width="2.5" stroke-linecap="round" />
+
+  <!-- Middle Center Point -->
+  <circle cx="50" cy="80" r="3.5" fill="url(#goldAccent)" />
+
+  <!-- Lower Diamond with Cross -->
+  <path d="M50 82 L68 104 L50 126 L32 104 Z" stroke="url(#runeGlow)" stroke-width="3" fill="none" stroke-linejoin="round" filter="url(#cyanBlur)" />
+  <line x1="22" y1="104" x2="78" y2="104" stroke="url(#runeGlow)" stroke-width="2.5" stroke-linecap="round" />
+
+  <!-- Bottom Finial Spear -->
+  <line x1="50" y1="120" x2="50" y2="148" stroke="url(#runeGlow)" stroke-width="2.5" stroke-linecap="round" />
+  <path d="M50 148 L54 130 L50 134 L46 130 Z" fill="url(#runeGlow)" />
+</svg>

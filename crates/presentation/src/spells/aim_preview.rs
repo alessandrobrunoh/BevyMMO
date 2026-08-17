@@ -75,7 +75,7 @@ pub fn draw_ability_aim_preview(
     let Some(item) = item_registry.get(&weapon.item_id) else {
         return;
     };
-    let Some(weapon_abilities) = item.weapon_abilities() else {
+    let Some(weapon_abilities) = item.ability_loadout() else {
         return;
     };
     let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
@@ -88,12 +88,13 @@ pub fn draw_ability_aim_preview(
         known,
         &ability_registry,
         &modifier_registry,
+        Some(item.as_ref()),
     );
 
     // Slot bloccato (Glifo sconosciuto, o dati incoerenti): niente forma da
     // disegnare, ma un cerchietto rosso ai piedi del personaggio è meglio del
     // silenzio — dice "questo tasto non farà nulla" prima del rilascio.
-    let Ok(SlotPreview { ability, params }) = preview else {
+    let Ok(SlotPreview { ability, params, .. }) = preview else {
         draw_flat_circle(&mut gizmos, position.0, 1.0, BLOCKED_COLOR);
         return;
     };

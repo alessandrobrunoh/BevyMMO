@@ -1,17 +1,20 @@
 //! Module startup, connections, and character creation.
 
-use spacetimedb::{reducer, ReducerContext, ScheduleAt, Table};
+use spacetimedb::{reducer, ReducerContext, ScheduleAt, Table, Uuid};
 use std::time::Duration;
 
+use crate::reducers::account::caller_session;
 use crate::rows::{equipment_to_rows, inventory_to_rows, HotbarRow, StatsRow, Vec3Row};
 use crate::tables::{
-    aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats, equipment,
-    game_entity, grid_cell, hotbar, inventory, known_glyphs, player, player_stats, projectile,
-    stat_modifier, threat, tick_schedule, tick_stats, ColorRow, EntityKindRow, EntityStateRow,
-    EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownGlyphsTable, Player, PlayerStats,
-    TickSchedule,
+    active_status, aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats, equipment,
+    game_entity, grid_cell, hotbar, inventory, known_ancient_language, known_glyphs, periodic_effect,
+    player, player_stats,
+    projectile, resonance, session, stat_modifier, threat, tick_schedule, tick_stats, ColorRow, EntityKindRow,
+    EntityStateRow, EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownAncientLanguageTable,
+    KnownGlyphsTable, Player,
+    PlayerStats, Session, TickSchedule,
 };
-use crate::{normalize_name, world, DEFAULT_SPEED_PER_SECOND, TICK_INTERVAL_MS};
+use crate::{normalize_name, world, DEFAULT_SPEED_PER_SECOND, MAX_CHARACTERS_PER_ACCOUNT, TICK_INTERVAL_MS};
 
 /// Runs once, when the module is first published to an empty database.
 #[reducer(init)]
@@ -41,6 +44,7 @@ fn clear_runtime_state(ctx: &ReducerContext) {
     let projectile_ids: Vec<_> = ctx.db.projectile().iter().map(|row| row.id).collect();
     let aoe_ids: Vec<_> = ctx.db.aoe_region().iter().map(|row| row.id).collect();
     let crowd_control_ids: Vec<_> = ctx.db.crowd_control().iter().map(|row| row.id).collect();
+        let active_status_ids: Vec<_> = ctx.db.active_status().iter().map(|row| row.id).collect();
     let modifier_ids: Vec<_> = ctx.db.stat_modifier().iter().map(|row| row.id).collect();
     let threat_ids: Vec<_> = ctx.db.threat().iter().map(|row| row.id).collect();
     let cast_entity_ids: Vec<_> = ctx
@@ -60,7 +64,7 @@ fn clear_runtime_state(ctx: &ReducerContext) {
         .db
         .game_entity()
         .iter()
-        .filter(|row| row.owner.is_none())
+        .filter(|row| row.owner_character_id.is_none())
         .map(|row| row.entity_id)
         .collect();
     let tick_stat_ids: Vec<_> = ctx.db.tick_stats().iter().map(|row| row.id).collect();
@@ -73,6 +77,9 @@ fn clear_runtime_state(ctx: &ReducerContext) {
     }
     for id in crowd_control_ids {
         ctx.db.crowd_control().id().delete(&id);
+    }
+    for id in active_status_ids {
+        ctx.db.active_status().id().delete(&id);
     }
     for id in modifier_ids {
         ctx.db.stat_modifier().id().delete(&id);
@@ -99,53 +106,65 @@ fn clear_runtime_state(ctx: &ReducerContext) {
     }
 }
 
-/// Marks an existing character online.
+/// Marks the caller's active character online, if this connection is
+/// authenticated and already playing one.
 ///
-/// A connection with no character is normal: the client calls [`join`] once the
-/// player has picked a name.
+/// A connection with no session, or a session with no character selected yet,
+/// is normal: the client calls `login`/`register` and then [`join`] before
+/// there is anything to mark online.
 #[reducer(client_connected)]
 pub fn client_connected(ctx: &ReducerContext) {
-    let Some(player) = ctx.db.player().identity().find(&ctx.sender()) else {
+    let Some(character) = active_character(ctx) else {
         return;
     };
-    ctx.db.player().identity().update(Player {
+    let entity_id = character.entity_id;
+    ctx.db.player().character_id().update(Player {
         online: true,
         last_seen: ctx.timestamp,
-        ..player
+        ..character
     });
 
     // A returning character arrives with gear already on. `entity_stats` is
     // derived — base plus equipment plus modifiers — and nothing has recomputed
     // it since the equipment last changed, so it is rebuilt here rather than
     // trusted.
-    crate::sim::combat::recalculate_effective_stats(ctx, player.entity_id);
+    crate::sim::combat::recalculate_effective_stats(ctx, entity_id);
 }
 
-/// Marks the character offline and stops it where it stands.
+/// Marks the active character offline, stops it where it stands, and ends the
+/// connection's [`Session`].
 ///
 /// Note what is *not* here: a save. Position, stats and inventory are already
 /// rows. The Bevy server wrote its only snapshot at this point, which is why a
 /// crash lost the whole session.
+///
+/// The `Session` is deleted, not merely cleared, so a reconnect — even one
+/// reusing the same cached `Identity` — must call `login`/`register` again
+/// rather than inheriting a stale authentication.
 #[reducer(client_disconnected)]
 pub fn client_disconnected(ctx: &ReducerContext) {
-    let Some(player) = ctx.db.player().identity().find(&ctx.sender()) else {
-        return;
-    };
-    if let Some(entity) = ctx.db.game_entity().entity_id().find(&player.entity_id) {
-        ctx.db.game_entity().entity_id().update(GameEntity {
-            move_target: None,
-            state: EntityStateRow::Idle,
-            ..entity
+    if let Some(character) = active_character(ctx) {
+        if let Some(entity) = ctx.db.game_entity().entity_id().find(&character.entity_id) {
+            ctx.db.game_entity().entity_id().update(GameEntity {
+                move_target: None,
+                state: EntityStateRow::Idle,
+                ..entity
+            });
+        }
+        ctx.db.player().character_id().update(Player {
+            online: false,
+            last_seen: ctx.timestamp,
+            ..character
         });
     }
-    ctx.db.player().identity().update(Player {
-        online: false,
-        last_seen: ctx.timestamp,
-        ..player
-    });
+    ctx.db.session().identity().delete(&ctx.sender());
 }
 
-/// Creates the caller's character, or brings the existing one online.
+/// Selects an existing character by name, or creates one, for the caller's
+/// authenticated session.
+///
+/// Requires a prior `login`/`register`: an unauthenticated connection has no
+/// `Session` row, so there is no account to own a new character.
 #[reducer]
 pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
     let normalized = normalize_name(&display_name);
@@ -155,24 +174,34 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         ));
     }
 
-    let identity = ctx.sender();
-    if let Some(player) = ctx.db.player().identity().find(&identity) {
-        ctx.db.player().identity().update(Player {
+    let session_row = caller_session(ctx)?;
+    let account_id = session_row.account_id;
+
+    if let Some(existing) = ctx.db.player().normalized_name().find(&normalized) {
+        if existing.account_id != account_id {
+            return Err(format!("name {display_name:?} is taken"));
+        }
+        // The caller's own character: reactivate it and make it this
+        // connection's active character.
+        set_active_character(ctx, Some(existing.character_id));
+        ctx.db.player().character_id().update(Player {
             online: true,
             last_seen: ctx.timestamp,
-            ..player
+            ..existing
         });
         return Ok(());
     }
 
-    if ctx
+    let existing_count = ctx
         .db
         .player()
-        .normalized_name()
-        .find(&normalized)
-        .is_some()
-    {
-        return Err(format!("name {display_name:?} is taken"));
+        .account_id()
+        .filter(&account_id)
+        .count();
+    if existing_count >= MAX_CHARACTERS_PER_ACCOUNT {
+        return Err(format!(
+            "an account may have at most {MAX_CHARACTERS_PER_ACCOUNT} characters"
+        ));
     }
 
     let spawn = world::player_spawn_point(ctx);
@@ -180,7 +209,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
     let entity = ctx.db.game_entity().insert(GameEntity {
         entity_id: 0,
         kind: EntityKindRow::Player,
-        owner: Some(identity),
+        owner_character_id: None, // filled in once the character row exists, below
         display_name: display_name.clone(),
         color: ColorRow::for_kind(EntityKindRow::Player),
         position: spawn,
@@ -201,43 +230,51 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
 
     let defaults = bevymmo_domain::stats::defaults::player_defaults();
     let stats = StatsRow::from(&defaults);
+
+    // Minted before the insert: a failure here must not leave an orphaned
+    // `game_entity` row behind, and `insert` takes the value, not a Result.
+    let character_id = ctx
+        .new_uuid_v4()
+        .map_err(|err| format!("failed to mint a character id: {err}"))?;
+    let character = ctx.db.player().insert(Player {
+        character_id,
+        account_id,
+        normalized_name: normalized,
+        display_name,
+        entity_id: entity.entity_id,
+        online: true,
+        last_seen: ctx.timestamp,
+    });
+
+    ctx.db.game_entity().entity_id().update(GameEntity {
+        owner_character_id: Some(character_id),
+        ..entity
+    });
+
     ctx.db
         .player_stats()
-        .insert(PlayerStats { identity, stats });
+        .insert(PlayerStats { character_id, stats });
     ctx.db.entity_stats().insert(crate::tables::EntityStats {
-        entity_id: entity.entity_id,
+        entity_id: character.entity_id,
         stats,
         current_mana: stats.max_mana,
     });
 
     ctx.db.hotbar().insert(Hotbar {
-        identity,
+        character_id,
         slots: HotbarRow::from(&bevymmo_domain::spells::components::default_player_hotbar()),
     });
     ctx.db.inventory().insert(InventoryTable {
-        identity,
+        character_id,
         slots: inventory_to_rows(&Default::default()),
     });
-    for item_id in [
-        "magic_staff",
-        "leather_helmet",
-        "travelers_cape",
-        "iron_plate_armor",
-        "wooden_shield",
-        "quick_flask",
-        "swift_boots",
-        "field_rations",
-        "swift_steed",
-        "travelers_bag",
-    ] {
-        crate::reducers::items::grant_item(ctx, identity, item_id)?;
-    }
+    crate::reducers::items::grant_item(ctx, character_id, "magic_staff")?;
     ctx.db.equipment().insert(EquipmentTable {
-        identity,
+        character_id,
         slots: equipment_to_rows(&Default::default()),
     });
     ctx.db.known_glyphs().insert(KnownGlyphsTable {
-        identity,
+        character_id,
         essences: vec!["fuoco".to_string(), "gelo".to_string(), "terra".to_string()],
         modifiers: vec![
             "espandere".to_string(),
@@ -246,30 +283,219 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         ],
         ancient_words: Vec::new(),
     });
-
-    ctx.db.player().insert(Player {
-        identity,
-        normalized_name: normalized,
-        display_name,
-        entity_id: entity.entity_id,
-        online: true,
-        last_seen: ctx.timestamp,
+    ctx.db.known_ancient_language().insert(KnownAncientLanguageTable {
+        character_id,
+        root_words: vec!["damage".to_string()],
+        ancient_words: vec!["amplia".to_string()],
+        base_abilities: vec!["arcane_orb".to_string()],
     });
+
+    set_active_character(ctx, Some(character_id));
     Ok(())
 }
 
-/// Resolves the caller's entity, or explains why there isn't one.
-pub fn caller_entity(ctx: &ReducerContext) -> Result<GameEntity, String> {
-    let player = ctx
+/// Points the caller's `Session` at `character_id` (`Some`), or clears it
+/// back to `None` — one write, since "select" and "clear" were the same
+/// `Session` update with a different value for this one field.
+fn set_active_character(ctx: &ReducerContext, character_id: Option<Uuid>) {
+    let identity = ctx.sender();
+    if let Some(session_row) = ctx.db.session().identity().find(&identity) {
+        ctx.db.session().identity().update(Session {
+            character_id,
+            ..session_row
+        });
+    }
+}
+
+/// Returns the caller to character select: marks the active character
+/// offline and clears the connection's `Session.character_id`, without
+/// deleting anything. The account stays authenticated and every other
+/// character keeps existing — to permanently delete one, use
+/// [`delete_character`].
+///
+/// Deliberately non-destructive, unlike an earlier version of this reducer:
+/// back when a character *was* the `Identity` (no accounts, one throwaway
+/// identity per launch), deleting on `leave` was how a name got freed up
+/// again. With accounts, a character survives across logins by design, and
+/// deleting it here made both closing the game window and pressing the
+/// pause menu's "Logout" silently destroy the character being played —
+/// exactly the data loss `delete_character`'s two-click confirmation exists
+/// to prevent everywhere else.
+///
+/// A no-op if the caller has no active character selected.
+#[reducer]
+pub fn leave(ctx: &ReducerContext) -> Result<(), String> {
+    let Some(character) = active_character(ctx) else {
+        return Ok(());
+    };
+    if let Some(entity) = ctx.db.game_entity().entity_id().find(&character.entity_id) {
+        ctx.db.game_entity().entity_id().update(GameEntity {
+            move_target: None,
+            state: EntityStateRow::Idle,
+            ..entity
+        });
+    }
+    ctx.db.player().character_id().update(Player {
+        online: false,
+        last_seen: ctx.timestamp,
+        ..character
+    });
+    // Free the connection to pick or create a different character without
+    // logging out of the account.
+    set_active_character(ctx, None);
+    Ok(())
+}
+
+/// Permanently deletes one of the caller's own characters by id, whether or
+/// not it is the connection's currently active one — the character-select
+/// screen's "delete" action. [`leave`] does not delete anything; this is the
+/// only reducer that does.
+///
+/// Rejects deleting a character belonging to a *different* account: the
+/// caller only ever supplies a bare `character_id`, so without this check
+/// any authenticated connection could delete anyone's character by guessing
+/// or enumerating ids.
+#[reducer]
+pub fn delete_character(ctx: &ReducerContext, character_id: Uuid) -> Result<(), String> {
+    let session_row = caller_session(ctx)?;
+    let character = ctx
         .db
         .player()
-        .identity()
-        .find(&ctx.sender())
-        .ok_or_else(|| "no character for this identity; call `join` first".to_string())?;
+        .character_id()
+        .find(&character_id)
+        .ok_or_else(|| "no character with this id".to_string())?;
+    if character.account_id != session_row.account_id {
+        return Err("that character does not belong to your account".to_string());
+    }
+
+    delete_character_rows(ctx, &character);
+    if session_row.character_id == Some(character_id) {
+        set_active_character(ctx, None);
+    }
+    Ok(())
+}
+
+/// Deletes every row `character` owns: its entity, its derived combat state,
+/// and its persistent gameplay rows (inventory, equipment, hotbar, glyphs,
+/// stats, resonance). Shared by [`leave`] and [`delete_character`] — the only
+/// difference between them is which character they resolve and whether the
+/// caller's `Session.character_id` needs clearing afterward.
+fn delete_character_rows(ctx: &ReducerContext, character: &Player) {
+    let character_id = character.character_id;
+    let entity_id = character.entity_id;
+
+    // Table scans and mutations must be separate passes, as elsewhere in this
+    // module.
+    let cooldown_ids: Vec<_> = ctx
+        .db
+        .cooldown()
+        .iter()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| row.id)
+        .collect();
+    let crowd_control_ids: Vec<_> = ctx
+        .db
+        .crowd_control()
+        .iter()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| row.id)
+        .collect();
+    let active_status_ids: Vec<_> = ctx
+        .db
+        .active_status()
+        .iter()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| row.id)
+        .collect();
+    let stat_modifier_ids: Vec<_> = ctx
+        .db
+        .stat_modifier()
+        .iter()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| row.id)
+        .collect();
+    let periodic_effect_ids: Vec<_> = ctx
+        .db
+        .periodic_effect()
+        .iter()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| row.id)
+        .collect();
+    // A player entity is only ever a threat *target*, never a `boss_entity`.
+    let threat_ids: Vec<_> = ctx
+        .db
+        .threat()
+        .iter()
+        .filter(|row| row.target_entity == entity_id)
+        .map(|row| row.id)
+        .collect();
+    let resonance_ids: Vec<_> = ctx
+        .db
+        .resonance()
+        .iter()
+        .filter(|row| row.character_id == character_id)
+        .map(|row| row.id)
+        .collect();
+
+    for id in cooldown_ids {
+        ctx.db.cooldown().id().delete(&id);
+    }
+    for id in crowd_control_ids {
+        ctx.db.crowd_control().id().delete(&id);
+    }
+    for id in active_status_ids {
+        ctx.db.active_status().id().delete(&id);
+    }
+    for id in stat_modifier_ids {
+        ctx.db.stat_modifier().id().delete(&id);
+    }
+    for id in periodic_effect_ids {
+        ctx.db.periodic_effect().id().delete(&id);
+    }
+    for id in threat_ids {
+        ctx.db.threat().id().delete(&id);
+    }
+    for id in resonance_ids {
+        ctx.db.resonance().id().delete(&id);
+    }
+
+    ctx.db.cast_state().entity_id().delete(&entity_id);
+    ctx.db.entity_stats().entity_id().delete(&entity_id);
+    ctx.db.game_entity().entity_id().delete(&entity_id);
+
+    ctx.db.known_glyphs().character_id().delete(&character_id);
+    ctx.db.equipment().character_id().delete(&character_id);
+    ctx.db.inventory().character_id().delete(&character_id);
+    ctx.db.hotbar().character_id().delete(&character_id);
+    ctx.db.player_stats().character_id().delete(&character_id);
+    ctx.db.player().character_id().delete(&character_id);
+}
+
+/// Resolves the caller's active character, if this connection is
+/// authenticated and one is selected. Unlike [`caller_character`], this never
+/// errors — it is for lifecycle hooks (`client_connected`, `heartbeat`) where
+/// "nothing to do yet" is a normal, silent case rather than a rejection.
+fn active_character(ctx: &ReducerContext) -> Option<Player> {
+    let session_row = ctx.db.session().identity().find(&ctx.sender())?;
+    let character_id = session_row.character_id?;
+    ctx.db.player().character_id().find(&character_id)
+}
+
+/// Resolves the caller's active character, or explains why there isn't one.
+pub fn caller_character(ctx: &ReducerContext) -> Result<Player, String> {
+    active_character(ctx).ok_or_else(|| {
+        "no character selected for this connection; call `join` first".to_string()
+    })
+}
+
+/// Resolves the caller's active character's entity, or explains why there
+/// isn't one.
+pub fn caller_entity(ctx: &ReducerContext) -> Result<GameEntity, String> {
+    let character = caller_character(ctx)?;
     ctx.db
         .game_entity()
         .entity_id()
-        .find(&player.entity_id)
+        .find(&character.entity_id)
         .ok_or_else(|| "character has no entity".to_string())
 }
 
@@ -282,19 +508,15 @@ pub fn caller_entity(ctx: &ReducerContext) -> Result<GameEntity, String> {
 /// short enough that a restarted server does not show a lobby full of ghosts.
 const PRESENCE_TIMEOUT_SECONDS: i64 = 15;
 
-/// Says the caller is still here. The client calls this every few seconds.
+/// Says the caller's active character is still here. The client calls this
+/// every few seconds.
 #[reducer]
 pub fn heartbeat(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx
-        .db
-        .player()
-        .identity()
-        .find(&ctx.sender())
-        .ok_or_else(|| "no character for this identity".to_string())?;
-    ctx.db.player().identity().update(Player {
+    let character = caller_character(ctx)?;
+    ctx.db.player().character_id().update(Player {
         online: true,
         last_seen: ctx.timestamp,
-        ..player
+        ..character
     });
     Ok(())
 }
@@ -322,9 +544,21 @@ pub fn expire_stale_presence(ctx: &ReducerContext) {
 
     for player in stale {
         log::info!("{} timed out", player.display_name);
-        ctx.db.player().identity().update(Player {
+        ctx.db.player().character_id().update(Player {
             online: false,
             ..player
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn character_cap_boundary() {
+        assert!(2 < MAX_CHARACTERS_PER_ACCOUNT);
+        assert!(MAX_CHARACTERS_PER_ACCOUNT <= MAX_CHARACTERS_PER_ACCOUNT);
+        assert_eq!(MAX_CHARACTERS_PER_ACCOUNT, 3);
     }
 }

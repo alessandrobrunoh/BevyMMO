@@ -13,7 +13,7 @@ mod systems;
 use bevy::prelude::*;
 use bevymmo_network::network::mode::has_client;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{not_typing, GameScreen, Screen};
 
 #[derive(Resource, Default)]
 pub struct SpellSelectorUiState {
@@ -28,7 +28,9 @@ impl Plugin for SpellSelectorUiPlugin {
         app.add_systems(
             Update,
             (
-                systems::toggle_spell_selector,
+                // Only the toggle is typing-gated — see the identical note
+                // in `ui::inventory::mod`.
+                systems::toggle_spell_selector.run_if(not_typing),
                 systems::update_spell_selector_ui,
                 systems::handle_spell_selector_interactions,
             )

@@ -10,12 +10,15 @@
 //!
 //! `instance_id` segue l'oggetto ovunque vada (inventario, equipaggiato,
 //! eventualmente scambiato/droppato in futuro); `inscriptions` è `None` per
-//! qualunque item che non ha `weapon_abilities()` nel proprio catalogo
+//! qualunque item che non ha `ability_loadout()` nel proprio catalogo
 //! (armor, pozioni, ...).
 
 use serde::{Deserialize, Serialize};
 
-use crate::abilities::{AbilitySelection, WeaponInscriptions};
+use crate::abilities::{
+    inscription::{ArmorInscription, WeaponInscription},
+    AbilitySelection, WeaponInscriptions,
+};
 
 use super::registry::ItemId;
 
@@ -55,11 +58,19 @@ pub struct ItemInstance {
     pub instance_id: ItemInstanceId,
     pub item_id: ItemId,
     pub inscriptions: Option<WeaponInscriptions>,
-    /// Which of `Item::weapon_abilities()`'s Primary/Secondary options is
+    /// Which of `Item::ability_loadout()`'s Primary/Secondary options is
     /// active on THIS esemplare — `Default` (nothing picked yet) resolves to
     /// the first offered option via `abilities::resolve_active_ability`.
     #[serde(default)]
     pub ability_selection: AbilitySelection,
+    /// New RootWord-based inscription model (additive to legacy inscriptions).
+    /// `None` means no root inscription has been applied yet.
+    #[serde(default)]
+    pub root_inscription: Option<WeaponInscription>,
+    /// Independent inscription for armor items. Kept separate during the
+    /// additive migration so armor never has to pretend to be a weapon.
+    #[serde(default)]
+    pub armor_inscription: Option<ArmorInscription>,
 }
 
 impl ItemInstance {
@@ -72,6 +83,8 @@ impl ItemInstance {
             item_id,
             inscriptions: None,
             ability_selection: AbilitySelection::default(),
+            root_inscription: None,
+            armor_inscription: None,
         }
     }
 }

@@ -117,15 +117,6 @@ pub struct SpellCooldowns {
 }
 
 impl SpellCooldowns {
-    /// Time elapsed on a spell's cooldown, or `None` if it is not on one.
-    ///
-    /// Note this returns *elapsed*, not remaining, despite the name — preserved
-    /// as-is from the Bevy version because the cooldown UI is calibrated
-    /// against it. See [`Cooldown::remaining_secs`] for the other one.
-    pub fn get_remaining(&self, id: &SpellId) -> Option<f32> {
-        self.timers.get(id).map(|timer| timer.elapsed_secs())
-    }
-
     /// Check if a spell is currently on cooldown.
     pub fn is_on_cooldown(&self, id: &SpellId) -> bool {
         self.timers.get(id).is_some_and(|timer| !timer.is_finished())

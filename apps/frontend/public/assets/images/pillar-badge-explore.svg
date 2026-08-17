@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" width="60" height="60">
+  <circle cx="30" cy="30" r="28" fill="#082238" stroke="#d0ae61" stroke-width="2"/>
+  <circle cx="30" cy="30" r="24" fill="none" stroke="#d0ae61" stroke-width="1" stroke-dasharray="2,2" opacity="0.6"/>
+  <!-- 8-point Compass Rose -->
+  <polygon points="30,8 33,26 30,30 27,26" fill="#f5edd9"/>
+  <polygon points="30,8 30,30 27,26" fill="#d0ae61"/>
+  <polygon points="30,52 33,34 30,30 27,34" fill="#f5edd9"/>
+  <polygon points="30,52 30,30 33,34" fill="#d0ae61"/>
+  <polygon points="8,30 26,27 30,30 26,33" fill="#f5edd9"/>
+  <polygon points="8,30 30,30 26,27" fill="#d0ae61"/>
+  <polygon points="52,30 34,27 30,30 34,33" fill="#f5edd9"/>
+  <polygon points="52,30 30,30 34,33" fill="#d0ae61"/>
+  <!-- Diagonal small points -->
+  <polygon points="15,15 28,28 26,30" fill="#d0ae61"/>
+  <polygon points="45,15 32,28 34,30" fill="#d0ae61"/>
+  <polygon points="15,45 28,32 30,34" fill="#d0ae61"/>
+  <polygon points="45,45 32,32 30,34" fill="#d0ae61"/>
+  <circle cx="30" cy="30" r="3.5" fill="#3ccbff" stroke="#d0ae61" stroke-width="1"/>
+</svg>

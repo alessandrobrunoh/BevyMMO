@@ -12,3 +12,12 @@ bind_addr = "0.0.0.0:5051"
 [client]
 # Client targets the production server.
 server_addr = "193.70.42.29:5051"
+
+[gateway]
+# Accepts connections on all interfaces inside Docker container.
+bind_addr = "0.0.0.0:8001"
+# TODO: set to the real deployed frontend origin — the `default.toml` value
+# (`http://localhost:4200`) is a dev-only placeholder and will reject every
+# browser request in production. Override here or via `GATEWAY__CORS_ORIGIN`.
+cookie_secure = true
+

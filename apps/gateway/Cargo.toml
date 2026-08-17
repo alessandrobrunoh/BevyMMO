@@ -1,0 +1,50 @@
+[package]
+name = "bevymmo_gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Shared app helpers: layered `config/*.toml` + path resolution. Keeps the
+# gateway consistent with `bins/game` on how settings are loaded.
+bevymmo_app_support = { path = "../../crates/app-support" }
+
+axum = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tower = { workspace = true, features = ["timeout"] }
+# Features beyond the workspace's `cors`: `catch-panic` turns a panicking
+# handler into a logged 500, `timeout` bounds every request (SpacetimeDB
+# round-trips included) so a hung upstream fails fast instead of pinning
+# connections.
+tower-http = { workspace = true, features = ["catch-panic", "timeout"] }
+tracing = { workspace = true }
+# `json` on top of the workspace's `env-filter`: one JSON object per line for
+# log collectors — see `GatewaySettings::log_format`.
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+
+# `AppError`, the gateway's single error type — see `api::error`.
+thiserror = "2"
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["serde", "v4"] }
+
+# OpenAPI generation for the Scalar reference at `/docs`. Plain `utoipa` only
+# (no `utoipa-scalar`/`utoipa-swagger-ui`): those crates ship axum integration
+# types pinned to a specific axum version, while the derive-only usage here
+# stays decoupled from the workspace's axum. The Scalar page itself is a
+# hand-rolled HTML shell pointing at `/docs/openapi.json`.
+utoipa = { version = "5", features = ["uuid"] }
+
+# Pinned exactly, same reason as `crates/client/Cargo.toml`: the generated
+# `module_bindings` call into `spacetimedb_sdk::__codegen`, an internal API
+# with no compatibility guarantee across even patch versions.
+spacetimedb-sdk = "=2.8.1"
+
+[[bin]]
+name = "gateway"
+path = "src/main.rs"
+
+[lints]
+workspace = true

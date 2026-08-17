@@ -1,0 +1,206 @@
+@use '../../../styles/variables' as *;
+
+.auth-page-wrapper {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--header-height) + 2rem) 1.5rem 4rem 1.5rem;
+  overflow: hidden;
+
+  .auth-backdrop {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center 25%;
+    filter: brightness(0.4) blur(3px);
+    z-index: 1;
+  }
+
+  .auth-overlay {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 50%, rgba(13, 30, 46, 0.75) 0%, rgba(6, 23, 38, 0.98) 100%);
+    z-index: 2;
+  }
+
+  .auth-container {
+    position: relative;
+    z-index: 3;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .auth-panel {
+    padding: 2.5rem 2.25rem;
+    background: linear-gradient(180deg, var(--blue-900) 0%, var(--blue-950) 100%);
+    border: 1px solid rgba(208, 174, 97, 0.5);
+    box-shadow: var(--shadow-runic), 0 0 35px rgba(60, 203, 255, 0.12);
+
+    @media (max-width: 480px) {
+      padding: 1.75rem 1.25rem;
+    }
+  }
+
+  .auth-header {
+    text-align: center;
+    margin-bottom: 2rem;
+
+    .auth-rune-logo {
+      width: 36px;
+      height: 52px;
+      margin: 0 auto 0.75rem auto;
+
+      .rune-svg {
+        width: 100%;
+        height: 100%;
+        filter: drop-shadow(0 0 10px rgba(60, 203, 255, 0.7));
+      }
+    }
+
+    .auth-title {
+      font-family: var(--font-serif);
+      font-size: 1.6rem;
+      font-weight: 500;
+      color: #ffffff;
+      letter-spacing: 0.08em;
+    }
+
+    .auth-subtitle {
+      font-family: var(--font-serif);
+      font-size: 0.9rem;
+      color: rgba(237, 248, 255, 0.75);
+      margin-top: 0.4rem;
+      line-height: 1.5;
+    }
+  }
+
+  .auth-error-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: rgba(196, 82, 82, 0.15);
+    border: 1px solid var(--color-danger);
+    border-radius: 2px;
+    margin-bottom: 1.25rem;
+    color: #ff9e9e;
+    font-size: 0.85rem;
+
+    .err-ico { color: var(--color-danger); }
+  }
+
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+
+      .label-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .form-label {
+        font-family: var(--font-serif);
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--gold-light);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .forgot-link {
+        font-size: 0.75rem;
+        color: rgba(255, 255, 255, 0.6);
+        &:hover { color: var(--cyan-light); }
+      }
+
+      .input-wrap {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.65rem 0.9rem;
+        background: rgba(6, 23, 38, 0.85);
+        border: 1px solid rgba(208, 174, 97, 0.35);
+        border-radius: 2px;
+        transition: all var(--transition);
+
+        &:focus-within {
+          border-color: var(--cyan);
+          box-shadow: 0 0 12px rgba(60, 203, 255, 0.35);
+        }
+
+        .field-icon {
+          font-size: 0.9rem;
+        }
+
+        .form-input {
+          flex: 1;
+          background: transparent;
+          border: none;
+          outline: none;
+          color: #ffffff;
+          font-family: var(--font-sans);
+          font-size: 0.95rem;
+
+          &::placeholder {
+            color: rgba(255, 255, 255, 0.35);
+          }
+        }
+
+        .password-toggle-btn {
+          font-size: 0.9rem;
+          color: rgba(255, 255, 255, 0.6);
+          &:hover { color: #ffffff; }
+        }
+      }
+    }
+
+    .form-options {
+      .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        color: rgba(237, 248, 255, 0.8);
+        cursor: pointer;
+
+        input[type="checkbox"] {
+          accent-color: var(--gold);
+          width: 15px;
+          height: 15px;
+        }
+      }
+    }
+
+    .form-submit {
+      margin-top: 0.5rem;
+    }
+
+    .mode-switch-footer {
+      text-align: center;
+      font-size: 0.85rem;
+      color: rgba(255, 255, 255, 0.7);
+
+      .switch-link {
+        font-family: var(--font-serif);
+        font-weight: 700;
+        color: var(--gold-light);
+        letter-spacing: 0.05em;
+        margin-left: 0.3rem;
+
+        &:hover {
+          color: #ffffff;
+          text-decoration: underline;
+        }
+      }
+    }
+  }
+}

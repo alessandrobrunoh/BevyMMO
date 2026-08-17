@@ -1,0 +1,128 @@
+<app-page-header
+  title="Development & Patch Notes"
+  subtitle="Track the ongoing evolution of Eivar Online through alpha builds, gameplay iterations, and engine notes."
+  badge="Changelogs & Builds"
+  bgImage="assets/images/ancient-citadel.jpg"
+  [breadcrumbs]="[{ label: 'Updates' }]"
+></app-page-header>
+
+<div class="updates-page-section section-padding">
+  <div class="container">
+    <div class="updates-layout-grid">
+      <!-- Left: Main Updates List -->
+      <main class="updates-main-stream">
+        <!-- Toolbar -->
+        <div class="updates-toolbar stone-panel">
+          <div class="type-filter-buttons">
+            <button
+              class="filter-btn"
+              [class.active]="activeType() === 'All'"
+              (click)="setType('All')"
+            >
+              All Logs
+            </button>
+            <button
+              class="filter-btn"
+              [class.active]="activeType() === 'Patch Notes'"
+              (click)="setType('Patch Notes')"
+            >
+              Patch Notes
+            </button>
+            <button
+              class="filter-btn"
+              [class.active]="activeType() === 'Development'"
+              (click)="setType('Development')"
+            >
+              Development Reports
+            </button>
+          </div>
+        </div>
+
+        <!-- Updates Timeline Stream -->
+        <div class="updates-stream-list">
+          @for (update of filteredUpdates(); track update.id) {
+            <article [id]="update.id" class="update-entry-card stone-panel chamfer-box">
+              <header class="update-card-header">
+                <div class="header-left">
+                  <div class="version-badge">
+                    <span class="rune">ᛉ</span>
+                    <span class="v-num">{{ update.version }}</span>
+                  </div>
+                  <div class="title-group">
+                    <h3 class="update-title">{{ update.title }}</h3>
+                    <span class="update-type-tag">{{ update.type }} · {{ update.date }}</span>
+                  </div>
+                </div>
+
+                <div class="status-pill" [ngClass]="update.status.toLowerCase().replace(' ', '-')">
+                  {{ update.status }}
+                </div>
+              </header>
+
+              <div class="update-summary-box">
+                <p class="summary-text">{{ update.summary }}</p>
+              </div>
+
+              <!-- Highlights -->
+              @if (update.highlights && update.highlights.length > 0) {
+                <div class="highlights-box">
+                  <h4 class="h-title">Key Highlights:</h4>
+                  <ul class="h-list">
+                    @for (hl of update.highlights; track hl) {
+                      <li><span class="bullet">✦</span> {{ hl }}</li>
+                    }
+                  </ul>
+                </div>
+              }
+
+              <!-- Categorized Sections: NEW, CHANGED, BALANCE, FIXED, TECHNICAL -->
+              <div class="update-sections-grid">
+                @for (sec of update.sections; track sec.category) {
+                  <div class="category-block" [ngClass]="'cat-' + sec.category.toLowerCase()">
+                    <div class="category-header">
+                      <span class="cat-badge">{{ sec.category }}</span>
+                    </div>
+                    <ul class="cat-items-list">
+                      @for (item of sec.items; track item) {
+                        <li>{{ item }}</li>
+                      }
+                    </ul>
+                  </div>
+                }
+              </div>
+            </article>
+          }
+        </div>
+      </main>
+
+      <!-- Right: Sticky Version Navigation Sidebar -->
+      <aside class="updates-version-sidebar">
+        <div class="sidebar-sticky-box stone-panel chamfer-box">
+          <div class="sidebar-header">
+            <span class="rune">ᛟ</span>
+            <h4 class="sidebar-title">Build Index</h4>
+          </div>
+
+          <nav class="version-nav-list">
+            @for (upd of updates(); track upd.id) {
+              <button class="v-nav-item" (click)="scrollToUpdate(upd.id)">
+                <div class="v-meta">
+                  <span class="v-title">{{ upd.version }}</span>
+                  <span class="v-date">{{ upd.date }}</span>
+                </div>
+                <span class="v-arrow">↓</span>
+              </button>
+            }
+          </nav>
+
+          <div class="sidebar-footer">
+            <p class="server-status">
+              <span class="online-dot"></span>
+              <span>Alpha Shard: Online</span>
+            </p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>

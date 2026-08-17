@@ -1,7 +1,7 @@
 //! Inscription UI — the Eidolon counterpart of `crate::ui::spell_selector`.
 //!
 //! Shown instead of the spell selector when the equipped weapon has Eidolon
-//! gestures (`Item::weapon_abilities()`); the two share the same toggle key,
+//! gestures (`Item::ability_loadout()`); the two share the same toggle key,
 //! each independently checking the equipped weapon before opening (mirrors
 //! `crate::spells::input`/`crate::spells::eidolon_input` splitting Q/W/E the
 //! same way).
@@ -12,7 +12,7 @@ mod systems;
 use bevy::prelude::*;
 use bevymmo_network::network::mode::has_client;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{not_typing, GameScreen, Screen};
 
 #[derive(Resource, Default)]
 pub struct InscriptionUiState {
@@ -27,7 +27,9 @@ impl Plugin for InscriptionUiPlugin {
         app.add_systems(
             Update,
             (
-                systems::toggle_inscription_window,
+                // Only the toggle is typing-gated — see the identical note
+                // in `ui::inventory::mod`.
+                systems::toggle_inscription_window.run_if(not_typing),
                 systems::refresh_inscription_window_on_equipment_change,
                 systems::handle_inscription_interactions,
             )

@@ -36,16 +36,6 @@ impl SpellCastRequest {
         }
     }
 
-    /// Create a caster-centered spell request (no target position).
-    pub fn caster_centered(caster: EntityId, spell_id: SpellId) -> Self {
-        Self {
-            caster,
-            spell_id,
-            target_position: None,
-            target_entity: None,
-        }
-    }
-
     /// Create a targeted spell request with a specific position.
     pub fn targeted(caster: EntityId, spell_id: SpellId, target_position: Vec3) -> Self {
         Self {

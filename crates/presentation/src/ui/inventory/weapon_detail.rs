@@ -128,7 +128,7 @@ pub fn summarize_weapon(
     known: &KnownGlyphs,
 ) -> Option<WeaponSummary> {
     let item = items.get(&instance.item_id)?;
-    let abilities = item.weapon_abilities()?;
+    let abilities = item.ability_loadout()?;
     let inscriptions = instance.inscriptions.clone().unwrap_or_default();
     let profile = item.rune_profile();
 
@@ -146,7 +146,7 @@ pub fn summarize_weapon(
 
     let slots = AbilitySlot::ALL
         .iter()
-        .filter_map(|&slot| summarize_slot(slot, instance, abilities, &inscriptions, glyphs, known))
+        .filter_map(|&slot| summarize_slot(slot, instance, abilities, &inscriptions, glyphs, known, item.as_ref()))
         .collect();
 
     Some(WeaponSummary { runes, slots })
@@ -180,6 +180,7 @@ fn summarize_slot(
     inscriptions: &WeaponInscriptions,
     glyphs: GlyphCatalog,
     known: &KnownGlyphs,
+    item: &dyn bevymmo_gameplay::items::Item,
 ) -> Option<SlotSummary> {
     let selection = &instance.ability_selection;
     let active_id = resolve_active_ability(slot, abilities, selection)?;
@@ -198,6 +199,7 @@ fn summarize_slot(
         known,
         glyphs.abilities,
         glyphs.modifiers,
+        Some(item),
     );
     let blocked = match &preview {
         Err(CastBlockedReason::UnknownGlyph) => {
@@ -274,8 +276,8 @@ fn describe_geometry(geometry: bevymmo_gameplay::abilities::AbilityGeometry) -> 
 /// `AbilityParams`, e stamparlo riempirebbe la riga di rumore.
 fn describe_params(params: &bevymmo_gameplay::abilities::AbilityParams) -> String {
     let mut parts = Vec::new();
-    if params.power != 0.0 {
-        parts.push(format!("{} power", number(params.power)));
+    if params.potency != 0.0 {
+        parts.push(format!("{} potency", number(params.potency)));
     }
     if params.area != 0.0 {
         parts.push(format!("{} m area", number(params.area)));
@@ -367,7 +369,7 @@ mod tests {
 
     fn params() -> AbilityParams {
         AbilityParams {
-            power: 220.0,
+            potency: 220.0,
             area: 0.0,
             range: 22.0,
             cast_time: 0.25,
@@ -424,11 +426,16 @@ mod tests {
     }
 
     #[test]
-    fn slots_with_one_gesture_have_no_alternatives() {
+    fn ultimate_slot_lists_selectable_alternatives() {
         let app = catalog_app();
         let summary = summarize(&app, &magic_staff(), &KnownGlyphs::default());
 
-        assert!(summary.slots.iter().all(|slot| slot.alternatives.is_none()));
+        assert!(summary.slots[0].alternatives.is_none());
+        assert!(summary.slots[1].alternatives.is_none());
+        assert_eq!(
+            summary.slots[2].alternatives.as_deref(),
+            Some("Also offers: Lancia Meteora")
+        );
     }
 
     /// The rune line is the shared budget across all three slots, discounted by
@@ -503,7 +510,7 @@ mod tests {
     #[test]
     fn params_line_lists_only_the_fields_that_carry_information() {
         let line = describe_params(&params());
-        assert!(line.contains("220 power"));
+        assert!(line.contains("220 potency"));
         assert!(line.contains("22 m range"));
         assert!(line.contains("2.5 s cooldown"));
         // `area` is 0 for a pure projectile: printing it would be noise.
@@ -513,7 +520,7 @@ mod tests {
     #[test]
     fn params_line_never_comes_back_empty() {
         let empty = AbilityParams {
-            power: 0.0,
+            potency: 0.0,
             area: 0.0,
             range: 0.0,
             cast_time: 0.0,

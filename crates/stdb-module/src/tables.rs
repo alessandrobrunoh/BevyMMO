@@ -23,9 +23,9 @@
 //! scan. `game_entity` carries a `cell_x`/`cell_z` grid index for exactly that:
 //! a linear scan per mob per tick does not survive contact with a populated map.
 
-use spacetimedb::{table, Identity, SpacetimeType, Timestamp};
+use spacetimedb::{table, Identity, SpacetimeType, Timestamp, Uuid};
 
-use crate::rows::{HotbarRow, ItemInstanceRow, StatsRow, Vec3Row};
+use crate::rows::{EffectPayloadRow, HotbarRow, ItemInstanceRow, StatsRow, Vec3Row};
 
 /// Side of a spatial grid cell, in world units.
 ///
@@ -43,20 +43,101 @@ pub fn grid_cell(position: Vec3Row) -> (i32, i32) {
 }
 
 // ---------------------------------------------------------------------------
+// Persistent: accounts
+// ---------------------------------------------------------------------------
+
+/// What an account is allowed to do. Everyone starts as `Player`; promotion to
+/// `Admin` is itself a protected, audited reducer call (Slice 3), never a
+/// value a client can set on itself.
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoleRow {
+    Player,
+    Admin,
+}
+
+/// A permanent login: one email, one password hash, up to
+/// [`crate::MAX_CHARACTERS_PER_ACCOUNT`] characters (see `Player::account_id`).
+///
+/// Deliberately holds no gameplay state of its own — that stays on `Player`
+/// rows, keyed by `account_id` — so an account is exactly the credential plus
+/// the role, and nothing about it needs to change when a character does.
+///
+/// Deliberately **not** `public`: SpacetimeDB 2.8.1's row-level security
+/// filters are unimplemented (`client_visibility_filter` is marked
+/// unenforced), so `public` here would let any connected client subscribe to
+/// `SELECT * FROM account` and read every email and password hash in the
+/// database. Reducers can still read and write this table freely — visibility
+/// only gates client-side subscriptions — so nothing about `reducers::account`
+/// needs to change; the client simply never sees this table directly.
+#[table(accessor = account)]
+pub struct Account {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    /// Lowercased, trimmed uniqueness key. See `reducers::account::normalize_email`.
+    #[unique]
+    pub normalized_email: String,
+    /// As the player typed it, for their own profile display.
+    pub email: String,
+    /// Argon2id PHC string (algorithm, salt and hash together) — never the
+    /// plaintext, and never a fast unsalted digest. See `reducers::account`.
+    pub password_hash: String,
+    pub role: RoleRow,
+    pub created_at: Timestamp,
+}
+
+/// Binds one live connection to the account that authenticated it, and to
+/// whichever character (if any) that connection is currently playing.
+///
+/// Rows here are ephemeral — deleted on `client_disconnected` and on
+/// `logout` — unlike `Account`/`Player`, which outlive every session. The
+/// SpacetimeDB `Identity` is a per-connection credential, not a login: this is
+/// the only path a reducer has from `ctx.sender()` to an account, and from
+/// there to a character.
+///
+/// Unlike [`Account`], this table **is** `public` — it holds no credential,
+/// only bookkeeping (`account_id`, `character_id`) that is already derivable
+/// from the public `player` table (`Player::account_id`) by anyone who knows
+/// one of the account's characters. Making `Session` public is what lets the
+/// owning client learn its *own* `account_id` — the one thing it cannot
+/// derive from `player` before it has a character yet — and from there build
+/// its character roster, by filtering `player` rows client-side to the row
+/// whose `identity` matches its own connection.
+#[table(accessor = session, public)]
+pub struct Session {
+    #[primary_key]
+    pub identity: Identity,
+    #[index(btree)]
+    pub account_id: u64,
+    /// `None` until `join` selects or creates a character for this session.
+    #[index(btree)]
+    pub character_id: Option<Uuid>,
+    pub authenticated_at: Timestamp,
+}
+
+// ---------------------------------------------------------------------------
 // Persistent: the character
 // ---------------------------------------------------------------------------
 
-/// A player character. Keyed by `Identity`, not by name.
+/// A player character, owned by an [`Account`].
 ///
-/// The Bevy/Postgres server keyed characters on a normalised name, which meant
-/// anyone who knew a name could log in as that character (netcode ran with an
-/// all-zero private key, so there was nothing else to check). `Identity` is
-/// assigned and verified by SpacetimeDB, so that hole closes by construction;
-/// the name survives as a display label that happens to be unique.
+/// Up to [`crate::MAX_CHARACTERS_PER_ACCOUNT`] rows share an `account_id`.
+/// `character_id` is stable regardless of which connection, if any, is
+/// currently playing the character — see `Session` for that binding — which is
+/// what makes more than one character per account possible: an `Identity` can
+/// be only one `Session.character_id` at a time, but a `Player` row does not
+/// stop existing just because nobody is connected as it right now.
 #[table(accessor = player, public)]
 pub struct Player {
+    /// Random UUID (v4, from `ReducerContext::new_uuid_v4`), minted once at
+    /// `join` and never reused. Not `#[auto_inc]`: sequential ids leak how
+    /// many characters exist and invite enumeration; a UUID is safe to show
+    /// to other clients, which is exactly what the public `player` table and
+    /// the gateway's `/public/accounts/*` do.
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: Uuid,
+    #[index(btree)]
+    pub account_id: u64,
     #[unique]
     pub normalized_name: String,
     pub display_name: String,
@@ -64,8 +145,8 @@ pub struct Player {
     /// on entity ids, so the character has one like everything else.
     #[unique]
     pub entity_id: u64,
-    /// Whether a connection for this identity is currently open. Distinct from
-    /// row existence: the character outlives the session.
+    /// Whether a connection is currently playing this character. Distinct
+    /// from row existence: the character outlives the session.
     pub online: bool,
     pub last_seen: Timestamp,
 }
@@ -74,28 +155,28 @@ pub struct Player {
 #[table(accessor = player_stats, public)]
 pub struct PlayerStats {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: Uuid,
     pub stats: StatsRow,
 }
 
 #[table(accessor = hotbar, public)]
 pub struct Hotbar {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: Uuid,
     pub slots: HotbarRow,
 }
 
 #[table(accessor = inventory, public)]
 pub struct InventoryTable {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: Uuid,
     pub slots: Vec<Option<ItemInstanceRow>>,
 }
 
 #[table(accessor = equipment, public)]
 pub struct EquipmentTable {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: Uuid,
     /// Ten slots in `rows::EQUIP_SLOTS` order.
     pub slots: Vec<Option<ItemInstanceRow>>,
 }
@@ -103,10 +184,132 @@ pub struct EquipmentTable {
 #[table(accessor = known_glyphs, public)]
 pub struct KnownGlyphsTable {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: Uuid,
     pub essences: Vec<String>,
     pub modifiers: Vec<String>,
     pub ancient_words: Vec<String>,
+}
+
+/// New vocabulary for Root Words and universal Ancient Words. This table is
+/// additive to `KnownGlyphsTable` so existing characters remain readable while
+/// the migration is in progress.
+#[table(accessor = known_ancient_language, public)]
+pub struct KnownAncientLanguageTable {
+    #[primary_key]
+    pub character_id: Uuid,
+    pub root_words: Vec<String>,
+    pub ancient_words: Vec<String>,
+    pub base_abilities: Vec<String>,
+}
+
+/// A player's resonance (XP and level) with an Ancient Word.
+///
+/// Keyed by auto-increment ID; the natural key `(character_id, root_word_id)`
+/// is enforced unique so that a character has at most one row per word.
+#[table(
+    accessor = resonance,
+    public,
+    index(accessor = character_root_word, btree(columns = [character_id, root_word_id]))
+)]
+#[derive(Clone)]
+pub struct Resonance {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub character_id: Uuid,
+    pub root_word_id: String,
+    pub xp: u64,
+    pub level: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Persistent: parties
+// ---------------------------------------------------------------------------
+//
+// Keyed on `character_id`, not `Identity`. A party is a relationship between
+// *characters* — the persistent things a player builds up gear and resonance
+// on — not between connections. A player can reconnect under a fresh
+// `Identity` (a new browser tab, a dropped socket) and keep the same
+// character; the party must follow the character through that, not evaporate
+// because the old `Identity` disconnected. See `reducers::lifecycle::caller_character`
+// for how a reducer resolves "which character is calling", and `Session` for
+// how a character's *current* `Identity`, if any, is found when a party
+// notification needs somewhere to go.
+
+/// One party of up to [`crate::MAX_PARTY_SIZE`] characters.
+///
+/// `leader` is `#[unique]`: [`PartyMemberRow`] guarantees a character is
+/// never in more than one party at a time, and the leader is always also a
+/// member (see `reducers::parties`), so a character can never lead two
+/// parties simultaneously — the uniqueness constraint documents that
+/// invariant rather than merely hoping for it.
+#[table(accessor = party, public)]
+pub struct PartyRow {
+    #[primary_key]
+    #[auto_inc]
+    pub party_id: u64,
+    #[unique]
+    pub leader: Uuid,
+    pub created_at: Timestamp,
+}
+
+/// One character's membership in one party.
+///
+/// Keyed by `character_id` rather than an auto-inc id: that primary key *is*
+/// the "one party per character at a time" guarantee, the same way
+/// `Player::entity_id` being `#[unique]` guarantees one entity per character.
+/// No separate uniqueness check is needed anywhere in `reducers::parties`.
+#[table(
+    accessor = party_member,
+    public,
+    index(accessor = by_party, btree(columns = [party_id]))
+)]
+pub struct PartyMemberRow {
+    #[primary_key]
+    pub character_id: Uuid,
+    pub party_id: u64,
+    /// Used to break ties when a leader leaves: the longest-tenured
+    /// remaining member is promoted (see `reducers::parties::party_leave`).
+    pub joined_at: Timestamp,
+}
+
+/// Which direction a pending [`PartyRequestRow`] runs.
+///
+/// Both kinds are resolved identically by `party_accept`/`party_decline`:
+/// whoever is named in `recipient` is the one who must act. The kind exists
+/// only so `party_accept` knows who joins the party on acceptance — the
+/// invitee for an `Invite`, the original joiner (not the accepting leader)
+/// for a `JoinRequest`.
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartyRequestKind {
+    /// The party's leader invited someone outside it.
+    Invite,
+    /// An outsider asked to join a named leader's party.
+    JoinRequest,
+}
+
+/// A pending invite or join request, waiting on `recipient` to accept or
+/// decline.
+///
+/// At most one live request may connect any two characters — enforced in
+/// `reducers::parties`, not by the schema — so `party_accept`/`party_decline`
+/// resolving "whichever pending request exists between the sender and the
+/// named character" is never ambiguous.
+#[table(
+    accessor = party_request,
+    public,
+    index(accessor = by_recipient, btree(columns = [recipient]))
+)]
+pub struct PartyRequestRow {
+    #[primary_key]
+    #[auto_inc]
+    pub request_id: u64,
+    pub party_id: u64,
+    pub kind: PartyRequestKind,
+    pub initiator: Uuid,
+    /// Whoever must `/party accept` or `/party decline` this request.
+    pub recipient: Uuid,
+    pub created_at: Timestamp,
 }
 
 /// GM edits to a map's props: moved, retinted or removed.
@@ -193,9 +396,10 @@ pub struct GameEntity {
     #[auto_inc]
     pub entity_id: u64,
     pub kind: EntityKindRow,
-    /// Set for player characters, so a reducer can map caller to entity.
+    /// Set for player characters, so a reducer can map this entity back to
+    /// the character that owns it (see `Player::character_id`).
     #[index(btree)]
-    pub owner: Option<Identity>,
+    pub owner_character_id: Option<Uuid>,
     pub display_name: String,
     pub color: ColorRow,
     pub position: Vec3Row,
@@ -233,6 +437,9 @@ pub struct EntityStats {
 pub enum CastKindRow {
     Instant,
     CastTime,
+    /// Hold-to-charge: accumulates while held, fires on release (not auto-fire).
+    /// Only valid for Eidolon abilities with BlueprintExecution::Charge.
+    Charge,
     Channeling,
 }
 
@@ -244,6 +451,12 @@ pub enum CastSourceRow {
     Spell,
     /// Eidolon weapon ability (`eidolon_cast` reducer).
     Eidolon,
+    /// Primary ability from the equipped helmet.
+    Helmet,
+    /// Primary ability from the equipped chestplate.
+    Armor,
+    /// Primary ability from the equipped boots/shoes.
+    Shoes,
 }
 
 /// A cast in progress. At most one per caster: starting another cancels it.
@@ -301,7 +514,7 @@ pub struct Projectile {
     pub target_entity: Option<u64>,
     pub target_position: Option<Vec3Row>,
     pub speed: f32,
-    pub damage: f32,
+    pub effects: Vec<EffectPayloadRow>,
     pub hit_radius: f32,
     pub remaining_seconds: f32,
 }
@@ -310,6 +523,16 @@ pub struct Projectile {
 pub enum AoeShapeRow {
     Circle,
     Cone,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AoeTargetingRow {
+    /// Hits all entities in range.
+    Everyone,
+    /// Caster only (e.g. self-heal AoE).
+    CasterOnly,
+    /// Everyone except caster (e.g. Meteorite: caster is not damaged).
+    ExcludeCaster,
 }
 
 #[table(accessor = aoe_region, public)]
@@ -329,8 +552,9 @@ pub struct AoeRegion {
     pub pending_delay_seconds: f32,
     /// Entities already affected, for effects that apply once each.
     pub affected: Vec<u64>,
-    pub damage: f32,
-    pub healing: f32,
+    /// Targeting policy for this region.
+    pub targeting: AoeTargetingRow,
+    pub effects: Vec<EffectPayloadRow>,
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
@@ -360,6 +584,28 @@ pub struct CrowdControl {
     /// a fill ratio: it only ever sees the countdown, so the first frame it
     /// observes would always look like a full bar.
     pub total_seconds: f32,
+}
+
+/// Semantic status instance. Specialized runtime tables remain optimized child
+/// state; this row gives them one stable owner and gives clients a unified view.
+#[table(
+    accessor = active_status,
+    public,
+    index(accessor = on_entity, btree(columns = [entity_id]))
+)]
+pub struct ActiveStatus {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub entity_id: u64,
+    pub status_id: String,
+    pub source: Option<u64>,
+    pub stacks: u16,
+    pub potency: f32,
+    pub remaining_seconds: f32,
+    pub total_seconds: f32,
+    /// Present while the status is represented by the legacy CC table.
+    pub control_kind: Option<CrowdControlKindRow>,
 }
 
 /// Whether a modifier helps or hurts the entity carrying it.
@@ -393,6 +639,7 @@ pub struct StatModifier {
     pub is_multiplicative: bool,
     pub amount: f32,
     pub kind: ModifierKindRow,
+    pub origin_status_instance_id: Option<u64>,
     /// `None` means it lasts until something removes it.
     pub remaining_seconds: Option<f32>,
 }
@@ -420,6 +667,8 @@ pub struct PeriodicEffect {
     /// every consumer wants the signed number anyway.
     pub amount_per_tick: f32,
     pub tick_interval_seconds: f32,
+    /// Status instance that owns this periodic schedule, when applicable.
+    pub origin_status_instance_id: Option<u64>,
     /// Counts up to `tick_interval_seconds`, then fires and resets.
     pub since_last_tick: f32,
     pub remaining_seconds: f32,

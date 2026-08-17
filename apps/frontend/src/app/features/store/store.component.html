@@ -1,0 +1,127 @@
+<app-page-header
+  title="Supporter & Cosmetic Store"
+  subtitle="Support the development of Eivar Online with exclusive Alpha supporter bundles and cosmetic armor skins."
+  badge="Alpha Emporium"
+  bgImage="assets/images/founder-banner.jpg"
+  [breadcrumbs]="[{ label: 'Store' }]"
+></app-page-header>
+
+<div class="store-page-section section-padding">
+  <div class="container">
+    <!-- Notice Banner -->
+    <div class="prototype-notice stone-panel chamfer-box">
+      <div class="notice-left">
+        <span class="notice-rune">ᛟ</span>
+        <div>
+          <h4 class="notice-title">PROTOTYPE STOREFRONT ONLY</h4>
+          <p class="notice-desc">All items and currencies shown here are purely fictional mock representations for interface testing. No real payments or financial transactions occur.</p>
+        </div>
+      </div>
+      <div class="user-balance-pill">
+        <span class="cur-icon">✦</span>
+        <span class="cur-text">Test Balance: <strong>2,400 Marks</strong></span>
+      </div>
+    </div>
+
+    <!-- Category Tabs -->
+    <div class="store-toolbar stone-panel">
+      <div class="category-tabs">
+        @for (cat of categories; track cat) {
+          <button
+            class="cat-btn"
+            [class.active]="activeCategory() === cat"
+            (click)="setCategory(cat)"
+          >
+            {{ cat }}
+          </button>
+        }
+      </div>
+    </div>
+
+    <!-- Store Grid -->
+    <div class="store-grid">
+      @for (item of filteredItems(); track item.id) {
+        <article class="store-item-card stone-panel chamfer-box" [ngClass]="'rarity-' + item.rarity.toLowerCase()">
+          <div class="item-media" (click)="openItemModal(item)">
+            <img [src]="item.image" [alt]="item.name" class="item-img" />
+            <div class="rarity-badge">{{ item.rarity }}</div>
+            @if (item.featured) {
+              <div class="featured-badge">
+                <span class="material-symbols-outlined star-ico">star</span>
+                <span>Featured</span>
+              </div>
+            }
+          </div>
+
+          <div class="item-body">
+            <div class="item-meta">
+              <span class="item-cat">{{ item.category }}</span>
+              <span class="item-price">{{ item.mockPrice }}</span>
+            </div>
+
+            <h3 class="item-name" (click)="openItemModal(item)">{{ item.name }}</h3>
+            <p class="item-desc">{{ item.description }}</p>
+
+            <div class="item-actions">
+              <app-eivar-button variant="primary" size="sm" (onClick)="openItemModal(item)">
+                <span>Inspect</span>
+              </app-eivar-button>
+
+              <app-eivar-button variant="cyan" size="sm" (onClick)="onMockPurchase(item)">
+                <span>Unlock</span>
+              </app-eivar-button>
+            </div>
+          </div>
+        </article>
+      }
+    </div>
+  </div>
+</div>
+
+<!-- Rich Item Preview Modal -->
+@if (selectedItem(); as modalItem) {
+  <app-modal
+    [isOpen]="true"
+    [title]="modalItem.name"
+    [showFooter]="true"
+    (close)="closeItemModal()"
+  >
+    <div class="item-modal-content">
+      <div class="modal-media-wrap chamfer-box">
+        <img [src]="modalItem.image" [alt]="modalItem.name" class="modal-img" />
+        <span class="modal-rarity-pill" [ngClass]="modalItem.rarity.toLowerCase()">
+          {{ modalItem.rarity }} Tier
+        </span>
+      </div>
+
+      <div class="modal-details">
+        <div class="modal-price-bar">
+          <span class="modal-cat">{{ modalItem.category }}</span>
+          <span class="modal-price">{{ modalItem.mockPrice }}</span>
+        </div>
+
+        <p class="modal-lore">{{ modalItem.detailedLore }}</p>
+
+        @if (modalItem.includes && modalItem.includes.length > 0) {
+          <div class="modal-includes-box">
+            <h5 class="includes-title">Package Includes:</h5>
+            <ul class="includes-list">
+              @for (inc of modalItem.includes; track inc) {
+                <li><span class="bullet">✦</span> {{ inc }}</li>
+              }
+            </ul>
+          </div>
+        }
+      </div>
+    </div>
+
+    <div footer class="modal-actions-footer">
+      <app-eivar-button variant="secondary" size="md" (onClick)="closeItemModal()">
+        <span>Close Preview</span>
+      </app-eivar-button>
+      <app-eivar-button variant="cyan" size="md" (onClick)="onMockPurchase(modalItem)">
+        <span>Unlock (Prototype Demo)</span>
+      </app-eivar-button>
+    </div>
+  </app-modal>
+}

@@ -9,12 +9,13 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::abilities::{RuneProfile, WeaponAbilities};
+use crate::abilities::{AbilityBlueprint, AbilityLoadout, BaseAbility, RuneProfile};
 
 use super::components::EquipSlot;
 use super::effects::ItemEffect;
 use super::registry::ItemId;
 use super::spell_kit::SpellKit;
+use super::weapon_family::WeaponFamilyId;
 
 /// Narrative category, used by the inventory UI (filtering / icons) and by
 /// equip validation (only `Weapon` items can go into the weapon slot, etc.).
@@ -108,20 +109,29 @@ pub trait Item: Send + Sync + 'static {
         None
     }
 
-    /// I tre gesti fissi (Primary/Secondary/Ultimate) di questa variante
-    /// d'arma — sistema "Eidolon": il gesto è dell'arma, cosa manifesta
-    /// dipende dall'Incisione del giocatore su quell'esemplare (vedi
-    /// `crate::abilities`). `None` per item senza gesti propri.
-    ///
-    /// Coesiste con [`spell_kit`](Item::spell_kit): un'arma usa l'uno O
-    /// l'altro modello, non entrambi. Nuove armi dovrebbero preferire
-    /// questo; `spell_kit` resta per gli item già esistenti.
-    fn weapon_abilities(&self) -> Option<&WeaponAbilities> {
+    /// Shared weapon category. `None` for non-weapon items or items that do
+    /// not participate in the weapon-family system yet.
+    fn weapon_family(&self) -> Option<WeaponFamilyId> {
         None
     }
 
-    /// Capacità Runica / Stabilità / Affinità — quanto e cosa questa arma
-    /// può reggere inciso. `None` se `weapon_abilities()` è `None`.
+    /// Abilità offerte da questo item. Lo stesso loadout è usato da armi e
+    /// armature; `None` indica un item senza abilità proprie.
+    fn ability_loadout(&self) -> Option<&AbilityLoadout> {
+        None
+    }
+
+    /// Applies item-specific execution rules to a derived ability blueprint.
+    /// Root Words and Ancient Words will join this pipeline later.
+    fn transform_ability_blueprint(&self, _blueprint: &mut AbilityBlueprint) {}
+
+    fn ability_blueprint(&self, ability: &dyn BaseAbility) -> AbilityBlueprint {
+        let mut blueprint = ability.blueprint();
+        self.transform_ability_blueprint(&mut blueprint);
+        blueprint
+    }
+
+    /// Capacità Runica / Stabilità / Affinità — quanto può reggere inciso.
     fn rune_profile(&self) -> Option<&RuneProfile> {
         None
     }

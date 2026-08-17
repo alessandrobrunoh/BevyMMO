@@ -12,11 +12,17 @@ use crate::ui::theme::UiTheme;
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiButtonAction {
     Play,
+    Login,
+    Register,
     OpenSettings,
     BackToMenu,
     Resume,
     ReturnToMainMenu,
+    /// Pause menu's "Leave Character": returns to character select without
+    /// logging out of the account.
     Logout,
+    /// Character-select screen's "Logout": ends the account session.
+    LogoutAccount,
     Exit,
     /// Settings → Keybinds → "Reset to defaults".
     ResetKeybinds,

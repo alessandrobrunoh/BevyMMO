@@ -24,3 +24,5 @@ __pycache__/
 # OS and editor cruft
 .DS_Store
 Thumbs.db
+.claude/
+

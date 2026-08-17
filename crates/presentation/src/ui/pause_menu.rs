@@ -70,7 +70,7 @@ fn setup_pause_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: R
     spawn_button(
         &mut commands,
         panel,
-        "Logout",
+        "Leave Character",
         UiButtonAction::Logout,
         &theme,
         &asset_server,

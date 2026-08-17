@@ -1,4 +1,4 @@
-//! Systems for right-click targeting and automatic cleanup.
+//! Systems for left-click targeting and automatic cleanup.
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -6,6 +6,7 @@ use bevy::window::PrimaryWindow;
 use bevymmo_gameplay::entity::components::GameEntity;
 use bevymmo_network::network::protocol::Position;
 use bevymmo_gameplay::stats::components::VitalStats;
+use crate::movement::cursor_ray;
 use crate::targeting::CurrentTarget;
 
 const TARGETING_RADIUS: f32 = 1.2;
@@ -57,7 +58,7 @@ fn ray_sphere_intersection(
     }
 }
 
-/// Target selection system with right click.
+/// Target selection system with left click.
 ///
 /// Executes the following steps:
 /// 1. Reads cursor position
@@ -66,7 +67,7 @@ fn ray_sphere_intersection(
 /// 4. Filters dead entities
 /// 5. Ray-sphere test with each entity
 /// 6. Selects closest entity along ray
-pub fn select_target_with_right_click(
+pub fn select_target_with_left_click(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
@@ -82,16 +83,7 @@ pub fn select_target_with_right_click(
         return;
     }
 
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
-    let Some((camera, camera_transform)) = cameras.iter().next() else {
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
+    let Some(ray) = cursor_ray(&windows, &cameras) else {
         return;
     };
 

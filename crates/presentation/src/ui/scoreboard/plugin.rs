@@ -29,7 +29,9 @@ impl Plugin for ScoreboardPlugin {
         app.add_systems(Startup, systems::setup_scoreboard);
         app.add_systems(
             Update,
-            systems::update_scoreboard.run_if(crate::ui::systems::in_gameplay),
+            systems::update_scoreboard
+                .run_if(crate::ui::systems::in_gameplay)
+                .run_if(crate::game_state::not_typing),
         );
     }
 }

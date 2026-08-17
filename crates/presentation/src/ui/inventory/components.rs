@@ -10,10 +10,6 @@ pub enum InventorySelection {
     Equipment(EquipSlot),
 }
 
-/// Marker component for the Inventory Card window root.
-#[derive(Component, Debug)]
-pub struct InventoryWindow;
-
 /// Button component attached to an inventory grid slot.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct ItemSlotButton {
@@ -64,3 +60,16 @@ pub enum ItemSlotOrigin {
 /// being dragged.
 #[derive(Component, Debug)]
 pub struct ItemDragGhost;
+
+/// Root of the confirmation dialog shown when an inventory item is dropped
+/// outside the inventory window.
+#[derive(Component, Debug)]
+pub struct DestroyItemDialog;
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct ConfirmDestroyButton {
+    pub instance_id: u64,
+}
+
+#[derive(Component, Debug)]
+pub struct CancelDestroyButton;

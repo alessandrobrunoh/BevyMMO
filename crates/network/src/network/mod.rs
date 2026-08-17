@@ -1,7 +1,8 @@
 //! Network protocol types and application mode.
 //!
-//! Contains only data types, message definitions, and the [`ProtocolPlugin`]
-//! registration. No transport: sockets live in `bevymmo_server` / `bevymmo_client`.
+//! Contains only data types and message definitions used to talk to the
+//! SpacetimeDB module. No transport lives here: the SpacetimeDB SDK owns the
+//! connection, in `bevymmo_client::stdb`.
 
 pub mod mode;
 pub mod protocol;

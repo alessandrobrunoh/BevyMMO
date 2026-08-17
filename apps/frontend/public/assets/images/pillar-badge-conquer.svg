@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" width="60" height="60">
+  <circle cx="30" cy="30" r="28" fill="#082238" stroke="#d0ae61" stroke-width="2"/>
+  <circle cx="30" cy="30" r="24" fill="none" stroke="#d0ae61" stroke-width="1" stroke-dasharray="2,2" opacity="0.6"/>
+  <!-- Heraldic Shield -->
+  <path d="M30 12 L44 18 C44 32 38 41 30 47 C22 41 16 32 16 18 Z" fill="#0e3452" stroke="#d0ae61" stroke-width="1.8"/>
+  <!-- Shield Inset Lines & Castle Tower -->
+  <path d="M30 16 L40 21 C40 31 35 38 30 42 C25 38 20 31 20 21 Z" fill="#f5edd9" opacity="0.15"/>
+  <!-- Fortress Battlement / Crown -->
+  <path d="M23 23 L23 35 L37 35 L37 23 L34 23 L34 26 L32 26 L32 23 L28 23 L28 26 L26 26 L26 23 Z" fill="#d0ae61"/>
+  <rect x="28" y="29" width="4" height="6" fill="#082238"/>
+</svg>

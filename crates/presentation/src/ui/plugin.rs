@@ -3,11 +3,13 @@
 use bevy::prelude::*;
 
 use super::{
-    boss_bar, card, connecting, crowd_control_bar, death_screen, debug_position, entity_bar,
-    inscription, inventory, main_menu, notices, pause_menu, player_stats, scoreboard, scrollbar,
-    settings, spell_selector, systems, target_frame, target_indicator,
+    boss_bar, card, character_roster, chat, connecting, crowd_control_bar, death_screen,
+    debug_position, entity_bar, inscription, inventory, login, main_menu, notices, npc_sidebar,
+    pause_menu, player_stats, scoreboard, scrollbar, settings, spell_selector, status_bar,
+    systems, target_frame, target_indicator,
 };
 
+use crate::game_state::not_typing;
 use crate::ui::theme::UiTheme;
 
 /// Camera 2D dedicata alla UI. Resta attiva nel menu e durante la partita,
@@ -23,9 +25,12 @@ impl Plugin for UiPlugin {
         app.add_systems(Startup, setup_ui_camera);
         app.add_plugins((
             card::CardPlugin,
+            chat::ChatPlugin,
             entity_bar::EntityBarPlugin,
             scoreboard::ScoreboardPlugin,
             main_menu::MainMenuPlugin,
+            character_roster::CharacterRosterPlugin,
+            login::LoginPlugin,
             settings::SettingsPlugin,
             pause_menu::PauseMenuPlugin,
             player_stats::PlayerStatsPlugin,
@@ -40,8 +45,10 @@ impl Plugin for UiPlugin {
             inscription::InscriptionUiPlugin,
             inventory::InventoryUiPlugin,
             boss_bar::BossBarPlugin,
+            status_bar::StatusBarPlugin,
             scrollbar::ScrollbarPlugin,
             notices::NoticesPlugin,
+            npc_sidebar::NpcSidebarPlugin,
         ));
         app.add_plugins(debug_position::DebugPositionPlugin);
 
@@ -49,12 +56,14 @@ impl Plugin for UiPlugin {
             Update,
             (
                 systems::update_button_actions,
+                systems::update_auth_button_actions,
                 systems::update_button_visuals,
                 systems::update_text_input_focus,
                 systems::update_text_input_keyboard,
                 systems::update_text_input_display,
                 systems::update_connection_failure,
-                systems::toggle_pause,
+                systems::sync_typing_focus,
+                systems::toggle_pause.run_if(not_typing),
             ),
         );
     }

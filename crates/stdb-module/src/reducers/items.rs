@@ -9,9 +9,11 @@
 //! - **No anti-spoofing checks.** Every Bevy handler started by scanning the
 //!   player query for the entity whose `PlayerId` matched the sending peer,
 //!   precisely so a client could not name someone else's entity in the command.
-//!   Here the row key *is* `ctx.sender()`, verified by SpacetimeDB, so there is
-//!   nothing to spoof and nothing to check — the lookup and the authorisation
-//!   are the same operation.
+//!   Here the working key is the caller's active character, resolved from
+//!   `ctx.sender()` through `Session` and `Player` (see
+//!   `reducers::lifecycle::caller_character`), so there is nothing to spoof and
+//!   nothing to check — the lookup and the authorisation are the same
+//!   operation.
 //! - **Rejections are returned, not logged.** The Bevy handlers `warn!`ed and
 //!   dropped an invalid command because a message receiver has no reply
 //!   channel. A reducer's `Err` reaches the caller, so an invalid request now
@@ -36,12 +38,17 @@
 //! effective value that combat and the client read. Nothing writes bonuses back
 //! into `player_stats`.
 
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use bevymmo_domain::abilities::inscription::{validate_weapon_inscriptions, Inscription};
+use bevymmo_domain::abilities::inscription::{
+    validate_weapon_inscriptions, ArmorInscription, Inscription, SecondaryWord, SlotInscription,
+    WeaponInscription,
+};
 use bevymmo_domain::abilities::{
-    AbilityId, AbilitySlot, AncientWordId, AncientWordRegistry, BaseAbilityRegistry, EssenceId,
-    EssenceRegistry, ModifierId, ModifierRegistry,
+    resolve_active_ability, AbilityId, AbilitySlot, AncientWordId, AncientWordRegistry,
+    BaseAbilityRegistry, EssenceId,
+    EssenceRegistry, ModifierId, ModifierRegistry, RootWordId, RootWordRegistry,
 };
 use bevymmo_domain::items::components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY};
 use bevymmo_domain::items::definition::EquipRequirement;
@@ -50,14 +57,16 @@ use bevymmo_domain::items::registry::{ItemId, ItemRegistry};
 use bevymmo_domain::items::{compute_available_choices, AvailableSpellChoices};
 use bevymmo_domain::spells::components::{HotbarSlot, SpellHotbar};
 use bevymmo_domain::spells::registry::SpellId;
-use spacetimedb::{reducer, Identity, ReducerContext, Table};
+use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
 use crate::rows::{
     equipment_from_rows, equipment_to_rows, inventory_from_rows, inventory_to_rows,
-    known_glyphs_from_rows, HotbarRow,
+    known_ancient_language_from_rows, known_glyphs_from_rows, HotbarRow,
 };
+use crate::reducers::lifecycle::caller_character;
 use crate::tables::{
-    equipment, hotbar, inventory, known_glyphs, player, EquipmentTable, Hotbar, InventoryTable,
+    equipment, game_entity, hotbar, inventory, known_ancient_language, known_glyphs, player,
+    EntityKindRow, EquipmentTable, Hotbar, InventoryTable,
 };
 
 // ---------------------------------------------------------------------------
@@ -101,6 +110,11 @@ fn ancient_word_registry() -> &'static AncientWordRegistry {
     REGISTRY.get_or_init(bevymmo_domain::content::ancient_words::default_ancient_words)
 }
 
+fn root_word_registry() -> &'static RootWordRegistry {
+    static REGISTRY: OnceLock<RootWordRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(bevymmo_domain::content::root_words::default_root_words)
+}
+
 // ---------------------------------------------------------------------------
 // Reducers
 // ---------------------------------------------------------------------------
@@ -122,9 +136,9 @@ fn ancient_word_registry() -> &'static AncientWordRegistry {
 pub fn equip_item(ctx: &ReducerContext, slot_index: u8) -> Result<(), String> {
     // The caller *is* the character. No `PlayerId`-to-entity scan, and no
     // "is this really your entity" check: see the module docs.
-    let identity = ctx.sender();
-    let mut inventory = load_inventory(ctx, identity)?;
-    let mut equipment = load_equipment(ctx, identity)?;
+    let character_id = caller_character(ctx)?.character_id;
+    let mut inventory = load_inventory(ctx, character_id)?;
+    let mut equipment = load_equipment(ctx, character_id)?;
 
     let index = usize::from(slot_index);
     if index >= INVENTORY_CAPACITY {
@@ -159,12 +173,12 @@ pub fn equip_item(ctx: &ReducerContext, slot_index: u8) -> Result<(), String> {
     *equipment.get_mut(target) = Some(instance);
     inventory.slots[index] = previous;
 
-    store_inventory(ctx, identity, &inventory);
-    store_equipment(ctx, identity, &equipment);
+    store_inventory(ctx, character_id, &inventory);
+    store_equipment(ctx, character_id, &equipment);
 
     // Equipment changed, so both things derived from it are now stale.
-    recompute_effective_stats(ctx, identity)?;
-    prune_hotbar_to_available(ctx, identity, &equipment);
+    recompute_effective_stats(ctx, character_id)?;
+    prune_hotbar_to_available(ctx, character_id, &equipment);
     Ok(())
 }
 
@@ -179,10 +193,10 @@ pub fn equip_item(ctx: &ReducerContext, slot_index: u8) -> Result<(), String> {
 /// version, which restored the item before returning the error.
 #[reducer]
 pub fn unequip_item(ctx: &ReducerContext, slot: String) -> Result<(), String> {
-    let identity = ctx.sender();
+    let character_id = caller_character(ctx)?.character_id;
     let target = parse_equip_slot(&slot)?;
-    let mut inventory = load_inventory(ctx, identity)?;
-    let mut equipment = load_equipment(ctx, identity)?;
+    let mut inventory = load_inventory(ctx, character_id)?;
+    let mut equipment = load_equipment(ctx, character_id)?;
 
     let Some(instance) = equipment.get_mut(target).take() else {
         return Err(format!("equipment slot {slot:?} is empty"));
@@ -198,11 +212,11 @@ pub fn unequip_item(ctx: &ReducerContext, slot: String) -> Result<(), String> {
 
     inventory.slots[free] = Some(instance);
 
-    store_inventory(ctx, identity, &inventory);
-    store_equipment(ctx, identity, &equipment);
+    store_inventory(ctx, character_id, &inventory);
+    store_equipment(ctx, character_id, &equipment);
 
-    recompute_effective_stats(ctx, identity)?;
-    prune_hotbar_to_available(ctx, identity, &equipment);
+    recompute_effective_stats(ctx, character_id)?;
+    prune_hotbar_to_available(ctx, character_id, &equipment);
     Ok(())
 }
 
@@ -212,7 +226,7 @@ pub fn unequip_item(ctx: &ReducerContext, slot: String) -> Result<(), String> {
 /// item sits, so unlike equip/unequip this touches no stats and no hotbar.
 #[reducer]
 pub fn move_item(ctx: &ReducerContext, from: u8, to: u8) -> Result<(), String> {
-    let identity = ctx.sender();
+    let character_id = caller_character(ctx)?.character_id;
     let (from_index, to_index) = (usize::from(from), usize::from(to));
     if from_index >= INVENTORY_CAPACITY || to_index >= INVENTORY_CAPACITY {
         return Err(format!(
@@ -220,9 +234,78 @@ pub fn move_item(ctx: &ReducerContext, from: u8, to: u8) -> Result<(), String> {
         ));
     }
 
-    let mut inventory = load_inventory(ctx, identity)?;
+    let mut inventory = load_inventory(ctx, character_id)?;
     inventory.slots.swap(from_index, to_index);
-    store_inventory(ctx, identity, &inventory);
+    store_inventory(ctx, character_id, &inventory);
+    Ok(())
+}
+
+/// Grants a catalogue item through a nearby NPC vendor.
+///
+/// This is intentionally server-authoritative: the caller supplies only an
+/// item id and NPC entity id, while the module verifies the NPC, proximity,
+/// catalogue entry and inventory capacity before creating a new instance.
+#[reducer]
+pub fn claim_npc_item(
+    ctx: &ReducerContext,
+    npc_entity_id: u64,
+    item_id: String,
+) -> Result<(), String> {
+    let character = caller_character(ctx)?;
+    // Derived from the already-resolved `character` instead of calling
+    // `caller_entity` (which would resolve `caller_character` a second
+    // time via `ctx.sender() -> Session -> Player`).
+    let player = ctx
+        .db
+        .game_entity()
+        .entity_id()
+        .find(&character.entity_id)
+        .ok_or_else(|| "character has no entity".to_string())?;
+    let npc = ctx
+        .db
+        .game_entity()
+        .entity_id()
+        .find(&npc_entity_id)
+        .ok_or_else(|| "NPC not found".to_string())?;
+    if npc.kind != EntityKindRow::Npc {
+        return Err("that entity is not an NPC vendor".to_string());
+    }
+
+    let dx = player.position.x - npc.position.x;
+    let dy = player.position.y - npc.position.y;
+    let dz = player.position.z - npc.position.z;
+    if dx * dx + dy * dy + dz * dz > 36.0 {
+        return Err("you are too far from that NPC".to_string());
+    }
+
+    grant_item(ctx, character.character_id, &item_id)?;
+    Ok(())
+}
+
+/// Permanently destroys an item instance from the caller's inventory.
+///
+/// Equipment cannot be destroyed through this reducer: the UI's drag-out
+/// gesture originates from the inventory, and forcing an explicit unequip
+/// first prevents accidental loss of currently equipped stats/abilities.
+#[reducer]
+pub fn destroy_item(ctx: &ReducerContext, instance_id: u64) -> Result<(), String> {
+    if instance_id == 0 {
+        return Err("item instance is not assigned".to_string());
+    }
+
+    let character_id = caller_character(ctx)?.character_id;
+    let mut inventory = load_inventory(ctx, character_id)?;
+    let instance_id = ItemInstanceId(instance_id);
+    let Some(slot) = inventory
+        .slots
+        .iter()
+        .position(|item| item.as_ref().is_some_and(|item| item.instance_id == instance_id))
+    else {
+        return Err("item instance is not in your inventory".to_string());
+    };
+
+    inventory.slots[slot] = None;
+    store_inventory(ctx, character_id, &inventory);
     Ok(())
 }
 
@@ -244,7 +327,8 @@ pub fn set_hotbar_spell(
     slot: String,
     spell_id: Option<String>,
 ) -> Result<(), String> {
-    assign_hotbar_spell(ctx, ctx.sender(), &slot, spell_id)
+    let character_id = caller_character(ctx)?.character_id;
+    assign_hotbar_spell(ctx, character_id, &slot, spell_id)
 }
 
 /// The body of [`set_hotbar_spell`], callable from another reducer.
@@ -259,18 +343,18 @@ pub fn set_hotbar_spell(
 /// the computation is a walk over ten slots.
 pub fn assign_hotbar_spell(
     ctx: &ReducerContext,
-    identity: Identity,
+    character_id: Uuid,
     slot: &str,
     spell_id: Option<String>,
 ) -> Result<(), String> {
     let key = parse_hotbar_slot(slot)?;
-    let equipment = load_equipment(ctx, identity)?;
+    let equipment = load_equipment(ctx, character_id)?;
 
     let row = ctx
         .db
         .hotbar()
-        .identity()
-        .find(&identity)
+        .character_id()
+        .find(&character_id)
         .ok_or_else(|| "no character for this identity; call `join` first".to_string())?;
     let mut bar = SpellHotbar::from(&row.slots);
 
@@ -286,8 +370,8 @@ pub fn assign_hotbar_spell(
     }
 
     bar.assign(key, spell);
-    ctx.db.hotbar().identity().update(Hotbar {
-        identity,
+    ctx.db.hotbar().character_id().update(Hotbar {
+        character_id,
         slots: HotbarRow::from(&bar),
     });
     Ok(())
@@ -311,9 +395,9 @@ pub fn set_inscription(
     modifiers: Vec<String>,
     ancient_word: Option<String>,
 ) -> Result<(), String> {
-    let identity = ctx.sender();
+    let character_id = caller_character(ctx)?.character_id;
     let target = parse_ability_slot(&slot)?;
-    let mut equipment = load_equipment(ctx, identity)?;
+    let mut equipment = load_equipment(ctx, character_id)?;
 
     let weapon = equipment
         .get(EquipSlot::Weapon)
@@ -322,7 +406,7 @@ pub fn set_inscription(
     let item = item_registry()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let (Some(abilities), Some(profile)) = (item.weapon_abilities(), item.rune_profile()) else {
+    let (Some(abilities), Some(profile)) = (crate::sim::spells::ability_loadout_for_item(item.as_ref()), item.rune_profile()) else {
         return Err(format!(
             "{:?} is not an Eidolon weapon and cannot be inscribed",
             weapon.item_id.as_str()
@@ -337,7 +421,7 @@ pub fn set_inscription(
 
     // The Vocabolario is per character and survives losing the weapon, so it is
     // checked against `known_glyphs`, not against anything on the item.
-    let known = load_known_glyphs(ctx, identity)?;
+    let known = load_known_glyphs(ctx, character_id)?;
     if !known.fully_knows(&candidate_slot) {
         return Err("that Incisione uses a Glifo you do not know".to_string());
     }
@@ -362,38 +446,247 @@ pub fn set_inscription(
     let mut updated = weapon;
     updated.inscriptions = Some(inscriptions);
     *equipment.get_mut(EquipSlot::Weapon) = Some(updated);
-    store_equipment(ctx, identity, &equipment);
+    store_equipment(ctx, character_id, &equipment);
 
     // Nothing derived changes: an Incisione alters what a gesture manifests, not
     // the item's passive stat bonuses nor which spells it offers.
     Ok(())
 }
 
+/// Writes the new RootWord-based inscription for the equipped weapon.
+///
+/// This reducer is additive to [`set_inscription`]. It persists only the new
+/// `root_inscription` field, so legacy characters can be migrated without
+/// rewriting their old data. All derived spell values remain server-owned.
+#[reducer]
+pub fn set_root_inscription(
+    ctx: &ReducerContext,
+    root_word: Option<String>,
+    primary_words: Vec<String>,
+    secondary_words: Vec<String>,
+    ultimate_words: Vec<String>,
+) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
+    let mut equipment = load_equipment(ctx, character_id)?;
+    let weapon = equipment
+        .get(EquipSlot::Weapon)
+        .clone()
+        .ok_or_else(|| "no weapon equipped".to_string())?;
+    let item = item_registry()
+        .get(&weapon.item_id)
+        .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
+    let abilities = crate::sim::spells::ability_loadout_for_item(item.as_ref())
+        .ok_or_else(|| format!("{:?} has no ability loadout", weapon.item_id.as_str()))?;
+    let profile = item
+        .rune_profile()
+        .ok_or_else(|| format!("{:?} has no rune profile", weapon.item_id.as_str()))?;
+
+    let known = ctx
+        .db
+        .known_ancient_language()
+        .character_id()
+        .find(&character_id)
+        .map(|row| known_ancient_language_from_rows(&row.root_words, &row.ancient_words, &row.base_abilities))
+        .ok_or_else(|| "ancient language has not been initialized for this character".to_string())?;
+
+    let root_id = root_word.map(RootWordId::new);
+    let root_cost = match &root_id {
+        Some(id) => {
+            if !known.knows_root_word(id) {
+                return Err(format!("Root Word {:?} is not known", id.as_str()));
+            }
+            root_word_registry()
+                .get(id)
+                .ok_or_else(|| format!("unknown Root Word {:?}", id.as_str()))?
+                .metadata()
+                .rune_cost
+        }
+        None => 0,
+    };
+
+    let slot_inputs = [
+        (AbilitySlot::Primary, primary_words, 2usize),
+        (AbilitySlot::Secondary, secondary_words, 2usize),
+        (AbilitySlot::Ultimate, ultimate_words, 1usize),
+    ];
+    let mut total_cost = root_cost;
+    let mut slots = [SlotInscription::default(), SlotInscription::default(), SlotInscription::default()];
+
+    for (index, (slot, word_ids, max_words)) in slot_inputs.into_iter().enumerate() {
+        if word_ids.len() > max_words {
+            return Err(format!("{slot:?} accepts at most {max_words} Ancient Words"));
+        }
+        let ability_id = resolve_active_ability(slot, abilities, &weapon.ability_selection)
+            .ok_or_else(|| format!("no ability offered for {slot:?}"))?;
+        let ability = ability_registry()
+            .get(ability_id)
+            .ok_or_else(|| format!("unknown ability {:?}", ability_id.as_str()))?;
+        let mut ids = HashSet::new();
+        let mut groups = HashSet::new();
+        let mut words = Vec::with_capacity(word_ids.len());
+
+        for word_id in word_ids {
+            let id = AncientWordId::new(word_id);
+            if !ids.insert(id.clone()) {
+                return Err(format!("duplicate Ancient Word {:?}", id.as_str()));
+            }
+            if !known.knows_ancient_word(&id) {
+                return Err(format!("Ancient Word {:?} is not known", id.as_str()));
+            }
+            let word = ancient_word_registry()
+                .get(&id)
+                .ok_or_else(|| format!("unknown Ancient Word {:?}", id.as_str()))?;
+            let metadata = word.metadata();
+            if !metadata.is_compatible_with(ability.tags()) {
+                return Err(format!("Ancient Word {:?} is incompatible with {slot:?}", id.as_str()));
+            }
+            if let Some(group) = metadata.exclusive_group {
+                if !groups.insert(group) {
+                    return Err(format!("Ancient Word conflict in group {group:?}"));
+                }
+            }
+            total_cost += metadata.rune_cost;
+            words.push(SecondaryWord::new(id));
+        }
+        slots[index] = SlotInscription { secondary_words: words };
+    }
+
+    if total_cost > profile.capacity {
+        return Err(format!("rune capacity exceeded: {total_cost} / {}", profile.capacity));
+    }
+
+    let mut updated = weapon;
+    updated.root_inscription = Some(WeaponInscription {
+        root_word: root_id,
+        primary: slots[0].clone(),
+        secondary: slots[1].clone(),
+        ultimate: slots[2].clone(),
+    });
+    *equipment.get_mut(EquipSlot::Weapon) = Some(updated);
+    store_equipment(ctx, character_id, &equipment);
+    Ok(())
+}
+
+/// Writes the independent inscription of an equipped armor item.
+///
+/// Armor deliberately has its own compact shape instead of pretending to have
+/// weapon Primary/Secondary/Ultimate slots. The item remains authoritative for
+/// the offered abilities; this reducer only persists the Root Word language data.
+#[reducer]
+pub fn set_armor_inscription(
+    ctx: &ReducerContext,
+    slot: String,
+    root_word: Option<String>,
+    secondary_words: Vec<String>,
+) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
+    let target = parse_equip_slot(&slot)?;
+    if !matches!(target, EquipSlot::Helmet | EquipSlot::Armor | EquipSlot::Shoes) {
+        return Err("armor inscriptions are only valid for helmet, armor or shoes".to_string());
+    }
+
+    let mut equipment = load_equipment(ctx, character_id)?;
+    let item_instance = equipment
+        .get(target)
+        .clone()
+        .ok_or_else(|| format!("equipment slot {slot:?} is empty"))?;
+    let item = item_registry()
+        .get(&item_instance.item_id)
+        .ok_or_else(|| format!("unknown item {:?}", item_instance.item_id.as_str()))?;
+    let abilities = crate::sim::spells::ability_loadout_for_item(item.as_ref())
+        .ok_or_else(|| format!("{:?} has no armor abilities", item_instance.item_id.as_str()))?;
+    let profile = item
+        .rune_profile()
+        .ok_or_else(|| format!("{:?} has no rune profile", item_instance.item_id.as_str()))?;
+
+    let language_row = ctx
+        .db
+        .known_ancient_language()
+        .character_id()
+        .find(&character_id)
+        .ok_or_else(|| "ancient language has not been initialized".to_string())?;
+    let language = known_ancient_language_from_rows(
+        &language_row.root_words,
+        &language_row.ancient_words,
+        &language_row.base_abilities,
+    );
+
+    let root_id = root_word.map(RootWordId::new);
+    let mut total_cost = match &root_id {
+        Some(id) => {
+            if !language.knows_root_word(id) {
+                return Err(format!("Root Word {:?} is not known", id.as_str()));
+            }
+            root_word_registry()
+                .get(id)
+                .ok_or_else(|| format!("unknown Root Word {:?}", id.as_str()))?
+                .metadata()
+                .rune_cost
+        }
+        None => 0,
+    };
+
+    if secondary_words.len() > 2 {
+        return Err("armor accepts at most 2 Ancient Words".to_string());
+    }
+    let ability_id = abilities
+        .primary
+        .first()
+        .ok_or_else(|| "armor has no primary ability".to_string())?;
+    let ability = ability_registry()
+        .get(ability_id)
+        .ok_or_else(|| format!("unknown armor ability {:?}", ability_id.as_str()))?;
+    let mut seen = HashSet::new();
+    let mut words = Vec::with_capacity(secondary_words.len());
+    for word_id in secondary_words {
+        let id = AncientWordId::new(word_id);
+        if !seen.insert(id.clone()) {
+            return Err(format!("duplicate Ancient Word {:?}", id.as_str()));
+        }
+        if !language.knows_ancient_word(&id) {
+            return Err(format!("Ancient Word {:?} is not known", id.as_str()));
+        }
+        let word = ancient_word_registry()
+            .get(&id)
+            .ok_or_else(|| format!("unknown Ancient Word {:?}", id.as_str()))?;
+        let metadata = word.metadata();
+        if !metadata.is_compatible_with(ability.tags()) {
+            return Err(format!("Ancient Word {:?} is incompatible with armor", id.as_str()));
+        }
+        total_cost += metadata.rune_cost;
+        words.push(SecondaryWord::new(id));
+    }
+
+    if total_cost > profile.capacity {
+        return Err(format!("rune capacity exceeded: {total_cost} / {}", profile.capacity));
+    }
+
+    let mut updated = item_instance;
+    updated.armor_inscription = Some(ArmorInscription {
+        root_word: root_id,
+        secondary_words: words,
+    });
+    *equipment.get_mut(target) = Some(updated);
+    store_equipment(ctx, character_id, &equipment);
+    Ok(())
+}
+
 /// Picks which of the equipped weapon's offered gestures is active on
 /// `"primary"` or `"secondary"`.
 ///
-/// Two deliberate differences from `handle_update_ability_selection_requests`:
-///
-/// - `"ultimate"` is rejected. `AbilitySelection::assign` ignores it (an
-///   Ultimate offers exactly one gesture, so there is nothing to choose), which
-///   meant the Bevy handler accepted the request and silently did nothing. An
-///   error is the honest answer.
-/// - The salvage rule is kept: when the new gesture makes the slot's existing
-///   Incisione invalid — a Modificatore that needed a tag the old gesture had —
-///   the slot's glyphs are cleared rather than the request refused, otherwise a
-///   player could get stuck unable to switch gesture at all.
+/// The salvage rule is kept: when the new gesture makes the slot's existing
+/// Incisione invalid — a Modificatore that needed a tag the old gesture had —
+/// the slot's glyphs are cleared rather than the request refused, otherwise a
+/// player could get stuck unable to switch gesture at all.
 #[reducer]
 pub fn set_ability_selection(
     ctx: &ReducerContext,
     slot: String,
     ability_id: String,
 ) -> Result<(), String> {
-    let identity = ctx.sender();
+    let character_id = caller_character(ctx)?.character_id;
     let target = parse_ability_slot(&slot)?;
-    if target == AbilitySlot::Ultimate {
-        return Err("Ultimate offers a single gesture; there is nothing to select".to_string());
-    }
-    let mut equipment = load_equipment(ctx, identity)?;
+    let mut equipment = load_equipment(ctx, character_id)?;
 
     let weapon = equipment
         .get(EquipSlot::Weapon)
@@ -402,7 +695,7 @@ pub fn set_ability_selection(
     let item = item_registry()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let (Some(abilities), Some(profile)) = (item.weapon_abilities(), item.rune_profile()) else {
+    let (Some(abilities), Some(profile)) = (crate::sim::spells::ability_loadout_for_item(item.as_ref()), item.rune_profile()) else {
         return Err(format!(
             "{:?} offers no gestures to choose from",
             weapon.item_id.as_str()
@@ -440,7 +733,7 @@ pub fn set_ability_selection(
     updated.ability_selection = selection;
     updated.inscriptions = Some(inscriptions);
     *equipment.get_mut(EquipSlot::Weapon) = Some(updated);
-    store_equipment(ctx, identity, &equipment);
+    store_equipment(ctx, character_id, &equipment);
     Ok(())
 }
 
@@ -448,7 +741,7 @@ pub fn set_ability_selection(
 // Shared API: derived state
 // ---------------------------------------------------------------------------
 
-/// Recomputes `entity_stats` for `identity` from `player_stats` plus the
+/// Recomputes `entity_stats` for `character_id` from `player_stats` plus the
 /// bonuses of everything currently equipped.
 ///
 /// **Shared API — call this from any reducer that changes a character's base
@@ -466,13 +759,13 @@ pub fn set_ability_selection(
 /// `entity_stats` row (falling back to the base row on first computation) and
 /// re-clamped to the new maxima. Taking them from `player_stats` instead would
 /// silently full-heal a character every time they swapped a helmet.
-pub fn recompute_effective_stats(ctx: &ReducerContext, identity: Identity) -> Result<(), String> {
+pub fn recompute_effective_stats(ctx: &ReducerContext, character_id: Uuid) -> Result<(), String> {
     let player = ctx
         .db
         .player()
-        .identity()
-        .find(&identity)
-        .ok_or_else(|| "no character for this identity".to_string())?;
+        .character_id()
+        .find(&character_id)
+        .ok_or_else(|| "no character with this id".to_string())?;
 
     // Delegates rather than deriving the stats here. `sim::combat` owns
     // `entity_stats`: it folds equipment *and* timed modifiers into the base,
@@ -493,8 +786,8 @@ pub fn recompute_effective_stats(ctx: &ReducerContext, identity: Identity) -> Re
 /// Silent when the character has no hotbar row: that is a state `join` does not
 /// produce, and failing an otherwise valid equip over it would be worse than
 /// ignoring it.
-fn prune_hotbar_to_available(ctx: &ReducerContext, identity: Identity, equipment: &Equipment) {
-    let Some(row) = ctx.db.hotbar().identity().find(&identity) else {
+fn prune_hotbar_to_available(ctx: &ReducerContext, character_id: Uuid, equipment: &Equipment) {
+    let Some(row) = ctx.db.hotbar().character_id().find(&character_id) else {
         return;
     };
     let choices = available_choices(equipment);
@@ -513,8 +806,8 @@ fn prune_hotbar_to_available(ctx: &ReducerContext, identity: Identity, equipment
     }
 
     if changed {
-        ctx.db.hotbar().identity().update(Hotbar {
-            identity,
+        ctx.db.hotbar().character_id().update(Hotbar {
+            character_id,
             slots: HotbarRow::from(&bar),
         });
     }
@@ -539,13 +832,13 @@ fn available_choices(equipment: &Equipment) -> AvailableSpellChoices {
 ///
 /// The `item_id` is checked against the registry: an inventory holding an id
 /// nothing can look up is a slot the player can never equip or drop.
-pub fn grant_item(ctx: &ReducerContext, identity: Identity, item_id: &str) -> Result<u8, String> {
+pub fn grant_item(ctx: &ReducerContext, character_id: Uuid, item_id: &str) -> Result<u8, String> {
     let id = ItemId::new(item_id.to_string());
     if !item_registry().contains(&id) {
         return Err(format!("unknown item {item_id:?}"));
     }
 
-    let mut inventory = load_inventory(ctx, identity)?;
+    let mut inventory = load_inventory(ctx, character_id)?;
     let free = inventory
         .slots
         .iter()
@@ -555,7 +848,7 @@ pub fn grant_item(ctx: &ReducerContext, identity: Identity, item_id: &str) -> Re
     let mut instance = ItemInstance::new(id);
     instance.instance_id = ItemInstanceId(next_instance_id(ctx));
     inventory.slots[free] = Some(instance);
-    store_inventory(ctx, identity, &inventory);
+    store_inventory(ctx, character_id, &inventory);
     Ok(free as u8)
 }
 
@@ -616,46 +909,46 @@ fn check_equip_requirements(requirements: &[EquipRequirement]) -> Result<(), Str
 // Row access
 // ---------------------------------------------------------------------------
 
-fn load_inventory(ctx: &ReducerContext, identity: Identity) -> Result<Inventory, String> {
+fn load_inventory(ctx: &ReducerContext, character_id: Uuid) -> Result<Inventory, String> {
     ctx.db
         .inventory()
-        .identity()
-        .find(&identity)
+        .character_id()
+        .find(&character_id)
         .map(|row| inventory_from_rows(&row.slots))
         .ok_or_else(|| "no character for this identity; call `join` first".to_string())
 }
 
-fn store_inventory(ctx: &ReducerContext, identity: Identity, inventory: &Inventory) {
-    ctx.db.inventory().identity().update(InventoryTable {
-        identity,
+fn store_inventory(ctx: &ReducerContext, character_id: Uuid, inventory: &Inventory) {
+    ctx.db.inventory().character_id().update(InventoryTable {
+        character_id,
         slots: inventory_to_rows(inventory),
     });
 }
 
-fn load_equipment(ctx: &ReducerContext, identity: Identity) -> Result<Equipment, String> {
+fn load_equipment(ctx: &ReducerContext, character_id: Uuid) -> Result<Equipment, String> {
     ctx.db
         .equipment()
-        .identity()
-        .find(&identity)
+        .character_id()
+        .find(&character_id)
         .map(|row| equipment_from_rows(&row.slots))
         .ok_or_else(|| "no character for this identity; call `join` first".to_string())
 }
 
-fn store_equipment(ctx: &ReducerContext, identity: Identity, equipment: &Equipment) {
-    ctx.db.equipment().identity().update(EquipmentTable {
-        identity,
+fn store_equipment(ctx: &ReducerContext, character_id: Uuid, equipment: &Equipment) {
+    ctx.db.equipment().character_id().update(EquipmentTable {
+        character_id,
         slots: equipment_to_rows(equipment),
     });
 }
 
 fn load_known_glyphs(
     ctx: &ReducerContext,
-    identity: Identity,
+    character_id: Uuid,
 ) -> Result<bevymmo_domain::abilities::KnownGlyphs, String> {
     ctx.db
         .known_glyphs()
-        .identity()
-        .find(&identity)
+        .character_id()
+        .find(&character_id)
         .map(|row| known_glyphs_from_rows(&row.essences, &row.modifiers, &row.ancient_words))
         .ok_or_else(|| "no character for this identity; call `join` first".to_string())
 }

@@ -7,10 +7,9 @@ use crate::EntityId;
 use glam::Vec3;
 
 use super::visuals::SpellVisualEffect;
+use crate::effects::{ApplyStatusEffect, EffectBundle, EffectContext, EffectSpec, StatusId};
 use crate::stats::components::CombatStats;
-use crate::stats::events::{
-    ApplyStatModifierEvent, DamageEvent, HealEvent, ModifierEffect, ModifierKind,
-};
+use crate::stats::events::ApplyStatModifierEvent;
 
 /// How a spell selects its targets at cast time.
 ///
@@ -193,67 +192,10 @@ impl AoeTargeting {
 pub struct ProjectileSpawnRequest {
     pub target: EntityId,
     pub speed: f32,
-    pub damage: f32,
+    pub effects: Vec<EffectSpec>,
     pub hit_radius: f32,
 }
 
-/// Effect applied by an AoE region to entities entering it.
-///
-/// Lives in spawn request payload (as already done for
-/// projectiles with `ProjectileSpawnRequest`), so the central system
-/// `update_aoe_regions` remains generic and ignores spell identity.
-#[derive(Debug, Clone, PartialEq)]
-pub enum AoeEffect {
-    /// Applies an [`ApplyStatModifierEvent`] to entities in area.
-    ApplyModifier {
-        effects: Vec<ModifierEffect>,
-        /// `None` = permanent until explicitly removed.
-        duration_seconds: Option<f32>,
-        kind: ModifierKind,
-        /// `true`: each entity receives effect only once (e.g. healing
-        /// circle: enters → buff applied, then ignored).
-        /// `false`: effect is re-applied as long as entity stays inside
-        /// (e.g. poison cloud doing continuous DoT).
-        once_per_entity: bool,
-        /// Filters which entities are valid targets relative to caster.
-        targeting: AoeTargeting,
-    },
-    /// Damage burst applied one-off to entities in area at moment
-    /// of impact (or entry, if not delayed). Used by "bomb-style"
-    /// spells like Meteorite.
-    Damage {
-        amount: f32,
-        targeting: AoeTargeting,
-    },
-    /// Heal burst applied one-off to entities in area.
-    Heal {
-        amount: f32,
-        targeting: AoeTargeting,
-    },
-    /// Applies a Crowd Control effect (e.g. Stun) to entities in area
-    /// at moment of impact. Effect duration then lives on target,
-    /// independent of AoE region lifetime.
-    CrowdControl {
-        kind: crate::crowd_control::CrowdControlKind,
-        duration_seconds: f32,
-        /// `true`: each entity receives effect only once (typical for
-        /// one-off AoE bursts like Stun Field).
-        once_per_entity: bool,
-        targeting: AoeTargeting,
-    },
-}
-
-impl AoeEffect {
-    /// Returns targeting policy associated with effect.
-    pub fn targeting(&self) -> AoeTargeting {
-        match self {
-            AoeEffect::ApplyModifier { targeting, .. }
-            | AoeEffect::Damage { targeting, .. }
-            | AoeEffect::Heal { targeting, .. }
-            | AoeEffect::CrowdControl { targeting, .. } => *targeting,
-        }
-    }
-}
 
 /// Forma dell'area coperta da una regione AoE.
 ///
@@ -318,7 +260,7 @@ impl AoeShape {
 }
 
 /// Spawn request for a persistent Area-of-Effect (AoE) region.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AoeSpawnRequest {
     pub center: Vec3,
     pub radius: f32,
@@ -334,7 +276,11 @@ pub struct AoeSpawnRequest {
     /// warning marker) but applies no damage/heal/modifier. Default `0.0`.
     pub initial_delay_seconds: f32,
     pub spell_id: String,
-    pub effect: AoeEffect,
+    /// Generic effects for damage/heal/status payloads.
+    pub effects: Vec<EffectSpec>,
+    /// Targeting policy. Defaults to [`AoeTargeting::Everyone`] for backward
+    /// compatibility with existing call sites that do not specify it.
+    pub targeting: AoeTargeting,
 }
 
 /// Context provided to a spell during casting.
@@ -361,10 +307,10 @@ pub struct SpellCastContext<'a> {
     /// This is provided as a slice of (EntityId, Vec3) tuples. Spells can filter
     /// this list based on their own criteria (range, area of effect, etc.).
     pub potential_targets: &'a [(EntityId, Vec3)],
-    /// Pending damage events to be applied after the spell cast completes.
-    pub pending_damage: Vec<DamageEvent>,
-    /// Pending healing events to be applied after the spell cast completes.
-    pub pending_healing: Vec<HealEvent>,
+    /// Unified effects emitted by the spell. These are resolved authoritatively
+    /// after validation; the older typed lists remain as compatibility adapters.
+    pub pending_effects: Vec<EffectBundle>,
+
     /// Pending projectile spawn requests.
     pub pending_projectiles: Vec<ProjectileSpawnRequest>,
     /// Pending AoE spawn requests.
@@ -395,8 +341,8 @@ impl<'a> SpellCastContext<'a> {
             target_position,
             target_entity,
             potential_targets,
-            pending_damage: Vec::new(),
-            pending_healing: Vec::new(),
+            pending_effects: Vec::new(),
+
             pending_projectiles: Vec::new(),
             pending_aoes: Vec::new(),
             pending_modifiers: Vec::new(),
@@ -404,78 +350,65 @@ impl<'a> SpellCastContext<'a> {
         }
     }
 
-    /// Emit a damage event to a target.
-    pub fn emit_damage(&mut self, target: EntityId, amount: f32) {
-        self.pending_damage.push(DamageEvent {
-            target,
-            source: Some(self.caster),
-            amount,
-        });
+    pub fn emit_cleanse(&mut self, target: EntityId, effect: crate::effects::CleanseEffect) {
+        self.emit_effect(target, EffectSpec::Cleanse(effect));
     }
 
-    /// Emit a healing event to a target.
-    pub fn emit_heal(&mut self, target: EntityId, amount: f32) {
-        self.pending_healing.push(HealEvent {
-            target,
-            source: Some(self.caster),
-            amount,
-        });
+    pub fn emit_purge(&mut self, target: EntityId, effect: crate::effects::PurgeEffect) {
+        self.emit_effect(target, EffectSpec::Purge(effect));
     }
+
+    fn emit_effect(&mut self, target: EntityId, effect: EffectSpec) {
+        let mut context = EffectContext::new(target);
+        context.source = Some(self.caster);
+        self.pending_effects.push(EffectBundle::single(context, effect));
+    }
+
+    /// Emit a unified status application request.
+    pub fn emit_status(&mut self, target: EntityId, status_id: StatusId) {
+        let mut context = EffectContext::new(target);
+        context.source = Some(self.caster);
+        self.pending_effects.push(EffectBundle::single(
+            context,
+            EffectSpec::ApplyStatus(ApplyStatusEffect {
+                status_id,
+                duration_override_seconds: None,
+                potency: 1.0,
+            }),
+        ));
+    }
+
 
     /// Emit a projectile spawn request (for homing/projectile spells).
-    pub fn emit_projectile(&mut self, target: EntityId, speed: f32, damage: f32, hit_radius: f32) {
+    pub fn emit_projectile(
+        &mut self,
+        target: EntityId,
+        speed: f32,
+        effects: Vec<EffectSpec>,
+        hit_radius: f32,
+    ) {
         self.pending_projectiles.push(ProjectileSpawnRequest {
             target,
             speed,
-            damage,
+            effects,
             hit_radius,
         });
     }
 
-    /// Emit an AoE spawn request.
-    ///
-    /// `effect` carries the effect payload (damage, heal, modifier,
-    /// etc.) so the central system does not need to dispatch on
-    /// `spell_id`.
-    pub fn emit_aoe(
+    /// Compatibility alias for content that uses the explicit effects name.
+    pub fn emit_projectile_effects(
         &mut self,
-        center: Vec3,
-        radius: f32,
-        duration_seconds: f32,
-        spell_id: impl Into<String>,
-        effect: AoeEffect,
+        target: EntityId,
+        speed: f32,
+        effects: Vec<EffectSpec>,
+        hit_radius: f32,
     ) {
-        self.emit_aoe_with_delay(center, radius, duration_seconds, 0.0, spell_id, effect);
+        self.emit_projectile(target, speed, effects, hit_radius);
     }
 
-    /// Like [`emit_aoe`] but with an initial delay before effect fires
-    /// (e.g. Meteorite: 2s red warning circle before impact).
-    pub fn emit_aoe_with_delay(
-        &mut self,
-        center: Vec3,
-        radius: f32,
-        duration_seconds: f32,
-        initial_delay_seconds: f32,
-        spell_id: impl Into<String>,
-        effect: AoeEffect,
-    ) {
-        self.emit_aoe_shaped(
-            center,
-            radius,
-            AoeShape::Circle,
-            duration_seconds,
-            initial_delay_seconds,
-            spell_id,
-            effect,
-        );
-    }
-
-    /// Variante completa di [`emit_aoe_with_delay`] che sceglie anche la
-    /// [`AoeShape`]. Le due funzioni sopra le delegano passando
-    /// [`AoeShape::Circle`], così esiste un solo punto in cui una richiesta
-    /// di AoE viene costruita.
+    /// Emit an AoE spawn request with full control over shape and timing.
     #[allow(clippy::too_many_arguments)]
-    pub fn emit_aoe_shaped(
+    pub fn emit_aoe(
         &mut self,
         center: Vec3,
         radius: f32,
@@ -483,7 +416,7 @@ impl<'a> SpellCastContext<'a> {
         duration_seconds: f32,
         initial_delay_seconds: f32,
         spell_id: impl Into<String>,
-        effect: AoeEffect,
+        effects: Vec<EffectSpec>,
     ) {
         self.pending_aoes.push(AoeSpawnRequest {
             center,
@@ -492,29 +425,29 @@ impl<'a> SpellCastContext<'a> {
             duration_seconds,
             initial_delay_seconds,
             spell_id: spell_id.into(),
-            effect,
+            effects,
+            targeting: AoeTargeting::default(),
         });
     }
 
-    /// Emit a one-shot stat modifier (buff/debuff) on a single target.
-    ///
-    /// Utility wrapper around [`ApplyStatModifierEvent`]: spells that only
-    /// need to apply a buff to caster (e.g. Swift) do not need to manually
-    /// construct the event.
-    pub fn emit_modifier(
+    /// Convenience wrapper for circular AoE (no delay).
+    pub fn emit_aoe_circle(
         &mut self,
-        target: EntityId,
-        effects: Vec<ModifierEffect>,
-        duration_seconds: Option<f32>,
-        kind: ModifierKind,
+        center: Vec3,
+        radius: f32,
+        duration_seconds: f32,
+        spell_id: impl Into<String>,
+        effects: Vec<EffectSpec>,
     ) {
-        self.pending_modifiers.push(ApplyStatModifierEvent {
-            target,
-            source: Some(self.caster),
-            effects,
+        self.emit_aoe(
+            center,
+            radius,
+            AoeShape::Circle,
             duration_seconds,
-            kind,
-        });
+            0.0,
+            spell_id,
+            effects,
+        );
     }
 
     /// Emit a replicated visual effect after a successful server-side cast.
@@ -595,7 +528,7 @@ pub trait Spell: Send + Sync + 'static {
     ///
     /// The spell should:
     /// 1. Filter/select targets based on its criteria
-    /// 2. Emit damage/healing events via the context
+    /// - Emit unified effects via the context
     /// 3. Return; the system will apply the events and handle cooldowns
     ///
     /// # Example
@@ -607,7 +540,9 @@ pub trait Spell: Send + Sync + 'static {
     ///
     ///     for (target, _) in targets {
     ///         if target != ctx.caster {
-    ///             ctx.emit_damage(target, ctx.caster_combat.attack_power);
+    ///             ctx.emit_effect(target, EffectSpec::Damage(
+    ///                 crate::effects::DamageEffect { amount: ctx.caster_combat.attack_power },
+    ///             ));
     ///         }
     ///     }
     /// }
@@ -708,9 +643,90 @@ mod tests {
     }
 
     #[test]
-    fn emit_aoe_defaults_to_a_circle() {
+    fn emit_status_queues_a_unified_apply_status_effect() {
+        use crate::effects::EffectSpec;
         use crate::stats::components::CombatStats;
-        
+
+        let combat = CombatStats {
+            attack_power: 0.0,
+            armor: 0.0,
+        };
+        let caster = EntityId::new(1);
+        let target = EntityId::new(2);
+        let mut ctx =
+            SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
+
+        ctx.emit_status(target, StatusId::new("stun"));
+
+        assert_eq!(ctx.pending_effects.len(), 1);
+        assert!(matches!(
+            ctx.pending_effects[0].effects[0],
+            EffectSpec::ApplyStatus(_)
+        ));
+        assert_eq!(ctx.pending_effects[0].context.source, Some(caster));
+        assert_eq!(ctx.pending_effects[0].context.target, target);
+    }
+
+    #[test]
+    fn emit_cleanse_and_purge_queue_unified_effects() {
+        use crate::effects::{
+            CleanseEffect, EffectSpec, PurgeEffect, StatusFilter, StatusSelection,
+        };
+        use crate::stats::components::CombatStats;
+
+        let combat = CombatStats {
+            attack_power: 0.0,
+            armor: 0.0,
+        };
+        let caster = EntityId::new(1);
+        let target = EntityId::new(2);
+        let mut ctx =
+            SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
+
+        ctx.emit_cleanse(
+            target,
+            CleanseEffect {
+                filter: StatusFilter::Debuffs,
+                max_statuses: Some(2),
+                selection: StatusSelection::Oldest,
+            },
+        );
+        ctx.emit_purge(
+            target,
+            PurgeEffect {
+                filter: StatusFilter::Buffs,
+                max_statuses: Some(1),
+                selection: StatusSelection::Newest,
+            },
+        );
+
+        assert!(matches!(
+            ctx.pending_effects[0].effects[0],
+            EffectSpec::Cleanse(CleanseEffect {
+                filter: StatusFilter::Debuffs,
+                max_statuses: Some(2),
+                selection: StatusSelection::Oldest,
+            })
+        ));
+        assert!(matches!(
+            ctx.pending_effects[1].effects[0],
+            EffectSpec::Purge(PurgeEffect {
+                filter: StatusFilter::Buffs,
+                max_statuses: Some(1),
+                selection: StatusSelection::Newest,
+            })
+        ));
+        assert!(ctx
+            .pending_effects
+            .iter()
+            .all(|bundle| bundle.context.source == Some(caster)));
+    }
+
+    #[test]
+    fn emit_aoe_defaults_to_a_circle() {
+        use crate::effects::EffectSpec;
+        use crate::stats::components::CombatStats;
+
         let combat = CombatStats {
             attack_power: 0.0,
             armor: 0.0,
@@ -719,15 +735,12 @@ mod tests {
         let mut ctx =
             SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
 
-        ctx.emit_aoe(
+        ctx.emit_aoe_circle(
             Vec3::ZERO,
             3.0,
             1.0,
             "test",
-            AoeEffect::Damage {
-                amount: 1.0,
-                targeting: AoeTargeting::Everyone,
-            },
+            vec![EffectSpec::Damage(crate::effects::DamageEffect { amount: 1.0 })],
         );
 
         assert_eq!(ctx.pending_aoes[0].shape, AoeShape::Circle);

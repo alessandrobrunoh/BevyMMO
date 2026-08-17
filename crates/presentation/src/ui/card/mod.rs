@@ -8,6 +8,8 @@
 
 use bevy::prelude::*;
 
+use crate::game_state::not_typing;
+
 pub mod builder;
 pub mod components;
 pub mod systems;
@@ -30,7 +32,10 @@ impl Plugin for CardPlugin {
             (
                 systems::enforce_card_exclusivity,
                 systems::close_card_on_button,
-                systems::close_card_on_esc,
+                // Reads raw `KeyCode::Escape`, not a rebindable `KeyAction` —
+                // gated directly so Escape-to-leave-the-chat-field does not
+                // also close whatever card happens to be open.
+                systems::close_card_on_esc.run_if(not_typing),
                 systems::handle_card_drag,
             ),
         );
@@ -51,6 +56,8 @@ mod tests {
         // provides the latter; this App is deliberately minimal.
         app.init_resource::<ButtonInput<MouseButton>>();
         app.init_resource::<UiScale>();
+        // `close_card_on_esc` is now gated by `not_typing`, which reads this.
+        app.init_resource::<bevymmo_client::app_state::TypingFocus>();
         app.add_plugins(CardPlugin);
         app.update();
     }

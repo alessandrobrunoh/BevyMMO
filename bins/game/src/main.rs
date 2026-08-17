@@ -146,6 +146,16 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
                             present_mode: PresentMode::AutoVsync,
                             ..default()
                         }),
+                        // The default behaviour exits the instant every window
+                        // is gone, which races the SpacetimeDB disconnect
+                        // `bevymmo_client::stdb::plugin::begin_shutdown` queues
+                        // off the same `WindowCloseRequested` message — the
+                        // process would usually die before `frame_tick` ever
+                        // got to send it, leaving the player marked online
+                        // until the server's presence timeout caught up.
+                        // `finish_shutdown` calls `AppExit` itself once that
+                        // disconnect actually goes out.
+                        exit_condition: bevy::window::ExitCondition::DontExit,
                         ..default()
                     }),
             );

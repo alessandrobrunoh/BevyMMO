@@ -1,0 +1,156 @@
+@use '../../../../styles/variables' as *;
+
+.ability-card {
+  position: relative;
+  display: flex;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: linear-gradient(180deg, var(--blue-900) 0%, var(--blue-950) 100%);
+  border: 1px solid rgba(208, 174, 97, 0.45);
+  box-shadow: var(--shadow-runic), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  margin-bottom: 1.25rem;
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .ability-slot-badge {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    display: grid;
+    place-items: center;
+    background: rgba(7, 26, 42, 0.8);
+    border: 1.5px solid var(--gold);
+    transform: rotate(45deg);
+    margin: 8px 6px;
+
+    .slot-letter {
+      transform: rotate(-45deg);
+      font-family: var(--font-serif);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--gold-light);
+    }
+  }
+
+  .ability-main {
+    flex: 1;
+
+    .ability-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.65rem;
+      gap: 1rem;
+      flex-wrap: wrap;
+
+      .ability-name {
+        font-family: var(--font-serif);
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: #ffffff;
+        letter-spacing: 0.04em;
+        margin: 0 0 2px 0;
+      }
+
+      .ability-type {
+        font-family: var(--font-serif);
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--gold-light);
+      }
+
+      .ability-costs {
+        display: flex;
+        gap: 0.5rem;
+
+        .cost-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 3px 8px;
+          background: rgba(6, 23, 38, 0.7);
+          border: 1px solid rgba(208, 174, 97, 0.3);
+          font-family: var(--font-serif);
+          font-size: 0.75rem;
+          color: rgba(237, 248, 255, 0.85);
+
+          .cost-ico {
+            font-size: 14px;
+            color: var(--gold-light);
+          }
+        }
+      }
+    }
+
+    .ability-desc {
+      font-family: var(--font-sans);
+      font-size: 0.92rem;
+      line-height: 1.6;
+      color: rgba(237, 248, 255, 0.8);
+      margin-bottom: 1rem;
+    }
+
+    .inscriptions-block {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      padding: 0.75rem 1rem;
+      background: rgba(6, 23, 38, 0.6);
+      border: 1px solid rgba(208, 174, 97, 0.25);
+
+      .inscription-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 0.82rem;
+
+        .ins-label {
+          font-family: var(--font-serif);
+          font-size: 0.72rem;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--gold-light);
+          min-width: 100px;
+        }
+
+        .tags-group {
+          display: flex;
+          gap: 0.4rem;
+          flex-wrap: wrap;
+        }
+
+        .ins-value {
+          padding: 2px 8px;
+          border-radius: 2px;
+          font-weight: 600;
+          font-size: 0.78rem;
+
+          &.essence-tag {
+            background: rgba(255, 107, 53, 0.2);
+            border: 1px solid rgba(255, 107, 53, 0.4);
+            color: #ffc49b;
+          }
+
+          &.mod-tag {
+            background: rgba(208, 174, 97, 0.15);
+            border: 1px solid rgba(208, 174, 97, 0.35);
+            color: var(--gold-light);
+          }
+
+          &.word-tag {
+            background: rgba(60, 203, 255, 0.2);
+            border: 1px solid var(--cyan);
+            color: var(--cyan-light);
+            text-shadow: 0 0 8px rgba(60, 203, 255, 0.6);
+          }
+        }
+      }
+    }
+  }
+}

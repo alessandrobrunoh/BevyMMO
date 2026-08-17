@@ -24,6 +24,7 @@
 //! prediction around slopes and blockers.
 
 use bevy::prelude::*;
+use bevy::window::WindowCloseRequested;
 use bevymmo_domain::movement::{self, Step};
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
@@ -33,30 +34,35 @@ use bevymmo_domain::stats::modifiers::{
 };
 use bevymmo_domain::EntityId;
 use bevymmo_gameplay::abilities::{AncientWordId, EssenceId, KnownGlyphs, ModifierId};
+use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
 use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
 use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
 use bevymmo_gameplay::entity::components::{EntityKind, EntityState, GameEntity, PlayerName};
 use crate::local_player::LocalPlayer;
 use crate::app_state::{
-    ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen, Screen,
+    AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus, ConnectionFailure,
+    ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, GameScreen, Screen,
 };
 use bevymmo_gameplay::items::components::{Equipment, Inventory};
-use crate::movement::{resolve_ray_to_ground, ClientSurfaceQuery};
+use crate::movement::MoveTarget;
 use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
-use crate::server_feed::{ServerNotice, SpellCooldownState};
+use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
 use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
 use bevymmo_network::world_components::{
     EntityColor, LookDirection, NetworkEntityId, Position, ProjectileVisual,
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use spacetimedb_sdk::{credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey};
+use spacetimedb_sdk::{credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey, Uuid};
 use std::collections::{HashMap, HashSet};
 
+use super::combat_input::send_combat_inputs;
+use super::module_bindings::active_status_table::ActiveStatusTableAccess;
 use super::module_bindings::boss_state_table::BossStateTableAccess;
 use super::module_bindings::cast_ended_table::CastEndedTableAccess;
 use super::module_bindings::cast_state_table::CastStateTableAccess;
 use super::module_bindings::cooldown_table::CooldownTableAccess;
 use super::module_bindings::crowd_control_table::CrowdControlTableAccess;
+use super::module_bindings::delete_character_reducer::delete_character;
 use super::module_bindings::entity_stats_table::EntityStatsTableAccess;
 use super::module_bindings::equipment_table::EquipmentTableAccess;
 use super::module_bindings::game_entity_table::GameEntityTableAccess;
@@ -64,20 +70,25 @@ use super::module_bindings::heartbeat_reducer::heartbeat;
 use super::module_bindings::hotbar_table::HotbarTableAccess;
 use super::module_bindings::inventory_table::InventoryTableAccess;
 use super::module_bindings::join_reducer::join;
+use super::module_bindings::leave_reducer::leave;
+use super::module_bindings::login_reducer::login;
+use super::module_bindings::logout_reducer::logout;
+use super::module_bindings::register_reducer::register;
 use super::module_bindings::known_glyphs_table::KnownGlyphsTableAccess;
 use super::module_bindings::move_to_reducer::move_to;
 use super::module_bindings::periodic_effect_table::PeriodicEffectTableAccess;
 use super::module_bindings::player_message_table::PlayerMessageTableAccess;
 use super::module_bindings::player_table::PlayerTableAccess;
 use super::module_bindings::projectile_table::ProjectileTableAccess;
+use super::module_bindings::session_table::SessionTableAccess;
 use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAccess;
 use super::module_bindings::stat_modifier_table::StatModifierTableAccess;
 use super::module_bindings::{
-    BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState, ColorRow, Cooldown,
-    CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow, EntityStats,
+    ActiveStatus, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState, ColorRow,
+    Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow, EntityStats,
     EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable, ItemInstanceRow,
     KnownGlyphsTable, ModifierKindRow, PeriodicEffect, Player, PlayerMessageEvent, Projectile,
-    ReducerEventContext, RemoteReducers, SpellVisualEffectEvent, StatModifier, Vec3Row,
+    ReducerEventContext, RemoteReducers, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
 };
 
 /// How fast predicted position is pulled back towards the authoritative one, as
@@ -101,6 +112,17 @@ const MOVE_COMMAND_INTERVAL: f32 = 0.1;
 /// restarted server settles to "nobody online" instead of showing ghosts.
 const HEARTBEAT_INTERVAL: f32 = 5.0;
 
+/// How long a graceful shutdown waits for a queued disconnect to actually
+/// reach the socket before letting the process die anyway.
+///
+/// `disconnect()` only queues the close — [`DbConnection::frame_tick`] is what
+/// sends it — so exiting on the same frame the shutdown was requested would
+/// tear the connection down mid-send almost every time, leaving `Player.online`
+/// stuck `true` until the server's own presence timeout notices. This is a few
+/// frames' worth of margin, not a real wait: [`finish_shutdown`] exits the
+/// moment [`DbContext::is_active`] reports the disconnect went through.
+const SHUTDOWN_GRACE_SECONDS: f32 = 0.5;
+
 /// The server's last word on an entity, kept apart from the rendered
 /// [`Position`] so prediction has something to reconcile against.
 #[derive(Component, Debug, Clone, Copy)]
@@ -116,6 +138,7 @@ enum RowEvent {
     EntityRemoved(u64),
     Stats(EntityStats),
     Player(Player),
+    Session(Session),
     Inventory(InventoryTable),
     Equipment(EquipmentTable),
     Hotbar(Hotbar),
@@ -124,6 +147,8 @@ enum RowEvent {
     CastEnded(CastEndedEvent),
     SpellVisualEffect(SpellVisualEffectEvent),
     BossState(BossState),
+    ActiveStatus(ActiveStatus),
+    ActiveStatusRemoved(ActiveStatus),
     CrowdControl(CrowdControl),
     CrowdControlRemoved(CrowdControl),
     StatModifier(StatModifier),
@@ -138,6 +163,9 @@ enum RowEvent {
     /// A reducer the client called came back with the module's own `Err`.
     ReducerRejected(String),
     JoinRejected(String),
+    /// `register`/`login` confirmed the caller's connection as an account.
+    AuthAccepted,
+    AuthRejected(String),
 }
 
 /// Latest rows retained until the dependent Bevy entity exists. Initial
@@ -148,13 +176,22 @@ enum RowEvent {
 #[derive(Resource, Default)]
 struct PendingRows {
     entities: HashMap<u64, EntityRow>,
-    offline_players: HashSet<Identity>,
+    /// Every `player` row seen, regardless of which account owns it —
+    /// unlike [`CharacterRoster`], which only ever holds *this* account's
+    /// characters. Kept so [`recompute_roster`] can rebuild the roster from
+    /// scratch once [`LocalCharacter::account_id`] becomes known, since
+    /// `player` rows and the `session` row that reveals the account id have
+    /// no guaranteed delivery order — see `RowEvent::Session`'s comment.
+    players: HashMap<Uuid, Player>,
+    offline_players: HashSet<Uuid>,
     stats: HashMap<u64, EntityStats>,
-    inventory: HashMap<Identity, InventoryTable>,
-    equipment: HashMap<Identity, EquipmentTable>,
-    hotbar: HashMap<Identity, Hotbar>,
-    known_glyphs: HashMap<Identity, KnownGlyphsTable>,
+    inventory: HashMap<Uuid, InventoryTable>,
+    equipment: HashMap<Uuid, EquipmentTable>,
+    hotbar: HashMap<Uuid, Hotbar>,
+    known_glyphs: HashMap<Uuid, KnownGlyphsTable>,
     boss_state: HashMap<u64, BossState>,
+    /// Keyed by `active_status.id`, not by entity: one entity can carry several.
+    active_status: HashMap<u64, ActiveStatus>,
     /// Keyed by `crowd_control.id`, not by entity: one entity can carry several.
     crowd_control: HashMap<u64, CrowdControl>,
     /// Keyed by `stat_modifier.id`.
@@ -175,8 +212,10 @@ struct PendingRows {
 /// The last effect state written to one entity, for change suppression.
 #[derive(Default, PartialEq, Debug)]
 struct AppliedEffects {
+    active_status: ActiveStatuses,
     crowd_control: CrowdControlState,
     /// The contributing rows, as `(id, remaining_seconds bits)`.
+    status_signature: Vec<(u64, u32)>,
     /// `StatModifierInstance` has no `PartialEq` to compare the built component
     /// with, and the rows are what decides it anyway.
     modifier_signature: Vec<(u64, u32)>,
@@ -249,6 +288,24 @@ impl StdbConnection {
             let _ = reports.send(RowEvent::JoinRejected(message));
         }
     }
+
+    /// Unlike [`Self::report_rejection`], `register`/`login` also report
+    /// success: `AuthState::Authenticating` is a real waiting period the UI
+    /// shows while the round trip is in flight, not an optimistic guess, so
+    /// something has to confirm it turned into `Authenticated`.
+    fn report_auth_outcome(
+        &self,
+    ) -> impl FnOnce(&ReducerEventContext, ReducerOutcome) + Send + 'static {
+        let reports = self.reports.clone();
+        move |_ctx, outcome| {
+            let event = match outcome {
+                Ok(Ok(())) => RowEvent::AuthAccepted,
+                Ok(Err(reason)) => RowEvent::AuthRejected(reason),
+                Err(err) => RowEvent::AuthRejected(err.to_string()),
+            };
+            let _ = reports.send(event);
+        }
+    }
 }
 
 /// What a `*_then` callback is handed: the module's own `Result`, or the SDK
@@ -260,9 +317,9 @@ type ReducerOutcome =
 #[derive(Resource, Default)]
 pub struct StdbEntityMap {
     by_entity_id: HashMap<u64, Entity>,
-    /// Which server entity belongs to which account, so the per-character
+    /// Which server entity belongs to which character, so the per-character
     /// tables (inventory, equipment, hotbar) can find the entity to attach to.
-    entity_of_identity: HashMap<Identity, u64>,
+    entity_of_character: HashMap<Uuid, u64>,
     /// Projectiles live in their own id space — `projectile.id` counts
     /// separately from `game_entity.entity_id` — so they get their own map
     /// rather than colliding in the one above.
@@ -275,6 +332,113 @@ impl StdbEntityMap {
     }
 }
 
+/// Which account and character (if any) this connection is authenticated as
+/// and playing.
+///
+/// Resolved from the `session` table, which — unlike `account` — is
+/// `public` precisely so the owning client can learn its own `account_id`
+/// (see `tables::Session`'s doc comment) and, once `join` selects one, its
+/// `character_id`.
+#[derive(Resource, Default)]
+struct LocalCharacter {
+    account_id: Option<u64>,
+    character_id: Option<Uuid>,
+}
+
+/// One of the caller's own characters, for the character-select screen.
+///
+/// Cheap to keep around: a handful of fields per character, at most
+/// [`crate::app_state::MAX_CHARACTERS_PER_ACCOUNT`] of them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RosterCharacter {
+    pub character_id: Uuid,
+    pub display_name: String,
+    pub online: bool,
+}
+
+/// The caller's own characters (from the public `player` table, filtered to
+/// [`LocalCharacter::account_id`]), for the character-select screen.
+///
+/// A plain resource, not ECS entities: an offline character has no mirrored
+/// `game_entity` (see [`RowEvent::Player`]'s `else` branch), so there is
+/// nothing in the world for the character-select screen to query — this is
+/// the only place its name and id are still available.
+#[derive(Resource, Default)]
+pub struct CharacterRoster {
+    characters: HashMap<Uuid, RosterCharacter>,
+}
+
+impl CharacterRoster {
+    pub fn iter(&self) -> impl Iterator<Item = &RosterCharacter> {
+        self.characters.values()
+    }
+
+    pub fn len(&self) -> usize {
+        self.characters.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.characters.is_empty()
+    }
+}
+
+/// Rebuilds `roster` from scratch out of every cached `player` row, filtered
+/// to `local.account_id`. A full rebuild rather than an incremental
+/// insert/remove because the order `player` and `session` rows arrive in is
+/// not guaranteed — see the call sites on `RowEvent::Player`/`RowEvent::Session`.
+/// Cheap enough: at most `MAX_CHARACTERS_PER_ACCOUNT` characters ever belong
+/// to one account, and this only runs when one of those two row kinds changes.
+fn recompute_roster(pending: &PendingRows, local: &LocalCharacter, roster: &mut CharacterRoster) {
+    let Some(account_id) = local.account_id else {
+        roster.characters.clear();
+        return;
+    };
+    roster.characters = pending
+        .players
+        .values()
+        .filter(|player| player.account_id == account_id)
+        .map(|player| {
+            (
+                player.character_id,
+                RosterCharacter {
+                    character_id: player.character_id,
+                    display_name: player.display_name.clone(),
+                    online: player.online,
+                },
+            )
+        })
+        .collect();
+}
+
+/// The client-side replication state, bundled into one [`SystemParam`] so
+/// `drain_events` — which already touches every mirrored table — does not
+/// cross the workspace's raised `too-many-arguments` threshold (see
+/// `clippy.toml`) just by also tracking [`LocalCharacter`].
+#[derive(bevy::ecs::system::SystemParam)]
+struct ReplicationState<'w> {
+    map: ResMut<'w, StdbEntityMap>,
+    pending: ResMut<'w, PendingRows>,
+    local: ResMut<'w, LocalCharacter>,
+    roster: ResMut<'w, CharacterRoster>,
+}
+
+/// [`AuthState`]/[`AuthFailure`], bundled for the same reason as
+/// [`ReplicationState`]: `drain_events` is already near the workspace's
+/// raised `too-many-arguments` threshold.
+#[derive(bevy::ecs::system::SystemParam)]
+struct AuthResources<'w> {
+    state: ResMut<'w, AuthState>,
+    failure: ResMut<'w, AuthFailure>,
+}
+
+impl LocalCharacter {
+    /// Whether `character_id` (from a `game_entity` row's `owner_character_id`,
+    /// or a `player` row's own id) is this connection's active character.
+    fn is(&self, character_id: Option<Uuid>) -> bool {
+        matches!((self.character_id, character_id), (Some(a), Some(b)) if a == b)
+    }
+}
+
 pub struct StdbPlugin {
     pub uri: String,
     pub module: String,
@@ -282,23 +446,38 @@ pub struct StdbPlugin {
 
 impl Plugin for StdbPlugin {
     fn build(&self, app: &mut App) {
+        app.add_message::<ChatLine>();
+
         let uri = self.uri.clone();
         let module = self.module.clone();
 
         app.init_resource::<StdbEntityMap>();
         app.init_resource::<PendingRows>();
+        app.init_resource::<LocalCharacter>();
+        app.init_resource::<CharacterRoster>();
+        app.init_resource::<ShuttingDown>();
         app.insert_resource(StdbConnectionConfig {
             uri: uri.clone(),
             module: module.clone(),
         });
+        app.init_resource::<PartyRoster>();
         app.add_systems(Startup, move |world: &mut World| {
             match connect(&uri, &module) {
-                Ok(connection) => world.insert_resource(connection),
+                Ok((connection, party_events)) => {
+                    world.insert_resource(connection);
+                    world.insert_resource(party_events);
+                }
                 // Not fatal: the menu stays usable and the player can retry
                 // rather than the process dying on a cold database.
                 Err(err) => error!("SpacetimeDB connection to {uri} failed: {err}"),
             }
         });
+        // Unconditional, and ordered before the connection pump: a shutdown
+        // request must queue its disconnect before `frame_tick` runs so the
+        // very next pump has something to send, and it must be caught even if
+        // `StdbConnection` never existed (a close during a failed connection
+        // attempt).
+        app.add_systems(PreUpdate, begin_shutdown.before(pump_connection));
         app.add_systems(
             PreUpdate,
             (pump_connection, drain_events)
@@ -306,31 +485,178 @@ impl Plugin for StdbPlugin {
                 .run_if(resource_exists::<StdbConnection>),
         );
         app.add_systems(
+            PreUpdate,
+            drain_party_events
+                .after(pump_connection)
+                .run_if(resource_exists::<StdbConnection>)
+                .run_if(resource_exists::<PartyEvents>),
+        );
+        app.add_systems(Update, finish_shutdown);
+        app.add_systems(
             Update,
-            (join_on_request, send_move_commands, send_heartbeat)
+            (auth_on_request, delete_character_on_request, join_on_request)
                 .run_if(resource_exists::<StdbConnection>),
+        );
+        app.add_systems(
+            Update,
+            (
+                // `select_move_target` writes the `MoveTarget` this system
+                // consumes; ordering after it keeps the value read here from
+                // the same frame's click instead of one frame stale.
+                send_move_commands.after(crate::player_movement::select_move_target),
+                send_combat_inputs,
+            )
+                .run_if(resource_exists::<StdbConnection>)
+                .run_if(in_gameplay)
+                .run_if(crate::app_state::not_typing),
+        );
+        app.add_systems(
+            Update,
+            send_heartbeat.run_if(resource_exists::<StdbConnection>),
         );
         app.add_systems(Update, predict_and_reconcile);
     }
 }
 
-/// Where the auth token is cached between runs, so a returning player keeps
-/// their character. Without it every launch is a brand-new `Identity` — and
-/// since the character is keyed by identity, a brand-new character.
-fn credential_store() -> credentials::File {
-    credentials::File::new("bevymmo")
+/// Whether gameplay actions (movement, casting) are meaningful right now —
+/// i.e. a character exists in the world. `Paused` counts: it is a
+/// client-side overlay only and does not pause the network or the
+/// simulation (see [`Screen`]'s doc comment), so a cast queued while the
+/// pause menu is open still has somewhere to go.
+///
+/// Without this, [`send_move_commands`]/[`send_combat_inputs`] read the raw
+/// keyboard/mouse state unconditionally — including at the main menu, where
+/// they have no character to act through and the server just rejects every
+/// call. Worse, cast keybinds default to plain letters (`D`, `R`, `F`, ...),
+/// so typing an email into the login form could — and did — fire spurious
+/// `armor_cast` calls for every letter that happened to match one.
+fn in_gameplay(screen: Res<GameScreen>) -> bool {
+    matches!(screen.0, Screen::InGame | Screen::Paused)
 }
 
-fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error::Error>> {
+/// Produces a filesystem-safe cache key per SpacetimeDB instance and module.
+/// Tokens are signed by a server's key, so reusing one across instances causes
+/// the new server to reject the connection before it can issue a new identity.
+fn credential_key(uri: &str, module: &str) -> String {
+    let server: String = uri
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    format!("bevymmo_{server}_{module}")
+}
+
+/// Forgets a cached token for `uri`/`module`, so the next [`connect`] mints a
+/// fresh [`Identity`](spacetimedb_sdk::Identity) instead of resuming whichever
+/// character was last attached to this machine.
+///
+/// [`credentials::File`] has no delete method, so this reconstructs its own
+/// path (`~/.spacetimedb_client_credentials/<key>`) by hand.
+fn forget_cached_credentials(uri: &str, module: &str) {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let path = home
+        .join(".spacetimedb_client_credentials")
+        .join(credential_key(uri, module));
+    match std::fs::remove_file(&path) {
+        Ok(()) => {}
+        // Nothing was cached yet — the common case on a fresh machine.
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => warn!("could not remove cached SpacetimeDB token at {path:?}: {err}"),
+    }
+}
+
+fn connect(
+    uri: &str,
+    module: &str,
+) -> Result<(StdbConnection, PartyEvents), Box<dyn std::error::Error>> {
     let (tx, events) = unbounded();
     let reports = tx.clone();
+    let credential_key = credential_key(uri, module);
 
+    let cached_token = credentials::File::new(&credential_key).load().ok().flatten();
+    let conn = match build_connection(uri, module, &credential_key, cached_token.clone()) {
+        Ok(conn) => conn,
+        // A cached token is signed by the server that issued it. A dev server
+        // restarted with a fresh keypair (or a module recreated from scratch)
+        // rejects it at the handshake itself — a 401, not a normal
+        // `on_connect_error` — so every future launch would otherwise retry
+        // the same dead token forever. Drop it and mint a new identity
+        // instead, the same recovery `forget_cached_credentials` already does
+        // for an explicit logout.
+        Err(err) if cached_token.is_some() && looks_like_auth_rejection(&*err) => {
+            warn!("cached SpacetimeDB token was rejected ({err}); reconnecting with a fresh identity");
+            forget_cached_credentials(uri, module);
+            build_connection(uri, module, &credential_key, None)?
+        }
+        Err(err) => return Err(err),
+    };
+
+    register_callbacks(&conn, tx);
+
+    let (party_tx, party_events) = unbounded();
+    register_party_callbacks(&conn, party_tx);
+
+    conn.subscription_builder()
+        .on_applied(|_ctx| info!("SpacetimeDB subscription applied"))
+        .on_error(|_ctx, err| error!("SpacetimeDB subscription failed: {err}"))
+        .subscribe([
+            "SELECT * FROM game_entity",
+            "SELECT * FROM entity_stats",
+            "SELECT * FROM player",
+            "SELECT * FROM session",
+            "SELECT * FROM inventory",
+            "SELECT * FROM equipment",
+            "SELECT * FROM hotbar",
+            "SELECT * FROM known_glyphs",
+            "SELECT * FROM cast_state",
+            "SELECT * FROM boss_state",
+            "SELECT * FROM active_status",
+            "SELECT * FROM crowd_control",
+            "SELECT * FROM stat_modifier",
+            "SELECT * FROM periodic_effect",
+            "SELECT * FROM cooldown",
+            "SELECT * FROM projectile",
+            "SELECT * FROM cast_ended",
+            "SELECT * FROM spell_visual_effect",
+            "SELECT * FROM player_message",
+            "SELECT * FROM party",
+            "SELECT * FROM party_member",
+        ]);
+
+    Ok((
+        StdbConnection {
+            conn,
+            events,
+            reports,
+        },
+        PartyEvents(party_events),
+    ))
+}
+
+/// Builds and opens the actual SDK connection, with or without a token.
+/// Factored out of [`connect`] so a rejected cached token can be retried once
+/// anonymously without duplicating the callback wiring.
+fn build_connection(
+    uri: &str,
+    module: &str,
+    credential_key: &str,
+    token: Option<String>,
+) -> Result<DbConnection, Box<dyn std::error::Error>> {
+    let credential_key = credential_key.to_string();
     let conn = DbConnection::builder()
         .with_uri(uri)
         .with_database_name(module)
-        .with_token(credential_store().load().ok().flatten())
-        .on_connect(|_ctx, _identity, token| {
-            if let Err(err) = credential_store().save(token) {
+        .with_token(token)
+        .on_connect(move |_ctx, _identity, token| {
+            if let Err(err) = credentials::File::new(&credential_key).save(token) {
                 warn!("could not cache the SpacetimeDB token: {err}");
             }
         })
@@ -340,37 +666,15 @@ fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error
             None => info!("disconnected from SpacetimeDB"),
         })
         .build()?;
+    Ok(conn)
+}
 
-    register_callbacks(&conn, tx);
-
-    conn.subscription_builder()
-        .on_applied(|_ctx| info!("SpacetimeDB subscription applied"))
-        .on_error(|_ctx, err| error!("SpacetimeDB subscription failed: {err}"))
-        .subscribe([
-            "SELECT * FROM game_entity",
-            "SELECT * FROM entity_stats",
-            "SELECT * FROM player",
-            "SELECT * FROM inventory",
-            "SELECT * FROM equipment",
-            "SELECT * FROM hotbar",
-            "SELECT * FROM known_glyphs",
-            "SELECT * FROM cast_state",
-            "SELECT * FROM boss_state",
-            "SELECT * FROM crowd_control",
-            "SELECT * FROM stat_modifier",
-            "SELECT * FROM periodic_effect",
-            "SELECT * FROM cooldown",
-            "SELECT * FROM projectile",
-            "SELECT * FROM cast_ended",
-            "SELECT * FROM spell_visual_effect",
-            "SELECT * FROM player_message",
-        ]);
-
-    Ok(StdbConnection {
-        conn,
-        events,
-        reports,
-    })
+/// Whether a failed connection attempt looks like the server refusing a
+/// specific token, as opposed to being unreachable altogether — the
+/// distinction that decides if retrying anonymously can help.
+fn looks_like_auth_rejection(err: &(dyn std::error::Error + 'static)) -> bool {
+    let message = err.to_string();
+    message.contains("401") || message.contains("Unauthorized")
 }
 
 /// Every callback does the same thing: clone the row onto the channel. They stay
@@ -393,12 +697,14 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(game_entity, Entity);
     mirror!(entity_stats, Stats);
     mirror!(player, Player);
+    mirror!(session, Session);
     mirror!(inventory, Inventory);
     mirror!(equipment, Equipment);
     mirror!(hotbar, Hotbar);
     mirror!(known_glyphs, KnownGlyphs);
     mirror!(cast_state, CastState);
     mirror!(boss_state, BossState);
+    mirror!(active_status, ActiveStatus);
     mirror!(crowd_control, CrowdControl);
     mirror!(stat_modifier, StatModifier);
     mirror!(periodic_effect, PeriodicEffect);
@@ -417,6 +723,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
         }};
     }
 
+    mirror_delete!(active_status, ActiveStatusRemoved);
     mirror_delete!(crowd_control, CrowdControlRemoved);
     mirror_delete!(stat_modifier, StatModifierRemoved);
     mirror_delete!(periodic_effect, PeriodicEffectRemoved);
@@ -462,14 +769,15 @@ fn pump_connection(conn: Res<StdbConnection>) {
 
 fn drain_events(
     conn: Res<StdbConnection>,
-    mut map: ResMut<StdbEntityMap>,
-    mut pending: ResMut<PendingRows>,
+    mut state: ReplicationState,
+    mut auth: AuthResources,
     mut commands: Commands,
     mut cast_progress: MessageWriter<SpellCastProgress>,
     mut cast_ended: MessageWriter<SpellCastEnded>,
     mut visual_effects: MessageWriter<SpellVisualEffect>,
     mut cooldowns: MessageWriter<SpellCooldownState>,
     mut notices: MessageWriter<ServerNotice>,
+    mut chat_lines: MessageWriter<ChatLine>,
     mut failure: ResMut<ConnectionFailure>,
     mut screen: ResMut<GameScreen>,
 ) {
@@ -479,91 +787,140 @@ fn drain_events(
         match event {
             RowEvent::Entity(row) => {
                 let entity_id = row.entity_id;
-                let owner = row.owner;
-                pending.entities.insert(entity_id, row.clone());
-                if owner.is_some_and(|identity| pending.offline_players.contains(&identity)) {
+                let owner = row.owner_character_id;
+                state.pending.entities.insert(entity_id, row.clone());
+                if owner.is_some_and(|character_id| state.pending.offline_players.contains(&character_id)) {
                     continue;
                 }
 
-                apply_entity(&mut commands, &mut map, &row, local_identity);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
-                if let Some(identity) = owner {
-                    replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                apply_entity(&mut commands, &mut state.map, &row, &state.local);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
+                if let Some(character_id) = owner {
+                    replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
                 }
             }
             RowEvent::EntityRemoved(entity_id) => {
-                if let Some(entity) = map.by_entity_id.remove(&entity_id) {
+                if let Some(entity) = state.map.by_entity_id.remove(&entity_id) {
                     commands.entity(entity).despawn();
                 }
                 // Everything keyed by this entity goes with it — including the
-                // per-account rows, which are keyed by `Identity` and so were
-                // outliving the character they belonged to.
-                let owners: Vec<Identity> = map
-                    .entity_of_identity
+                // per-character rows, which are keyed by `character_id` and so
+                // were outliving the character they belonged to.
+                let owners: Vec<Uuid> = state.map
+                    .entity_of_character
                     .iter()
                     .filter(|(_, id)| **id == entity_id)
-                    .map(|(identity, _)| *identity)
+                    .map(|(character_id, _)| *character_id)
                     .collect();
-                for identity in owners {
-                    map.entity_of_identity.remove(&identity);
-                    pending.inventory.remove(&identity);
-                    pending.equipment.remove(&identity);
-                    pending.hotbar.remove(&identity);
-                    pending.known_glyphs.remove(&identity);
+                for character_id in owners {
+                    state.map.entity_of_character.remove(&character_id);
+                    state.pending.inventory.remove(&character_id);
+                    state.pending.equipment.remove(&character_id);
+                    state.pending.hotbar.remove(&character_id);
+                    state.pending.known_glyphs.remove(&character_id);
+                    state.pending.players.remove(&character_id);
+                    state.roster.characters.remove(&character_id);
+                    if state.local.character_id == Some(character_id) {
+                        state.local.character_id = None;
+                    }
                 }
-                pending.entities.remove(&entity_id);
-                pending.stats.remove(&entity_id);
-                pending.boss_state.remove(&entity_id);
-                pending.applied.remove(&entity_id);
-                pending.crowd_control.retain(|_, cc| cc.entity_id != entity_id);
-                pending
+                state.pending.entities.remove(&entity_id);
+                state.pending.stats.remove(&entity_id);
+                state.pending.boss_state.remove(&entity_id);
+                state.pending
+                    .active_status
+                    .retain(|_, row| row.entity_id != entity_id);
+                state.pending.applied.remove(&entity_id);
+                state.pending.crowd_control.retain(|_, cc| cc.entity_id != entity_id);
+                state.pending
                     .stat_modifier
                     .retain(|_, row| row.entity_id != entity_id);
-                pending
+                state.pending
                     .periodic_effect
                     .retain(|_, row| row.entity_id != entity_id);
             }
             RowEvent::Stats(row) => {
                 let entity_id = row.entity_id;
-                pending.stats.insert(entity_id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.stats.insert(entity_id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::Player(row) => {
-                map.entity_of_identity.insert(row.identity, row.entity_id);
+                state.map.entity_of_character.insert(row.character_id, row.entity_id);
+
+                // Cached regardless of account, then filtered back out in
+                // `recompute_roster` — this row can arrive before the
+                // `Session` row that reveals which account is ours (initial
+                // subscription snapshots have no ordering guarantee), and
+                // without the full cache that character would never make it
+                // into the roster: nothing re-scans `player` rows once
+                // `Session` finally does resolve the account id.
+                state.pending.players.insert(row.character_id, row.clone());
+                recompute_roster(&state.pending, &state.local, &mut state.roster);
+
                 if row.online {
-                    pending.offline_players.remove(&row.identity);
-                    if let Some(entity_row) = pending.entities.get(&row.entity_id).cloned() {
-                        apply_entity(&mut commands, &mut map, &entity_row, local_identity);
-                        replay_entity(&mut commands, &map, &mut pending, row.entity_id);
+                    state.pending.offline_players.remove(&row.character_id);
+                    if let Some(entity_row) = state.pending.entities.get(&row.entity_id).cloned() {
+                        apply_entity(&mut commands, &mut state.map, &entity_row, &state.local);
+                        replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
                     }
-                    replay_identity(&mut commands, &map, &pending, row.identity, local_identity);
+                    replay_character(&mut commands, &state.map, &state.pending, row.character_id, state.local.character_id);
                 } else {
-                    pending.offline_players.insert(row.identity);
-                    if let Some(entity) = map.by_entity_id.remove(&row.entity_id) {
+                    state.pending.offline_players.insert(row.character_id);
+                    if let Some(entity) = state.map.by_entity_id.remove(&row.entity_id) {
                         commands.entity(entity).despawn();
                     }
                 }
             }
             RowEvent::Inventory(row) => {
-                let identity = row.identity;
-                pending.inventory.insert(identity, row);
-                replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                let character_id = row.character_id;
+                state.pending.inventory.insert(character_id, row);
+                replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
             }
             RowEvent::Equipment(row) => {
-                let identity = row.identity;
-                pending.equipment.insert(identity, row);
-                replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                let character_id = row.character_id;
+                state.pending.equipment.insert(character_id, row);
+                replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
             }
             RowEvent::Hotbar(row) => {
-                let identity = row.identity;
-                pending.hotbar.insert(identity, row);
-                replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                let character_id = row.character_id;
+                state.pending.hotbar.insert(character_id, row);
+                replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
             }
             RowEvent::KnownGlyphs(row) => {
-                let identity = row.identity;
-                pending.known_glyphs.insert(identity, row);
-                if local_identity == Some(identity) {
-                    replay_identity(&mut commands, &map, &pending, identity, local_identity);
+                let character_id = row.character_id;
+                state.pending.known_glyphs.insert(character_id, row);
+                if state.local.character_id == Some(character_id) {
+                    replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
+                }
+            }
+            RowEvent::Session(row) => {
+                // `session` is public (see `tables::Session`'s doc comment),
+                // so this connection receives every connected player's row —
+                // filter to ours by `identity`, the one column every client
+                // can compare against its own connection.
+                if Some(row.identity) != local_identity {
+                    continue;
+                }
+                state.local.account_id = Some(row.account_id);
+                state.local.character_id = row.character_id;
+                // Catches every `player` row that already arrived before
+                // this `Session` row told us which account they should be
+                // filtered against — see the comment on `RowEvent::Player`.
+                recompute_roster(&state.pending, &state.local, &mut state.roster);
+
+                // The `game_entity`/`player` rows for this character may well
+                // have already arrived before this `Session` row confirmed
+                // which character it belongs to — apply the marker now rather
+                // than waiting for the next unrelated update to those rows.
+                if let Some(character_id) = row.character_id {
+                    if let Some(entity) = state
+                        .map
+                        .entity_of_character
+                        .get(&character_id)
+                        .and_then(|id| state.map.get(*id))
+                    {
+                        commands.entity(entity).insert(LocalPlayer);
+                    }
                 }
             }
             RowEvent::CastState(row) => {
@@ -585,35 +942,44 @@ fn drain_events(
             }
             RowEvent::BossState(row) => {
                 let entity_id = row.entity_id;
-                pending.boss_state.insert(entity_id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.boss_state.insert(entity_id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
+            }
+            RowEvent::ActiveStatus(row) => {
+                let entity_id = row.entity_id;
+                state.pending.active_status.insert(row.id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
+            }
+            RowEvent::ActiveStatusRemoved(row) => {
+                state.pending.active_status.remove(&row.id);
+                replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
             }
             RowEvent::CrowdControl(row) => {
                 let entity_id = row.entity_id;
-                pending.crowd_control.insert(row.id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.crowd_control.insert(row.id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::CrowdControlRemoved(row) => {
-                pending.crowd_control.remove(&row.id);
-                replay_entity(&mut commands, &map, &mut pending, row.entity_id);
+                state.pending.crowd_control.remove(&row.id);
+                replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
             }
             RowEvent::StatModifier(row) => {
                 let entity_id = row.entity_id;
-                pending.stat_modifier.insert(row.id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.stat_modifier.insert(row.id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::StatModifierRemoved(row) => {
-                pending.stat_modifier.remove(&row.id);
-                replay_entity(&mut commands, &map, &mut pending, row.entity_id);
+                state.pending.stat_modifier.remove(&row.id);
+                replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
             }
             RowEvent::PeriodicEffect(row) => {
                 let entity_id = row.entity_id;
-                pending.periodic_effect.insert(row.id, row);
-                replay_entity(&mut commands, &map, &mut pending, entity_id);
+                state.pending.periodic_effect.insert(row.id, row);
+                replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::PeriodicEffectRemoved(row) => {
-                pending.periodic_effect.remove(&row.id);
-                replay_entity(&mut commands, &map, &mut pending, row.entity_id);
+                state.pending.periodic_effect.remove(&row.id);
+                replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
             }
             RowEvent::Cooldown(row) => {
                 cooldowns.write(SpellCooldownState {
@@ -634,10 +1000,10 @@ fn drain_events(
                 });
             }
             RowEvent::Projectile(row) => {
-                apply_projectile(&mut commands, &mut map, &row);
+                apply_projectile(&mut commands, &mut state.map, &row);
             }
             RowEvent::ProjectileRemoved(id) => {
-                if let Some(entity) = map.projectiles.remove(&id) {
+                if let Some(entity) = state.map.projectiles.remove(&id) {
                     commands.entity(entity).despawn();
                 }
             }
@@ -645,8 +1011,11 @@ fn drain_events(
                 // `target` of `None` is a broadcast. A targeted message only
                 // reaches this client if the server addressed it here, but the
                 // table is public, so the check is made rather than assumed.
+                // Player chat lives only in the chat panel; routing it
+                // through the notice toast too made every message render
+                // twice in the same screen corner (chat.rs + notices/systems.rs).
                 if row.target.is_none() || row.target == local_identity {
-                    notices.write(ServerNotice::info(row.text));
+                    chat_lines.write(ChatLine { text: row.text });
                 }
             }
             RowEvent::ReducerRejected(message) => {
@@ -655,6 +1024,14 @@ fn drain_events(
             RowEvent::JoinRejected(message) => {
                 failure.0 = Some(message);
                 screen.0 = Screen::MainMenu;
+            }
+            RowEvent::AuthAccepted => {
+                auth.state.0 = AuthStatus::Authenticated;
+                auth.failure.0 = None;
+            }
+            RowEvent::AuthRejected(message) => {
+                auth.state.0 = AuthStatus::Rejected;
+                auth.failure.0 = Some(message);
             }
         }
     }
@@ -693,10 +1070,14 @@ fn apply_effects(
     entity_id: u64,
     pending: &mut PendingRows,
 ) {
+    let active_status = active_statuses_for(entity_id, pending);
+    let status_signature = status_signature_for(entity_id, pending);
     let crowd_control = crowd_control_state_for(entity_id, pending);
     let modifier_signature = modifier_signature_for(entity_id, pending);
     let next = AppliedEffects {
+        active_status,
         crowd_control,
+        status_signature,
         modifier_signature,
     };
 
@@ -704,42 +1085,44 @@ fn apply_effects(
         return;
     }
 
-    commands
-        .entity(entity)
-        .insert((next.crowd_control.clone(), stat_modifiers_for(entity_id, pending)));
+    commands.entity(entity).insert((
+        next.active_status.clone(),
+        next.crowd_control.clone(),
+        stat_modifiers_for(entity_id, pending),
+    ));
     pending.applied.insert(entity_id, next);
 }
 
-fn replay_identity(
+fn replay_character(
     commands: &mut Commands,
     map: &StdbEntityMap,
     pending: &PendingRows,
-    identity: Identity,
-    local_identity: Option<Identity>,
+    character_id: Uuid,
+    local_character_id: Option<Uuid>,
 ) {
-    let Some(entity) = entity_for(map, identity) else {
+    let Some(entity) = entity_for(map, character_id) else {
         return;
     };
 
-    if let Some(row) = pending.inventory.get(&identity) {
+    if let Some(row) = pending.inventory.get(&character_id) {
         commands.entity(entity).insert(inventory_from(&row.slots));
     }
-    if let Some(row) = pending.equipment.get(&identity) {
+    if let Some(row) = pending.equipment.get(&character_id) {
         commands.entity(entity).insert(equipment_from(&row.slots));
     }
-    if let Some(row) = pending.hotbar.get(&identity) {
+    if let Some(row) = pending.hotbar.get(&character_id) {
         commands.entity(entity).insert(hotbar_from(row));
     }
-    if local_identity == Some(identity) {
-        if let Some(row) = pending.known_glyphs.get(&identity) {
+    if local_character_id == Some(character_id) {
+        if let Some(row) = pending.known_glyphs.get(&character_id) {
             commands.entity(entity).insert(known_glyphs_from(row));
         }
     }
 }
 
-fn entity_for(map: &StdbEntityMap, identity: Identity) -> Option<Entity> {
-    map.entity_of_identity
-        .get(&identity)
+fn entity_for(map: &StdbEntityMap, character_id: Uuid) -> Option<Entity> {
+    map.entity_of_character
+        .get(&character_id)
         .and_then(|id| map.get(*id))
 }
 
@@ -788,8 +1171,10 @@ fn cast_progress_from(row: &CastState) -> SpellCastProgress {
         caster_network_id: row.entity_id,
         spell_id: row.spell_id.clone(),
         kind: match row.kind {
-            CastKindRow::Channeling => 1,
             CastKindRow::Instant | CastKindRow::CastTime => 0,
+            CastKindRow::Charge => 2,
+            // Preserve SpellCastProgress' existing public contract.
+            CastKindRow::Channeling => 1,
         },
         elapsed_seconds: row.elapsed_seconds,
         required_seconds: row.required_seconds,
@@ -816,8 +1201,37 @@ fn boss_phase(phase: BossPhaseRow) -> BossPhase {
     }
 }
 
+fn active_statuses_for(entity_id: u64, pending: &PendingRows) -> ActiveStatuses {
+    let mut statuses: Vec<_> = pending
+        .active_status
+        .values()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| ActiveStatusSnapshot {
+            instance_id: row.id,
+            status_id: row.status_id.clone(),
+            source: row.source.map(EntityId::new),
+            stacks: row.stacks,
+            potency: row.potency,
+            remaining_seconds: row.remaining_seconds,
+            total_seconds: row.total_seconds,
+        })
+        .collect();
+    statuses.sort_by_key(|status| status.instance_id);
+    ActiveStatuses { statuses }
+}
+
+fn status_signature_for(entity_id: u64, pending: &PendingRows) -> Vec<(u64, u32)> {
+    let mut signature: Vec<_> = pending
+        .active_status
+        .values()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| (row.id, row.remaining_seconds.to_bits() ^ u32::from(row.stacks)))
+        .collect();
+    signature.sort_unstable();
+    signature
+}
+
 /// Collects one entity's crowd control into the component the UI queries.
-///
 /// `Root`, `Silence` and `Slow` are dropped rather than approximated: the
 /// domain's `CrowdControlKind` knows only `Stun`, and inventing a mapping here
 /// would put a bar on screen that no gating rule agrees with. Nothing emits
@@ -998,7 +1412,7 @@ fn apply_entity(
     commands: &mut Commands,
     map: &mut StdbEntityMap,
     row: &EntityRow,
-    local_identity: Option<Identity>,
+    local: &LocalCharacter,
 ) {
     let authoritative = StdbAuthoritative {
         position: to_vec3(&row.position),
@@ -1021,12 +1435,10 @@ fn apply_entity(
                 ))
                 .id();
             map.by_entity_id.insert(row.entity_id, entity);
-            if row.owner.is_some() {
+            if let Some(character_id) = row.owner_character_id {
                 // Recorded here as well as from the `player` table, because the
                 // two rows can arrive in either order.
-                if let Some(identity) = row.owner {
-                    map.entity_of_identity.insert(identity, row.entity_id);
-                }
+                map.entity_of_character.insert(character_id, row.entity_id);
             }
             debug!(
                 "mirrored {:?} {} as entity {} at {}",
@@ -1047,7 +1459,7 @@ fn apply_entity(
     if matches!(row.kind, EntityKindRow::Boss) {
         cmd.insert(Boss);
     }
-    if local_identity.is_some() && row.owner == local_identity {
+    if matches!(row.kind, EntityKindRow::Player) && local.is(row.owner_character_id) {
         cmd.insert(LocalPlayer);
     }
 }
@@ -1113,8 +1525,12 @@ fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
     equipment
 }
 
-fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instance::ItemInstance {
-    use bevymmo_gameplay::abilities::inscription::{Inscription, WeaponInscriptions};
+	fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instance::ItemInstance {
+    use bevymmo_gameplay::abilities::inscription::{
+        ArmorInscription, Inscription, SecondaryWord, SlotInscription, WeaponInscription,
+        WeaponInscriptions,
+    };
+    use bevymmo_gameplay::abilities::root_word::RootWordId;
     use bevymmo_gameplay::abilities::weapon_abilities::AbilitySelection;
     use bevymmo_gameplay::abilities::{AbilityId, AncientWordId, EssenceId, ModifierId};
     use bevymmo_gameplay::items::instance::{ItemInstance, ItemInstanceId};
@@ -1124,6 +1540,15 @@ fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instanc
         essence: i.essence.clone().map(EssenceId::new),
         modifiers: i.modifiers.iter().cloned().map(ModifierId::new).collect(),
         ancient_word: i.ancient_word.clone().map(AncientWordId::new),
+    };
+
+    let secondary_word = |s: &super::module_bindings::SecondaryWordRow| SecondaryWord {
+        word_id: AncientWordId::new(s.word_id.clone()),
+        intensity: s.intensity,
+    };
+
+    let slot_inscription = |s: &super::module_bindings::SlotInscriptionRow| SlotInscription {
+        secondary_words: s.secondary_words.iter().map(secondary_word).collect(),
     };
 
     ItemInstance {
@@ -1137,23 +1562,97 @@ fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instanc
         ability_selection: AbilitySelection {
             primary: row.ability_selection.primary.clone().map(AbilityId::new),
             secondary: row.ability_selection.secondary.clone().map(AbilityId::new),
+            ultimate: row.ability_selection.ultimate.clone().map(AbilityId::new),
         },
+        root_inscription: row.root_inscription.as_ref().map(|w| WeaponInscription {
+            root_word: w.root_word.clone().map(RootWordId::new),
+            primary: slot_inscription(&w.primary),
+            secondary: slot_inscription(&w.secondary),
+            ultimate: slot_inscription(&w.ultimate),
+        }),
+        armor_inscription: row.armor_inscription.as_ref().map(|a| ArmorInscription {
+            root_word: a.root_word.clone().map(RootWordId::new),
+            secondary_words: a.secondary_words.iter().map(secondary_word).collect(),
+        }),
     }
 }
 
-/// Turns the main menu's "connect as <name>" into a `join` call and handles logout.
+/// Turns a login-form submission into a `register`/`login` call.
+///
+/// `AuthState` moves to `Authenticating` the moment the request is sent, and
+/// stays there until [`drain_events`] sees the reducer's own answer
+/// (`AuthAccepted`/`AuthRejected`) — unlike `join`, this does not move
+/// optimistically to the success state, so a slow round trip shows as
+/// genuinely pending rather than as a lie the UI has to walk back.
+fn auth_on_request(
+    conn: Res<StdbConnection>,
+    mut request: ResMut<AuthRequest>,
+    mut auth_state: ResMut<AuthState>,
+    mut auth_failure: ResMut<AuthFailure>,
+) {
+    let Some(intent) = request.0.take() else {
+        return;
+    };
+
+    auth_state.0 = AuthStatus::Authenticating;
+    auth_failure.0 = None;
+
+    let result = match intent {
+        AuthIntent::Register { email, password } => conn
+            .reducers()
+            .register_then(email, password, conn.report_auth_outcome()),
+        AuthIntent::Login { email, password } => conn
+            .reducers()
+            .login_then(email, password, conn.report_auth_outcome()),
+    };
+    if let Err(err) = result {
+        auth_state.0 = AuthStatus::Rejected;
+        auth_failure.0 = Some(err.to_string());
+    }
+}
+
+/// Turns a character-select "delete" press into a `delete_character` call.
+///
+/// Fire-and-forget beyond the rejection path: on success the row deletions
+/// (and the `game_entity` deletion in particular) reach the client as
+/// ordinary `EntityRemoved`/roster-cleanup events through [`drain_events`],
+/// the same as any other character disappearing — there is no separate
+/// "delete succeeded" signal to wait for.
+fn delete_character_on_request(
+    conn: Res<StdbConnection>,
+    mut request: ResMut<DeleteCharacterRequest>,
+) {
+    let Some(character_id) = request.0.take() else {
+        return;
+    };
+    if let Err(err) = conn.reducers().delete_character_then(
+        character_id,
+        conn.report_rejection("Impossibile eliminare il personaggio"),
+    ) {
+        error!("delete_character failed to send: {err}");
+    }
+}
+
+/// Turns the main menu's "connect as <name>" into a `join` call, and handles
+/// leaving a character / logging out of an account.
 ///
 /// Reuses `ConnectionRequest`, the same resource the lightyear path consumed, so
 /// the menu does not need to know which transport is mounted.
+///
+/// Unlike the version this replaced, neither `LeaveCharacter` nor
+/// `LogoutAccount` disconnects: `leave` and `logout` are ordinary reducer
+/// calls on the connection that is already open, the same as `join`. There is
+/// nothing to wait for a grace period on — see the removed `finish_logout`
+/// commit for the disconnect/reconnect dance this used to require back when
+/// an `Identity` had no account behind it to keep authenticating as.
 fn join_on_request(
     conn: Res<StdbConnection>,
-    config: Res<StdbConnectionConfig>,
     mut request: ResMut<ConnectionRequest>,
     mut screen: ResMut<GameScreen>,
     mut failure: ResMut<ConnectionFailure>,
-    mut map: ResMut<StdbEntityMap>,
-    mut pending: ResMut<PendingRows>,
     mut commands: Commands,
+    mut state: ReplicationState,
+    mut auth: AuthResources,
 ) {
     let Some(intent) = request.0.take() else {
         return;
@@ -1178,29 +1677,39 @@ fn join_on_request(
                 }
             }
         }
-        ConnectionIntent::Logout => {
-            if let Err(err) = conn.conn.disconnect() {
-                warn!("could not disconnect during logout: {err}");
+        ConnectionIntent::LeaveCharacter => {
+            // Fire-and-forget, same as `Shutdown`'s: `leave` is a no-op if no
+            // character was active, and there is nothing meaningful to
+            // report back — the character-select screen just repopulates
+            // from the `player` rows this already-open connection keeps
+            // receiving.
+            if let Err(err) = conn.reducers().leave() {
+                error!("leave failed to send: {err}");
             }
-            // Keep the cached token: logout returns to the main menu, not to a
-            // fresh account. Clearing it here would mint a new `Identity` on
-            // reconnect, orphaning the character under the old identity and
-            // making its name unusable ("name is taken") on the next join.
-            clear_replicated_state(&mut commands, &mut map, &mut pending);
-
-            match connect(&config.uri, &config.module) {
-                Ok(connection) => {
-                    commands.insert_resource(connection);
-                    failure.0 = None;
-                    screen.0 = Screen::MainMenu;
-                }
-                Err(err) => {
-                    error!("SpacetimeDB reconnection after logout failed: {err}");
-                    failure.0 = Some(format!("Impossibile riconnettersi: {err}"));
-                }
+            screen.0 = Screen::MainMenu;
+        }
+        ConnectionIntent::LogoutAccount => {
+            if let Err(err) = conn.reducers().logout() {
+                error!("logout failed to send: {err}");
             }
+            // Optimistic: unlike `login`/`register` (see `auth_on_request`),
+            // `logout` only ever clears the caller's own `Session` and has
+            // no rejection path worth waiting on.
+            clear_replicated_state(
+                &mut commands,
+                &mut state.map,
+                &mut state.pending,
+                &mut state.local,
+                &mut state.roster,
+            );
+            auth.state.0 = AuthStatus::LoggedOut;
+            auth.failure.0 = None;
+            screen.0 = Screen::MainMenu;
         }
         ConnectionIntent::Disconnect => {}
+        // Handled by `begin_shutdown`, which runs in `PreUpdate` and takes the
+        // request before this system ever sees it.
+        ConnectionIntent::Shutdown => {}
     }
 }
 
@@ -1213,6 +1722,8 @@ fn clear_replicated_state(
     commands: &mut Commands,
     map: &mut StdbEntityMap,
     pending: &mut PendingRows,
+    local: &mut LocalCharacter,
+    roster: &mut CharacterRoster,
 ) {
     for entity in map
         .by_entity_id
@@ -1222,8 +1733,10 @@ fn clear_replicated_state(
     {
         commands.entity(entity).despawn();
     }
-    map.entity_of_identity.clear();
+    map.entity_of_character.clear();
     *pending = PendingRows::default();
+    *local = LocalCharacter::default();
+    roster.characters.clear();
 }
 
 /// Tells the server the client is still here.
@@ -1237,14 +1750,92 @@ fn send_heartbeat(conn: Res<StdbConnection>, time: Res<Time>, mut elapsed: Local
     let _ = conn.reducers().heartbeat();
 }
 
+/// `Some` once a graceful shutdown has been requested; the value is the
+/// elapsed grace period, ticked by [`finish_shutdown`].
+#[derive(Resource, Default)]
+struct ShuttingDown(Option<f32>);
+
+/// Starts a graceful shutdown: queues a disconnect and lets [`finish_shutdown`]
+/// exit once it has actually gone out.
+///
+/// Two things ask for this, and both used to skip the disconnect entirely.
+/// The window's close button fires [`WindowCloseRequested`], which by default
+/// tears the process down with no chance to say goodbye — `bins/game`
+/// disables that default exit precisely so this system can run first. The
+/// main menu's "Exit" button used to call `AppExit` directly for the same
+/// reason. Runs regardless of whether [`StdbConnection`] exists yet, so a
+/// close during the initial connection attempt still exits promptly.
+fn begin_shutdown(
+    mut closed: MessageReader<WindowCloseRequested>,
+    mut request: ResMut<ConnectionRequest>,
+    mut shutting_down: ResMut<ShuttingDown>,
+    conn: Option<Res<StdbConnection>>,
+    config: Res<StdbConnectionConfig>,
+) {
+    let window_close_requested = closed.read().count() > 0;
+    let exit_requested = matches!(request.0, Some(ConnectionIntent::Shutdown));
+    if !window_close_requested && !exit_requested {
+        return;
+    }
+    if exit_requested {
+        request.0 = None;
+    }
+    if shutting_down.0.is_some() {
+        // Already draining (e.g. the window close button was mashed).
+        return;
+    }
+    if let Some(conn) = conn {
+        // No explicit `leave` here: `client_disconnected` on the module
+        // already marks the active character offline and clears the
+        // session the instant this socket actually closes — see
+        // `reducers::lifecycle::client_disconnected`. An earlier version of
+        // this function called `leave` first, back when `leave` deleted the
+        // character; that made closing the game window permanently destroy
+        // whatever character was being played.
+        if let Err(err) = conn.conn.disconnect() {
+            warn!("could not disconnect during shutdown: {err}");
+        }
+    }
+    // Forget the cached identity: the next launch should start fresh rather
+    // than silently resuming whatever character this machine last used.
+    forget_cached_credentials(&config.uri, &config.module);
+    shutting_down.0 = Some(0.0);
+}
+
+/// Lets the disconnect queued by [`begin_shutdown`] actually reach the socket
+/// — via the normal `frame_tick` pump — before the process exits.
+fn finish_shutdown(
+    mut shutting_down: ResMut<ShuttingDown>,
+    conn: Option<Res<StdbConnection>>,
+    time: Res<Time>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let Some(elapsed) = shutting_down.0.as_mut() else {
+        return;
+    };
+    *elapsed += time.delta_secs();
+    let drained = conn.map(|c| !c.conn.is_active()).unwrap_or(true);
+    if drained || *elapsed >= SHUTDOWN_GRACE_SECONDS {
+        exit.write(AppExit::Success);
+    }
+}
+
 /// Held right mouse button sets the destination, as it always has.
+///
+/// Reads [`MoveTarget`] instead of re-resolving the click itself:
+/// `crate::player_movement::select_move_target` already casts the same
+/// camera ray to the same ground every frame the button is held, to drive
+/// the click-feedback rings. This used to be two independent copies of that
+/// raycast (this one and `select_move_target`'s) computing the same point,
+/// with `MoveTarget` written but never read by anything — now there is one
+/// raycast and one source of truth. `.after(select_move_target)` keeps this
+/// system reading the value `select_move_target` wrote earlier in the same
+/// frame, not one frame stale.
 fn send_move_commands(
     conn: Res<StdbConnection>,
     time: Res<Time>,
     mouse: Option<Res<ButtonInput<MouseButton>>>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    surface_query: Res<ClientSurfaceQuery>,
+    move_target: Res<MoveTarget>,
     mut cooldown: Local<f32>,
 ) {
     let Some(mouse) = mouse else {
@@ -1265,34 +1856,7 @@ fn send_move_commands(
     }
     *cooldown = MOVE_COMMAND_INTERVAL;
 
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let Some(cursor) = window.cursor_position() else {
-        return;
-    };
-    let Some((camera, camera_transform)) = cameras.iter().next() else {
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else {
-        return;
-    };
-    // When no terrain mesh is available, fall back to a horizontal plane at Y=0.
-    // This is safe: the server ignores the client-sent Y and resolves X/Z
-    // authoritatively against its own collision data.
-    //
-    // A ray parallel to that plane never meets it, and dividing by its zero Y
-    // would send an infinite coordinate the module can only reject — so that
-    // case is simply not a click.
-    let Some(point) = surface_query
-        .0
-        .as_ref()
-        .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, 100.0, 0.5))
-        .or_else(|| {
-            let t = -ray.origin.y / ray.direction.y;
-            t.is_finite().then(|| ray.origin + *ray.direction * t)
-        })
-    else {
+    let Some(point) = move_target.0 else {
         return;
     };
 
@@ -1335,6 +1899,173 @@ fn to_vec3(v: &Vec3Row) -> Vec3 {
     Vec3::new(v.x, v.y, v.z)
 }
 
+// ---------------------------------------------------------------------------
+// Party roster
+// ---------------------------------------------------------------------------
+//
+// `/party list` and bare `/party` (`crates/presentation/src/ui/chat.rs`)
+// render entirely from already-subscribed `party`/`party_member` rows — no
+// reducer call, per `plans/party-system.md`. This section is deliberately
+// self-contained: its own channel, its own resource, its own drain system,
+// registered independently of `register_callbacks`/`drain_events` above, so
+// adding party support cannot perturb any already-shipped replication path.
+// It reuses `session`'s *existing* subscription (no new query needed) via a
+// second, independent listener, to learn the caller's own `character_id` —
+// the one thing `party_member` alone cannot answer.
+
+use super::module_bindings::party_member_table::PartyMemberTableAccess;
+use super::module_bindings::party_table::PartyTableAccess;
+use super::module_bindings::{PartyMemberRow, PartyRow};
+
+enum PartyRowEvent {
+    Member(PartyMemberRow),
+    MemberRemoved(PartyMemberRow),
+    PartyChanged(PartyRow),
+    PartyRemoved(PartyRow),
+    /// A `session` row, forwarded regardless of whose it is — `local_identity`
+    /// is only known inside [`drain_party_events`], the same reason
+    /// `RowEvent::Session` is handled that way above.
+    SessionSeen(Session),
+    /// A `player` row, forwarded so `/party list` can show display names
+    /// instead of bare character ids, without depending on the private
+    /// `PendingRows` cache above.
+    PlayerSeen(Player),
+}
+
+#[derive(Resource)]
+struct PartyEvents(Receiver<PartyRowEvent>);
+
+/// One character in the caller's own party.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartyMemberView {
+    pub character_id: Uuid,
+    pub display_name: String,
+    pub is_leader: bool,
+}
+
+/// The caller's own party, built entirely from subscribed `party`/
+/// `party_member`/`player` rows — never populated by calling a reducer.
+#[derive(Resource, Default)]
+pub struct PartyRoster {
+    local_character_id: Option<Uuid>,
+    parties: HashMap<u64, PartyRow>,
+    members: HashMap<Uuid, PartyMemberRow>,
+    /// Display names for *any* character seen in a `player` row, not just the
+    /// caller's own — `/party list` needs to name every member, not only the
+    /// caller.
+    display_names: HashMap<Uuid, String>,
+}
+
+impl PartyRoster {
+    /// The caller's own party roster, if they are currently in one. `None`
+    /// means "not in a party" — `/party list`/bare `/party` render that as
+    /// "You are not in a party."
+    pub fn my_party(&self) -> Option<Vec<PartyMemberView>> {
+        let character_id = self.local_character_id?;
+        let membership = self.members.get(&character_id)?;
+        let leader = self.parties.get(&membership.party_id).map(|row| row.leader);
+        let mut members: Vec<PartyMemberView> = self
+            .members
+            .values()
+            .filter(|row| row.party_id == membership.party_id)
+            .map(|row| PartyMemberView {
+                character_id: row.character_id,
+                display_name: self
+                    .display_names
+                    .get(&row.character_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("character #{}", row.character_id)),
+                is_leader: Some(row.character_id) == leader,
+            })
+            .collect();
+        members.sort_by_key(|member| member.character_id);
+        Some(members)
+    }
+}
+
+/// Registers the party subsystem's own row callbacks. Kept separate from
+/// [`register_callbacks`] so a mistake here cannot touch any table that
+/// subsystem already mirrors.
+fn register_party_callbacks(conn: &DbConnection, tx: Sender<PartyRowEvent>) {
+    let member_inserted = tx.clone();
+    conn.db().party_member().on_insert(move |_ctx, row| {
+        let _ = member_inserted.send(PartyRowEvent::Member(row.clone()));
+    });
+    let member_updated = tx.clone();
+    conn.db()
+        .party_member()
+        .on_update(move |_ctx, _old, new| {
+            let _ = member_updated.send(PartyRowEvent::Member(new.clone()));
+        });
+    let member_deleted = tx.clone();
+    conn.db().party_member().on_delete(move |_ctx, row| {
+        let _ = member_deleted.send(PartyRowEvent::MemberRemoved(row.clone()));
+    });
+
+    let party_inserted = tx.clone();
+    conn.db().party().on_insert(move |_ctx, row| {
+        let _ = party_inserted.send(PartyRowEvent::PartyChanged(row.clone()));
+    });
+    let party_updated = tx.clone();
+    conn.db().party().on_update(move |_ctx, _old, new| {
+        let _ = party_updated.send(PartyRowEvent::PartyChanged(new.clone()));
+    });
+    let party_deleted = tx.clone();
+    conn.db().party().on_delete(move |_ctx, row| {
+        let _ = party_deleted.send(PartyRowEvent::PartyRemoved(row.clone()));
+    });
+
+    let session_inserted = tx.clone();
+    conn.db().session().on_insert(move |_ctx, row| {
+        let _ = session_inserted.send(PartyRowEvent::SessionSeen(row.clone()));
+    });
+    let session_updated = tx.clone();
+    conn.db().session().on_update(move |_ctx, _old, new| {
+        let _ = session_updated.send(PartyRowEvent::SessionSeen(new.clone()));
+    });
+
+    let player_inserted = tx.clone();
+    conn.db().player().on_insert(move |_ctx, row| {
+        let _ = player_inserted.send(PartyRowEvent::PlayerSeen(row.clone()));
+    });
+    let player_updated = tx;
+    conn.db().player().on_update(move |_ctx, _old, new| {
+        let _ = player_updated.send(PartyRowEvent::PlayerSeen(new.clone()));
+    });
+}
+
+fn drain_party_events(
+    conn: Res<StdbConnection>,
+    events: Res<PartyEvents>,
+    mut roster: ResMut<PartyRoster>,
+) {
+    let local_identity = conn.identity();
+    while let Ok(event) = events.0.try_recv() {
+        match event {
+            PartyRowEvent::Member(row) => {
+                roster.members.insert(row.character_id, row);
+            }
+            PartyRowEvent::MemberRemoved(row) => {
+                roster.members.remove(&row.character_id);
+            }
+            PartyRowEvent::PartyChanged(row) => {
+                roster.parties.insert(row.party_id, row);
+            }
+            PartyRowEvent::PartyRemoved(row) => {
+                roster.parties.remove(&row.party_id);
+            }
+            PartyRowEvent::SessionSeen(row) => {
+                if Some(row.identity) == local_identity {
+                    roster.local_character_id = row.character_id;
+                }
+            }
+            PartyRowEvent::PlayerSeen(row) => {
+                roster.display_names.insert(row.character_id, row.display_name);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1358,7 +2089,7 @@ mod tests {
     #[test]
     fn known_glyph_row_becomes_domain_component() {
         let row = KnownGlyphsTable {
-            identity: Identity::default(),
+            character_id: Uuid::NIL,
             essences: vec!["fire".to_string()],
             modifiers: vec!["amplify".to_string()],
             ancient_words: vec!["eternity".to_string()],
@@ -1462,13 +2193,17 @@ mod tests {
             .insert(1, crowd_control_row(1, 7, CrowdControlKindRow::Stun, 1.5, 2.0));
 
         let first = AppliedEffects {
+            active_status: active_statuses_for(7, &pending),
             crowd_control: crowd_control_state_for(7, &pending),
+            status_signature: status_signature_for(7, &pending),
             modifier_signature: modifier_signature_for(7, &pending),
         };
         pending.applied.insert(7, first);
 
         let unchanged = AppliedEffects {
+            active_status: active_statuses_for(7, &pending),
             crowd_control: crowd_control_state_for(7, &pending),
+            status_signature: status_signature_for(7, &pending),
             modifier_signature: modifier_signature_for(7, &pending),
         };
         assert_eq!(pending.applied.get(&7), Some(&unchanged));
@@ -1477,7 +2212,9 @@ mod tests {
             .crowd_control
             .insert(1, crowd_control_row(1, 7, CrowdControlKindRow::Stun, 1.0, 2.0));
         let ticked = AppliedEffects {
+            active_status: active_statuses_for(7, &pending),
             crowd_control: crowd_control_state_for(7, &pending),
+            status_signature: status_signature_for(7, &pending),
             modifier_signature: modifier_signature_for(7, &pending),
         };
         assert_ne!(pending.applied.get(&7), Some(&ticked));
@@ -1494,6 +2231,7 @@ mod tests {
                 source: Some(9),
                 amount_per_tick: -4.0,
                 tick_interval_seconds: 0.5,
+                origin_status_instance_id: None,
                 since_last_tick: 0.1,
                 remaining_seconds: 6.0,
             },

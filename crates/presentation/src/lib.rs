@@ -28,6 +28,7 @@ impl Plugin for PresentationCorePlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<PresentationState>()
             .init_resource::<bevymmo_gameplay::placeables::PlaceableRegistry>()
+            .insert_resource(bevymmo_content::status_definitions::default_statuses())
             .add_loading_state(
                 LoadingState::new(PresentationState::Loading)
                     .continue_to_state(PresentationState::Ready)

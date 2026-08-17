@@ -1,0 +1,41 @@
+@use '../../../../styles/variables' as *;
+
+.rune-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 20px 0;
+  color: var(--gold-dark);
+  font-size: 1.1rem;
+
+  &::before,
+  &::after {
+    width: 90px;
+    height: 1px;
+    content: "";
+    background: linear-gradient(90deg, transparent, var(--gold-dark));
+  }
+
+  &::after {
+    background: linear-gradient(90deg, var(--gold-dark), transparent);
+  }
+
+  &.cyan {
+    color: var(--cyan);
+    &::before { background: linear-gradient(90deg, transparent, var(--cyan)); }
+    &::after { background: linear-gradient(90deg, var(--cyan), transparent); }
+  }
+
+  &.gold {
+    color: var(--gold-light);
+    &::before { background: linear-gradient(90deg, transparent, var(--gold-light)); }
+    &::after { background: linear-gradient(90deg, var(--gold-light), transparent); }
+  }
+
+  &.stone {
+    color: var(--stone-dark);
+    &::before { background: linear-gradient(90deg, transparent, var(--stone-dark)); }
+    &::after { background: linear-gradient(90deg, var(--stone-dark), transparent); }
+  }
+}

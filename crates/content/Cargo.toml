@@ -11,5 +11,8 @@ bevymmo_world = { path = "../world" }
 bevymmo_gameplay = { path = "../gameplay" }
 bevymmo-props-macro = { path = "../bevymmo-props-macro" }
 
+[dev-dependencies]
+glam = { version = "0.32", features = ["serde"] }
+
 [lints]
 workspace = true

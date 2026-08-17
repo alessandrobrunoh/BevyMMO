@@ -7,10 +7,10 @@
 
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::definition::Item;
+use crate::registry::Registry;
 
 /// Unique identifier of an item type.
 ///
@@ -46,7 +46,7 @@ impl From<&'static str> for ItemId {
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::resource::Resource))]
 #[derive(Default)]
 pub struct ItemRegistry {
-    items: HashMap<ItemId, Arc<dyn Item>>,
+    items: Registry<ItemId, Arc<dyn Item>>,
 }
 
 impl ItemRegistry {
@@ -64,7 +64,7 @@ impl ItemRegistry {
 
     /// Returns `true` if an item with the given id is registered.
     pub fn contains(&self, id: &ItemId) -> bool {
-        self.items.contains_key(id)
+        self.items.contains(id)
     }
 
     /// Number of registered items.
@@ -82,13 +82,8 @@ impl ItemRegistry {
     /// Deterministic iteration order keeps the inventory UI stable across
     /// rebuilds and matches the behavior of `SpellRegistry::sorted_spells`.
     pub fn sorted_items(&self) -> Vec<(ItemId, Arc<dyn Item>)> {
-        let mut list: Vec<_> = self
-            .items
-            .iter()
-            .map(|(id, item)| (id.clone(), item.clone()))
-            .collect();
-        list.sort_by(|a, b| a.1.display_name().cmp(b.1.display_name()));
-        list
+        self.items
+            .sorted_by(|a, b| a.display_name().cmp(b.display_name()))
     }
 }
 

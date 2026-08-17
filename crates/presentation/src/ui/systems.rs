@@ -4,7 +4,6 @@
 //! [`Display`] sul nodo root, non con respawn: lo spawn avviene una volta in
 //! `Startup`.
 
-use bevy::app::AppExit;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::ButtonInput;
 use bevy::input::ButtonState;
@@ -13,12 +12,38 @@ use bevy::prelude::*;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::game_state::{
-    validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen,
-    PlayerNameError, Screen,
+    validate_email, validate_password, validate_player_name, AuthIntent, AuthRequest,
+    ConnectionFailure, ConnectionIntent, ConnectionRequest, EmailError, GameScreen,
+    PasswordError, PlayerNameError, Screen, TypingFocus,
 };
 use crate::ui::button::{UiButton, UiButtonAction, UiButtonImages};
+use crate::ui::chat::ChatInput;
+use crate::ui::login::{EmailInput, PasswordInput};
+use crate::ui::main_menu::PlayerNameInput;
 use crate::ui::text_input::{TextInput, TextInputErrorText, TextInputValueText};
 use crate::ui::theme::UiTheme;
+
+/// Keeps [`TypingFocus`] in sync with whichever text field actually has
+/// focus this frame — chat, or one of the login/character-name `TextInput`
+/// fields. Recomputed from scratch every frame rather than tracked
+/// incrementally: several systems can change either field's `focused` flag
+/// (click, Enter, Escape, sending a message, clicking the game world), and a
+/// single source of truth here cannot drift out of sync with any of them.
+///
+/// `client`-crate gameplay systems (`send_combat_inputs`, `send_move_commands`)
+/// read this — see [`bevymmo_client::app_state::TypingFocus`] for why it
+/// lives there and not next to the components it mirrors.
+pub(crate) fn sync_typing_focus(
+    chat_inputs: Query<&ChatInput>,
+    text_inputs: Query<&TextInput>,
+    mut typing: ResMut<TypingFocus>,
+) {
+    let focused =
+        chat_inputs.iter().any(|input| input.focused) || text_inputs.iter().any(|input| input.focused);
+    if typing.0 != focused {
+        typing.0 = focused;
+    }
+}
 
 /// Condizione di esecuzione: il client è in una schermata di gameplay.
 pub fn in_gameplay(screen: Res<GameScreen>) -> bool {
@@ -32,15 +57,28 @@ fn error_message(err: PlayerNameError) -> String {
     }
 }
 
+fn email_error_message(err: EmailError) -> String {
+    match err {
+        EmailError::MissingAt => "Email must contain '@'.".to_string(),
+        EmailError::EmptyLocalOrDomain => "Email must have text before and after '@'.".to_string(),
+        EmailError::DomainMissingDot => "Email domain must contain a '.'.".to_string(),
+    }
+}
+
+fn password_error_message(err: PasswordError) -> String {
+    match err {
+        PasswordError::TooShort => "Password must be at least 8 characters.".to_string(),
+    }
+}
+
 /// Dispatch delle azioni associate ai pulsanti UI.
 ///
 /// Legge solo i pulsanti il cui [`Interaction`] è cambiato ed è `Pressed`.
 pub fn update_button_actions(
     mut screen: ResMut<GameScreen>,
     mut connection_request: ResMut<ConnectionRequest>,
-    mut exit: MessageWriter<AppExit>,
     buttons: Query<(&Interaction, &UiButton), Changed<Interaction>>,
-    mut text_input: Query<&mut TextInput>,
+    mut name_input: Query<&mut TextInput, With<PlayerNameInput>>,
 ) {
     for (interaction, button) in buttons.iter() {
         if *interaction != Interaction::Pressed {
@@ -49,7 +87,7 @@ pub fn update_button_actions(
 
         match button.action {
             UiButtonAction::Play => {
-                let Ok(mut input) = text_input.single_mut() else {
+                let Ok(mut input) = name_input.single_mut() else {
                     continue;
                 };
                 match validate_player_name(&input.value) {
@@ -65,6 +103,9 @@ pub fn update_button_actions(
                     }
                 }
             }
+            // Handled by `update_auth_button_actions`, which needs the
+            // email/password fields this system does not query.
+            UiButtonAction::Login | UiButtonAction::Register => {}
             UiButtonAction::OpenSettings => {
                 screen.0 = Screen::Settings;
             }
@@ -72,21 +113,86 @@ pub fn update_button_actions(
                 screen.0 = Screen::MainMenu;
             }
             UiButtonAction::ReturnToMainMenu => {
-                connection_request.0 = Some(ConnectionIntent::Disconnect);
+                // Previously sent `Disconnect`, which the SpacetimeDB path
+                // treats as a no-op — the character stayed marked online
+                // server-side even though the screen had already left it.
+                // `LeaveCharacter` is what `UiButtonAction::Logout` (pause
+                // menu's "Leave Character") sends for the same reason.
+                connection_request.0 = Some(ConnectionIntent::LeaveCharacter);
                 screen.0 = Screen::MainMenu;
             }
             UiButtonAction::Logout => {
-                connection_request.0 = Some(ConnectionIntent::Logout);
+                // Pause menu's "Leave Character": returns to character
+                // select, stays authenticated as the same account.
+                connection_request.0 = Some(ConnectionIntent::LeaveCharacter);
                 screen.0 = Screen::MainMenu;
+            }
+            UiButtonAction::LogoutAccount => {
+                // Character-select screen's "Logout": ends the account
+                // session so a different one can sign in.
+                connection_request.0 = Some(ConnectionIntent::LogoutAccount);
             }
             UiButtonAction::Resume => {
                 screen.0 = Screen::InGame;
             }
             UiButtonAction::Exit => {
-                exit.write(AppExit::Success);
+                // Goes through `stdb::plugin::begin_shutdown`/`finish_shutdown`
+                // rather than writing `AppExit` directly, so the pending
+                // disconnect actually reaches the socket before the process
+                // dies. See `ConnectionIntent::Shutdown`.
+                connection_request.0 = Some(ConnectionIntent::Shutdown);
             }
             // Handled by `settings::systems::reset_keybinds_on_button`.
             UiButtonAction::ResetKeybinds => {}
+        }
+    }
+}
+
+/// Dispatch delle azioni Login/Register del form di autenticazione.
+///
+/// Separato da [`update_button_actions`] perché legge due campi (email,
+/// password) invece di uno solo, e nessun'altra azione ne ha bisogno.
+pub fn update_auth_button_actions(
+    mut auth_request: ResMut<AuthRequest>,
+    buttons: Query<(&Interaction, &UiButton), Changed<Interaction>>,
+    mut email_input: Query<&mut TextInput, (With<EmailInput>, Without<PasswordInput>)>,
+    mut password_input: Query<&mut TextInput, (With<PasswordInput>, Without<EmailInput>)>,
+) {
+    for (interaction, button) in buttons.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let is_register = match button.action {
+            UiButtonAction::Login => false,
+            UiButtonAction::Register => true,
+            _ => continue,
+        };
+
+        let Ok(mut email) = email_input.single_mut() else {
+            continue;
+        };
+        let Ok(mut password) = password_input.single_mut() else {
+            continue;
+        };
+
+        let email_result = validate_email(&email.value);
+        let password_result = validate_password(&password.value);
+        email.error = email_result.clone().err().map(email_error_message);
+        password.error = password_result.clone().err().map(password_error_message);
+
+        if let (Ok(normalized_email), Ok(())) = (email_result, password_result) {
+            let password_value = password.value.clone();
+            auth_request.0 = Some(if is_register {
+                AuthIntent::Register {
+                    email: normalized_email,
+                    password: password_value,
+                }
+            } else {
+                AuthIntent::Login {
+                    email: normalized_email,
+                    password: password_value,
+                }
+            });
         }
     }
 }
@@ -107,29 +213,36 @@ pub fn update_button_visuals(
     }
 }
 
-/// Toggle del focus sul click del campo di testo.
+/// Focalizza il campo cliccato, sfocalizzando ogni altro campo aperto.
+///
+/// Più campi possono esistere insieme (es. email + password nel login): al
+/// più uno è focalizzato alla volta, altrimenti la tastiera non saprebbe a
+/// quale campo indirizzare gli eventi.
 pub fn update_text_input_focus(
-    mut query: Query<(&Interaction, &mut TextInput), Changed<Interaction>>,
+    clicked: Query<(Entity, &Interaction), (With<TextInput>, Changed<Interaction>)>,
+    mut inputs: Query<(Entity, &mut TextInput)>,
 ) {
-    for (interaction, mut input) in query.iter_mut() {
-        if *interaction == Interaction::Pressed {
-            input.focused = !input.focused;
-        }
+    let Some(clicked_entity) = clicked
+        .iter()
+        .find(|(_, interaction)| **interaction == Interaction::Pressed)
+        .map(|(entity, _)| entity)
+    else {
+        return;
+    };
+    for (entity, mut input) in inputs.iter_mut() {
+        input.focused = entity == clicked_entity;
     }
 }
 
-/// Gestione tastiera del campo di testo quando è focalizzato.
+/// Gestione tastiera del campo di testo attualmente focalizzato, se c'è.
 pub fn update_text_input_keyboard(
     mut events: MessageReader<KeyboardInput>,
     mut query: Query<&mut TextInput>,
 ) {
-    let Ok(mut input) = query.single_mut() else {
-        return;
-    };
-    if !input.focused {
+    let Some(mut input) = query.iter_mut().find(|input| input.focused) else {
         events.clear();
         return;
-    }
+    };
 
     let len = input.value.chars().count();
     for ev in events.read() {
@@ -140,7 +253,7 @@ pub fn update_text_input_keyboard(
             Key::Backspace => {
                 input.value.pop();
             }
-            Key::Enter => {
+            Key::Enter | Key::Escape => {
                 input.focused = false;
             }
             Key::Space if len < input.max_chars => {
@@ -158,42 +271,49 @@ pub fn update_text_input_keyboard(
     }
 }
 
-/// Riflette lo stato di [`TextInput`] sui nodi testo figli (valore/placeholder
-/// ed errore) e sul bordo in base a focus/errore.
+/// Riflette lo stato di ogni [`TextInput`] cambiato sui propri nodi testo
+/// figli (valore/placeholder ed errore) e sul proprio bordo.
+///
+/// Scrive tramite gli entity id salvati su `TextInput` (`value_text`,
+/// `error_text`), non tramite una ricerca globale: con più campi presenti
+/// contemporaneamente non esiste "il" nodo valore, solo il nodo di *questo*
+/// campo.
 pub fn update_text_input_display(
     theme: Res<UiTheme>,
-    query: Query<&TextInput, Changed<TextInput>>,
+    query: Query<(Entity, &TextInput), Changed<TextInput>>,
     mut value_text: Query<(&mut Text, &mut TextColor), With<TextInputValueText>>,
     mut error_text: Query<&mut Text, (With<TextInputErrorText>, Without<TextInputValueText>)>,
-    mut border: Query<&mut BorderColor, With<TextInput>>,
+    mut border: Query<&mut BorderColor>,
 ) {
-    let Ok(input) = query.single() else {
-        return;
-    };
-
-    if let Ok((mut text, mut color)) = value_text.single_mut() {
-        if input.value.is_empty() {
-            text.0 = input.placeholder.clone();
-            color.0 = theme.muted_text_color;
-        } else {
-            text.0 = input.value.clone();
-            color.0 = theme.text_color;
+    for (entity, input) in query.iter() {
+        if let Ok((mut text, mut color)) = value_text.get_mut(input.value_text) {
+            if input.value.is_empty() {
+                text.0 = input.placeholder.clone();
+                color.0 = theme.muted_text_color;
+            } else {
+                text.0 = if input.obscured {
+                    "•".repeat(input.value.chars().count())
+                } else {
+                    input.value.clone()
+                };
+                color.0 = theme.text_color;
+            }
         }
-    }
 
-    if let Ok(mut text) = error_text.single_mut() {
-        text.0 = input.error.clone().unwrap_or_default();
-    }
+        if let Ok(mut text) = error_text.get_mut(input.error_text) {
+            text.0 = input.error.clone().unwrap_or_default();
+        }
 
-    if let Ok(mut border_color) = border.single_mut() {
-        let color = if input.error.is_some() {
-            theme.error_color
-        } else if input.focused {
-            theme.input_border_focused
-        } else {
-            theme.input_border
-        };
-        border_color.set_all(color);
+        if let Ok(mut border_color) = border.get_mut(entity) {
+            let color = if input.error.is_some() {
+                theme.error_color
+            } else if input.focused {
+                theme.input_border_focused
+            } else {
+                theme.input_border
+            };
+            border_color.set_all(color);
+        }
     }
 }
 
@@ -290,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn logout_sets_connection_intent_and_transitions_to_main_menu() {
+    fn logout_button_leaves_character_and_transitions_to_main_menu() {
         use crate::ui::button::{UiButton, UiButtonAction};
 
         let mut app = App::new();
@@ -315,12 +435,13 @@ mod tests {
         // Verify screen transitioned to MainMenu
         assert_eq!(app.world().resource::<GameScreen>().0, Screen::MainMenu);
 
-        // Verify connection request was set to Logout
+        // Verify connection request was set to leave the character (not to
+        // log out of the account — see `UiButtonAction::LogoutAccount` for that).
         let connection_request = app.world().resource::<ConnectionRequest>();
         assert!(connection_request.0.is_some());
         assert!(matches!(
             connection_request.0.as_ref().unwrap(),
-            ConnectionIntent::Logout
+            ConnectionIntent::LeaveCharacter
         ));
 
         // Cleanup

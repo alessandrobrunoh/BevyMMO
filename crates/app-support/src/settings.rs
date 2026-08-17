@@ -20,20 +20,7 @@ pub struct Settings {
     #[serde(default = "default_tick_rate")]
     pub tick_rate: f64,
 
-    /// PostgreSQL connection URL, in the format
-    /// `postgresql://user:password@host:port/db`.
-    ///
-    /// Required in server mode: provided by `config/<env>.toml`,
-    /// `config/local.toml`, or env var `DATABASE_URL`.
-    #[serde(default)]
-    pub database_url: Option<String>,
-
     /// WebSocket URL of the SpacetimeDB instance.
-    ///
-    /// Set alongside `database_url` rather than replacing it: the migration to
-    /// SpacetimeDB is incremental, and the lightyear/Postgres stack has to keep
-    /// working until the gameplay reducers are ported. `database_url` goes away
-    /// with `crates/server`.
     #[serde(default = "default_spacetime_uri")]
     pub spacetime_uri: String,
 
@@ -42,31 +29,43 @@ pub struct Settings {
     pub spacetime_module: String,
 
     #[serde(default)]
-    pub server: ServerSettings,
-
-    #[serde(default)]
-    pub client: ClientSettings,
+    pub gateway: GatewaySettings,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-pub struct ServerSettings {
-    /// Local address the server listens on (bind), as string
-    /// "host:port". Maintained as `String` because `config` crate
-    /// deserializes from TOML/env as string; conversion to `SocketAddr`
-    /// happens at call sites.
-    #[serde(default = "default_server_bind_addr")]
+pub struct GatewaySettings {
+    /// Local address the HTTP gateway binds to ("host:port").
+    ///
+    /// Kept as `String` because the `config` crate hands us strings;
+    /// conversion happens at call sites.
+    #[serde(default = "default_gateway_bind_addr")]
     pub bind_addr: String,
-}
 
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct ClientSettings {
-    /// Address of the remote server to connect to ("host:port").
-    #[serde(default = "default_client_server_addr")]
-    pub server_addr: String,
+    /// Origin the frontend is served from, for CORS. The gateway's session
+    /// cookie requires credentialed cross-origin requests
+    /// (`Access-Control-Allow-Credentials`), which browsers refuse to pair
+    /// with a wildcard `*` origin — this must be the frontend's exact
+    /// scheme+host+port. Override per environment (`config/production.toml`,
+    /// `GATEWAY__CORS_ORIGIN`) rather than trusting this default anywhere but
+    /// local development.
+    #[serde(default = "default_cors_origin")]
+    pub cors_origin: String,
 
-    /// Local address bound by the client (typically "0.0.0.0:0").
-    #[serde(default = "default_client_addr")]
-    pub client_addr: String,
+    /// Whether the session cookie is marked `Secure` (HTTPS-only). `false`
+    /// by default so plain-HTTP local development keeps working — browsers
+    /// silently drop `Secure` cookies over HTTP, which would otherwise look
+    /// like login "succeeding" but never actually persisting. Production
+    /// must set this `true` once served over HTTPS.
+    #[serde(default)]
+    pub cookie_secure: bool,
+
+    /// Log output format: `"text"` (default, human-readable) or `"json"`
+    /// (one JSON object per line, for a log collector). Production sets
+    /// `json` via `GATEWAY__LOG_FORMAT`; an unknown value falls back to
+    /// `text` rather than refusing to boot — a wrong format must not take
+    /// the service down.
+    #[serde(default = "default_gateway_log_format")]
+    pub log_format: String,
 }
 
 impl Settings {
@@ -90,7 +89,12 @@ impl Settings {
             .add_source(config::File::with_name("config/local").required(false))
             // Env vars override everything. `try_parsing(true)` lets
             // values like "1.0" be parsed as numbers where needed.
-            .add_source(config::Environment::default().try_parsing(true));
+            // Double underscores (e.g. `GATEWAY__BIND_ADDR`) map to nested fields.
+            .add_source(
+                config::Environment::default()
+                    .separator("__")
+                    .try_parsing(true),
+            );
 
         builder
             .build()
@@ -116,14 +120,14 @@ fn default_spacetime_module() -> String {
     "bevymmo".to_string()
 }
 
-fn default_server_bind_addr() -> String {
-    "0.0.0.0:5051".to_owned()
+fn default_gateway_bind_addr() -> String {
+    "127.0.0.1:8080".to_owned()
 }
 
-fn default_client_server_addr() -> String {
-    "127.0.0.1:5051".to_owned()
+fn default_cors_origin() -> String {
+    "http://localhost:4200".to_owned()
 }
 
-fn default_client_addr() -> String {
-    "0.0.0.0:0".to_owned()
+fn default_gateway_log_format() -> String {
+    "text".to_owned()
 }

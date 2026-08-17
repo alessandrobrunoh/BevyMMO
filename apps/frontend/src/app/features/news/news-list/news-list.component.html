@@ -1,0 +1,87 @@
+<app-page-header
+  title="News From Eivar"
+  subtitle="Official chronicles, developer journals, community spotlights, and world dispatches."
+  badge="Official Chronicles"
+  bgImage="assets/images/world-exploration.jpg"
+  [breadcrumbs]="[{ label: 'News' }]"
+></app-page-header>
+
+<div class="news-page-content section-padding">
+  <div class="container">
+    <!-- Filter & Search Toolbar -->
+    <div class="news-toolbar stone-panel">
+      <!-- Category Tabs -->
+      <div class="category-tabs">
+        @for (cat of categories; track cat) {
+          <button
+            class="cat-tab-btn"
+            [class.active]="activeCategory() === cat"
+            (click)="setCategory(cat)"
+          >
+            {{ cat }}
+          </button>
+        }
+      </div>
+
+      <!-- Quick Search -->
+      <div class="news-search-box">
+        <span class="material-symbols-outlined search-ico">search</span>
+        <input
+          type="text"
+          placeholder="Filter news..."
+          [value]="searchQuery()"
+          (input)="onSearchInput($event)"
+          class="news-input"
+        />
+        @if (searchQuery()) {
+          <button class="clear-btn" (click)="searchQuery.set('')">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        }
+      </div>
+    </div>
+
+    <!-- News Grid -->
+    <div class="news-grid">
+      @if (filteredArticles().length === 0) {
+        <div class="empty-news-state stone-panel chamfer-box">
+          <span class="rune-icon">ᚹ</span>
+          <h3>No Chronicles Found</h3>
+          <p>There are no articles matching your current filter criteria.</p>
+          <app-eivar-button variant="secondary" size="sm" (onClick)="activeCategory.set('All'); searchQuery.set('')">
+            Reset Filters
+          </app-eivar-button>
+        </div>
+      }
+
+      @for (art of filteredArticles(); track art.id) {
+        <article class="news-card stone-panel chamfer-box" [routerLink]="['/news', art.slug]">
+          <div class="card-media">
+            <img [src]="art.image" [alt]="art.title" class="card-img" />
+            <span class="card-category-badge">{{ art.category }}</span>
+          </div>
+
+          <div class="card-body">
+            <div class="card-meta">
+              <span class="meta-date">{{ art.publishedAt }}</span>
+              <span class="meta-dot">·</span>
+              <span class="meta-reading">{{ art.readingTime }} min read</span>
+            </div>
+
+            <h3 class="card-title">{{ art.title }}</h3>
+            <p class="card-excerpt">{{ art.excerpt }}</p>
+
+            <div class="card-footer">
+              <div class="card-tags">
+                @for (tag of art.tags; track tag) {
+                  <span class="card-tag">#{{ tag }}</span>
+                }
+              </div>
+              <span class="read-link">Read More →</span>
+            </div>
+          </div>
+        </article>
+      }
+    </div>
+  </div>
+</div>

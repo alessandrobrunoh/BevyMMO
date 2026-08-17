@@ -12,7 +12,7 @@ mod systems;
 use bevy::prelude::*;
 use bevymmo_network::network::mode::has_client;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{not_typing, GameScreen, Screen};
 
 #[derive(Resource, Default)]
 pub struct InscriptionUiState {
@@ -27,7 +27,9 @@ impl Plugin for InscriptionUiPlugin {
         app.add_systems(
             Update,
             (
-                systems::toggle_inscription_window,
+                // Only the toggle is typing-gated — see the identical note
+                // in `ui::inventory::mod`.
+                systems::toggle_inscription_window.run_if(not_typing),
                 systems::refresh_inscription_window_on_equipment_change,
                 systems::handle_inscription_interactions,
             )

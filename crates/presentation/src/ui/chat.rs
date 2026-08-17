@@ -18,10 +18,12 @@ struct ChatRoot;
 #[derive(Component)]
 struct ChatHistory;
 
+/// `pub(crate)` (not private) so `ui::systems::sync_typing_focus` can read
+/// `focused` alongside `TextInput`'s — see [`bevymmo_client::app_state::TypingFocus`].
 #[derive(Component)]
-struct ChatInput {
+pub(crate) struct ChatInput {
     value: String,
-    focused: bool,
+    pub(crate) focused: bool,
 }
 
 #[derive(Component)]
@@ -45,6 +47,7 @@ impl Plugin for ChatPlugin {
                 sync_chat_visibility,
                 focus_chat_on_enter,
                 focus_chat_on_click,
+                defocus_chat_on_world_click,
                 edit_chat_input,
                 update_chat_input_display,
                 collect_chat_lines,
@@ -176,6 +179,31 @@ fn focus_chat_on_click(
     }
 }
 
+/// Releases chat focus on a click that landed on the game world rather than
+/// on any UI element — the same click that, e.g., sends a move command.
+/// Without this, clicking to move while chat is focused left the chat
+/// silently eating the next several keystrokes meant for gameplay.
+fn defocus_chat_on_world_click(
+    mouse: Res<ButtonInput<MouseButton>>,
+    ui_interactions: Query<&Interaction>,
+    mut inputs: Query<&mut ChatInput>,
+) {
+    if !(mouse.just_pressed(MouseButton::Left) || mouse.just_pressed(MouseButton::Right)) {
+        return;
+    }
+    // A `Pressed` interaction anywhere in the UI means this click landed on
+    // some clickable element — possibly chat's own input, already handled by
+    // `focus_chat_on_click` — not on the game world.
+    if ui_interactions.iter().any(|interaction| *interaction == Interaction::Pressed) {
+        return;
+    }
+    for mut input in inputs.iter_mut() {
+        if input.focused {
+            input.focused = false;
+        }
+    }
+}
+
 fn edit_chat_input(
     mut events: MessageReader<KeyboardInput>,
     screen: Res<GameScreen>,
@@ -214,6 +242,7 @@ fn edit_chat_input(
             Key::Enter => {
                 let message = input.value.trim().to_string();
                 if message.is_empty() {
+                    input.focused = false;
                     continue;
                 }
                 if let Some(conn) = conn.as_ref() {
@@ -223,6 +252,10 @@ fn edit_chat_input(
                         input.value.clear();
                     }
                 }
+                // Sending returns keyboard control to gameplay, same as
+                // Escape — a chat message is a single line, not a
+                // conversation the player is expected to keep typing into.
+                input.focused = false;
             }
             Key::Space if input.value.chars().count() < MAX_LOCAL_CHARS => {
                 input.value.push(' ');

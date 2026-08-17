@@ -9,7 +9,7 @@ pub mod weapon_detail;
 use bevy::prelude::*;
 use bevymmo_network::network::mode::has_client;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{not_typing, GameScreen, Screen};
 use components::InventorySelection;
 pub use drag::ItemDragState;
 
@@ -29,7 +29,11 @@ impl Plugin for InventoryUiPlugin {
         app.add_systems(
             Update,
             (
-                systems::toggle_inventory,
+                // Only the *toggle* is gated by typing focus — the window,
+                // once open, must keep rendering/dragging normally even if
+                // the player also opens chat, so the gate does not apply to
+                // the rest of this chain.
+                systems::toggle_inventory.run_if(not_typing),
                 systems::update_inventory_ui,
                 systems::handle_inventory_interactions,
                 drag::start_item_drag,

@@ -25,7 +25,10 @@ impl Plugin for TargetingPlugin {
             Update,
             (
                 select_target_with_right_click,
-                clear_target_with_escape,
+                // Escape is a keybind, unlike the world clicks the other two
+                // systems here react to — must not fire while a text field
+                // has focus, or clearing target and typing "e" both happen.
+                clear_target_with_escape.run_if(crate::app_state::not_typing),
                 cleanup_invalid_target,
             )
                 .run_if(mode::has_client),

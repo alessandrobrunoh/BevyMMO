@@ -29,13 +29,14 @@ impl Plugin for SpellsHudPlugin {
             aim_preview::cancel_ability_aim_on_escape
                 .before(crate::ui::systems::toggle_pause)
                 .before(bevymmo_client::targeting::systems::clear_target_with_escape)
-                .run_if(bevymmo_network::network::mode::has_client),
+                .run_if(bevymmo_network::network::mode::has_client)
+                .run_if(crate::game_state::not_typing),
         );
 
         app.add_systems(
             Update,
             (
-                input::cast_abilities_on_key,
+                input::cast_abilities_on_key.run_if(crate::game_state::not_typing),
                 // After input, so the preview draws *this* frame's aim rather
                 // than the previous frame's.
                 aim_preview::draw_ability_aim_preview.after(input::cast_abilities_on_key),

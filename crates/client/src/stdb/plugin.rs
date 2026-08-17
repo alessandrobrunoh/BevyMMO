@@ -490,7 +490,8 @@ impl Plugin for StdbPlugin {
             Update,
             (send_move_commands, send_combat_inputs)
                 .run_if(resource_exists::<StdbConnection>)
-                .run_if(in_gameplay),
+                .run_if(in_gameplay)
+                .run_if(crate::app_state::not_typing),
         );
         app.add_systems(
             Update,

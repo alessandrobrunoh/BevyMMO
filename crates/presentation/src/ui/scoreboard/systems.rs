@@ -127,6 +127,7 @@ mod tests {
         app.add_plugins(InputPlugin);
         app.init_resource::<UiTheme>();
         app.init_resource::<GameScreen>();
+        app.init_resource::<bevymmo_client::app_state::TypingFocus>();
         app.insert_resource(GameSettingsResource(
             bevymmo_client::user_settings::GameSettings::default(),
         ));

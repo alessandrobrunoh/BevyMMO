@@ -14,13 +14,36 @@ use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use crate::game_state::{
     validate_email, validate_password, validate_player_name, AuthIntent, AuthRequest,
     ConnectionFailure, ConnectionIntent, ConnectionRequest, EmailError, GameScreen,
-    PasswordError, PlayerNameError, Screen,
+    PasswordError, PlayerNameError, Screen, TypingFocus,
 };
 use crate::ui::button::{UiButton, UiButtonAction, UiButtonImages};
+use crate::ui::chat::ChatInput;
 use crate::ui::login::{EmailInput, PasswordInput};
 use crate::ui::main_menu::PlayerNameInput;
 use crate::ui::text_input::{TextInput, TextInputErrorText, TextInputValueText};
 use crate::ui::theme::UiTheme;
+
+/// Keeps [`TypingFocus`] in sync with whichever text field actually has
+/// focus this frame — chat, or one of the login/character-name `TextInput`
+/// fields. Recomputed from scratch every frame rather than tracked
+/// incrementally: several systems can change either field's `focused` flag
+/// (click, Enter, Escape, sending a message, clicking the game world), and a
+/// single source of truth here cannot drift out of sync with any of them.
+///
+/// `client`-crate gameplay systems (`send_combat_inputs`, `send_move_commands`)
+/// read this — see [`bevymmo_client::app_state::TypingFocus`] for why it
+/// lives there and not next to the components it mirrors.
+pub(crate) fn sync_typing_focus(
+    chat_inputs: Query<&ChatInput>,
+    text_inputs: Query<&TextInput>,
+    mut typing: ResMut<TypingFocus>,
+) {
+    let focused =
+        chat_inputs.iter().any(|input| input.focused) || text_inputs.iter().any(|input| input.focused);
+    if typing.0 != focused {
+        typing.0 = focused;
+    }
+}
 
 /// Condizione di esecuzione: il client è in una schermata di gameplay.
 pub fn in_gameplay(screen: Res<GameScreen>) -> bool {

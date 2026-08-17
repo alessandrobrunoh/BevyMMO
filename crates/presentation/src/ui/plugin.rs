@@ -9,6 +9,7 @@ use super::{
     systems, target_frame, target_indicator,
 };
 
+use crate::game_state::not_typing;
 use crate::ui::theme::UiTheme;
 
 /// Camera 2D dedicata alla UI. Resta attiva nel menu e durante la partita,
@@ -61,7 +62,8 @@ impl Plugin for UiPlugin {
                 systems::update_text_input_keyboard,
                 systems::update_text_input_display,
                 systems::update_connection_failure,
-                systems::toggle_pause,
+                systems::sync_typing_focus,
+                systems::toggle_pause.run_if(not_typing),
             ),
         );
     }

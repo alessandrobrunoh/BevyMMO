@@ -28,6 +28,30 @@ pub enum Screen {
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GameScreen(pub Screen);
 
+/// Whether a text-entry field (chat, login form, character name, ...) is
+/// currently capturing keyboard input.
+///
+/// Lives here, in `client`, rather than in `presentation` where the actual
+/// text-input components (`TextInput`, chat's own `ChatInput`) are defined,
+/// because `client`-crate systems (`stdb::combat_input::send_combat_inputs`,
+/// `stdb::plugin::send_move_commands`) need to read it too, and `client` is a
+/// dependency of `presentation`, not the other way around. `presentation`
+/// keeps this in sync every frame from whichever text field actually exists;
+/// see `crate::ui::systems::sync_typing_focus`.
+///
+/// Gameplay systems that read raw keybinds must `run_if(not_typing)`
+/// (`crate::app_state::not_typing`) — without this, typing a chat message or
+/// an email/password at login also fires whatever cast/toggle keybind
+/// happens to share a letter with what was typed.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TypingFocus(pub bool);
+
+/// Run condition: true when no text field currently has focus. See
+/// [`TypingFocus`].
+pub fn not_typing(typing: Res<TypingFocus>) -> bool {
+    !typing.0
+}
+
 #[derive(Resource, Debug, Default)]
 pub struct ConnectionRequest(pub Option<ConnectionIntent>);
 
@@ -171,6 +195,7 @@ impl Plugin for GameStatePlugin {
         app.init_resource::<AuthFailure>();
         app.init_resource::<AuthRequest>();
         app.init_resource::<DeleteCharacterRequest>();
+        app.init_resource::<TypingFocus>();
     }
 }
 

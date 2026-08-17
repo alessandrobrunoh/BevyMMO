@@ -11,6 +11,7 @@ use bevymmo_gameplay::abilities::{
 use bevymmo_gameplay::items::components::{EquipSlot, Equipment};
 use bevymmo_gameplay::items::registry::ItemRegistry;
 
+use crate::ui::scrollbar::spawn_scroll_view;
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::UiTheme;
 
@@ -152,7 +153,7 @@ fn spawn_window(
     };
     let inscription = weapon.root_inscription.clone().unwrap_or_default();
 
-    commands
+    let window = commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
@@ -173,36 +174,51 @@ fn spawn_window(
             BackgroundColor(theme.panel_bg),
             InscriptionWindow,
         ))
-        .with_children(|parent| {
-            spawn_header(parent, theme, item.display_name());
+        .id();
 
-            spawn_armor_summary(parent, theme, equipment, item_registry);
+    commands.entity(window).with_children(|parent| {
+        // The title and armor summary stay visible while the three inscription
+        // columns scroll below them.
+        spawn_header(parent, theme, item.display_name());
+        spawn_armor_summary(parent, theme, equipment, item_registry);
+    });
 
-            parent
-                .spawn((Node {
-                    width: Val::Percent(100.0),
-                    flex_grow: 1.0,
-                    flex_direction: FlexDirection::Row,
-                    column_gap: Val::Px(18.0),
-                    ..default()
-                },))
-                .with_children(|body| {
-                    for slot in SLOTS {
-                        spawn_slot_column(
-                            body,
-                            theme,
-                            slot,
-                            weapon_abilities,
-                            &weapon.ability_selection,
-                            &inscription,
-                            known,
-                            ability_registry,
-                            root_word_registry,
-                            ancient_word_registry,
-                        );
-                    }
-                });
-        });
+    let scroll_body = commands
+        .spawn((Node {
+            width: Val::Percent(100.0),
+            flex_grow: 1.0,
+            min_height: Val::Px(0.0),
+            ..default()
+        },))
+        .id();
+    commands.entity(window).add_child(scroll_body);
+
+    spawn_scroll_view(commands, scroll_body, theme, |commands| {
+        commands
+            .spawn((Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(18.0),
+                ..default()
+            },))
+            .with_children(|body| {
+                for slot in SLOTS {
+                    spawn_slot_column(
+                        body,
+                        theme,
+                        slot,
+                        weapon_abilities,
+                        &weapon.ability_selection,
+                        &inscription,
+                        known,
+                        ability_registry,
+                        root_word_registry,
+                        ancient_word_registry,
+                    );
+                }
+            })
+            .id()
+    });
 }
 
 fn armor_key_label(slot: EquipSlot) -> &'static str {

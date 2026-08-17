@@ -1,0 +1,2478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Eivar Online</title>
+
+  <meta
+    name="description"
+    content="Eivar Online — Forge your weapon. Shape its magic. Write your legend."
+  />
+
+  <style>
+    /* =========================================================
+       EIVAR ONLINE
+       Single-file frontend concept
+       ========================================================= */
+
+    :root {
+      --sky: #1c91d0;
+      --sky-light: #75c4e8;
+
+      --blue-950: #071a2a;
+      --blue-900: #0c2236;
+      --blue-850: #102d47;
+      --blue-800: #163b58;
+      --blue-700: #1d4b6c;
+
+      --cyan: #3ccbff;
+      --cyan-light: #a4eeff;
+
+      --gold: #d0ae61;
+      --gold-dark: #9b742e;
+      --gold-light: #e6cb86;
+
+      --stone: #c8bca5;
+      --stone-dark: #756b5a;
+
+      --parchment: #f1e8d6;
+      --parchment-2: #e7d6b9;
+
+      --text: #17283a;
+      --text-muted: #66717c;
+
+      --white: #fffdf7;
+
+      --container: 1280px;
+
+      --shadow:
+        0 18px 45px rgba(6, 19, 31, 0.16),
+        0 4px 14px rgba(6, 19, 31, 0.12);
+
+      --transition: 220ms ease;
+    }
+
+    /* =========================================================
+       RESET
+       ========================================================= */
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        linear-gradient(
+          180deg,
+          #dce7ea 0%,
+          var(--parchment) 40%,
+          #d9c9aa 100%
+        );
+      font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      overflow-x: hidden;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button,
+    a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img {
+      display: block;
+      width: 100%;
+    }
+
+    /* =========================================================
+       TYPOGRAPHY
+       ========================================================= */
+
+    .fantasy-title,
+    h1,
+    h2,
+    h3 {
+      font-family:
+        Georgia,
+        "Times New Roman",
+        serif;
+    }
+
+    .eyebrow {
+      color: var(--gold-dark);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    /* =========================================================
+       UTILITIES
+       ========================================================= */
+
+    .container {
+      width: min(calc(100% - 40px), var(--container));
+      margin-inline: auto;
+    }
+
+    .section {
+      position: relative;
+      padding: 100px 0;
+    }
+
+    .section-heading {
+      max-width: 760px;
+      margin: 0 auto 55px;
+      text-align: center;
+    }
+
+    .section-heading h2 {
+      margin: 10px 0 15px;
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      font-weight: 500;
+      line-height: 1;
+    }
+
+    .section-heading p {
+      max-width: 650px;
+      margin: auto;
+      color: #5f625f;
+      font-family: Georgia, serif;
+      font-size: 1.03rem;
+      line-height: 1.8;
+    }
+
+    .rune-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin-bottom: 10px;
+      color: var(--gold-dark);
+    }
+
+    .rune-divider::before,
+    .rune-divider::after {
+      width: 90px;
+      height: 1px;
+      content: "";
+      background:
+        linear-gradient(
+          90deg,
+          transparent,
+          var(--gold-dark)
+        );
+    }
+
+    .rune-divider::after {
+      background:
+        linear-gradient(
+          90deg,
+          var(--gold-dark),
+          transparent
+        );
+    }
+
+    /* =========================================================
+       NAVIGATION
+       ========================================================= */
+
+    .navbar {
+      position: fixed;
+      z-index: 1000;
+      top: 0;
+      left: 0;
+
+      width: 100%;
+      height: 76px;
+
+      color: var(--white);
+
+      border-bottom: 1px solid rgba(230, 203, 134, 0.22);
+
+      background:
+        linear-gradient(
+          180deg,
+          rgba(6, 25, 43, 0.88),
+          rgba(10, 35, 56, 0.72)
+        );
+
+      backdrop-filter: blur(12px);
+
+      transition:
+        background var(--transition),
+        box-shadow var(--transition);
+    }
+
+    .navbar.scrolled {
+      background: rgba(7, 26, 42, 0.96);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.22);
+    }
+
+    .nav-inner {
+      width: min(calc(100% - 32px), 1450px);
+      height: 100%;
+      margin: auto;
+
+      display: flex;
+      align-items: center;
+      gap: 36px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: max-content;
+    }
+
+    .brand-rune {
+      display: grid;
+      place-items: center;
+
+      width: 34px;
+      height: 48px;
+
+      color: var(--gold-light);
+
+      font-size: 2rem;
+      line-height: 1;
+    }
+
+    .brand-name {
+      font-family: Georgia, serif;
+      font-size: 1.55rem;
+      letter-spacing: 0.08em;
+    }
+
+    .brand-online {
+      display: block;
+
+      margin-top: -2px;
+
+      color: var(--gold-light);
+
+      font-size: 0.47rem;
+      letter-spacing: 0.42em;
+      text-align: center;
+    }
+
+    .desktop-nav {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+
+      margin-right: auto;
+    }
+
+    .nav-link {
+      position: relative;
+
+      color: rgba(255, 255, 255, 0.8);
+
+      font-family: Georgia, serif;
+      font-size: 0.82rem;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+
+      transition: color var(--transition);
+    }
+
+    .nav-link::after {
+      position: absolute;
+      bottom: -12px;
+      left: 50%;
+
+      width: 0;
+      height: 1px;
+
+      content: "";
+
+      background: var(--gold);
+
+      transform: translateX(-50%);
+
+      transition: width var(--transition);
+    }
+
+    .nav-link:hover {
+      color: var(--gold-light);
+    }
+
+    .nav-link:hover::after {
+      width: 100%;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+    }
+
+    .nav-action {
+      color: rgba(255,255,255,.82);
+
+      font-size: 0.73rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .nav-action:hover {
+      color: var(--gold-light);
+    }
+
+    /* =========================================================
+       BUTTONS
+       ========================================================= */
+
+    .eivar-button {
+      position: relative;
+      isolation: isolate;
+
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+
+      min-height: 46px;
+      padding: 0 24px;
+
+      overflow: hidden;
+
+      color: #fff7df;
+
+      border: 1px solid #c09a4e;
+
+      background:
+        linear-gradient(
+          180deg,
+          #87662d,
+          #5e451f
+        );
+
+      box-shadow:
+        inset 0 1px rgba(255,255,255,.2),
+        0 5px 15px rgba(0,0,0,.2);
+
+      clip-path:
+        polygon(
+          8px 0,
+          calc(100% - 8px) 0,
+          100% 8px,
+          100% calc(100% - 8px),
+          calc(100% - 8px) 100%,
+          8px 100%,
+          0 calc(100% - 8px),
+          0 8px
+        );
+
+      cursor: pointer;
+
+      font-family: Georgia, serif;
+      font-size: .74rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+
+      transition:
+        transform var(--transition),
+        filter var(--transition),
+        box-shadow var(--transition);
+    }
+
+    .eivar-button::before {
+      position: absolute;
+      z-index: -1;
+      inset: 2px;
+
+      content: "";
+
+      border: 1px solid rgba(230, 203, 134, .45);
+
+      pointer-events: none;
+    }
+
+    .eivar-button:hover {
+      transform: translateY(-2px);
+
+      filter: brightness(1.12);
+
+      box-shadow:
+        0 9px 26px rgba(0,0,0,.25),
+        0 0 18px rgba(208,174,97,.13);
+    }
+
+    .eivar-button.secondary {
+      color: white;
+
+      border-color: rgba(164,238,255,.45);
+
+      background:
+        linear-gradient(
+          180deg,
+          rgba(20, 77, 111, .95),
+          rgba(11, 45, 70, .98)
+        );
+    }
+
+    /* =========================================================
+       HERO
+       ========================================================= */
+
+    .hero {
+      position: relative;
+
+      min-height: 860px;
+      display: flex;
+      align-items: center;
+
+      overflow: hidden;
+
+      color: white;
+
+      background:
+        linear-gradient(
+          90deg,
+          rgba(6,23,38,.38) 0%,
+          rgba(6,23,38,.15) 38%,
+          rgba(6,23,38,.03) 70%
+        ),
+        linear-gradient(
+          180deg,
+          rgba(0,0,0,.1),
+          rgba(4,23,34,.02) 60%,
+          rgba(5,22,34,.62) 100%
+        ),
+        url("assets/eivar-cover.png")
+        center 42% / cover no-repeat;
+    }
+
+    .hero::after {
+      position: absolute;
+      right: 0;
+      bottom: -1px;
+      left: 0;
+
+      height: 120px;
+
+      content: "";
+
+      background:
+        linear-gradient(
+          180deg,
+          transparent,
+          rgba(240,232,214,.2) 40%,
+          var(--parchment)
+        );
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 2;
+
+      padding-top: 100px;
+      padding-left: clamp(0px, 3vw, 40px);
+
+      max-width: 680px;
+    }
+
+    .hero-rune {
+      margin-bottom: 10px;
+
+      color: var(--white);
+
+      font-size: 3.5rem;
+      line-height: .8;
+
+      text-shadow:
+        0 0 22px rgba(60, 203, 255, .42);
+    }
+
+    .hero h1 {
+      margin: 0;
+
+      color: #fffef8;
+
+      font-size: clamp(5rem, 10vw, 9rem);
+      font-weight: 500;
+      letter-spacing: .04em;
+      line-height: .85;
+
+      text-shadow:
+        0 3px 0 rgba(15,29,37,.3),
+        0 7px 20px rgba(0,0,0,.3);
+    }
+
+    .hero-online {
+      margin-top: 20px;
+      margin-left: 7px;
+
+      color: var(--gold-light);
+
+      font-family: Georgia, serif;
+      font-size: 1.25rem;
+      letter-spacing: .55em;
+    }
+
+    .hero-tagline {
+      margin: 35px 0 30px;
+
+      font-family: Georgia, serif;
+      font-size: clamp(1rem, 1.6vw, 1.35rem);
+      letter-spacing: .16em;
+      line-height: 1.8;
+      text-transform: uppercase;
+
+      text-shadow: 0 3px 10px rgba(0,0,0,.7);
+    }
+
+    .hero-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .scroll-rune {
+      position: absolute;
+      z-index: 3;
+      bottom: 55px;
+      left: 50%;
+
+      color: var(--gold-light);
+
+      font-size: 1.6rem;
+
+      transform: translateX(-50%);
+      animation: floatRune 2s ease-in-out infinite;
+    }
+
+    @keyframes floatRune {
+      0%, 100% {
+        transform: translate(-50%, 0);
+      }
+
+      50% {
+        transform: translate(-50%, 10px);
+      }
+    }
+
+    /* =========================================================
+       WORLD
+       ========================================================= */
+
+    .world-section {
+      background:
+        radial-gradient(
+          circle at 50% 0%,
+          rgba(255,255,255,.7),
+          transparent 40%
+        ),
+        var(--parchment);
+    }
+
+    .pillar-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 18px;
+    }
+
+    .pillar-card {
+      position: relative;
+
+      min-height: 370px;
+
+      overflow: hidden;
+
+      border: 1px solid rgba(117,107,90,.35);
+
+      background: #ded2bb;
+
+      box-shadow: var(--shadow);
+
+      clip-path:
+        polygon(
+          8px 0,
+          calc(100% - 8px) 0,
+          100% 8px,
+          100% calc(100% - 8px),
+          calc(100% - 8px) 100%,
+          8px 100%,
+          0 calc(100% - 8px),
+          0 8px
+        );
+
+      transition:
+        transform var(--transition),
+        box-shadow var(--transition);
+    }
+
+    .pillar-card:hover {
+      transform: translateY(-7px);
+
+      box-shadow:
+        0 24px 55px rgba(7,26,42,.22);
+    }
+
+    .pillar-image {
+      height: 200px;
+
+      overflow: hidden;
+
+      background:
+        linear-gradient(
+          135deg,
+          #4e8fb3,
+          #345c6f
+        );
+    }
+
+    .pillar-image img {
+      width: 100%;
+      height: 100%;
+
+      object-fit: cover;
+
+      transition: transform 500ms ease;
+    }
+
+    .pillar-card:hover img {
+      transform: scale(1.05);
+    }
+
+    .pillar-content {
+      position: relative;
+
+      padding: 38px 25px 25px;
+
+      text-align: center;
+    }
+
+    .pillar-icon {
+      position: absolute;
+      top: -29px;
+      left: 50%;
+
+      width: 58px;
+      height: 58px;
+
+      display: grid;
+      place-items: center;
+
+      color: var(--gold-light);
+
+      border: 2px solid var(--gold);
+
+      border-radius: 50%;
+
+      background: var(--blue-850);
+
+      box-shadow:
+        0 0 0 4px #ded2bb;
+
+      transform: translateX(-50%);
+
+      font-size: 1.2rem;
+    }
+
+    .pillar-content h3 {
+      margin: 10px 0 8px;
+
+      font-size: 1.35rem;
+      font-weight: 500;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .pillar-content p {
+      margin: 0;
+
+      color: #5f625f;
+
+      font-family: Georgia, serif;
+      font-size: .92rem;
+      line-height: 1.6;
+    }
+
+    /* =========================================================
+       RUNIC SYSTEM
+       ========================================================= */
+
+    .runic-wrap {
+      padding-top: 15px;
+    }
+
+    .runic-panel {
+      position: relative;
+
+      overflow: hidden;
+
+      padding: 48px;
+
+      color: #edf8ff;
+
+      border: 1px solid rgba(208,174,97,.72);
+
+      background:
+        radial-gradient(
+          circle at 25% 30%,
+          rgba(38,130,177,.2),
+          transparent 35%
+        ),
+        linear-gradient(
+          135deg,
+          var(--blue-800),
+          var(--blue-950)
+        );
+
+      box-shadow:
+        0 30px 70px rgba(7, 26, 42, .25),
+        inset 0 0 0 5px rgba(6,22,36,.5),
+        inset 0 0 0 6px rgba(208,174,97,.18);
+    }
+
+    .runic-panel::before,
+    .runic-panel::after {
+      position: absolute;
+
+      color: rgba(60,203,255,.14);
+
+      content:
+        "ᚠ ᚢ ᚦ ᚨ ᚱ ᚲ ᚷ ᚹ ᛁ ᛃ ᛇ ᛈ ᛉ ᛋ ᛏ ᛒ ᛖ ᛗ";
+
+      font-size: 1.1rem;
+      letter-spacing: 1.1rem;
+
+      pointer-events: none;
+    }
+
+    .runic-panel::before {
+      top: 10px;
+      left: 20px;
+    }
+
+    .runic-panel::after {
+      right: 20px;
+      bottom: 10px;
+    }
+
+    .runic-title-row {
+      margin-bottom: 38px;
+    }
+
+    .runic-title-row h2 {
+      margin: 0 0 8px;
+
+      color: var(--gold-light);
+
+      font-size: clamp(1.8rem, 3vw, 2.6rem);
+      font-weight: 500;
+      letter-spacing: .04em;
+    }
+
+    .runic-title-row p {
+      max-width: 580px;
+      margin: 0;
+
+      color: rgba(237,248,255,.75);
+
+      font-family: Georgia, serif;
+      line-height: 1.6;
+    }
+
+    .runic-layout {
+      display: grid;
+      grid-template-columns: .8fr 2fr;
+      gap: 42px;
+      align-items: center;
+    }
+
+    .weapon-orbit {
+      position: relative;
+
+      aspect-ratio: 1;
+
+      display: grid;
+      place-items: center;
+
+      max-width: 310px;
+      width: 100%;
+      margin: auto;
+
+      border: 1px solid rgba(208,174,97,.45);
+      border-radius: 50%;
+
+      box-shadow:
+        inset 0 0 35px rgba(60,203,255,.08),
+        0 0 40px rgba(60,203,255,.05);
+    }
+
+    .weapon-orbit::before,
+    .weapon-orbit::after {
+      position: absolute;
+
+      border: 1px dashed rgba(60,203,255,.25);
+      border-radius: 50%;
+
+      content: "";
+    }
+
+    .weapon-orbit::before {
+      inset: 18px;
+    }
+
+    .weapon-orbit::after {
+      inset: 52px;
+    }
+
+    .weapon-icon {
+      z-index: 2;
+
+      font-size: 6rem;
+
+      filter:
+        drop-shadow(0 0 12px rgba(60,203,255,.4));
+    }
+
+    .weapon-orbit span {
+      position: absolute;
+
+      width: 38px;
+      height: 38px;
+
+      display: grid;
+      place-items: center;
+
+      color: var(--gold-light);
+
+      border: 1px solid rgba(208,174,97,.5);
+      border-radius: 50%;
+
+      background: var(--blue-900);
+    }
+
+    .weapon-orbit span:nth-child(2) {
+      top: 9%;
+      left: 50%;
+
+      transform: translateX(-50%);
+    }
+
+    .weapon-orbit span:nth-child(3) {
+      top: 50%;
+      right: 4%;
+
+      transform: translateY(-50%);
+    }
+
+    .weapon-orbit span:nth-child(4) {
+      bottom: 9%;
+      left: 50%;
+
+      transform: translateX(-50%);
+    }
+
+    .weapon-orbit span:nth-child(5) {
+      top: 50%;
+      left: 4%;
+
+      transform: translateY(-50%);
+    }
+
+    .weapon-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+
+      padding: 15px 20px;
+
+      border-top: 1px solid rgba(208,174,97,.35);
+      border-bottom: 1px solid rgba(208,174,97,.35);
+
+      color: var(--gold-light);
+
+      font-family: Georgia, serif;
+      text-transform: uppercase;
+    }
+
+    .ability {
+      display: grid;
+      grid-template-columns:
+        60px
+        minmax(160px, 1.4fr)
+        repeat(4, minmax(95px, 1fr));
+
+      gap: 14px;
+      align-items: center;
+
+      min-height: 92px;
+      padding: 14px 8px;
+
+      border-bottom: 1px solid rgba(208,174,97,.22);
+    }
+
+    .key {
+      width: 48px;
+      height: 48px;
+
+      display: grid;
+      place-items: center;
+
+      color: var(--gold-light);
+
+      border: 1px solid var(--gold);
+
+      background: rgba(7,26,42,.65);
+
+      transform: rotate(45deg);
+    }
+
+    .key span {
+      transform: rotate(-45deg);
+
+      font-family: Georgia, serif;
+      font-size: 1.3rem;
+    }
+
+    .ability-main strong {
+      display: block;
+
+      font-family: Georgia, serif;
+      font-size: 1.05rem;
+      font-weight: 500;
+    }
+
+    .ability-main small,
+    .ability-stat small {
+      display: block;
+
+      margin-bottom: 5px;
+
+      color: var(--gold);
+
+      font-size: .55rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .ability-stat {
+      color: rgba(255,255,255,.9);
+
+      font-family: Georgia, serif;
+      font-size: .78rem;
+    }
+
+    .ancient-word {
+      color: var(--cyan-light);
+
+      text-shadow: 0 0 12px rgba(60,203,255,.45);
+    }
+
+    /* =========================================================
+       NEWS
+       ========================================================= */
+
+    .news-section {
+      background:
+        linear-gradient(
+          rgba(255,255,255,.25),
+          rgba(255,255,255,.1)
+        ),
+        var(--parchment);
+    }
+
+    .news-grid {
+      display: grid;
+      grid-template-columns: 1.4fr repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .news-card {
+      overflow: hidden;
+
+      border: 1px solid rgba(117,107,90,.3);
+
+      background: #eee4d0;
+
+      box-shadow: 0 10px 30px rgba(7,26,42,.12);
+
+      transition:
+        transform var(--transition),
+        box-shadow var(--transition);
+    }
+
+    .news-card:hover {
+      transform: translateY(-5px);
+
+      box-shadow:
+        0 20px 40px rgba(7,26,42,.18);
+    }
+
+    .news-image {
+      position: relative;
+
+      height: 160px;
+
+      overflow: hidden;
+
+      background:
+        linear-gradient(135deg, #7299ad, #466b80);
+    }
+
+    .news-featured .news-image {
+      height: 245px;
+    }
+
+    .news-image img {
+      width: 100%;
+      height: 100%;
+
+      object-fit: cover;
+
+      transition: transform 400ms ease;
+    }
+
+    .news-card:hover .news-image img {
+      transform: scale(1.05);
+    }
+
+    .news-label {
+      position: absolute;
+      top: 12px;
+      left: 0;
+
+      padding: 7px 12px;
+
+      color: white;
+
+      background: var(--blue-800);
+
+      font-size: .6rem;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .news-content {
+      padding: 22px;
+    }
+
+    .news-meta {
+      margin-bottom: 10px;
+
+      color: var(--blue-700);
+
+      font-size: .6rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .news-card h3 {
+      margin: 0 0 9px;
+
+      font-size: 1.17rem;
+      font-weight: 500;
+      line-height: 1.25;
+    }
+
+    .news-card p {
+      margin: 0 0 18px;
+
+      color: #68675f;
+
+      font-family: Georgia, serif;
+      font-size: .85rem;
+      line-height: 1.55;
+    }
+
+    .read-more {
+      color: var(--blue-700);
+
+      font-size: .65rem;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .news-more {
+      margin-top: 35px;
+
+      text-align: center;
+    }
+
+    /* =========================================================
+       DEVELOPMENT
+       ========================================================= */
+
+    .development {
+      position: relative;
+
+      padding: 95px 0;
+
+      overflow: hidden;
+
+      color: white;
+
+      background:
+        linear-gradient(
+          rgba(8,32,50,.84),
+          rgba(8,32,50,.96)
+        ),
+        url("assets/eivar-cover.png")
+        center 75% / cover;
+    }
+
+    .development::before {
+      position: absolute;
+      inset: 0;
+
+      content: "";
+
+      background:
+        radial-gradient(
+          circle at 15% 60%,
+          rgba(60,203,255,.16),
+          transparent 30%
+        );
+    }
+
+    .development h2 {
+      position: relative;
+
+      margin: 0 0 50px;
+
+      color: var(--white);
+
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 500;
+      letter-spacing: .05em;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .development-grid {
+      position: relative;
+
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 70px;
+    }
+
+    .development-card {
+      display: grid;
+      grid-template-columns: 100px 1fr;
+      gap: 26px;
+      align-items: center;
+    }
+
+    .development-icon {
+      width: 90px;
+      height: 90px;
+
+      display: grid;
+      place-items: center;
+
+      color: var(--cyan-light);
+
+      border: 1px solid rgba(208,174,97,.6);
+      border-radius: 50%;
+
+      background: rgba(6,23,38,.55);
+
+      box-shadow:
+        0 0 35px rgba(60,203,255,.12);
+
+      font-size: 2rem;
+    }
+
+    .development-card h3 {
+      margin: 0 0 7px;
+
+      color: var(--gold-light);
+
+      font-size: 1.15rem;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+
+    .development-card p {
+      margin: 0 0 14px;
+
+      color: rgba(255,255,255,.72);
+
+      font-family: Georgia, serif;
+      line-height: 1.65;
+    }
+
+    /* =========================================================
+       FOOTER
+       ========================================================= */
+
+    footer {
+      position: relative;
+
+      padding: 70px 0 25px;
+
+      overflow: hidden;
+
+      color: rgba(255,255,255,.72);
+
+      border-top: 1px solid rgba(208,174,97,.3);
+
+      background:
+        linear-gradient(
+          180deg,
+          var(--blue-900),
+          #061724
+        );
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1.6fr repeat(5, 1fr);
+      gap: 45px;
+    }
+
+    .footer-brand h2 {
+      margin: 0;
+
+      color: white;
+
+      font-size: 2.2rem;
+      font-weight: 500;
+      letter-spacing: .08em;
+    }
+
+    .footer-brand small {
+      color: var(--gold-light);
+
+      letter-spacing: .38em;
+    }
+
+    .footer-brand p {
+      max-width: 260px;
+
+      margin-top: 18px;
+
+      font-family: Georgia, serif;
+      font-size: .82rem;
+      line-height: 1.6;
+    }
+
+    .footer-column h4 {
+      margin: 0 0 18px;
+
+      color: white;
+
+      font-family: Georgia, serif;
+      font-size: .85rem;
+      font-weight: 500;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .footer-column a {
+      display: block;
+
+      margin: 9px 0;
+
+      font-size: .76rem;
+
+      transition: color var(--transition);
+    }
+
+    .footer-column a:hover {
+      color: var(--gold-light);
+    }
+
+    .footer-bottom {
+      margin-top: 55px;
+      padding-top: 22px;
+
+      border-top: 1px solid rgba(255,255,255,.1);
+
+      color: rgba(255,255,255,.4);
+
+      font-size: .7rem;
+      text-align: center;
+    }
+
+    /* =========================================================
+       MOBILE MENU
+       ========================================================= */
+
+    .mobile-menu-button {
+      display: none;
+
+      margin-left: auto;
+
+      color: white;
+
+      border: 0;
+
+      background: transparent;
+
+      cursor: pointer;
+
+      font-size: 1.8rem;
+    }
+
+    .mobile-menu {
+      position: fixed;
+      z-index: 990;
+      inset: 76px 0 auto 0;
+
+      display: none;
+
+      padding: 25px;
+
+      color: white;
+
+      background: rgba(7,26,42,.98);
+
+      border-bottom: 1px solid rgba(208,174,97,.3);
+
+      transform: translateY(-120%);
+
+      transition: transform 250ms ease;
+    }
+
+    .mobile-menu.open {
+      transform: translateY(0);
+    }
+
+    .mobile-menu a {
+      display: block;
+
+      padding: 15px 5px;
+
+      border-bottom: 1px solid rgba(255,255,255,.08);
+
+      font-family: Georgia, serif;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    /* =========================================================
+       RESPONSIVE
+       ========================================================= */
+
+    @media (max-width: 1100px) {
+      .desktop-nav,
+      .nav-actions {
+        display: none;
+      }
+
+      .mobile-menu-button {
+        display: block;
+      }
+
+      .mobile-menu {
+        display: block;
+      }
+
+      .pillar-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .runic-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .ability {
+        grid-template-columns:
+          60px
+          minmax(160px, 1fr)
+          repeat(2, 1fr);
+      }
+
+      .ability-stat:nth-last-child(-n+2) {
+        display: none;
+      }
+
+      .news-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .news-featured {
+        grid-column: span 2;
+      }
+
+      .footer-grid {
+        grid-template-columns: 2fr repeat(3, 1fr);
+      }
+
+      .footer-column:nth-last-child(-n+2) {
+        margin-top: 15px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .section {
+        padding: 72px 0;
+      }
+
+      .hero {
+        min-height: 760px;
+
+        background-position: 58% center;
+      }
+
+      .hero-content {
+        padding-top: 140px;
+      }
+
+      .hero h1 {
+        font-size: clamp(4rem, 20vw, 7rem);
+      }
+
+      .hero-online {
+        font-size: .9rem;
+      }
+
+      .hero-tagline {
+        font-size: .88rem;
+      }
+
+      .pillar-grid,
+      .news-grid,
+      .development-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .news-featured {
+        grid-column: span 1;
+      }
+
+      .pillar-card {
+        min-height: unset;
+      }
+
+      .pillar-image {
+        height: 230px;
+      }
+
+      .runic-panel {
+        padding: 30px 20px;
+      }
+
+      .ability {
+        grid-template-columns: 50px 1fr;
+        gap: 8px;
+      }
+
+      .ability-stat {
+        grid-column: 2;
+      }
+
+      .ability-stat:nth-last-child(-n+2) {
+        display: block;
+      }
+
+      .weapon-heading {
+        flex-direction: column;
+      }
+
+      .development-grid {
+        gap: 45px;
+      }
+
+      .development-card {
+        grid-template-columns: 70px 1fr;
+      }
+
+      .development-icon {
+        width: 65px;
+        height: 65px;
+      }
+
+      .footer-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .footer-brand {
+        grid-column: span 2;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        width: min(calc(100% - 24px), var(--container));
+      }
+
+      .hero h1 {
+        font-size: 4rem;
+      }
+
+      .hero-buttons {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .eivar-button {
+        width: 100%;
+      }
+
+      .footer-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- =======================================================
+       NAVIGATION
+       ======================================================= -->
+
+  <header class="navbar" id="navbar">
+    <div class="nav-inner">
+
+      <a href="#home" class="brand">
+        <div class="brand-rune">◇</div>
+
+        <div>
+          <div class="brand-name">EIVAR</div>
+          <span class="brand-online">ONLINE</span>
+        </div>
+      </a>
+
+      <nav class="desktop-nav">
+        <a href="#world" class="nav-link">Game</a>
+        <a href="#news" class="nav-link">News</a>
+        <a href="#updates" class="nav-link">Updates</a>
+        <a href="#runes" class="nav-link">Wiki</a>
+        <a href="#store" class="nav-link">Store</a>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="#" class="nav-action">⌕ Search</a>
+        <a href="#" class="nav-action">Community</a>
+        <a href="#" class="nav-action">Login</a>
+
+        <a href="#world" class="eivar-button">
+          Discover Eivar
+        </a>
+      </div>
+
+      <button
+        class="mobile-menu-button"
+        id="mobileMenuButton"
+        aria-label="Open menu"
+      >
+        ☰
+      </button>
+
+    </div>
+  </header>
+
+  <nav class="mobile-menu" id="mobileMenu">
+    <a href="#world">Game</a>
+    <a href="#news">News</a>
+    <a href="#updates">Updates</a>
+    <a href="#runes">Wiki</a>
+    <a href="#store">Store</a>
+    <a href="#">Community</a>
+    <a href="#">Login</a>
+  </nav>
+
+
+  <!-- =======================================================
+       HERO
+       ======================================================= -->
+
+  <main>
+
+    <section class="hero" id="home">
+
+      <div class="container">
+        <div class="hero-content">
+
+          <div class="hero-rune">
+            ◇
+          </div>
+
+          <h1>EIVAR</h1>
+
+          <div class="hero-online">
+            ONLINE
+          </div>
+
+          <div class="hero-tagline">
+            Forge your weapon.<br />
+            Shape its magic.<br />
+            Write your legend.
+          </div>
+
+          <div class="hero-buttons">
+
+            <a
+              href="#world"
+              class="eivar-button"
+            >
+              Discover Eivar
+            </a>
+
+            <a
+              href="#news"
+              class="eivar-button secondary"
+            >
+              Latest News
+            </a>
+
+          </div>
+
+        </div>
+      </div>
+
+      <a href="#world" class="scroll-rune">
+        ◇
+      </a>
+
+    </section>
+
+
+    <!-- =====================================================
+         WORLD
+         ===================================================== -->
+
+    <section
+      class="section world-section"
+      id="world"
+    >
+
+      <div class="container">
+
+        <header class="section-heading">
+
+          <div class="rune-divider">
+            ◇
+          </div>
+
+          <span class="eyebrow">
+            Discover the world
+          </span>
+
+          <h2>
+            A World Written in Ancient Words
+          </h2>
+
+          <p>
+            Across forgotten valleys, floating lands and the remains
+            of ancient civilizations, every stone and every inscription
+            carries a story waiting to be discovered.
+          </p>
+
+        </header>
+
+
+        <div class="pillar-grid">
+
+          <!-- Explore -->
+
+          <article class="pillar-card">
+
+            <div class="pillar-image">
+              <img
+                src="assets/explore.jpg"
+                alt="Eivar landscape"
+              />
+            </div>
+
+            <div class="pillar-content">
+
+              <div class="pillar-icon">
+                ✦
+              </div>
+
+              <h3>
+                Explore
+              </h3>
+
+              <p>
+                Cross ancient lands, hidden ruins,
+                wild frontiers and places forgotten
+                by civilization.
+              </p>
+
+            </div>
+
+          </article>
+
+
+          <!-- Forge -->
+
+          <article class="pillar-card">
+
+            <div class="pillar-image">
+              <img
+                src="assets/forge.jpg"
+                alt="Weapon forge"
+              />
+            </div>
+
+            <div class="pillar-content">
+
+              <div class="pillar-icon">
+                ⚒
+              </div>
+
+              <h3>
+                Forge
+              </h3>
+
+              <p>
+                Choose your weapon and define the
+                foundations of your own combat style.
+              </p>
+
+            </div>
+
+          </article>
+
+
+          <!-- Inscribe -->
+
+          <article class="pillar-card">
+
+            <div class="pillar-image">
+              <img
+                src="assets/runes.jpg"
+                alt="Ancient runes"
+              />
+            </div>
+
+            <div class="pillar-content">
+
+              <div class="pillar-icon">
+                ◇
+              </div>
+
+              <h3>
+                Inscribe
+              </h3>
+
+              <p>
+                Combine Essences, Modifiers and
+                Ancient Words to reshape your abilities.
+              </p>
+
+            </div>
+
+          </article>
+
+
+          <!-- Conquer -->
+
+          <article class="pillar-card">
+
+            <div class="pillar-image">
+              <img
+                src="assets/conquer.jpg"
+                alt="Fantasy battle"
+              />
+            </div>
+
+            <div class="pillar-content">
+
+              <div class="pillar-icon">
+                ♜
+              </div>
+
+              <h3>
+                Conquer
+              </h3>
+
+              <p>
+                Fight creatures, rivals and powerful
+                forces across the evolving world of Eivar.
+              </p>
+
+            </div>
+
+          </article>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         RUNIC WEAPON SYSTEM
+         ===================================================== -->
+
+    <section
+      class="section runic-wrap"
+      id="runes"
+    >
+
+      <div class="container">
+
+        <div class="runic-panel">
+
+          <div class="runic-title-row">
+
+            <span class="eyebrow">
+              The language of power
+            </span>
+
+            <h2>
+              The Runic Weapon System
+            </h2>
+
+            <p>
+              A weapon is only the beginning.
+              Combine Essences, Modifiers and Ancient Words
+              to shape how every ability behaves.
+            </p>
+
+          </div>
+
+
+          <div class="runic-layout">
+
+            <!-- Weapon Visualization -->
+
+            <div class="weapon-orbit">
+
+              <div class="weapon-icon">
+                ⚔
+              </div>
+
+              <span>ᚠ</span>
+              <span>ᛉ</span>
+              <span>ᛇ</span>
+              <span>ᚱ</span>
+
+            </div>
+
+
+            <!-- Ability Configuration -->
+
+            <div>
+
+              <div class="weapon-heading">
+
+                <span>
+                  Weapon
+                </span>
+
+                <strong>
+                  Channeling Staff
+                </strong>
+
+              </div>
+
+
+              <!-- Q -->
+
+              <div class="ability">
+
+                <div class="key">
+                  <span>Q</span>
+                </div>
+
+                <div class="ability-main">
+                  <small>Ability</small>
+                  <strong>
+                    Arcane Orb
+                  </strong>
+                </div>
+
+                <div class="ability-stat">
+                  <small>Essence</small>
+                  Fire
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Expand
+                </div>
+
+                <div class="ability-stat"></div>
+                <div class="ability-stat"></div>
+
+              </div>
+
+
+              <!-- W -->
+
+              <div class="ability">
+
+                <div class="key">
+                  <span>W</span>
+                </div>
+
+                <div class="ability-main">
+                  <small>Ability</small>
+                  <strong>
+                    Barrier
+                  </strong>
+                </div>
+
+                <div class="ability-stat">
+                  <small>Essence</small>
+                  Life
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Persistence
+                </div>
+
+                <div class="ability-stat"></div>
+                <div class="ability-stat"></div>
+
+              </div>
+
+
+              <!-- E -->
+
+              <div class="ability">
+
+                <div class="key">
+                  <span>E</span>
+                </div>
+
+                <div class="ability-main">
+                  <small>Ultimate</small>
+                  <strong>
+                    Great Impact
+                  </strong>
+                </div>
+
+                <div class="ability-stat">
+                  <small>Essence</small>
+                  Life
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Expand
+                </div>
+
+                <div class="ability-stat">
+                  <small>Modifier</small>
+                  Persistence
+                </div>
+
+                <div class="ability-stat ancient-word">
+                  <small>Ancient Word</small>
+                  Echo
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         NEWS
+         ===================================================== -->
+
+    <section
+      class="section news-section"
+      id="news"
+    >
+
+      <div class="container">
+
+        <header class="section-heading">
+
+          <div class="rune-divider">
+            ◇
+          </div>
+
+          <h2>
+            Latest News
+          </h2>
+
+        </header>
+
+
+        <div class="news-grid">
+
+          <!-- Featured -->
+
+          <article class="news-card news-featured">
+
+            <div class="news-image">
+
+              <img
+                src="assets/news-alpha.jpg"
+                alt="Eivar Online Alpha"
+              />
+
+              <div class="news-label">
+                Featured
+              </div>
+
+            </div>
+
+            <div class="news-content">
+
+              <div class="news-meta">
+                Development · August 2026
+              </div>
+
+              <h3>
+                Alpha Development:
+                The Journey Begins
+              </h3>
+
+              <p>
+                Development continues as new systems,
+                environments and foundational mechanics
+                begin taking shape.
+              </p>
+
+              <a href="#" class="read-more">
+                Read More →
+              </a>
+
+            </div>
+
+          </article>
+
+
+          <!-- News 2 -->
+
+          <article class="news-card">
+
+            <div class="news-image">
+              <img
+                src="assets/news-combat.jpg"
+                alt="Combat"
+              />
+            </div>
+
+            <div class="news-content">
+
+              <div class="news-meta">
+                Updates · August 2026
+              </div>
+
+              <h3>
+                Combat & Movement Update
+              </h3>
+
+              <p>
+                A closer look at movement,
+                responsiveness and combat iteration.
+              </p>
+
+              <a href="#" class="read-more">
+                Read More →
+              </a>
+
+            </div>
+
+          </article>
+
+
+          <!-- News 3 -->
+
+          <article class="news-card">
+
+            <div class="news-image">
+              <img
+                src="assets/news-world.jpg"
+                alt="Eivar world"
+              />
+            </div>
+
+            <div class="news-content">
+
+              <div class="news-meta">
+                World · August 2026
+              </div>
+
+              <h3>
+                Building the Lands of Eivar
+              </h3>
+
+              <p>
+                Mountains, ancient ruins and settlements
+                begin defining the game's world.
+              </p>
+
+              <a href="#" class="read-more">
+                Read More →
+              </a>
+
+            </div>
+
+          </article>
+
+
+          <!-- News 4 -->
+
+          <article class="news-card">
+
+            <div class="news-image">
+              <img
+                src="assets/news-community.jpg"
+                alt="Community"
+              />
+            </div>
+
+            <div class="news-content">
+
+              <div class="news-meta">
+                Community · August 2026
+              </div>
+
+              <h3>
+                Join the Eivar Community
+              </h3>
+
+              <p>
+                Follow development and help shape
+                the future world of Eivar Online.
+              </p>
+
+              <a href="#" class="read-more">
+                Read More →
+              </a>
+
+            </div>
+
+          </article>
+
+        </div>
+
+
+        <div class="news-more">
+
+          <a href="#" class="eivar-button secondary">
+            View All News
+          </a>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         DEVELOPMENT
+         ===================================================== -->
+
+    <section
+      class="development"
+      id="updates"
+    >
+
+      <div class="container">
+
+        <h2>
+          The World Is Being Forged
+        </h2>
+
+
+        <div class="development-grid">
+
+
+          <article class="development-card">
+
+            <div class="development-icon">
+              ◇
+            </div>
+
+            <div>
+
+              <h3>
+                Alpha Development
+              </h3>
+
+              <p>
+                Eivar Online is currently in active development.
+                Many mechanics, regions and systems are still
+                evolving.
+              </p>
+
+              <a href="#" class="read-more">
+                Learn More →
+              </a>
+
+            </div>
+
+          </article>
+
+
+          <article class="development-card">
+
+            <div class="development-icon">
+              ☁
+            </div>
+
+            <div>
+
+              <h3>
+                Join Our Community
+              </h3>
+
+              <p>
+                Follow development, discuss ideas and meet
+                other adventurers helping shape the world
+                of Eivar.
+              </p>
+
+              <a href="#" class="read-more">
+                Join Discord →
+              </a>
+
+            </div>
+
+          </article>
+
+
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <!-- =======================================================
+       FOOTER
+       ======================================================= -->
+
+  <footer id="store">
+
+    <div class="container">
+
+      <div class="footer-grid">
+
+
+        <div class="footer-brand">
+
+          <h2>
+            EIVAR
+          </h2>
+
+          <small>
+            ONLINE
+          </small>
+
+          <p>
+            A fantasy online world where ancient words
+            shape power and every adventurer writes
+            their own story.
+          </p>
+
+        </div>
+
+
+        <div class="footer-column">
+
+          <h4>
+            Game
+          </h4>
+
+          <a href="#">Overview</a>
+          <a href="#">Features</a>
+          <a href="#">World</a>
+          <a href="#">FAQ</a>
+
+        </div>
+
+
+        <div class="footer-column">
+
+          <h4>
+            News
+          </h4>
+
+          <a href="#">Latest News</a>
+          <a href="#">Updates</a>
+          <a href="#">Dev Blog</a>
+          <a href="#">Patch Notes</a>
+
+        </div>
+
+
+        <div class="footer-column">
+
+          <h4>
+            Wiki
+          </h4>
+
+          <a href="#">Getting Started</a>
+          <a href="#">Weapons</a>
+          <a href="#">Essences</a>
+          <a href="#">Ancient Words</a>
+
+        </div>
+
+
+        <div class="footer-column">
+
+          <h4>
+            Community
+          </h4>
+
+          <a href="#">Discord</a>
+          <a href="#">Guilds</a>
+          <a href="#">Community</a>
+
+        </div>
+
+
+        <div class="footer-column">
+
+          <h4>
+            Legal
+          </h4>
+
+          <a href="#">Terms</a>
+          <a href="#">Privacy</a>
+          <a href="#">Cookies</a>
+
+        </div>
+
+      </div>
+
+
+      <div class="footer-bottom">
+
+        © 2026 Eivar Online.
+
+        <br />
+
+        Eivar Online is currently in development.
+        Website content is temporary and subject to change.
+
+      </div>
+
+    </div>
+
+  </footer>
+
+
+  <!-- =======================================================
+       INTERACTIONS
+       ======================================================= -->
+
+  <script>
+
+    const navbar =
+      document.getElementById("navbar");
+
+    const mobileMenuButton =
+      document.getElementById("mobileMenuButton");
+
+    const mobileMenu =
+      document.getElementById("mobileMenu");
+
+
+    /*
+     * Navbar background after scrolling.
+     */
+
+    window.addEventListener("scroll", () => {
+
+      navbar.classList.toggle(
+        "scrolled",
+        window.scrollY > 40
+      );
+
+    });
+
+
+    /*
+     * Mobile navigation.
+     */
+
+    mobileMenuButton.addEventListener(
+      "click",
+      () => {
+
+        mobileMenu.classList.toggle("open");
+
+        mobileMenuButton.textContent =
+          mobileMenu.classList.contains("open")
+            ? "×"
+            : "☰";
+
+      }
+    );
+
+
+    /*
+     * Close mobile menu when selecting a link.
+     */
+
+    mobileMenu
+      .querySelectorAll("a")
+      .forEach(link => {
+
+        link.addEventListener(
+          "click",
+          () => {
+
+            mobileMenu.classList.remove("open");
+
+            mobileMenuButton.textContent = "☰";
+
+          }
+        );
+
+      });
+
+  </script>
+
+</body>
+</html>

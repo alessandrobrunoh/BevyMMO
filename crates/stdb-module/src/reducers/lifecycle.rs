@@ -6,10 +6,12 @@ use std::time::Duration;
 use crate::rows::{equipment_to_rows, inventory_to_rows, HotbarRow, StatsRow, Vec3Row};
 use crate::tables::{
     active_status, aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats, equipment,
-    game_entity, grid_cell, hotbar, inventory, known_glyphs, player, player_stats, projectile,
-    stat_modifier, threat, tick_schedule, tick_stats, ColorRow, EntityKindRow, EntityStateRow,
-    EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownGlyphsTable, Player, PlayerStats,
-    TickSchedule,
+    game_entity, grid_cell, hotbar, inventory, known_ancient_language, known_glyphs, periodic_effect,
+    player, player_stats,
+    projectile, resonance, stat_modifier, threat, tick_schedule, tick_stats, ColorRow, EntityKindRow,
+    EntityStateRow, EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownAncientLanguageTable,
+    KnownGlyphsTable, Player,
+    PlayerStats, TickSchedule,
 };
 use crate::{normalize_name, world, DEFAULT_SPEED_PER_SECOND, TICK_INTERVAL_MS};
 
@@ -237,6 +239,12 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         ],
         ancient_words: Vec::new(),
     });
+    ctx.db.known_ancient_language().insert(KnownAncientLanguageTable {
+        identity,
+        root_words: vec!["damage".to_string()],
+        ancient_words: vec!["amplia".to_string()],
+        base_abilities: vec!["arcane_orb".to_string()],
+    });
 
     ctx.db.player().insert(Player {
         identity,
@@ -246,6 +254,118 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         online: true,
         last_seen: ctx.timestamp,
     });
+    Ok(())
+}
+
+/// Permanently deletes the caller's character, freeing its display name.
+///
+/// The client's identity is a throwaway credential today (see
+/// `forget_cached_credentials` in `bevymmo_client::stdb::plugin`): every
+/// logout and every shutdown mints a fresh one on the next launch, so an
+/// identity that leaves without calling this reducer becomes unreachable
+/// forever, and the character it owned squats its name — and briefly its
+/// "online" status — with no way for anyone, including its own player, to
+/// ever get it back. This is the counterpart to [`join`] that makes that
+/// deliberate churn survivable: it removes every row the character owns
+/// rather than merely marking it offline, so the name is free the instant
+/// this reducer returns.
+///
+/// A no-op for an identity with no character — logging out from the main
+/// menu, before ever calling `join`, is normal.
+#[reducer]
+pub fn leave(ctx: &ReducerContext) -> Result<(), String> {
+    let identity = ctx.sender();
+    let Some(player) = ctx.db.player().identity().find(&identity) else {
+        return Ok(());
+    };
+    let entity_id = player.entity_id;
+
+    // Table scans and mutations must be separate passes, as elsewhere in this
+    // module.
+    let cooldown_ids: Vec<_> = ctx
+        .db
+        .cooldown()
+        .iter()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| row.id)
+        .collect();
+    let crowd_control_ids: Vec<_> = ctx
+        .db
+        .crowd_control()
+        .iter()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| row.id)
+        .collect();
+    let active_status_ids: Vec<_> = ctx
+        .db
+        .active_status()
+        .iter()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| row.id)
+        .collect();
+    let stat_modifier_ids: Vec<_> = ctx
+        .db
+        .stat_modifier()
+        .iter()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| row.id)
+        .collect();
+    let periodic_effect_ids: Vec<_> = ctx
+        .db
+        .periodic_effect()
+        .iter()
+        .filter(|row| row.entity_id == entity_id)
+        .map(|row| row.id)
+        .collect();
+    // A player entity is only ever a threat *target*, never a `boss_entity`.
+    let threat_ids: Vec<_> = ctx
+        .db
+        .threat()
+        .iter()
+        .filter(|row| row.target_entity == entity_id)
+        .map(|row| row.id)
+        .collect();
+    let resonance_ids: Vec<_> = ctx
+        .db
+        .resonance()
+        .iter()
+        .filter(|row| row.identity == identity)
+        .map(|row| row.id)
+        .collect();
+
+    for id in cooldown_ids {
+        ctx.db.cooldown().id().delete(&id);
+    }
+    for id in crowd_control_ids {
+        ctx.db.crowd_control().id().delete(&id);
+    }
+    for id in active_status_ids {
+        ctx.db.active_status().id().delete(&id);
+    }
+    for id in stat_modifier_ids {
+        ctx.db.stat_modifier().id().delete(&id);
+    }
+    for id in periodic_effect_ids {
+        ctx.db.periodic_effect().id().delete(&id);
+    }
+    for id in threat_ids {
+        ctx.db.threat().id().delete(&id);
+    }
+    for id in resonance_ids {
+        ctx.db.resonance().id().delete(&id);
+    }
+
+    ctx.db.cast_state().entity_id().delete(&entity_id);
+    ctx.db.entity_stats().entity_id().delete(&entity_id);
+    ctx.db.game_entity().entity_id().delete(&entity_id);
+
+    ctx.db.known_glyphs().identity().delete(&identity);
+    ctx.db.equipment().identity().delete(&identity);
+    ctx.db.inventory().identity().delete(&identity);
+    ctx.db.hotbar().identity().delete(&identity);
+    ctx.db.player_stats().identity().delete(&identity);
+    ctx.db.player().identity().delete(&identity);
+
     Ok(())
 }
 

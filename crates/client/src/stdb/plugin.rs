@@ -67,6 +67,7 @@ use super::module_bindings::heartbeat_reducer::heartbeat;
 use super::module_bindings::hotbar_table::HotbarTableAccess;
 use super::module_bindings::inventory_table::InventoryTableAccess;
 use super::module_bindings::join_reducer::join;
+use super::module_bindings::leave_reducer::leave;
 use super::module_bindings::known_glyphs_table::KnownGlyphsTableAccess;
 use super::module_bindings::move_to_reducer::move_to;
 use super::module_bindings::periodic_effect_table::PeriodicEffectTableAccess;
@@ -308,6 +309,7 @@ impl Plugin for StdbPlugin {
         app.init_resource::<StdbEntityMap>();
         app.init_resource::<PendingRows>();
         app.init_resource::<ShuttingDown>();
+        app.init_resource::<LoggingOut>();
         app.insert_resource(StdbConnectionConfig {
             uri: uri.clone(),
             module: module.clone(),
@@ -333,6 +335,7 @@ impl Plugin for StdbPlugin {
                 .run_if(resource_exists::<StdbConnection>),
         );
         app.add_systems(Update, finish_shutdown);
+        app.add_systems(Update, finish_logout);
         app.add_systems(
             Update,
             (join_on_request, send_move_commands, send_heartbeat)
@@ -1266,7 +1269,8 @@ fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
 
 	fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instance::ItemInstance {
     use bevymmo_gameplay::abilities::inscription::{
-        Inscription, SecondaryWord, SlotInscription, WeaponInscription, WeaponInscriptions,
+        ArmorInscription, Inscription, SecondaryWord, SlotInscription, WeaponInscription,
+        WeaponInscriptions,
     };
     use bevymmo_gameplay::abilities::root_word::RootWordId;
     use bevymmo_gameplay::abilities::weapon_abilities::AbilitySelection;
@@ -1281,12 +1285,11 @@ fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
     };
 
     let secondary_word = |s: &super::module_bindings::SecondaryWordRow| SecondaryWord {
-        word_id: RootWordId::new(s.word_id.clone()),
+        word_id: AncientWordId::new(s.word_id.clone()),
         intensity: s.intensity,
     };
 
     let slot_inscription = |s: &super::module_bindings::SlotInscriptionRow| SlotInscription {
-        root_word: s.root_word.clone().map(RootWordId::new),
         secondary_words: s.secondary_words.iter().map(secondary_word).collect(),
     };
 
@@ -1304,9 +1307,14 @@ fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
             ultimate: row.ability_selection.ultimate.clone().map(AbilityId::new),
         },
         root_inscription: row.root_inscription.as_ref().map(|w| WeaponInscription {
+            root_word: w.root_word.clone().map(RootWordId::new),
             primary: slot_inscription(&w.primary),
             secondary: slot_inscription(&w.secondary),
             ultimate: slot_inscription(&w.ultimate),
+        }),
+        armor_inscription: row.armor_inscription.as_ref().map(|a| ArmorInscription {
+            root_word: a.root_word.clone().map(RootWordId::new),
+            secondary_words: a.secondary_words.iter().map(secondary_word).collect(),
         }),
     }
 }
@@ -1317,14 +1325,19 @@ fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
 /// the menu does not need to know which transport is mounted.
 fn join_on_request(
     conn: Res<StdbConnection>,
-    config: Res<StdbConnectionConfig>,
     mut request: ResMut<ConnectionRequest>,
     mut screen: ResMut<GameScreen>,
     mut failure: ResMut<ConnectionFailure>,
-    mut map: ResMut<StdbEntityMap>,
-    mut pending: ResMut<PendingRows>,
-    mut commands: Commands,
+    mut logging_out: ResMut<LoggingOut>,
 ) {
+    // A logout already in flight owns the connection until `finish_logout`
+    // replaces it; touching `conn` again here would queue against a socket
+    // that is on its way down.
+    if logging_out.0.is_some() {
+        request.0 = None;
+        return;
+    }
+
     let Some(intent) = request.0.take() else {
         return;
     };
@@ -1349,26 +1362,22 @@ fn join_on_request(
             }
         }
         ConnectionIntent::Logout => {
+            // Best-effort: releases the character's row (and its display
+            // name) server-side before the identity that owns it becomes
+            // unreachable. `leave` is a no-op if `join` was never called, so
+            // this is safe to fire from the main menu too.
+            let _ = conn.reducers().leave();
             if let Err(err) = conn.conn.disconnect() {
                 warn!("could not disconnect during logout: {err}");
             }
-            // Forget the cached identity: logging out hands back a clean
-            // slate, not a silent resume of whatever character was last
-            // attached to this machine.
-            forget_cached_credentials(&config.uri, &config.module);
-            clear_replicated_state(&mut commands, &mut map, &mut pending);
-
-            match connect(&config.uri, &config.module) {
-                Ok(connection) => {
-                    commands.insert_resource(connection);
-                    failure.0 = None;
-                    screen.0 = Screen::MainMenu;
-                }
-                Err(err) => {
-                    error!("SpacetimeDB reconnection after logout failed: {err}");
-                    failure.0 = Some(format!("Impossibile riconnettersi: {err}"));
-                }
-            }
+            // Both calls above only *queue* their message — `finish_logout`
+            // holds this connection resource in place across a few more
+            // frames of `pump_connection` so they actually reach the socket
+            // before it's replaced. Swapping the resource here instead would
+            // drop them mid-send almost every time (the same trap
+            // `finish_shutdown` exists to avoid on exit).
+            screen.0 = Screen::Connecting;
+            logging_out.0 = Some(0.0);
         }
         ConnectionIntent::Disconnect => {}
         // Handled by `begin_shutdown`, which runs in `PreUpdate` and takes the
@@ -1445,6 +1454,10 @@ fn begin_shutdown(
         return;
     }
     if let Some(conn) = conn {
+        // Same reasoning as `join_on_request`'s `Logout` arm: the next
+        // launch discards this identity too, so leaving without releasing
+        // the character here would squat its name forever.
+        let _ = conn.reducers().leave();
         if let Err(err) = conn.conn.disconnect() {
             warn!("could not disconnect during shutdown: {err}");
         }
@@ -1470,6 +1483,60 @@ fn finish_shutdown(
     let drained = conn.map(|c| !c.conn.is_active()).unwrap_or(true);
     if drained || *elapsed >= SHUTDOWN_GRACE_SECONDS {
         exit.write(AppExit::Success);
+    }
+}
+
+/// `Some` once [`join_on_request`]'s `Logout` arm has queued a `leave` and a
+/// disconnect; the value is the elapsed grace period, ticked here.
+#[derive(Resource, Default)]
+struct LoggingOut(Option<f32>);
+
+/// Lets the `leave` call and disconnect queued by `Logout` actually reach the
+/// socket before the old connection resource is replaced with a fresh one.
+///
+/// Mirrors [`finish_shutdown`]'s wait for [`DbContext::is_active`], for the
+/// same reason: swapping the resource on the same frame the messages were
+/// queued would tear the old connection down before `pump_connection` ever
+/// gets to flush them, so `leave` would silently never reach the server and
+/// the abandoned character would linger — the exact bug this system exists
+/// to close.
+fn finish_logout(
+    mut logging_out: ResMut<LoggingOut>,
+    conn: Option<Res<StdbConnection>>,
+    config: Res<StdbConnectionConfig>,
+    time: Res<Time>,
+    mut commands: Commands,
+    mut map: ResMut<StdbEntityMap>,
+    mut pending: ResMut<PendingRows>,
+    mut failure: ResMut<ConnectionFailure>,
+    mut screen: ResMut<GameScreen>,
+) {
+    let Some(elapsed) = logging_out.0.as_mut() else {
+        return;
+    };
+    *elapsed += time.delta_secs();
+    let drained = conn.as_ref().map(|c| !c.conn.is_active()).unwrap_or(true);
+    if !drained && *elapsed < SHUTDOWN_GRACE_SECONDS {
+        return;
+    }
+    logging_out.0 = None;
+
+    // Only now does the identity actually become unreachable — `leave` had
+    // its chance to fire on the connection this replaces.
+    forget_cached_credentials(&config.uri, &config.module);
+    clear_replicated_state(&mut commands, &mut map, &mut pending);
+
+    match connect(&config.uri, &config.module) {
+        Ok(connection) => {
+            commands.insert_resource(connection);
+            failure.0 = None;
+            screen.0 = Screen::MainMenu;
+        }
+        Err(err) => {
+            error!("SpacetimeDB reconnection after logout failed: {err}");
+            failure.0 = Some(format!("Impossibile riconnettersi: {err}"));
+            screen.0 = Screen::MainMenu;
+        }
     }
 }
 

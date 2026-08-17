@@ -15,7 +15,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::abilities::{ AbilitySelection, inscription::WeaponInscription, WeaponInscriptions };
+use crate::abilities::{
+    inscription::{ArmorInscription, WeaponInscription},
+    AbilitySelection, WeaponInscriptions,
+};
 
 use super::registry::ItemId;
 
@@ -64,6 +67,10 @@ pub struct ItemInstance {
     /// `None` means no root inscription has been applied yet.
     #[serde(default)]
     pub root_inscription: Option<WeaponInscription>,
+    /// Independent inscription for armor items. Kept separate during the
+    /// additive migration so armor never has to pretend to be a weapon.
+    #[serde(default)]
+    pub armor_inscription: Option<ArmorInscription>,
 }
 
 impl ItemInstance {
@@ -77,6 +84,7 @@ impl ItemInstance {
             inscriptions: None,
             ability_selection: AbilitySelection::default(),
             root_inscription: None,
+            armor_inscription: None,
         }
     }
 }

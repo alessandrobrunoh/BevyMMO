@@ -9,7 +9,6 @@ use super::secondary_word_row_type::SecondaryWordRow;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct SlotInscriptionRow {
-    pub root_word: Option<String>,
     pub secondary_words: Vec<SecondaryWordRow>,
 }
 

@@ -1,0 +1,73 @@
+<app-page-header
+  title="The Eivar Archives"
+  subtitle="The comprehensive official codex of weapons, primal essences, modifiers, ancient words, and territorial laws."
+  badge="Official Knowledge Base"
+  bgImage="assets/images/channeling-staff.jpg"
+  [breadcrumbs]="[{ label: 'Wiki' }]"
+></app-page-header>
+
+<div class="wiki-landing-section section-padding">
+  <div class="container">
+    <!-- Archives Search Bar -->
+    <div class="archives-search-card stone-panel chamfer-box">
+      <div class="search-inner">
+        <span class="search-glyph">ᛟ</span>
+        <input
+          type="text"
+          class="archives-input"
+          placeholder="Search the Archives (e.g. 'Channeling Staff', 'Essences', 'Echo', 'Combat')..."
+          [value]="searchFilter()"
+          (input)="onSearch($event)"
+        />
+      </div>
+    </div>
+
+    <!-- Featured Codex Spotlight -->
+    <div class="spotlight-section">
+      <h3 class="section-label">RECOMMENDED STUDY</h3>
+      <div class="spotlight-grid">
+        @for (pop of popularArticles(); track pop.id) {
+          <div class="spotlight-card stone-panel chamfer-box" [routerLink]="['/wiki', pop.categorySlug, pop.slug]">
+            <div class="sp-img-wrap">
+              <img [src]="pop.image || 'assets/images/world-exploration.jpg'" [alt]="pop.title" class="sp-img" />
+              <span class="sp-badge">{{ pop.categoryName }}</span>
+            </div>
+            <div class="sp-body">
+              <h4 class="sp-title">{{ pop.title }}</h4>
+              <p class="sp-desc">{{ pop.subtitle || pop.overview }}</p>
+              <span class="sp-link">Open Record →</span>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+
+    <app-rune-divider styleVariant="cyan"></app-rune-divider>
+
+    <!-- Categories Grid -->
+    <div class="categories-section">
+      <div class="cat-section-header">
+        <h3 class="section-label">CODEX CATEGORIES</h3>
+        <span class="cat-count">{{ filteredCategories().length }} Classifications</span>
+      </div>
+
+      <div class="categories-grid">
+        @for (cat of filteredCategories(); track cat.id) {
+          <a [routerLink]="['/wiki', cat.slug]" class="category-card stone-panel chamfer-box">
+            <div class="cat-rune-symbol">
+              <span>{{ cat.runeSymbol }}</span>
+            </div>
+            <div class="cat-info">
+              <div class="cat-top">
+                <h4 class="cat-name">{{ cat.name }}</h4>
+                <span class="cat-articles-pill">{{ cat.articleCount }} entries</span>
+              </div>
+              <p class="cat-desc">{{ cat.description }}</p>
+            </div>
+            <span class="cat-arrow">→</span>
+          </a>
+        }
+      </div>
+    </div>
+  </div>
+</div>

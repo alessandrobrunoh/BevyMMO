@@ -1,0 +1,222 @@
+@if (article(); as art) {
+  <app-page-header
+    [title]="art.title"
+    [subtitle]="art.subtitle"
+    [badge]="art.categoryName"
+    [bgImage]="art.image"
+    [breadcrumbs]="[
+      { label: 'Wiki', route: '/wiki' },
+      { label: art.categoryName, route: ['/wiki', art.categorySlug] },
+      { label: art.title }
+    ]"
+  ></app-page-header>
+
+  <div class="wiki-detail-wrapper section-padding">
+    <div class="container">
+      <div class="wiki-three-col-layout">
+        <!-- 1. LEFT SIDEBAR: Categories & Navigation Tree -->
+        <aside class="wiki-left-nav">
+          <div class="left-nav-card stone-panel chamfer-box">
+            <div class="nav-tree-header">
+              <span class="rune">ᚹ</span>
+              <h4 class="nav-tree-title">Codex Index</h4>
+            </div>
+
+            <!-- Categories List -->
+            <div class="categories-tree">
+              @for (cat of categories(); track cat.id) {
+                <div class="tree-category-group" [class.active]="cat.slug === art.categorySlug">
+                  <a [routerLink]="['/wiki', cat.slug]" class="tree-cat-header">
+                    <span class="cat-rune">{{ cat.runeSymbol }}</span>
+                    <span class="cat-label">{{ cat.name }}</span>
+                    <span class="cat-count">({{ cat.articleCount }})</span>
+                  </a>
+
+                  <!-- Sub articles if current active category -->
+                  @if (cat.slug === art.categorySlug) {
+                    <ul class="sub-articles-list">
+                      @for (subArt of categoryArticles(); track subArt.id) {
+                        <li>
+                          <a
+                            [routerLink]="['/wiki', subArt.categorySlug, subArt.slug]"
+                            class="sub-art-link"
+                            [class.active]="subArt.slug === art.slug"
+                          >
+                            <span class="bullet">›</span>
+                            <span>{{ subArt.title }}</span>
+                          </a>
+                        </li>
+                      }
+                    </ul>
+                  }
+                </div>
+              }
+            </div>
+
+            <div class="nav-footer-btn">
+              <a routerLink="/wiki" class="back-overview-link">← Archives Landing</a>
+            </div>
+          </div>
+        </aside>
+
+        <!-- 2. CENTER CONTENT: Rich Article Body -->
+        <main class="wiki-center-article">
+          <div class="article-inner-panel parchment-panel">
+            <!-- Article Header & Overview -->
+            <header class="article-lead-header">
+              <h2 class="art-h1">{{ art.title }}</h2>
+              <span class="last-updated">Last inscribed: {{ art.lastUpdated }}</span>
+              <p class="overview-text">{{ art.overview }}</p>
+            </header>
+
+            <!-- Inline Infobox for mobile/tablet when right column collapsed -->
+            @if (art.infobox) {
+              <div class="mobile-infobox-wrapper">
+                <app-wiki-infobox [data]="art.infobox"></app-wiki-infobox>
+              </div>
+            }
+
+            <!-- Ability Cards Section -->
+            @if (art.abilities && art.abilities.length > 0) {
+              <section id="abilities-section" class="wiki-sub-section">
+                <h3 class="section-title">Weapon Abilities & Conduits</h3>
+                <div class="abilities-list">
+                  @for (ability of art.abilities; track ability.slot) {
+                    <app-ability-card [ability]="ability"></app-ability-card>
+                  }
+                </div>
+              </section>
+            }
+
+            <!-- Rune Formulas & Builds -->
+            @if (art.runeFormulas && art.runeFormulas.length > 0) {
+              <section id="formulas-section" class="wiki-sub-section">
+                <h3 class="section-title">Harmonic Inscription Builds</h3>
+                <div class="formulas-grid">
+                  @for (form of art.runeFormulas; track form.title) {
+                    <div class="formula-card stone-panel chamfer-box">
+                      <div class="f-top">
+                        <span class="f-rune">ᛟ</span>
+                        <h4 class="f-title">{{ form.title }}</h4>
+                      </div>
+                      <p class="f-desc">{{ form.description }}</p>
+
+                      <div class="f-ingredients">
+                        <div class="f-row">
+                          <span class="f-label">Essence:</span>
+                          <span class="f-val text-gold">{{ form.essence }}</span>
+                        </div>
+                        <div class="f-row">
+                          <span class="f-label">Modifiers:</span>
+                          <span class="f-val text-cyan">{{ form.modifiers.join(', ') }}</span>
+                        </div>
+                        @if (form.ancientWord) {
+                          <div class="f-row">
+                            <span class="f-label">Ancient Word:</span>
+                            <span class="f-val text-gold">{{ form.ancientWord }}</span>
+                          </div>
+                        }
+                      </div>
+
+                      <div class="f-result">
+                        <span class="res-tag">Emergent Synergy:</span>
+                        <p class="res-text">{{ form.resultEffect }}</p>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </section>
+            }
+
+            <!-- Document Sections & Tables -->
+            @for (sec of art.sections; track sec.id) {
+              <section [id]="sec.id" class="wiki-sub-section">
+                <h3 class="section-title">{{ sec.title }}</h3>
+                @for (para of sec.content; track para) {
+                  <p class="sec-paragraph">{{ para }}</p>
+                }
+
+                <!-- Callouts -->
+                @if (sec.callout) {
+                  <app-wiki-callout
+                    [type]="sec.callout.type"
+                    [title]="sec.callout.title"
+                    [text]="sec.callout.text"
+                  ></app-wiki-callout>
+                }
+
+                <!-- Tables -->
+                @if (sec.table) {
+                  <div class="wiki-table-frame stone-panel">
+                    <table class="wiki-table">
+                      <thead>
+                        <tr>
+                          @for (header of sec.table.headers; track header) {
+                            <th>{{ header }}</th>
+                          }
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (row of sec.table.rows; track row[0]) {
+                          <tr>
+                            @for (cell of row; track cell) {
+                              <td>{{ cell }}</td>
+                            }
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </section>
+            }
+
+            <app-rune-divider styleVariant="stone"></app-rune-divider>
+
+            <!-- Related Slugs -->
+            @if (art.relatedSlugs && art.relatedSlugs.length > 0) {
+              <footer class="wiki-article-footer">
+                <h4 class="footer-related-title">Cross-Referenced Records:</h4>
+                <div class="related-chips">
+                  @for (rel of art.relatedSlugs; track rel.slug) {
+                    <a [routerLink]="['/wiki', rel.categorySlug, rel.slug]" class="rel-chip">
+                      <span class="chip-rune">ᛟ</span>
+                      <span>{{ rel.title }}</span>
+                    </a>
+                  }
+                </div>
+              </footer>
+            }
+          </div>
+        </main>
+
+        <!-- 3. RIGHT SIDEBAR: Infobox & Table of Contents -->
+        <aside class="wiki-right-sidebar">
+          @if (art.infobox) {
+            <div class="desktop-infobox">
+              <app-wiki-infobox [data]="art.infobox"></app-wiki-infobox>
+            </div>
+          }
+
+          <div class="toc-card stone-panel chamfer-box">
+            <div class="toc-header">
+              <span class="rune">ᛉ</span>
+              <h4 class="toc-title">Table of Contents</h4>
+            </div>
+            <ul class="toc-list">
+              @if (art.abilities && art.abilities.length > 0) {
+                <li><button class="toc-link" (click)="scrollToSection('abilities-section')">Weapon Abilities</button></li>
+              }
+              @if (art.runeFormulas && art.runeFormulas.length > 0) {
+                <li><button class="toc-link" (click)="scrollToSection('formulas-section')">Harmonic Builds</button></li>
+              }
+              @for (sec of art.sections; track sec.id) {
+                <li><button class="toc-link" (click)="scrollToSection(sec.id)">{{ sec.title }}</button></li>
+              }
+            </ul>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+}

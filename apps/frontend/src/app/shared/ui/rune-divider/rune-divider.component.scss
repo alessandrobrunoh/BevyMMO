@@ -1,0 +1,58 @@
+@use '../../../../styles/variables' as *;
+
+.rune-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin: 2.5rem 0;
+  gap: 1.25rem;
+
+  .line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba(221, 212, 195, 0.25) 50%, rgba(221, 212, 195, 0.4) 100%);
+
+    &.right-line {
+      background: linear-gradient(90deg, rgba(221, 212, 195, 0.4) 0%, rgba(221, 212, 195, 0.25) 50%, transparent 100%);
+    }
+  }
+
+  .rune-emblem {
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+
+    .rune-svg {
+      width: 100%;
+      height: 100%;
+      transition: all var(--transition-normal);
+    }
+  }
+
+  // Cyan
+  &.style-cyan {
+    color: var(--color-rune-cyan);
+
+    &.with-glow .rune-emblem .rune-svg {
+      filter: drop-shadow(0 0 8px rgba(60, 203, 255, 0.6));
+    }
+  }
+
+  // Gold
+  &.style-gold {
+    color: var(--color-gold);
+
+    &.with-glow .rune-emblem .rune-svg {
+      filter: drop-shadow(0 0 8px rgba(208, 174, 97, 0.5));
+    }
+  }
+
+  // Stone
+  &.style-stone {
+    color: var(--color-stone-400);
+  }
+}

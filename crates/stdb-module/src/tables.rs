@@ -109,6 +109,18 @@ pub struct KnownGlyphsTable {
     pub ancient_words: Vec<String>,
 }
 
+/// New vocabulary for Root Words and universal Ancient Words. This table is
+/// additive to `KnownGlyphsTable` so existing characters remain readable while
+/// the migration is in progress.
+#[table(accessor = known_ancient_language, public)]
+pub struct KnownAncientLanguageTable {
+    #[primary_key]
+    pub identity: Identity,
+    pub root_words: Vec<String>,
+    pub ancient_words: Vec<String>,
+    pub base_abilities: Vec<String>,
+}
+
 /// A player's resonance (XP and level) with an Ancient Word.
 ///
 /// Keyed by auto-increment ID; the natural key `(identity, root_word_id)` is
@@ -267,6 +279,12 @@ pub enum CastSourceRow {
     Spell,
     /// Eidolon weapon ability (`eidolon_cast` reducer).
     Eidolon,
+    /// Primary ability from the equipped helmet.
+    Helmet,
+    /// Primary ability from the equipped chestplate.
+    Armor,
+    /// Primary ability from the equipped boots/shoes.
+    Shoes,
 }
 
 /// A cast in progress. At most one per caster: starting another cancels it.

@@ -76,13 +76,11 @@ impl KnownAncientLanguage {
     /// Check if a [`SlotInscription`] is fully known.
     ///
     /// Returns `true` only if:
-    /// - The primary [`RootWordId`] is in `root_words` (or slot is empty)
-    /// - Every secondary word's [`RootWordId`] is in `root_words`
+    /// - Every secondary Ancient Word is in `ancient_words`
     pub fn knows_slot(&self, slot: &SlotInscription) -> bool {
-        slot.root_word
-            .as_ref()
-            .is_none_or(|id| self.root_words.contains(id))
-            && slot.secondary_words.iter().all(|sw| self.root_words.contains(&sw.word_id))
+        slot.secondary_words
+            .iter()
+            .all(|sw| self.ancient_words.contains(&sw.word_id))
     }
 
     /// Check if an [`ItemInscription`] is fully known.
@@ -93,9 +91,23 @@ impl KnownAncientLanguage {
     pub fn knows_item_inscription(&self, item: &ItemInscription) -> bool {
         match item {
             ItemInscription::Weapon(weapon) => {
-                self.knows_slot(&weapon.primary)
+                weapon
+                    .root_word
+                    .as_ref()
+                    .is_none_or(|id| self.root_words.contains(id))
+                    && self.knows_slot(&weapon.primary)
                     && self.knows_slot(&weapon.secondary)
                     && self.knows_slot(&weapon.ultimate)
+            }
+            ItemInscription::Armor(armor) => {
+                armor
+                    .root_word
+                    .as_ref()
+                    .is_none_or(|id| self.root_words.contains(id))
+                    && armor
+                        .secondary_words
+                        .iter()
+                        .all(|word| self.ancient_words.contains(&word.word_id))
             }
             ItemInscription::Legacy(_) => false,
         }
@@ -175,37 +187,19 @@ mod tests {
     }
 
     #[test]
-    fn knows_slot_false_when_root_word_missing() {
-        let known = KnownAncientLanguage::default();
-        let slot = SlotInscription::with_root(RootWordId::from("damage"));
-        assert!(!known.knows_slot(&slot));
-    }
-
-    #[test]
-    fn knows_slot_true_when_root_word_known() {
-        let mut known = KnownAncientLanguage::default();
-        known.root_words.insert(RootWordId::from("damage"));
-        let slot = SlotInscription::with_root(RootWordId::from("damage"));
-        assert!(known.knows_slot(&slot));
-    }
-
-    #[test]
     fn knows_slot_false_when_secondary_word_unknown() {
-        let mut known = KnownAncientLanguage::default();
-        known.root_words.insert(RootWordId::from("damage"));
-        // "empower" secondary not learned
-        let slot = SlotInscription::with_root(RootWordId::from("damage"))
-            .with_secondary(SecondaryWord::new(RootWordId::from("empower")));
+        let known = KnownAncientLanguage::default();
+        let slot = SlotInscription::default()
+            .with_secondary(SecondaryWord::new(AncientWordId::new("empower")));
         assert!(!known.knows_slot(&slot));
     }
 
     #[test]
     fn knows_slot_true_with_known_secondary() {
         let mut known = KnownAncientLanguage::default();
-        known.root_words.insert(RootWordId::from("damage"));
-        known.root_words.insert(RootWordId::from("empower"));
-        let slot = SlotInscription::with_root(RootWordId::from("damage"))
-            .with_secondary(SecondaryWord::new(RootWordId::from("empower")));
+        known.ancient_words.insert(AncientWordId::new("empower"));
+        let slot = SlotInscription::default()
+            .with_secondary(SecondaryWord::new(AncientWordId::new("empower")));
         assert!(known.knows_slot(&slot));
     }
 
@@ -227,12 +221,11 @@ mod tests {
     fn knows_item_inscription_checks_all_slots() {
         let mut known = KnownAncientLanguage::default();
         known.root_words.insert(RootWordId::from("damage"));
-        known.root_words.insert(RootWordId::from("heal"));
 
-        let mut weapon = WeaponInscription::default();
-        weapon.primary = SlotInscription::with_root(RootWordId::from("damage"));
-        weapon.secondary = SlotInscription::with_root(RootWordId::from("heal"));
-        // ultimate left empty
+        let weapon = WeaponInscription {
+            root_word: Some(RootWordId::from("damage")),
+            ..Default::default()
+        };
 
         let item = ItemInscription::Weapon(weapon);
         assert!(known.knows_item_inscription(&item));
@@ -240,13 +233,12 @@ mod tests {
 
     #[test]
     fn knows_item_inscription_false_when_any_slot_fails() {
-        let mut known = KnownAncientLanguage::default();
-        known.root_words.insert(RootWordId::from("damage"));
-        // "heal" not learned
-
-        let mut weapon = WeaponInscription::default();
-        weapon.primary = SlotInscription::with_root(RootWordId::from("damage"));
-        weapon.secondary = SlotInscription::with_root(RootWordId::from("heal"));
+        let known = KnownAncientLanguage::default();
+        // "missing" Root Word is not learned.
+        let weapon = WeaponInscription {
+            root_word: Some(RootWordId::from("missing")),
+            ..Default::default()
+        };
 
         let item = ItemInscription::Weapon(weapon);
         assert!(!known.knows_item_inscription(&item));

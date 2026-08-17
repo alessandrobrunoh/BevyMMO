@@ -46,6 +46,9 @@ pub struct Settings {
 
     #[serde(default)]
     pub client: ClientSettings,
+
+    #[serde(default)]
+    pub gateway: GatewaySettings,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -67,6 +70,16 @@ pub struct ClientSettings {
     /// Local address bound by the client (typically "0.0.0.0:0").
     #[serde(default = "default_client_addr")]
     pub client_addr: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GatewaySettings {
+    /// Local address the HTTP gateway binds to ("host:port").
+    ///
+    /// Kept as `String` for the same reason as `ServerSettings::bind_addr`:
+    /// the `config` crate hands us strings, conversion happens at call sites.
+    #[serde(default = "default_gateway_bind_addr")]
+    pub bind_addr: String,
 }
 
 impl Settings {
@@ -126,4 +139,8 @@ fn default_client_server_addr() -> String {
 
 fn default_client_addr() -> String {
     "0.0.0.0:0".to_owned()
+}
+
+fn default_gateway_bind_addr() -> String {
+    "127.0.0.1:8080".to_owned()
 }

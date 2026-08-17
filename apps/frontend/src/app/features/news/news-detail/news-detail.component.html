@@ -1,0 +1,97 @@
+@if (article(); as art) {
+  <app-page-header
+    [title]="art.title"
+    [subtitle]="art.subtitle"
+    [badge]="art.category"
+    [bgImage]="art.image"
+    [breadcrumbs]="[
+      { label: 'News', route: '/news' },
+      { label: art.title }
+    ]"
+  ></app-page-header>
+
+  <article class="article-content-section section-padding">
+    <div class="container container-narrow">
+      <!-- Article Metadata Header -->
+      <div class="article-meta-banner stone-panel">
+        <div class="meta-left">
+          <div class="author-avatar">
+            <span class="rune">ᛟ</span>
+          </div>
+          <div class="author-details">
+            <h5 class="author-name">{{ art.author?.name || 'Eivar Chronicles' }}</h5>
+            <span class="author-role">{{ art.author?.role || 'Development Dispatch' }}</span>
+          </div>
+        </div>
+
+        <div class="meta-right">
+          <span class="meta-date">📅 {{ art.publishedAt }}</span>
+          <span class="meta-read">⌛ {{ art.readingTime }} min read</span>
+        </div>
+      </div>
+
+      <!-- Featured Image Container -->
+      <div class="article-featured-image-frame chamfer-box">
+        <img [src]="art.image" [alt]="art.title" class="featured-img" />
+      </div>
+
+      <!-- Editorial Paragraphs -->
+      <div class="editorial-body">
+        <p class="article-lead">{{ art.excerpt }}</p>
+
+        @for (paragraph of art.content; track paragraph) {
+          <p class="content-paragraph">{{ paragraph }}</p>
+        }
+      </div>
+
+      <!-- Tags & Share -->
+      <div class="article-tags-row">
+        <span class="tags-label">TAGS:</span>
+        @for (tag of art.tags; track tag) {
+          <span class="article-tag">#{{ tag }}</span>
+        }
+      </div>
+
+      <app-rune-divider styleVariant="cyan"></app-rune-divider>
+
+      <!-- Related Stories -->
+      @if (relatedArticles().length > 0) {
+        <section class="related-section">
+          <h3 class="related-title">Related Chronicles</h3>
+          <div class="related-grid">
+            @for (rel of relatedArticles(); track rel.id) {
+              <div class="related-card stone-panel chamfer-box" [routerLink]="['/news', rel.slug]">
+                <img [src]="rel.image" [alt]="rel.title" class="rel-img" />
+                <div class="rel-body">
+                  <span class="rel-cat">{{ rel.category }}</span>
+                  <h4 class="rel-title">{{ rel.title }}</h4>
+                  <span class="rel-date">{{ rel.publishedAt }}</span>
+                </div>
+              </div>
+            }
+          </div>
+        </section>
+      }
+
+      <div class="back-nav-bar">
+        <a routerLink="/news">
+          <app-eivar-button variant="secondary" size="md">
+            <span>← Back to All News</span>
+          </app-eivar-button>
+        </a>
+      </div>
+    </div>
+  </article>
+} @else {
+  <div class="article-not-found section-padding">
+    <div class="container text-center">
+      <h2>Chronicle Not Found</h2>
+      <p>The requested article could not be located in the archives.</p>
+      <a routerLink="/news">
+        <app-eivar-button variant="primary" size="md">
+          Return to News
+        </app-eivar-button>
+      </a>
+    </div>
+  </div>
+}

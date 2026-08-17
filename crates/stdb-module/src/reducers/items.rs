@@ -36,12 +36,17 @@
 //! effective value that combat and the client read. Nothing writes bonuses back
 //! into `player_stats`.
 
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use bevymmo_domain::abilities::inscription::{validate_weapon_inscriptions, Inscription};
+use bevymmo_domain::abilities::inscription::{
+    validate_weapon_inscriptions, ArmorInscription, Inscription, SecondaryWord, SlotInscription,
+    WeaponInscription,
+};
 use bevymmo_domain::abilities::{
-    AbilityId, AbilitySlot, AncientWordId, AncientWordRegistry, BaseAbilityRegistry, EssenceId,
-    EssenceRegistry, ModifierId, ModifierRegistry,
+    resolve_active_ability, AbilityId, AbilitySlot, AncientWordId, AncientWordRegistry,
+    BaseAbilityRegistry, EssenceId,
+    EssenceRegistry, ModifierId, ModifierRegistry, RootWordId, RootWordRegistry,
 };
 use bevymmo_domain::items::components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY};
 use bevymmo_domain::items::definition::EquipRequirement;
@@ -54,10 +59,11 @@ use spacetimedb::{reducer, Identity, ReducerContext, Table};
 
 use crate::rows::{
     equipment_from_rows, equipment_to_rows, inventory_from_rows, inventory_to_rows,
-    known_glyphs_from_rows, HotbarRow,
+    known_ancient_language_from_rows, known_glyphs_from_rows, HotbarRow,
 };
 use crate::tables::{
-    equipment, hotbar, inventory, known_glyphs, player, EquipmentTable, Hotbar, InventoryTable,
+    equipment, hotbar, inventory, known_ancient_language, known_glyphs, player, EquipmentTable,
+    Hotbar, InventoryTable,
 };
 
 // ---------------------------------------------------------------------------
@@ -99,6 +105,11 @@ fn modifier_registry() -> &'static ModifierRegistry {
 fn ancient_word_registry() -> &'static AncientWordRegistry {
     static REGISTRY: OnceLock<AncientWordRegistry> = OnceLock::new();
     REGISTRY.get_or_init(bevymmo_domain::content::ancient_words::default_ancient_words)
+}
+
+fn root_word_registry() -> &'static RootWordRegistry {
+    static REGISTRY: OnceLock<RootWordRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(bevymmo_domain::content::root_words::default_root_words)
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +377,226 @@ pub fn set_inscription(
 
     // Nothing derived changes: an Incisione alters what a gesture manifests, not
     // the item's passive stat bonuses nor which spells it offers.
+    Ok(())
+}
+
+/// Writes the new RootWord-based inscription for the equipped weapon.
+///
+/// This reducer is additive to [`set_inscription`]. It persists only the new
+/// `root_inscription` field, so legacy characters can be migrated without
+/// rewriting their old data. All derived spell values remain server-owned.
+#[reducer]
+pub fn set_root_inscription(
+    ctx: &ReducerContext,
+    root_word: Option<String>,
+    primary_words: Vec<String>,
+    secondary_words: Vec<String>,
+    ultimate_words: Vec<String>,
+) -> Result<(), String> {
+    let identity = ctx.sender();
+    let mut equipment = load_equipment(ctx, identity)?;
+    let weapon = equipment
+        .get(EquipSlot::Weapon)
+        .clone()
+        .ok_or_else(|| "no weapon equipped".to_string())?;
+    let item = item_registry()
+        .get(&weapon.item_id)
+        .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
+    let abilities = item
+        .ability_loadout()
+        .ok_or_else(|| format!("{:?} has no ability loadout", weapon.item_id.as_str()))?;
+    let profile = item
+        .rune_profile()
+        .ok_or_else(|| format!("{:?} has no rune profile", weapon.item_id.as_str()))?;
+
+    let known = ctx
+        .db
+        .known_ancient_language()
+        .identity()
+        .find(&identity)
+        .map(|row| known_ancient_language_from_rows(&row.root_words, &row.ancient_words, &row.base_abilities))
+        .ok_or_else(|| "ancient language has not been initialized for this character".to_string())?;
+
+    let root_id = root_word.map(RootWordId::new);
+    let root_cost = match &root_id {
+        Some(id) => {
+            if !known.knows_root_word(id) {
+                return Err(format!("Root Word {:?} is not known", id.as_str()));
+            }
+            root_word_registry()
+                .get(id)
+                .ok_or_else(|| format!("unknown Root Word {:?}", id.as_str()))?
+                .metadata()
+                .rune_cost
+        }
+        None => 0,
+    };
+
+    let slot_inputs = [
+        (AbilitySlot::Primary, primary_words, 2usize),
+        (AbilitySlot::Secondary, secondary_words, 2usize),
+        (AbilitySlot::Ultimate, ultimate_words, 1usize),
+    ];
+    let mut total_cost = root_cost;
+    let mut slots = [SlotInscription::default(), SlotInscription::default(), SlotInscription::default()];
+
+    for (index, (slot, word_ids, max_words)) in slot_inputs.into_iter().enumerate() {
+        if word_ids.len() > max_words {
+            return Err(format!("{slot:?} accepts at most {max_words} Ancient Words"));
+        }
+        let ability_id = resolve_active_ability(slot, abilities, &weapon.ability_selection)
+            .ok_or_else(|| format!("no ability offered for {slot:?}"))?;
+        let ability = ability_registry()
+            .get(ability_id)
+            .ok_or_else(|| format!("unknown ability {:?}", ability_id.as_str()))?;
+        let mut ids = HashSet::new();
+        let mut groups = HashSet::new();
+        let mut words = Vec::with_capacity(word_ids.len());
+
+        for word_id in word_ids {
+            let id = AncientWordId::new(word_id);
+            if !ids.insert(id.clone()) {
+                return Err(format!("duplicate Ancient Word {:?}", id.as_str()));
+            }
+            if !known.knows_ancient_word(&id) {
+                return Err(format!("Ancient Word {:?} is not known", id.as_str()));
+            }
+            let word = ancient_word_registry()
+                .get(&id)
+                .ok_or_else(|| format!("unknown Ancient Word {:?}", id.as_str()))?;
+            let metadata = word.metadata();
+            if !metadata.is_compatible_with(ability.tags()) {
+                return Err(format!("Ancient Word {:?} is incompatible with {slot:?}", id.as_str()));
+            }
+            if let Some(group) = metadata.exclusive_group {
+                if !groups.insert(group) {
+                    return Err(format!("Ancient Word conflict in group {group:?}"));
+                }
+            }
+            total_cost += metadata.rune_cost;
+            words.push(SecondaryWord::new(id));
+        }
+        slots[index] = SlotInscription { secondary_words: words };
+    }
+
+    if total_cost > profile.capacity {
+        return Err(format!("rune capacity exceeded: {total_cost} / {}", profile.capacity));
+    }
+
+    let mut updated = weapon;
+    updated.root_inscription = Some(WeaponInscription {
+        root_word: root_id,
+        primary: slots[0].clone(),
+        secondary: slots[1].clone(),
+        ultimate: slots[2].clone(),
+    });
+    *equipment.get_mut(EquipSlot::Weapon) = Some(updated);
+    store_equipment(ctx, identity, &equipment);
+    Ok(())
+}
+
+/// Writes the independent inscription of an equipped armor item.
+///
+/// Armor deliberately has its own compact shape instead of pretending to have
+/// weapon Primary/Secondary/Ultimate slots. The item remains authoritative for
+/// the offered abilities; this reducer only persists the Root Word language data.
+#[reducer]
+pub fn set_armor_inscription(
+    ctx: &ReducerContext,
+    slot: String,
+    root_word: Option<String>,
+    secondary_words: Vec<String>,
+) -> Result<(), String> {
+    let identity = ctx.sender();
+    let target = parse_equip_slot(&slot)?;
+    if !matches!(target, EquipSlot::Helmet | EquipSlot::Armor | EquipSlot::Shoes) {
+        return Err("armor inscriptions are only valid for helmet, armor or shoes".to_string());
+    }
+
+    let mut equipment = load_equipment(ctx, identity)?;
+    let item_instance = equipment
+        .get(target)
+        .clone()
+        .ok_or_else(|| format!("equipment slot {slot:?} is empty"))?;
+    let item = item_registry()
+        .get(&item_instance.item_id)
+        .ok_or_else(|| format!("unknown item {:?}", item_instance.item_id.as_str()))?;
+    let abilities = item
+        .ability_loadout()
+        .ok_or_else(|| format!("{:?} has no armor abilities", item_instance.item_id.as_str()))?;
+    let profile = item
+        .rune_profile()
+        .ok_or_else(|| format!("{:?} has no rune profile", item_instance.item_id.as_str()))?;
+
+    let language_row = ctx
+        .db
+        .known_ancient_language()
+        .identity()
+        .find(&identity)
+        .ok_or_else(|| "ancient language has not been initialized".to_string())?;
+    let language = known_ancient_language_from_rows(
+        &language_row.root_words,
+        &language_row.ancient_words,
+        &language_row.base_abilities,
+    );
+
+    let root_id = root_word.map(RootWordId::new);
+    let mut total_cost = match &root_id {
+        Some(id) => {
+            if !language.knows_root_word(id) {
+                return Err(format!("Root Word {:?} is not known", id.as_str()));
+            }
+            root_word_registry()
+                .get(id)
+                .ok_or_else(|| format!("unknown Root Word {:?}", id.as_str()))?
+                .metadata()
+                .rune_cost
+        }
+        None => 0,
+    };
+
+    if secondary_words.len() > 2 {
+        return Err("armor accepts at most 2 Ancient Words".to_string());
+    }
+    let ability_id = abilities
+        .primary
+        .first()
+        .ok_or_else(|| "armor has no primary ability".to_string())?;
+    let ability = ability_registry()
+        .get(ability_id)
+        .ok_or_else(|| format!("unknown armor ability {:?}", ability_id.as_str()))?;
+    let mut seen = HashSet::new();
+    let mut words = Vec::with_capacity(secondary_words.len());
+    for word_id in secondary_words {
+        let id = AncientWordId::new(word_id);
+        if !seen.insert(id.clone()) {
+            return Err(format!("duplicate Ancient Word {:?}", id.as_str()));
+        }
+        if !language.knows_ancient_word(&id) {
+            return Err(format!("Ancient Word {:?} is not known", id.as_str()));
+        }
+        let word = ancient_word_registry()
+            .get(&id)
+            .ok_or_else(|| format!("unknown Ancient Word {:?}", id.as_str()))?;
+        let metadata = word.metadata();
+        if !metadata.is_compatible_with(ability.tags()) {
+            return Err(format!("Ancient Word {:?} is incompatible with armor", id.as_str()));
+        }
+        total_cost += metadata.rune_cost;
+        words.push(SecondaryWord::new(id));
+    }
+
+    if total_cost > profile.capacity {
+        return Err(format!("rune capacity exceeded: {total_cost} / {}", profile.capacity));
+    }
+
+    let mut updated = item_instance;
+    updated.armor_inscription = Some(ArmorInscription {
+        root_word: root_id,
+        secondary_words: words,
+    });
+    *equipment.get_mut(target) = Some(updated);
+    store_equipment(ctx, identity, &equipment);
     Ok(())
 }
 

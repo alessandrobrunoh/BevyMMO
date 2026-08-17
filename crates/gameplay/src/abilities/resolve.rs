@@ -6,8 +6,9 @@ use super::ancient_word::AncientWordRegistry;
 use super::base_ability::{AbilityParams, ArcBaseAbility, BaseAbilityRegistry};
 use super::blueprint::AbilityBlueprint;
 use super::essence::EssenceRegistry;
-use super::inscription::WeaponInscriptions;
-use super::known_glyphs::KnownGlyphs;
+use super::inscription::{ArmorInscription, WeaponInscription, WeaponInscriptions};
+use super::known_glyphs::{KnownAncientLanguage, KnownGlyphs};
+use super::root_word::RootWordRegistry;
 use super::modifier::ModifierRegistry;
 use super::slot::AbilitySlot;
 use super::weapon_abilities::{resolve_active_ability, AbilitySelection, WeaponAbilities};
@@ -24,6 +25,9 @@ pub enum CastBlockedReason {
     /// incoerenti — non dovrebbe succedere con contenuti registrati
     /// correttamente, ma viene gestito senza panic).
     MissingRegistryEntry,
+    UnknownRootWord,
+    UnknownAncientWord,
+    IncompatibleAncientWord,
 }
 
 /// Applica in sequenza i Modificatori conosciuti ai parametri base
@@ -105,6 +109,188 @@ pub fn resolve_slot_preview(
         blueprint,
         params,
     })
+}
+
+/// Resolves the additive RootWord inscription path. The legacy resolver above
+/// remains available while persisted characters migrate.
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_root_inscribed_slot(
+    slot: AbilitySlot,
+    abilities: &WeaponAbilities,
+    selection: &AbilitySelection,
+    inscription: &WeaponInscription,
+    known: &KnownAncientLanguage,
+    ability_registry: &BaseAbilityRegistry,
+    root_words: &RootWordRegistry,
+    ancient_words: &AncientWordRegistry,
+    item: Option<&dyn Item>,
+) -> Result<SlotPreview, CastBlockedReason> {
+    let Some(ability_id) = resolve_active_ability(slot, abilities, selection) else {
+        return Err(CastBlockedReason::MissingRegistryEntry);
+    };
+    let ability = ability_registry
+        .get(ability_id)
+        .ok_or(CastBlockedReason::MissingRegistryEntry)?;
+
+    if !known.knows_root_word(inscription.root_word.as_ref().ok_or(CastBlockedReason::UnknownRootWord)?) {
+        return Err(CastBlockedReason::UnknownRootWord);
+    }
+
+    let mut blueprint = match item {
+        Some(item) => item.ability_blueprint(ability.as_ref()),
+        None => ability.blueprint(),
+    };
+
+    let root_id = inscription.root_word.as_ref().ok_or(CastBlockedReason::UnknownRootWord)?;
+    let root = root_words
+        .get(root_id)
+        .ok_or(CastBlockedReason::UnknownRootWord)?;
+    let root_params = blueprint.params;
+    root.apply_to_blueprint(&mut blueprint, &root_params);
+
+    let mut words = inscription.get(slot).secondary_words.clone();
+    words.sort_by(|left, right| {
+        let left_phase = ancient_words
+            .get(&left.word_id)
+            .map(|word| word.metadata().phase)
+            .unwrap_or(u8::MAX);
+        let right_phase = ancient_words
+            .get(&right.word_id)
+            .map(|word| word.metadata().phase)
+            .unwrap_or(u8::MAX);
+        left_phase
+            .cmp(&right_phase)
+            .then_with(|| left.word_id.as_str().cmp(right.word_id.as_str()))
+    });
+
+    for secondary in words {
+        if !known.knows_ancient_word(&secondary.word_id) {
+            return Err(CastBlockedReason::UnknownAncientWord);
+        }
+        let word = ancient_words
+            .get(&secondary.word_id)
+            .ok_or(CastBlockedReason::UnknownAncientWord)?;
+        if !word.metadata().is_compatible_with(&blueprint.tags) {
+            return Err(CastBlockedReason::IncompatibleAncientWord);
+        }
+        word.transform_blueprint(&mut blueprint);
+    }
+
+    let params = blueprint.params;
+    Ok(SlotPreview {
+        ability,
+        blueprint,
+        params,
+    })
+}
+
+/// Resolves one armor ability using its independent Root Word inscription.
+/// Armor has no weapon-style slot selection: the item’s first Primary ability
+/// is the active ability for this initial cast API.
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_armor_inscribed_ability(
+    ability_id: &super::base_ability::AbilityId,
+    inscription: Option<&ArmorInscription>,
+    known: &KnownAncientLanguage,
+    ability_registry: &BaseAbilityRegistry,
+    root_words: &RootWordRegistry,
+    ancient_words: &AncientWordRegistry,
+    item: Option<&dyn Item>,
+) -> Result<SlotPreview, CastBlockedReason> {
+    let ability = ability_registry
+        .get(ability_id)
+        .ok_or(CastBlockedReason::MissingRegistryEntry)?;
+    let Some(inscription) = inscription else {
+        return Ok(SlotPreview {
+            blueprint: item
+                .map(|item| item.ability_blueprint(ability.as_ref()))
+                .unwrap_or_else(|| ability.blueprint()),
+            params: ability.base_params(),
+            ability,
+        });
+    };
+    let root_id = inscription.root_word.as_ref().ok_or(CastBlockedReason::UnknownRootWord)?;
+    if !known.knows_root_word(root_id) {
+        return Err(CastBlockedReason::UnknownRootWord);
+    }
+    let mut blueprint = item
+        .map(|item| item.ability_blueprint(ability.as_ref()))
+        .unwrap_or_else(|| ability.blueprint());
+    let root = root_words
+        .get(root_id)
+        .ok_or(CastBlockedReason::UnknownRootWord)?;
+    let root_params = blueprint.params;
+    root.apply_to_blueprint(&mut blueprint, &root_params);
+    let mut words = inscription.secondary_words.clone();
+    words.sort_by(|left, right| left.word_id.as_str().cmp(right.word_id.as_str()));
+    for secondary in words {
+        if !known.knows_ancient_word(&secondary.word_id) {
+            return Err(CastBlockedReason::UnknownAncientWord);
+        }
+        let word = ancient_words
+            .get(&secondary.word_id)
+            .ok_or(CastBlockedReason::UnknownAncientWord)?;
+        if !word.metadata().is_compatible_with(&blueprint.tags) {
+            return Err(CastBlockedReason::IncompatibleAncientWord);
+        }
+        word.transform_blueprint(&mut blueprint);
+    }
+    let params = blueprint.params;
+    Ok(SlotPreview { ability, blueprint, params })
+}
+
+/// Executes a RootWord inscription using the same preview blueprint. This is
+/// the additive cast path used once an item has migrated off the legacy model.
+#[allow(clippy::too_many_arguments)]
+pub fn cast_armor_inscribed_ability(
+    ability_id: &super::base_ability::AbilityId,
+    inscription: Option<&ArmorInscription>,
+    known: &KnownAncientLanguage,
+    ability_registry: &BaseAbilityRegistry,
+    root_words: &RootWordRegistry,
+    ancient_words: &AncientWordRegistry,
+    ctx: &mut SpellCastContext,
+    item: Option<&dyn Item>,
+) -> Result<(), CastBlockedReason> {
+    let preview = resolve_armor_inscribed_ability(
+        ability_id,
+        inscription,
+        known,
+        ability_registry,
+        root_words,
+        ancient_words,
+        item,
+    )?;
+    preview.ability.default_manifestation(&preview.params, ctx);
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn cast_root_inscribed_slot(
+    slot: AbilitySlot,
+    abilities: &WeaponAbilities,
+    selection: &AbilitySelection,
+    inscription: &WeaponInscription,
+    known: &KnownAncientLanguage,
+    ability_registry: &BaseAbilityRegistry,
+    root_words: &RootWordRegistry,
+    ancient_words: &AncientWordRegistry,
+    ctx: &mut SpellCastContext,
+    item: Option<&dyn Item>,
+) -> Result<(), CastBlockedReason> {
+    let preview = resolve_root_inscribed_slot(
+        slot,
+        abilities,
+        selection,
+        inscription,
+        known,
+        ability_registry,
+        root_words,
+        ancient_words,
+        item,
+    )?;
+    preview.ability.default_manifestation(&preview.params, ctx);
+    Ok(())
 }
 
 /// Lancia lo slot `slot` dell'arma incisa `inscriptions`.

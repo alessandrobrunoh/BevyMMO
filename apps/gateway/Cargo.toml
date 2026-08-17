@@ -1,0 +1,27 @@
+[package]
+name = "bevymmo_gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Shared app helpers: layered `config/*.toml` + path resolution. Keeps the
+# gateway consistent with `bins/game` on how settings are loaded.
+bevymmo_app_support = { path = "../../crates/app-support" }
+
+axum = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tower = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "gateway"
+path = "src/main.rs"
+
+[lints]
+workspace = true

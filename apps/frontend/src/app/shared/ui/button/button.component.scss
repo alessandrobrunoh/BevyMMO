@@ -1,0 +1,147 @@
+@use '../../../../styles/variables' as *;
+
+.eivar-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-normal);
+  user-select: none;
+  cursor: pointer;
+  outline: none;
+  border: 1px solid transparent;
+  overflow: hidden;
+
+  &.full-width {
+    width: 100%;
+  }
+
+  // Sizes
+  &.size-sm {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.78rem;
+  }
+
+  &.size-md {
+    padding: 0.65rem 1.4rem;
+    font-size: 0.88rem;
+  }
+
+  &.size-lg {
+    padding: 0.9rem 2rem;
+    font-size: 1.02rem;
+    letter-spacing: 0.1em;
+  }
+
+  .btn-content {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .spinner-rune {
+    display: inline-block;
+    animation: spinRune 1.5s linear infinite;
+    color: var(--color-rune-cyan);
+  }
+
+  // Primary Variant: Stone & Aged Metal with Subtle Gold
+  &.variant-primary {
+    background: linear-gradient(180deg, #274866 0%, #152d42 100%);
+    color: #ffffff;
+    border-color: rgba(200, 188, 165, 0.4);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+
+    &:hover:not(:disabled) {
+      transform: translateY(-2px);
+      border-color: var(--color-gold);
+      box-shadow: 0 6px 20px rgba(208, 174, 97, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(1px);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    }
+  }
+
+  // Secondary Variant: Outlined Translucent
+  &.variant-secondary {
+    background: rgba(16, 45, 71, 0.4);
+    color: var(--text-stone);
+    border-color: rgba(221, 212, 195, 0.25);
+    backdrop-filter: blur(4px);
+
+    &:hover:not(:disabled) {
+      background: rgba(22, 59, 88, 0.7);
+      color: #ffffff;
+      border-color: var(--color-sky-300);
+      transform: translateY(-2px);
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+  }
+
+  // Cyan / Runic Magic Variant
+  &.variant-cyan {
+    background: linear-gradient(180deg, #10629c 0%, #0d3859 100%);
+    color: #ffffff;
+    border-color: var(--color-rune-cyan);
+    box-shadow: 0 0 16px rgba(60, 203, 255, 0.35), inset 0 1px 0 rgba(164, 238, 255, 0.4);
+
+    &:hover:not(:disabled) {
+      background: linear-gradient(180deg, #147cc1 0%, #104b73 100%);
+      box-shadow: 0 0 24px rgba(60, 203, 255, 0.6), inset 0 1px 0 #ffffff;
+      transform: translateY(-2px);
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+  }
+
+  // Gold Variant
+  &.variant-gold {
+    background: linear-gradient(180deg, #8a6724 0%, #4a340c 100%);
+    color: #fcedcf;
+    border-color: var(--color-gold);
+    box-shadow: 0 0 14px rgba(208, 174, 97, 0.3);
+
+    &:hover:not(:disabled) {
+      border-color: var(--color-gold-light);
+      box-shadow: 0 0 22px rgba(208, 174, 97, 0.55);
+      transform: translateY(-2px);
+    }
+  }
+
+  // Ghost Variant
+  &.variant-ghost {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: transparent;
+
+    &:hover:not(:disabled) {
+      background: rgba(221, 212, 195, 0.08);
+      color: var(--text-main);
+    }
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    filter: grayscale(0.5);
+  }
+}
+
+@keyframes spinRune {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

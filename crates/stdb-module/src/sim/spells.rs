@@ -120,6 +120,11 @@ pub fn ancient_words() -> &'static AncientWordRegistry {
     REGISTRY.get_or_init(bevymmo_domain::content::ancient_words::default_ancient_words)
 }
 
+pub fn root_words() -> &'static bevymmo_domain::abilities::RootWordRegistry {
+    static REGISTRY: OnceLock<bevymmo_domain::abilities::RootWordRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(bevymmo_domain::content::root_words::default_root_words)
+}
+
 /// The item catalogue, needed to read the equipped weapon's Eidolon gestures.
 ///
 /// Lives here rather than in `reducers::items` because the spell path is its
@@ -312,12 +317,16 @@ pub fn fire_eidolon_ability(
     ability_id_str: &str,
     target_position: Option<Vec3>,
     target_entity: Option<u64>,
+    source: CastSourceRow,
 ) -> Option<f32> {
     use bevymmo_domain::abilities::{
-        cast_inscribed_slot, resolve_active_ability, AbilitySlot,
+        cast_inscribed_slot, cast_root_inscribed_slot, resolve_active_ability,
+        resolve_root_inscribed_slot, resolve_slot_preview, AbilitySlot,
     };
-    use crate::rows::{equipment_from_rows, known_glyphs_from_rows};
-    use crate::tables::{equipment, known_glyphs};
+    use crate::rows::{
+        equipment_from_rows, known_ancient_language_from_rows, known_glyphs_from_rows,
+    };
+    use crate::tables::{equipment, known_ancient_language, known_glyphs};
 
     let combat = combat_stats(ctx, caster.entity_id)?;
     let caster_position = Vec3::from(caster.position);
@@ -331,44 +340,92 @@ pub fn fire_eidolon_ability(
     // rows at all, so every one of them silently failed to fire.
     let identity = caster.owner?;
 
-    // Re-resolve equipment and weapon (must still be equipped).
+    // Re-resolve the source item. A cast can finish several ticks after it
+    // started, so equipment and inscriptions must still be valid at fire time.
     let equip_row = ctx.db.equipment().identity().find(&identity)?;
     let equipment = equipment_from_rows(&equip_row.slots);
-    let weapon = equipment.weapon.as_ref()?;
-    let item = items().get(&weapon.item_id)?;
-    let weapon_abilities = item.ability_loadout()?;
-
-    // Determine which slot this ability belongs to.
     let ability_id = bevymmo_domain::abilities::AbilityId::new(ability_id_str.to_string());
-    let slot = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate]
-        .into_iter()
-        .find(|&s| {
-            resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
-                .map_or(false, |id| id.as_str() == ability_id.as_str())
-        })?;
 
-    // Resolve inscriptions and known glyphs.
-    let known_row = ctx.db.known_glyphs().identity().find(&identity);
-    let known = known_row
-        .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
-        .unwrap_or_default();
-    let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-
-    // Build target list.
-    let preview = {
-        use bevymmo_domain::abilities::resolve_slot_preview;
-        resolve_slot_preview(
-            slot,
-            weapon_abilities,
-            &weapon.ability_selection,
-            &inscriptions,
-            &known,
-            base_abilities(),
-            modifiers(),
-            Some(item.as_ref()),
-        )
-        .ok()?
+    let (item, preview, armor_inscription) = match source {
+        CastSourceRow::Eidolon => {
+            let weapon = equipment.weapon.as_ref()?;
+            let item = items().get(&weapon.item_id)?;
+            let weapon_abilities = item.ability_loadout()?;
+            let slot = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate]
+                .into_iter()
+                .find(|&s| {
+                    resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
+                        .map_or(false, |id| id.as_str() == ability_id.as_str())
+                })?;
+            let known_row = ctx.db.known_glyphs().identity().find(&identity);
+            let known = known_row
+                .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
+                .unwrap_or_default();
+            let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
+            let preview = if let Some(root_inscription) = weapon.root_inscription.as_ref() {
+                let language_row = ctx.db.known_ancient_language().identity().find(&identity)?;
+                let language = known_ancient_language_from_rows(
+                    &language_row.root_words,
+                    &language_row.ancient_words,
+                    &language_row.base_abilities,
+                );
+                resolve_root_inscribed_slot(
+                    slot,
+                    weapon_abilities,
+                    &weapon.ability_selection,
+                    root_inscription,
+                    &language,
+                    base_abilities(),
+                    root_words(),
+                    ancient_words(),
+                    Some(item.as_ref()),
+                ).ok()?
+            } else {
+                resolve_slot_preview(
+                    slot,
+                    weapon_abilities,
+                    &weapon.ability_selection,
+                    &inscriptions,
+                    &known,
+                    base_abilities(),
+                    modifiers(),
+                    Some(item.as_ref()),
+                ).ok()?
+            };
+            (item, preview, None)
+        }
+        armor_source => {
+            use bevymmo_domain::items::EquipSlot;
+            let slot = match armor_source {
+                CastSourceRow::Helmet => EquipSlot::Helmet,
+                CastSourceRow::Armor => EquipSlot::Armor,
+                CastSourceRow::Shoes => EquipSlot::Shoes,
+                CastSourceRow::Spell => return None,
+                CastSourceRow::Eidolon => unreachable!(),
+            };
+            let armor = equipment.get(slot).as_ref()?;
+            let item = items().get(&armor.item_id)?;
+            item.ability_loadout()?.primary.iter().find(|id| id.as_str() == ability_id.as_str())?;
+            let language_row = ctx.db.known_ancient_language().identity().find(&identity)?;
+            let language = known_ancient_language_from_rows(
+                &language_row.root_words,
+                &language_row.ancient_words,
+                &language_row.base_abilities,
+            );
+            let preview = bevymmo_domain::abilities::resolve_armor_inscribed_ability(
+                &ability_id,
+                armor.armor_inscription.as_ref(),
+                &language,
+                base_abilities(),
+                root_words(),
+                ancient_words(),
+                Some(item.as_ref()),
+            ).ok()?;
+            (item, preview, armor.armor_inscription.clone())
+        }
+        CastSourceRow::Spell => return None,
     };
+
 
     let targets = potential_targets(
         ctx,
@@ -386,20 +443,57 @@ pub fn fire_eidolon_ability(
         &targets,
     );
 
-    cast_inscribed_slot(
-        slot,
-        weapon_abilities,
-        &weapon.ability_selection,
-        &inscriptions,
-        &known,
-        base_abilities(),
-        essences(),
-        modifiers(),
-        ancient_words(),
-        &mut cast_ctx,
-        Some(item.as_ref()),
-    )
-    .ok()?;
+    match source {
+        CastSourceRow::Eidolon => {
+            let equip_row = ctx.db.equipment().identity().find(&identity)?;
+            let equipment = equipment_from_rows(&equip_row.slots);
+            let weapon = equipment.weapon.as_ref()?;
+            let weapon_abilities = item.ability_loadout()?;
+            let slot = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate]
+                .into_iter()
+                .find(|&s| {
+                    resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
+                        .map_or(false, |id| id.as_str() == ability_id.as_str())
+                })?;
+            let known = ctx.db.known_glyphs().identity().find(&identity)
+                .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
+                .unwrap_or_default();
+            let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
+            if let Some(root_inscription) = weapon.root_inscription.as_ref() {
+                let language_row = ctx.db.known_ancient_language().identity().find(&identity)?;
+                let language = known_ancient_language_from_rows(
+                    &language_row.root_words,
+                    &language_row.ancient_words,
+                    &language_row.base_abilities,
+                );
+                cast_root_inscribed_slot(
+                    slot, weapon_abilities, &weapon.ability_selection, root_inscription,
+                    &language, base_abilities(), root_words(), ancient_words(),
+                    &mut cast_ctx, Some(item.as_ref()),
+                ).ok()?;
+            } else {
+                cast_inscribed_slot(
+                    slot, weapon_abilities, &weapon.ability_selection, &inscriptions, &known,
+                    base_abilities(), essences(), modifiers(), ancient_words(), &mut cast_ctx,
+                    Some(item.as_ref()),
+                ).ok()?;
+            }
+        }
+        CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes => {
+            let inscription = armor_inscription.as_ref();
+            let language_row = ctx.db.known_ancient_language().identity().find(&identity)?;
+            let language = known_ancient_language_from_rows(
+                &language_row.root_words,
+                &language_row.ancient_words,
+                &language_row.base_abilities,
+            );
+            bevymmo_domain::abilities::cast_armor_inscribed_ability(
+                &ability_id, inscription, &language, base_abilities(), root_words(),
+                ancient_words(), &mut cast_ctx, Some(item.as_ref()),
+            ).ok()?;
+        }
+        CastSourceRow::Spell => return None,
+    }
 
     apply_pending(ctx, caster.entity_id, caster_position, ability_id_str, &mut cast_ctx);
     Some(preview.ability.base_params().cooldown)
@@ -755,13 +849,13 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
             }
 
             // --- Eidolon ability paths ---
-            (CastSourceRow::Eidolon, CastKindRow::CastTime) => {
+            (source @ (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes), CastKindRow::CastTime) => {
                 let due = elapsed_seconds >= cast.required_seconds;
                 if due {
                     // Resolution may fail if equipment/selection changed during wind-up.
                     // Treat as interrupted: no effect, no cooldown (client shows cancelled bar).
                     match fire_eidolon_ability(
-                        ctx, &caster, &cast.spell_id, target_position, cast.target_entity,
+                        ctx, &caster, &cast.spell_id, target_position, cast.target_entity, cast.source,
                     ) {
                         Some(cd) => {
                             start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
@@ -781,7 +875,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                     false
                 }
             }
-            (CastSourceRow::Eidolon, CastKindRow::Channeling) => {
+            (source @ (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes), CastKindRow::Channeling) => {
                 channel_tick_accumulator += dt;
                 let interval = if cast.tick_interval_seconds > 0.0 { cast.tick_interval_seconds } else { dt.max(f32::EPSILON) };
                 while channel_tick_accumulator >= interval {
@@ -790,7 +884,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                     // Tick failures are logged but don't interrupt the channel:
                     // the player may have moved out of range or the target died,
                     // but the channel itself is still valid.
-                    if fire_eidolon_ability(ctx, &caster, &cast.spell_id, target_position, cast.target_entity).is_none() {
+                    if fire_eidolon_ability(ctx, &caster, &cast.spell_id, target_position, cast.target_entity, cast.source).is_none() {
                         log::debug!(
                             "Eidolon channel tick {:?} for entity {} failed to resolve",
                             cast.spell_id, cast.entity_id
@@ -799,7 +893,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
-            (CastSourceRow::Eidolon, CastKindRow::Charge) => {
+            (source @ (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes), CastKindRow::Charge) => {
                 // Charge accumulates while held but does NOT auto-fire.
                 // The ability fires when the player releases (release_cast reducer).
                 // If elapsed exceeds required_seconds, the charge is "full" but

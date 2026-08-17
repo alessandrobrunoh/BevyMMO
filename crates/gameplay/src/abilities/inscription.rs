@@ -5,8 +5,8 @@
 //! The new model uses [`RootWordId`] as the primary identifier, with optional
 //! secondary words for modification. This supports:
 //!
-//! - [`WeaponInscription`] — weapon inscriptions with slot-specific root words
-//! - [`AbilityInscription`] — ability-level inscriptions with secondary words
+//! - [`WeaponInscription`] — one item-level root word plus slot secondary words
+//! - [`AbilityInscription`] — ability-level secondary words
 //! - [`ItemInscription`] — enum dispatching to specific inscription types
 //!
 //! ## Legacy Model (pre-RootWord)
@@ -45,9 +45,10 @@ use super::weapon_abilities::{resolve_active_ability, AbilitySelection, WeaponAb
 /// Note: Does not derive `Eq`/`Hash` because `f32` (intensity) does not implement them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SecondaryWord {
-    pub word_id: RootWordId,
-    /// Power scaling factor for this secondary word (0.0-1.0).
-    /// Represents how strongly this word modifies the primary effect.
+    /// Secondary words belong to the universal Ancient Word vocabulary.
+    pub word_id: AncientWordId,
+    /// Optional intensity retained for the migration window. Final content
+    /// should normally encode trade-offs in the word definition itself.
     #[serde(default = "default_secondary_intensity")]
     pub intensity: f32,
 }
@@ -57,14 +58,14 @@ fn default_secondary_intensity() -> f32 {
 }
 
 impl SecondaryWord {
-    pub fn new(word_id: RootWordId) -> Self {
+    pub fn new(word_id: AncientWordId) -> Self {
         Self {
             word_id,
             intensity: default_secondary_intensity(),
         }
     }
 
-    pub fn with_intensity(word_id: RootWordId, intensity: f32) -> Self {
+    pub fn with_intensity(word_id: AncientWordId, intensity: f32) -> Self {
         Self {
             word_id,
             intensity: intensity.clamp(0.0, 1.0),
@@ -74,28 +75,17 @@ impl SecondaryWord {
 
 /// A single slot inscription using the new RootWord-based model.
 ///
-/// Each ability slot (Primary/Secondary/Ultimate) can have one primary
-/// [`RootWordId`] that defines the core identity, plus zero or more
-/// [`SecondaryWord`]s that modify its behavior.
+/// Secondary Ancient Words applied to one selected ability slot. The Root Word
+/// is stored once on [`WeaponInscription`] and is shared by all three slots.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SlotInscription {
-    /// Primary Root Word — defines what this inscription fundamentally *is*.
-    pub root_word: Option<RootWordId>,
-    /// Secondary words that modify or enhance the primary Root Word.
+    /// Secondary words that modify or enhance the item's Root Word.
     pub secondary_words: Vec<SecondaryWord>,
 }
 
 impl SlotInscription {
     pub fn is_empty(&self) -> bool {
-        self.root_word.is_none() && self.secondary_words.is_empty()
-    }
-
-    /// Create an inscription with just a primary Root Word.
-    pub fn with_root(word: RootWordId) -> Self {
-        Self {
-            root_word: Some(word),
-            secondary_words: Vec::new(),
-        }
+        self.secondary_words.is_empty()
     }
 
     /// Add a secondary word to this inscription.
@@ -111,6 +101,8 @@ impl SlotInscription {
 /// Contains one [`SlotInscription`] per ability slot.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct WeaponInscription {
+    /// One Root Word shared by Primary, Secondary and Ultimate.
+    pub root_word: Option<RootWordId>,
     pub primary: SlotInscription,
     pub secondary: SlotInscription,
     pub ultimate: SlotInscription,
@@ -135,7 +127,10 @@ impl WeaponInscription {
 
     /// Check if all slots are empty (no inscriptions at all).
     pub fn is_fresh(&self) -> bool {
-        self.primary.is_empty() && self.secondary.is_empty() && self.ultimate.is_empty()
+        self.root_word.is_none()
+            && self.primary.is_empty()
+            && self.secondary.is_empty()
+            && self.ultimate.is_empty()
     }
 }
 
@@ -146,20 +141,17 @@ impl WeaponInscription {
 /// construction and spell resolution.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AbilityInscription {
-    /// The primary Root Word defining this ability's core identity.
-    pub root_word: Option<RootWordId>,
-    /// Secondary words that modify the ability's behavior.
+    /// Secondary words that modify the item's shared Root Word for this ability.
     pub secondary_words: Vec<SecondaryWord>,
 }
 
 impl AbilityInscription {
     pub fn is_empty(&self) -> bool {
-        self.root_word.is_none() && self.secondary_words.is_empty()
+        self.secondary_words.is_empty()
     }
 
     pub fn from_slot(slot: &SlotInscription) -> Self {
         Self {
-            root_word: slot.root_word.clone(),
             secondary_words: slot.secondary_words.clone(),
         }
     }
@@ -173,6 +165,8 @@ impl AbilityInscription {
 pub enum ItemInscription {
     /// New RootWord-based weapon inscription.
     Weapon(WeaponInscription),
+    /// New independent armor inscription. Armor does not use fake Q/W/E slots.
+    Armor(ArmorInscription),
     /// Legacy Essence/Modifier/AncientWord inscription (pre-RootWord).
     Legacy(legacy::WeaponInscriptions), // Note: legacy::WeaponInscriptions is the old type
 }
@@ -181,6 +175,7 @@ impl ItemInscription {
     pub fn is_empty(&self) -> bool {
         match self {
             ItemInscription::Weapon(w) => w.is_fresh(),
+            ItemInscription::Armor(a) => a.is_empty(),
             ItemInscription::Legacy(l) => {
                 l.primary.is_empty() && l.secondary.is_empty() && l.ultimate.is_empty()
             }
@@ -190,6 +185,19 @@ impl ItemInscription {
     /// Create a new empty weapon inscription (convenience constructor).
     pub fn new_weapon() -> Self {
         ItemInscription::Weapon(WeaponInscription::default())
+    }
+}
+
+/// Independent inscription carried by Helmet, Chest and Shoes.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ArmorInscription {
+    pub root_word: Option<RootWordId>,
+    pub secondary_words: Vec<SecondaryWord>,
+}
+
+impl ArmorInscription {
+    pub fn is_empty(&self) -> bool {
+        self.root_word.is_none() && self.secondary_words.is_empty()
     }
 }
 

@@ -18,6 +18,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use super::base_ability::{AbilityParams, AbilityTag, BaseAbility};
+use super::blueprint::AbilityBlueprint;
 use crate::spells::context::SpellCastContext;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -40,6 +41,8 @@ impl From<&'static str> for AncientWordId {
 
 pub trait AncientWordEffect: Send + Sync + 'static {
     fn post_process(&self, ability: &dyn BaseAbility, params: &AbilityParams, ctx: &mut SpellCastContext);
+
+    fn transform_blueprint(&self, _blueprint: &mut AbilityBlueprint) {}
 }
 
 /// Metadati statici di un'Ancient Word.
@@ -109,6 +112,10 @@ pub trait AncientWord: Send + Sync + 'static {
     fn metadata(&self) -> AncientWordMetadata {
         AncientWordMetadata::from_legacy(self.display_name(), self.required_tag(), self.rune_cost())
     }
+
+    /// Preview-side transformation. Legacy words default to no-op until their
+    /// content is migrated from `Modifier`/post-process behavior.
+    fn transform_blueprint(&self, _blueprint: &mut AbilityBlueprint) {}
 }
 
 pub type ArcAncientWord = Arc<dyn AncientWord>;

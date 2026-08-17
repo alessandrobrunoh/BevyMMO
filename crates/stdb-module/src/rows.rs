@@ -14,10 +14,10 @@
 //! could not see inside them. These are real columns, so `spacetime sql` can.
 
 use bevymmo_domain::abilities::inscription::{
-    AbilityInscription, Inscription, SecondaryWord, SlotInscription, WeaponInscription,
-    WeaponInscriptions,
+    AbilityInscription, ArmorInscription, Inscription, SecondaryWord, SlotInscription,
+    WeaponInscription, WeaponInscriptions,
 };
-use bevymmo_domain::abilities::known_glyphs::KnownGlyphs;
+use bevymmo_domain::abilities::known_glyphs::{KnownAncientLanguage, KnownGlyphs};
 use bevymmo_domain::abilities::root_word::RootWordId;
 use bevymmo_domain::abilities::weapon_abilities::AbilitySelection;
 use bevymmo_domain::abilities::{AbilityId, AncientWordId, EssenceId, ModifierId};
@@ -291,7 +291,7 @@ impl From<&SecondaryWord> for SecondaryWordRow {
 impl From<&SecondaryWordRow> for SecondaryWord {
     fn from(s: &SecondaryWordRow) -> Self {
         SecondaryWord {
-            word_id: RootWordId::new(s.word_id.clone()),
+            word_id: AncientWordId::new(s.word_id.clone()),
             intensity: s.intensity,
         }
     }
@@ -299,16 +299,13 @@ impl From<&SecondaryWordRow> for SecondaryWord {
 
 #[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
 pub struct SlotInscriptionRow {
-    /// Primary Root Word — defines what this inscription fundamentally *is*.
-    pub root_word: Option<String>,
-    /// Secondary words that modify or enhance the primary Root Word.
+    /// Secondary words applied to the item's shared Root Word.
     pub secondary_words: Vec<SecondaryWordRow>,
 }
 
 impl From<&SlotInscription> for SlotInscriptionRow {
     fn from(s: &SlotInscription) -> Self {
         Self {
-            root_word: s.root_word.as_ref().map(|w| w.as_str().to_string()),
             secondary_words: s.secondary_words.iter().map(Into::into).collect(),
         }
     }
@@ -317,7 +314,6 @@ impl From<&SlotInscription> for SlotInscriptionRow {
 impl From<&SlotInscriptionRow> for SlotInscription {
     fn from(s: &SlotInscriptionRow) -> Self {
         SlotInscription {
-            root_word: s.root_word.clone().map(RootWordId::new),
             secondary_words: s.secondary_words.iter().map(Into::into).collect(),
         }
     }
@@ -326,6 +322,7 @@ impl From<&SlotInscriptionRow> for SlotInscription {
 /// Complete weapon inscription using the new RootWord-based model.
 #[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
 pub struct WeaponInscriptionRow {
+    pub root_word: Option<String>,
     pub primary: SlotInscriptionRow,
     pub secondary: SlotInscriptionRow,
     pub ultimate: SlotInscriptionRow,
@@ -334,6 +331,7 @@ pub struct WeaponInscriptionRow {
 impl From<&WeaponInscription> for WeaponInscriptionRow {
     fn from(w: &WeaponInscription) -> Self {
         Self {
+            root_word: w.root_word.as_ref().map(|word| word.as_str().to_string()),
             primary: (&w.primary).into(),
             secondary: (&w.secondary).into(),
             ultimate: (&w.ultimate).into(),
@@ -344,6 +342,7 @@ impl From<&WeaponInscription> for WeaponInscriptionRow {
 impl From<&WeaponInscriptionRow> for WeaponInscription {
     fn from(w: &WeaponInscriptionRow) -> Self {
         WeaponInscription {
+            root_word: w.root_word.clone().map(RootWordId::new),
             primary: (&w.primary).into(),
             secondary: (&w.secondary).into(),
             ultimate: (&w.ultimate).into(),
@@ -354,16 +353,13 @@ impl From<&WeaponInscriptionRow> for WeaponInscription {
 /// Ability-level inscription for fine-grained ability customization.
 #[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
 pub struct AbilityInscriptionRow {
-    /// The primary Root Word defining this ability's core identity.
-    pub root_word: Option<String>,
-    /// Secondary words that modify the ability's behavior.
+    /// Secondary words that modify the item's shared Root Word.
     pub secondary_words: Vec<SecondaryWordRow>,
 }
 
 impl From<&AbilityInscription> for AbilityInscriptionRow {
     fn from(a: &AbilityInscription) -> Self {
         Self {
-            root_word: a.root_word.as_ref().map(|w| w.as_str().to_string()),
             secondary_words: a.secondary_words.iter().map(Into::into).collect(),
         }
     }
@@ -372,7 +368,6 @@ impl From<&AbilityInscription> for AbilityInscriptionRow {
 impl From<&AbilityInscriptionRow> for AbilityInscription {
     fn from(a: &AbilityInscriptionRow) -> Self {
         AbilityInscription {
-            root_word: a.root_word.clone().map(RootWordId::new),
             secondary_words: a.secondary_words.iter().map(Into::into).collect(),
         }
     }
@@ -405,7 +400,31 @@ impl From<&AbilitySelectionRow> for AbilitySelection {
     }
 }
 
-/// One physical copy of an item.
+/// Independent inscription carried by an armor item.
+#[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
+pub struct ArmorInscriptionRow {
+    pub root_word: Option<String>,
+    pub secondary_words: Vec<SecondaryWordRow>,
+}
+
+impl From<&ArmorInscription> for ArmorInscriptionRow {
+    fn from(a: &ArmorInscription) -> Self {
+        Self {
+            root_word: a.root_word.as_ref().map(|word| word.as_str().to_string()),
+            secondary_words: a.secondary_words.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<&ArmorInscriptionRow> for ArmorInscription {
+    fn from(a: &ArmorInscriptionRow) -> Self {
+        Self {
+            root_word: a.root_word.clone().map(RootWordId::new),
+            secondary_words: a.secondary_words.iter().map(Into::into).collect(),
+        }
+    }
+}
+
 #[derive(SpacetimeType, Clone, Debug, PartialEq)]
 pub struct ItemInstanceRow {
     /// Zero means "not stored yet"; see [`ItemInstanceId`].
@@ -413,8 +432,10 @@ pub struct ItemInstanceRow {
     pub item_id: String,
     pub inscriptions: Option<WeaponInscriptionsRow>,
     pub ability_selection: AbilitySelectionRow,
-    /// New RootWord-based inscription model (additive to legacy `inscriptions`).
+    /// New RootWord-based weapon inscription model.
     pub root_inscription: Option<WeaponInscriptionRow>,
+    /// New independent armor inscription model.
+    pub armor_inscription: Option<ArmorInscriptionRow>,
 }
 
 impl From<&ItemInstance> for ItemInstanceRow {
@@ -425,6 +446,7 @@ impl From<&ItemInstance> for ItemInstanceRow {
             inscriptions: i.inscriptions.as_ref().map(Into::into),
             ability_selection: (&i.ability_selection).into(),
             root_inscription: i.root_inscription.as_ref().map(Into::into),
+            armor_inscription: i.armor_inscription.as_ref().map(Into::into),
         }
     }
 }
@@ -437,6 +459,7 @@ impl From<&ItemInstanceRow> for ItemInstance {
             inscriptions: i.inscriptions.as_ref().map(Into::into),
             ability_selection: (&i.ability_selection).into(),
             root_inscription: i.root_inscription.as_ref().map(Into::into),
+            armor_inscription: i.armor_inscription.as_ref().map(Into::into),
         }
     }
 }
@@ -517,6 +540,26 @@ impl From<&HotbarRow> for SpellHotbar {
             w_spell: h.w.clone().map(SpellId::new),
             e_spell: h.e.clone().map(SpellId::new),
         }
+    }
+}
+
+pub fn known_ancient_language_from_rows(
+    root_words: &[String],
+    ancient_words: &[String],
+    base_abilities: &[String],
+) -> KnownAncientLanguage {
+    KnownAncientLanguage {
+        root_words: root_words.iter().cloned().map(RootWordId::new).collect(),
+        ancient_words: ancient_words
+            .iter()
+            .cloned()
+            .map(AncientWordId::new)
+            .collect(),
+        base_abilities: base_abilities
+            .iter()
+            .cloned()
+            .map(AbilityId::new)
+            .collect(),
     }
 }
 

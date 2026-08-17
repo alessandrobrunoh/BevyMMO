@@ -2115,6 +2115,9 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
             ) {
                 <Self as crate::abilities::AncientWordEffect>::post_process(self, ability, params, ctx)
             }
+            fn transform_blueprint(&self, blueprint: &mut crate::abilities::AbilityBlueprint) {
+                <Self as crate::abilities::AncientWordEffect>::transform_blueprint(self, blueprint)
+            }
         }
 
         impl #name {

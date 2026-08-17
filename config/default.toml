@@ -23,6 +23,11 @@ server_addr = "127.0.0.1:5051"
 # Local address bound by the client (0.0.0.0:0 = ephemeral port).
 client_addr = "0.0.0.0:0"
 
+[gateway]
+# Address the HTTP gateway (apps/gateway) binds to. The Angular frontend in
+# apps/frontend talks to it; it is a facade, not the authoritative server.
+bind_addr = "127.0.0.1:8080"
+
 # NOTE: `database_url` has no default. It must be provided by:
 #   - config/development.toml or config/production.toml (local/non-sensitive values)
 #   - config/local.toml (gitignored, local secrets)

@@ -1,0 +1,150 @@
+// ============================================================
+// EIVAR ONLINE — UTILITIES & REUSABLE STYLES
+// ============================================================
+
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+
+  @media (max-width: 768px) {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+.container-narrow {
+  width: 100%;
+  max-width: var(--container-narrow);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+// Stone Chamfered Box & Surface
+.stone-panel {
+  background: linear-gradient(135deg, rgba(20, 45, 68, 0.75) 0%, rgba(13, 30, 46, 0.9) 100%);
+  border: 1px solid var(--border-stone);
+  box-shadow: var(--shadow-medium), inset 0 1px 0 rgba(221, 212, 195, 0.15);
+  border-radius: var(--radius-md);
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(221, 212, 195, 0.35), transparent);
+  }
+}
+
+.parchment-panel {
+  background: linear-gradient(180deg, rgba(241, 232, 214, 0.08) 0%, rgba(200, 188, 165, 0.03) 100%);
+  border: 1px solid rgba(221, 212, 195, 0.16);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-subtle);
+}
+
+.rune-glow-box {
+  border: 1px solid var(--border-cyan);
+  box-shadow: 0 0 16px var(--color-rune-glow-soft);
+}
+
+// Chamfered Fantasy Corner effect
+.chamfer-box {
+  clip-path: polygon(
+    0 12px,
+    12px 0,
+    calc(100% - 12px) 0,
+    100% 12px,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    12px 100%,
+    0 calc(100% - 12px)
+  );
+}
+
+.gold-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  background: rgba(208, 174, 97, 0.12);
+  border: 1px solid rgba(208, 174, 97, 0.35);
+  color: var(--text-gold);
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: var(--radius-xs);
+}
+
+.cyan-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  background: rgba(60, 203, 255, 0.1);
+  border: 1px solid rgba(60, 203, 255, 0.35);
+  color: var(--text-cyan);
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: var(--radius-xs);
+}
+
+.stone-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  background: rgba(200, 188, 165, 0.1);
+  border: 1px solid rgba(200, 188, 165, 0.2);
+  color: var(--text-stone);
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: var(--radius-xs);
+}
+
+.grid-auto-fit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-padding {
+  padding-top: 5rem;
+  padding-bottom: 5rem;
+
+  @media (max-width: 768px) {
+    padding-top: 3.5rem;
+    padding-bottom: 3.5rem;
+  }
+}

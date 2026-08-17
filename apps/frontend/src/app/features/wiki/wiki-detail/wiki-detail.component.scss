@@ -1,0 +1,417 @@
+@use '../../../../styles/variables' as *;
+
+.wiki-three-col-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr 300px;
+  gap: 2rem;
+  align-items: flex-start;
+
+  @media (max-width: 1200px) {
+    grid-template-columns: 240px 1fr;
+    .wiki-right-sidebar { display: none; }
+  }
+
+  @media (max-width: 860px) {
+    grid-template-columns: 1fr;
+    .wiki-left-nav { display: none; }
+  }
+}
+
+// Left Nav Tree
+.wiki-left-nav {
+  position: sticky;
+  top: calc(var(--header-height) + 1rem);
+
+  .left-nav-card {
+    padding: 1.25rem;
+    background: linear-gradient(180deg, #132e47 0%, #0d1e2e 100%);
+    border: 1px solid var(--border-stone);
+    max-height: 80vh;
+    overflow-y: auto;
+
+    .nav-tree-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding-bottom: 0.75rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid rgba(221, 212, 195, 0.12);
+
+      .rune { color: var(--color-rune-cyan); font-size: 1.1rem; }
+      .nav-tree-title {
+        font-family: var(--font-display);
+        font-size: 1rem;
+        font-weight: 800;
+        color: #ffffff;
+      }
+    }
+
+    .categories-tree {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+
+      .tree-category-group {
+        .tree-cat-header {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.45rem 0.65rem;
+          border-radius: var(--radius-xs);
+          font-family: var(--font-display);
+          font-size: 0.85rem;
+          font-weight: 700;
+          color: var(--text-stone);
+          transition: all var(--transition-fast);
+
+          .cat-rune { color: var(--color-rune-cyan); font-size: 0.9rem; }
+          .cat-label { flex: 1; }
+          .cat-count { font-size: 0.72rem; color: var(--text-dim); }
+
+          &:hover {
+            background: rgba(221, 212, 195, 0.08);
+            color: #ffffff;
+          }
+        }
+
+        &.active {
+          .tree-cat-header {
+            background: rgba(20, 124, 193, 0.2);
+            color: var(--color-rune-cyan);
+            border: 1px solid rgba(60, 203, 255, 0.3);
+          }
+        }
+
+        .sub-articles-list {
+          margin: 0.35rem 0 0.5rem 1.25rem;
+          padding-left: 0.5rem;
+          border-left: 1px solid rgba(60, 203, 255, 0.2);
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+
+          .sub-art-link {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            padding: 0.25rem 0.4rem;
+            border-radius: 2px;
+            transition: all var(--transition-fast);
+
+            .bullet { color: var(--color-gold); font-size: 0.9rem; }
+
+            &:hover {
+              color: #ffffff;
+              background: rgba(221, 212, 195, 0.06);
+            }
+
+            &.active {
+              color: var(--color-rune-cyan);
+              font-weight: 600;
+            }
+          }
+        }
+      }
+    }
+
+    .nav-footer-btn {
+      margin-top: 1.5rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid rgba(221, 212, 195, 0.1);
+
+      .back-overview-link {
+        font-family: var(--font-display);
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--text-gold);
+        &:hover { color: #ffffff; }
+      }
+    }
+  }
+}
+
+// Center Content
+.wiki-center-article {
+  .article-inner-panel {
+    padding: 2.5rem;
+    background: rgba(13, 30, 46, 0.75);
+    border: 1px solid var(--border-stone);
+    border-radius: var(--radius-md);
+
+    @media (max-width: 640px) {
+      padding: 1.5rem;
+    }
+
+    .article-lead-header {
+      margin-bottom: 2rem;
+
+      .art-h1 {
+        font-family: var(--font-display);
+        font-size: 2.2rem;
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.04em;
+        line-height: 1.2;
+      }
+
+      .last-updated {
+        font-size: 0.8rem;
+        color: var(--text-dim);
+        display: block;
+        margin: 0.4rem 0 1.25rem 0;
+      }
+
+      .overview-text {
+        font-size: 1.12rem;
+        line-height: 1.75;
+        color: var(--text-stone);
+      }
+    }
+
+    .mobile-infobox-wrapper {
+      display: none;
+      margin: 1.5rem 0;
+
+      @media (max-width: 1200px) {
+        display: block;
+      }
+    }
+
+    .wiki-sub-section {
+      margin-top: 2.5rem;
+
+      .section-title {
+        font-family: var(--font-display);
+        font-size: 1.4rem;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: 0.05em;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(221, 212, 195, 0.15);
+      }
+
+      .sec-paragraph {
+        font-size: 1rem;
+        line-height: 1.75;
+        color: var(--text-stone);
+        margin-bottom: 1rem;
+      }
+    }
+
+    .formulas-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.25rem;
+
+      .formula-card {
+        padding: 1.5rem;
+        background: linear-gradient(135deg, #102d47 0%, #0d1e2e 100%);
+        border: 1px solid var(--border-stone);
+
+        .f-top {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-bottom: 0.4rem;
+
+          .f-rune { color: var(--color-rune-cyan); font-size: 1.1rem; }
+          .f-title {
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+            font-weight: 800;
+            color: #ffffff;
+          }
+        }
+
+        .f-desc {
+          font-size: 0.88rem;
+          color: var(--text-muted);
+          margin-bottom: 1rem;
+        }
+
+        .f-ingredients {
+          display: flex;
+          flex-direction: column;
+          gap: 0.4rem;
+          padding: 0.75rem 1rem;
+          background: rgba(8, 19, 29, 0.6);
+          border-radius: var(--radius-xs);
+          margin-bottom: 1rem;
+
+          .f-row {
+            display: flex;
+            gap: 0.75rem;
+            font-size: 0.85rem;
+
+            .f-label {
+              font-family: var(--font-display);
+              font-size: 0.75rem;
+              font-weight: 700;
+              color: var(--text-dim);
+              min-width: 100px;
+            }
+
+            .f-val {
+              font-weight: 600;
+            }
+          }
+        }
+
+        .f-result {
+          padding: 0.75rem 1rem;
+          background: rgba(20, 124, 193, 0.12);
+          border: 1px solid rgba(60, 203, 255, 0.25);
+          border-radius: var(--radius-xs);
+
+          .res-tag {
+            font-family: var(--font-display);
+            font-size: 0.72rem;
+            font-weight: 800;
+            color: var(--color-rune-cyan);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 0.2rem;
+          }
+
+          .res-text {
+            font-size: 0.88rem;
+            color: var(--text-main);
+            line-height: 1.5;
+          }
+        }
+      }
+    }
+
+    .wiki-table-frame {
+      overflow-x: auto;
+      margin: 1.5rem 0;
+
+      .wiki-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 0.9rem;
+
+        th {
+          font-family: var(--font-display);
+          font-weight: 800;
+          font-size: 0.8rem;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--text-gold);
+          background: rgba(8, 19, 29, 0.85);
+          padding: 0.85rem 1.25rem;
+          border-bottom: 1px solid var(--border-stone);
+        }
+
+        td {
+          padding: 0.85rem 1.25rem;
+          color: var(--text-stone);
+          border-bottom: 1px solid rgba(221, 212, 195, 0.08);
+        }
+
+        tr:hover td {
+          background: rgba(20, 124, 193, 0.08);
+          color: #ffffff;
+        }
+      }
+    }
+
+    .wiki-article-footer {
+      margin-top: 2.5rem;
+
+      .footer-related-title {
+        font-family: var(--font-display);
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--text-gold);
+        text-transform: uppercase;
+        margin-bottom: 0.75rem;
+      }
+
+      .related-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+
+        .rel-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.35rem 0.85rem;
+          background: rgba(16, 45, 71, 0.6);
+          border: 1px solid rgba(221, 212, 195, 0.2);
+          border-radius: var(--radius-xs);
+          font-size: 0.82rem;
+          color: var(--text-stone);
+          transition: all var(--transition-fast);
+
+          .chip-rune { color: var(--color-rune-cyan); }
+
+          &:hover {
+            background: rgba(20, 124, 193, 0.25);
+            border-color: var(--color-rune-cyan);
+            color: #ffffff;
+          }
+        }
+      }
+    }
+  }
+}
+
+// Right Sidebar
+.wiki-right-sidebar {
+  position: sticky;
+  top: calc(var(--header-height) + 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+
+  .toc-card {
+    padding: 1.25rem;
+    background: linear-gradient(180deg, #132e47 0%, #0d1e2e 100%);
+    border: 1px solid var(--border-stone);
+
+    .toc-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding-bottom: 0.65rem;
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid rgba(221, 212, 195, 0.12);
+
+      .rune { color: var(--color-gold); font-size: 1rem; }
+      .toc-title {
+        font-family: var(--font-display);
+        font-size: 0.92rem;
+        font-weight: 800;
+        color: #ffffff;
+      }
+    }
+
+    .toc-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+
+      li .toc-link {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        text-align: left;
+        padding: 0.25rem 0;
+        transition: all var(--transition-fast);
+        display: block;
+        width: 100%;
+
+        &:hover {
+          color: var(--color-rune-cyan);
+          transform: translateX(3px);
+        }
+      }
+    }
+  }
+}

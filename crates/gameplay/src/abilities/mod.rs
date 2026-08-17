@@ -40,8 +40,9 @@ pub use inscription::legacy::Inscription;
 pub use known_glyphs::{KnownAncientLanguage, KnownGlyphs};
 pub use modifier::{ArcModifier, Modifier, ModifierEffect, ModifierId, ModifierRegistry};
 pub use resolve::{
-    cast_inscribed_slot, resolve_ability_params, resolve_slot_preview, CastBlockedReason,
-    SlotPreview,
+    cast_armor_inscribed_ability, cast_inscribed_slot, cast_root_inscribed_slot,
+    resolve_ability_params, resolve_armor_inscribed_ability, resolve_root_inscribed_slot,
+    resolve_slot_preview, CastBlockedReason, SlotPreview,
 };
 pub use slot::AbilitySlot;
 pub use weapon_abilities::{resolve_active_ability, AbilityLoadout, AbilitySelection, WeaponAbilities};

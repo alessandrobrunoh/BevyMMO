@@ -1,0 +1,118 @@
+@use '../../../../styles/variables' as *;
+
+.account-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 0.75rem);
+  right: 0;
+  width: 270px;
+  background: linear-gradient(180deg, #132e47 0%, #0d1e2e 100%);
+  border: 1px solid var(--border-stone);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 20px rgba(60, 203, 255, 0.15);
+  z-index: 1000;
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+
+  .menu-header {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 1rem 1.25rem;
+    background: rgba(8, 19, 29, 0.75);
+    border-bottom: 1px solid rgba(221, 212, 195, 0.12);
+
+    .user-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #1f4566 0%, #102d47 100%);
+      border: 1.5px solid var(--color-rune-cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+
+      .avatar-rune {
+        color: var(--color-rune-cyan);
+        font-size: 1.2rem;
+      }
+    }
+
+    .user-details {
+      .user-name {
+        font-family: var(--font-display);
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #ffffff;
+      }
+
+      .user-rank {
+        font-size: 0.75rem;
+        color: var(--text-gold);
+        display: block;
+        margin-top: 0.1rem;
+      }
+    }
+  }
+
+  .user-currencies {
+    padding: 0.65rem 1.25rem;
+    background: rgba(16, 45, 71, 0.4);
+    border-bottom: 1px solid rgba(221, 212, 195, 0.08);
+
+    .currency-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      color: var(--text-stone);
+
+      .cur-icon {
+        color: var(--color-gold);
+      }
+
+      .cur-val {
+        font-weight: 700;
+        color: var(--text-gold);
+        margin-left: auto;
+      }
+    }
+  }
+
+  .menu-links {
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+
+    .menu-link-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0.85rem;
+      border-radius: var(--radius-xs);
+      font-size: 0.85rem;
+      color: var(--text-stone);
+      text-align: left;
+      transition: all var(--transition-fast);
+
+      &:hover {
+        background: rgba(221, 212, 195, 0.1);
+        color: #ffffff;
+        transform: translateX(3px);
+      }
+
+      &.logout-btn {
+        border-top: 1px solid rgba(221, 212, 195, 0.08);
+        margin-top: 0.3rem;
+        padding-top: 0.75rem;
+        color: #e57373;
+
+        &:hover {
+          background: rgba(229, 115, 115, 0.12);
+          color: #ff8a80;
+        }
+      }
+    }
+  }
+}

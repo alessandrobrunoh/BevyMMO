@@ -13,6 +13,8 @@ pub mod aoe_region_table;
 pub mod aoe_region_type;
 pub mod aoe_shape_row_type;
 pub mod aoe_targeting_row_type;
+pub mod armor_cast_reducer;
+pub mod armor_inscription_row_type;
 pub mod award_resonance_xp_reducer;
 pub mod boss_phase_row_type;
 pub mod boss_state_table;
@@ -58,8 +60,11 @@ pub mod inventory_table;
 pub mod inventory_table_type;
 pub mod item_instance_row_type;
 pub mod join_reducer;
+pub mod known_ancient_language_table;
+pub mod known_ancient_language_table_type;
 pub mod known_glyphs_table;
 pub mod known_glyphs_table_type;
+pub mod leave_reducer;
 pub mod modifier_kind_row_type;
 pub mod move_item_reducer;
 pub mod move_to_reducer;
@@ -81,9 +86,11 @@ pub mod resonance_type;
 pub mod respawn_reducer;
 pub mod secondary_word_row_type;
 pub mod set_ability_selection_reducer;
+pub mod set_armor_inscription_reducer;
 pub mod set_hotbar_spell_reducer;
 pub mod set_inscription_reducer;
 pub mod set_resonance_xp_reducer;
+pub mod set_root_inscription_reducer;
 pub mod slot_inscription_row_type;
 pub mod spell_visual_effect_event_type;
 pub mod spell_visual_effect_table;
@@ -108,6 +115,8 @@ pub use aoe_region_table::*;
 pub use aoe_region_type::AoeRegion;
 pub use aoe_shape_row_type::AoeShapeRow;
 pub use aoe_targeting_row_type::AoeTargetingRow;
+pub use armor_cast_reducer::armor_cast;
+pub use armor_inscription_row_type::ArmorInscriptionRow;
 pub use award_resonance_xp_reducer::award_resonance_xp;
 pub use boss_phase_row_type::BossPhaseRow;
 pub use boss_state_table::*;
@@ -153,8 +162,11 @@ pub use inventory_table::*;
 pub use inventory_table_type::InventoryTable;
 pub use item_instance_row_type::ItemInstanceRow;
 pub use join_reducer::join;
+pub use known_ancient_language_table::*;
+pub use known_ancient_language_table_type::KnownAncientLanguageTable;
 pub use known_glyphs_table::*;
 pub use known_glyphs_table_type::KnownGlyphsTable;
+pub use leave_reducer::leave;
 pub use modifier_kind_row_type::ModifierKindRow;
 pub use move_item_reducer::move_item;
 pub use move_to_reducer::move_to;
@@ -176,9 +188,11 @@ pub use resonance_type::Resonance;
 pub use respawn_reducer::respawn;
 pub use secondary_word_row_type::SecondaryWordRow;
 pub use set_ability_selection_reducer::set_ability_selection;
+pub use set_armor_inscription_reducer::set_armor_inscription;
 pub use set_hotbar_spell_reducer::set_hotbar_spell;
 pub use set_inscription_reducer::set_inscription;
 pub use set_resonance_xp_reducer::set_resonance_xp;
+pub use set_root_inscription_reducer::set_root_inscription;
 pub use slot_inscription_row_type::SlotInscriptionRow;
 pub use spell_visual_effect_event_type::SpellVisualEffectEvent;
 pub use spell_visual_effect_table::*;
@@ -204,6 +218,11 @@ pub use weapon_inscriptions_row_type::WeaponInscriptionsRow;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
+    ArmorCast {
+        armor_slot: String,
+        target_entity: Option<u64>,
+        target_position: Option<Vec3Row>,
+    },
     AwardResonanceXp {
         root_word_id: String,
         xp_amount: u64,
@@ -238,6 +257,7 @@ pub enum Reducer {
     Join {
         display_name: String,
     },
+    Leave,
     MoveItem {
         from: u8,
         to: u8,
@@ -255,6 +275,11 @@ pub enum Reducer {
         slot: String,
         ability_id: String,
     },
+    SetArmorInscription {
+        slot: String,
+        root_word: Option<String>,
+        secondary_words: Vec<String>,
+    },
     SetHotbarSpell {
         slot: String,
         spell_id: Option<String>,
@@ -270,6 +295,12 @@ pub enum Reducer {
         xp: u64,
         level: u32,
     },
+    SetRootInscription {
+        root_word: Option<String>,
+        primary_words: Vec<String>,
+        secondary_words: Vec<String>,
+        ultimate_words: Vec<String>,
+    },
     Stop,
     UnequipItem {
         slot: String,
@@ -283,6 +314,7 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
+            Reducer::ArmorCast { .. } => "armor_cast",
             Reducer::AwardResonanceXp { .. } => "award_resonance_xp",
             Reducer::CastSpell { .. } => "cast_spell",
             Reducer::EidolonCast { .. } => "eidolon_cast",
@@ -292,14 +324,17 @@ impl __sdk::Reducer for Reducer {
             Reducer::GmSetPropOverride { .. } => "gm_set_prop_override",
             Reducer::Heartbeat => "heartbeat",
             Reducer::Join { .. } => "join",
+            Reducer::Leave => "leave",
             Reducer::MoveItem { .. } => "move_item",
             Reducer::MoveTo { .. } => "move_to",
             Reducer::ReleaseCast { .. } => "release_cast",
             Reducer::Respawn => "respawn",
             Reducer::SetAbilitySelection { .. } => "set_ability_selection",
+            Reducer::SetArmorInscription { .. } => "set_armor_inscription",
             Reducer::SetHotbarSpell { .. } => "set_hotbar_spell",
             Reducer::SetInscription { .. } => "set_inscription",
             Reducer::SetResonanceXp { .. } => "set_resonance_xp",
+            Reducer::SetRootInscription { .. } => "set_root_inscription",
             Reducer::Stop => "stop",
             Reducer::UnequipItem { .. } => "unequip_item",
             _ => unreachable!(),
@@ -308,6 +343,15 @@ impl __sdk::Reducer for Reducer {
     #[allow(clippy::clone_on_copy)]
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
+            Reducer::ArmorCast {
+                armor_slot,
+                target_entity,
+                target_position,
+            } => __sats::bsatn::to_vec(&armor_cast_reducer::ArmorCastArgs {
+                armor_slot: armor_slot.clone(),
+                target_entity: target_entity.clone(),
+                target_position: target_position.clone(),
+            }),
             Reducer::AwardResonanceXp {
                 root_word_id,
                 xp_amount,
@@ -366,6 +410,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::Join { display_name } => __sats::bsatn::to_vec(&join_reducer::JoinArgs {
                 display_name: display_name.clone(),
             }),
+            Reducer::Leave => __sats::bsatn::to_vec(&leave_reducer::LeaveArgs {}),
             Reducer::MoveItem { from, to } => {
                 __sats::bsatn::to_vec(&move_item_reducer::MoveItemArgs {
                     from: from.clone(),
@@ -389,6 +434,15 @@ impl __sdk::Reducer for Reducer {
                     ability_id: ability_id.clone(),
                 })
             }
+            Reducer::SetArmorInscription {
+                slot,
+                root_word,
+                secondary_words,
+            } => __sats::bsatn::to_vec(&set_armor_inscription_reducer::SetArmorInscriptionArgs {
+                slot: slot.clone(),
+                root_word: root_word.clone(),
+                secondary_words: secondary_words.clone(),
+            }),
             Reducer::SetHotbarSpell { slot, spell_id } => {
                 __sats::bsatn::to_vec(&set_hotbar_spell_reducer::SetHotbarSpellArgs {
                     slot: slot.clone(),
@@ -414,6 +468,17 @@ impl __sdk::Reducer for Reducer {
                 root_word_id: root_word_id.clone(),
                 xp: xp.clone(),
                 level: level.clone(),
+            }),
+            Reducer::SetRootInscription {
+                root_word,
+                primary_words,
+                secondary_words,
+                ultimate_words,
+            } => __sats::bsatn::to_vec(&set_root_inscription_reducer::SetRootInscriptionArgs {
+                root_word: root_word.clone(),
+                primary_words: primary_words.clone(),
+                secondary_words: secondary_words.clone(),
+                ultimate_words: ultimate_words.clone(),
             }),
             Reducer::Stop => __sats::bsatn::to_vec(&stop_reducer::StopArgs {}),
             Reducer::UnequipItem { slot } => {
@@ -441,6 +506,7 @@ pub struct DbUpdate {
     game_entity: __sdk::TableUpdate<GameEntity>,
     hotbar: __sdk::TableUpdate<Hotbar>,
     inventory: __sdk::TableUpdate<InventoryTable>,
+    known_ancient_language: __sdk::TableUpdate<KnownAncientLanguageTable>,
     known_glyphs: __sdk::TableUpdate<KnownGlyphsTable>,
     periodic_effect: __sdk::TableUpdate<PeriodicEffect>,
     player: __sdk::TableUpdate<Player>,
@@ -500,6 +566,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "inventory" => db_update
                     .inventory
                     .append(inventory_table::parse_table_update(table_update)?),
+                "known_ancient_language" => db_update.known_ancient_language.append(
+                    known_ancient_language_table::parse_table_update(table_update)?,
+                ),
                 "known_glyphs" => db_update
                     .known_glyphs
                     .append(known_glyphs_table::parse_table_update(table_update)?),
@@ -597,6 +666,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.inventory = cache
             .apply_diff_to_table::<InventoryTable>("inventory", &self.inventory)
             .with_updates_by_pk(|row| &row.identity);
+        diff.known_ancient_language = cache
+            .apply_diff_to_table::<KnownAncientLanguageTable>(
+                "known_ancient_language",
+                &self.known_ancient_language,
+            )
+            .with_updates_by_pk(|row| &row.identity);
         diff.known_glyphs = cache
             .apply_diff_to_table::<KnownGlyphsTable>("known_glyphs", &self.known_glyphs)
             .with_updates_by_pk(|row| &row.identity);
@@ -674,6 +749,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory" => db_update
                     .inventory
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "known_ancient_language" => db_update
+                    .known_ancient_language
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "known_glyphs" => db_update
                     .known_glyphs
@@ -763,6 +841,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "inventory" => db_update
                     .inventory
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "known_ancient_language" => db_update
+                    .known_ancient_language
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "known_glyphs" => db_update
                     .known_glyphs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -827,6 +908,7 @@ pub struct AppliedDiff<'r> {
     game_entity: __sdk::TableAppliedDiff<'r, GameEntity>,
     hotbar: __sdk::TableAppliedDiff<'r, Hotbar>,
     inventory: __sdk::TableAppliedDiff<'r, InventoryTable>,
+    known_ancient_language: __sdk::TableAppliedDiff<'r, KnownAncientLanguageTable>,
     known_glyphs: __sdk::TableAppliedDiff<'r, KnownGlyphsTable>,
     periodic_effect: __sdk::TableAppliedDiff<'r, PeriodicEffect>,
     player: __sdk::TableAppliedDiff<'r, Player>,
@@ -885,6 +967,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<GameEntity>("game_entity", &self.game_entity, event);
         callbacks.invoke_table_row_callbacks::<Hotbar>("hotbar", &self.hotbar, event);
         callbacks.invoke_table_row_callbacks::<InventoryTable>("inventory", &self.inventory, event);
+        callbacks.invoke_table_row_callbacks::<KnownAncientLanguageTable>(
+            "known_ancient_language",
+            &self.known_ancient_language,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<KnownGlyphsTable>(
             "known_glyphs",
             &self.known_glyphs,
@@ -1598,6 +1685,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         game_entity_table::register_table(client_cache);
         hotbar_table::register_table(client_cache);
         inventory_table::register_table(client_cache);
+        known_ancient_language_table::register_table(client_cache);
         known_glyphs_table::register_table(client_cache);
         periodic_effect_table::register_table(client_cache);
         player_table::register_table(client_cache);
@@ -1625,6 +1713,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "game_entity",
         "hotbar",
         "inventory",
+        "known_ancient_language",
         "known_glyphs",
         "periodic_effect",
         "player",

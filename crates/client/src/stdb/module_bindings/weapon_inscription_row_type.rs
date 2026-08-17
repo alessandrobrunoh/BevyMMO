@@ -9,6 +9,7 @@ use super::slot_inscription_row_type::SlotInscriptionRow;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct WeaponInscriptionRow {
+    pub root_word: Option<String>,
     pub primary: SlotInscriptionRow,
     pub secondary: SlotInscriptionRow,
     pub ultimate: SlotInscriptionRow,

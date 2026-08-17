@@ -1,0 +1,55 @@
+@use '../../../../styles/variables' as *;
+
+.section-heading-container {
+  margin-bottom: 2.75rem;
+
+  &.align-center {
+    text-align: center;
+    .category-badge { margin: 0 auto 0.75rem auto; }
+    .subtitle { margin-left: auto; margin-right: auto; }
+  }
+
+  &.align-left {
+    text-align: left;
+    .category-badge { margin-bottom: 0.75rem; }
+  }
+
+  .category-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.75rem;
+    background: rgba(20, 124, 193, 0.12);
+    border: 1px solid rgba(60, 203, 255, 0.3);
+    border-radius: var(--radius-xs);
+    color: var(--color-rune-cyan);
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+
+    .badge-rune {
+      font-size: 0.9rem;
+    }
+  }
+
+  .main-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.8rem, 4vw, 2.75rem);
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: #ffffff;
+    text-transform: uppercase;
+    line-height: 1.15;
+    text-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  }
+
+  .subtitle {
+    margin-top: 0.75rem;
+    font-size: 1.05rem;
+    color: var(--text-muted);
+    max-width: 680px;
+    line-height: 1.6;
+  }
+}

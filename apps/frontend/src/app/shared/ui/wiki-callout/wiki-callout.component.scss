@@ -1,0 +1,57 @@
+@use '../../../../styles/variables' as *;
+
+.wiki-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.15rem 1.4rem;
+  border-radius: var(--radius-sm);
+  margin: 1.75rem 0;
+  border: 1px solid var(--border-stone);
+  background: rgba(16, 45, 71, 0.4);
+
+  .callout-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+    margin-top: 0.1rem;
+  }
+
+  .callout-content {
+    flex: 1;
+
+    .callout-title {
+      font-family: var(--font-display);
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.3rem;
+    }
+
+    .callout-text {
+      font-size: 0.92rem;
+      color: var(--text-stone);
+      line-height: 1.55;
+    }
+  }
+
+  &.type-info {
+    border-color: rgba(60, 203, 255, 0.35);
+    background: rgba(20, 124, 193, 0.12);
+    .callout-icon { color: var(--color-rune-cyan); }
+    .callout-title { color: var(--color-rune-cyan); }
+  }
+
+  &.type-tip {
+    border-color: rgba(208, 174, 97, 0.35);
+    background: rgba(208, 174, 97, 0.1);
+    .callout-icon { color: var(--color-gold); }
+    .callout-title { color: var(--color-gold); }
+  }
+
+  &.type-warning {
+    border-color: rgba(216, 150, 53, 0.4);
+    background: rgba(216, 150, 53, 0.12);
+    .callout-icon { color: var(--color-warning); }
+    .callout-title { color: var(--color-warning); }
+  }
+}

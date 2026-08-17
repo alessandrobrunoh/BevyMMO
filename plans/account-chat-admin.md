@@ -1,7 +1,7 @@
 # Plan: Accounts, Chat, and Admin Commands
 
 **Branch**: TBD  
-**Status**: Proposed
+**Status**: Decisions confirmed (2026-08-17) — ready to start Slice 1
 
 ## Goal
 
@@ -16,8 +16,9 @@ Allow a player to create a permanent username/password account, use it from both
 - `apps/gateway` currently only exposes health/welcome endpoints.
 - `player_message` already exists as a transient SpacetimeDB event for one-shot player notifications, but it is not a chat history.
 - GM authorization currently uses the compile-time `BEVYMMO_GM_IDENTITIES` allowlist.
--
- Existing local changes must not be overwritten.
+- The bottom-left chat UI (click/Enter/Escape focus behavior) and the `send_chat_message` reducer (`$name: $message` formatting, length/content validation) already exist and work end-to-end (`crates/presentation/src/ui/chat.rs`, `crates/stdb-module/src/reducers/chat.rs`). Slice 4 only needs to add server-side rate limiting and regression coverage, not rebuild the feature.
+- The current SpacetimeDB database will be wiped immediately before Slice 1 ships; no migration path for existing identities/characters is needed.
+- Existing local changes must not be overwritten.
 
 ## Proposed architecture
 
@@ -27,16 +28,19 @@ Use the SpacetimeDB `Identity` as the authenticated connection identity and add 
 
 The Bevy client should expose explicit states such as `logged_out`, `authenticating`, `authenticated`, and `rejected`; a cached SpacetimeDB token must not be treated as the complete user-facing login model.
 
-## Decisions required before implementation
+## Decisions (confirmed 2026-08-17)
 
-1. Does “list of my accounts” mean a list of playable characters, or can one user own multiple separate game accounts?
-2. Must the Bevy client ask for username/password before entering the world?
-3. Can password recovery be deferred from the first version?
-4. Are the initial roles only `player` and `admin`, or are `moder
-ator`/`gm` also required?
-5. Should the first chat version support only global chat, or also whispers/party/guild channels?
-6. Which commands should ship first? Proposed: `notify`, then `give_item`; `teleport` and `reseed` should be added only after their permission boundaries are explicit.
-7. Should the frontend profile show playable characters, connected devices/sessions, or both?
+1. One account (email + password) can own up to 3 characters (e.g. `Galvdon1`, `Galvdon2`, `Galvdon3`). "List of my accounts" in the profile means these characters, not multiple separate game accounts.
+2. The Bevy client must authenticate with email + password before entering the world; no guest/anonymous entry.
+3. Password recovery is deferred; out of scope for this plan.
+4. Initial roles are only `player` and `admin`.
+5. First chat version is global only; party/whisper channels are a later iteration.
+6. First admin commands: `/kill <player>` (deals lethal damage through the normal combat/health path, triggering death → respawn; must never delete the character or account) and `/give <player> <item_name>`.
+7. The frontend profile shows both playable characters and connected sessions/devices.
+8. Chat rate limiting is a per-account token bucket (burst allowance, then a fixed refill rate) evaluated with `ctx.timestamp()`, not per-connection — reconnecting must not reset the limit.
+9. Command syntax uses a `/` prefix (e.g. `/kill`, `/give`); anything else is treated as normal global chat text.
+10. The existing SpacetimeDB database will be wiped immediately before Slice 1 ships. No migration path for pre-existing identities/characters is needed or should be built.
+11. The frontend needs both a login page and a dedicated register page, not login only.
 
 ## Global acceptance criteria
 
@@ -56,21 +60,22 @@ Every slice follows **RED → GREEN → MUTATE → KILL MUTANTS → REFACTOR**. 
 
 ### Slice 1: Register and authenticate an account from the game client
 
-**Value**: A player gets a permanent username/password account while retaining the secure SpacetimeDB connection identity.
+**Value**: A player gets a permanent email/password account while retaining the secure SpacetimeDB connection identity, and can create up to 3 characters under it.
 
-**Production path**: Bevy login screen → register/login reducer → persistent account and identity binding → character load/create → success or rejection feedback.
+**Production path**: Existing SpacetimeDB database is wiped (Decision 10) → Bevy login screen (email + password, register or login) → register/login reducer → persistent account and identity binding → character list/create (max 3 per account) → success or rejection feedback.
 
 **Acceptance criteria**:
 
-- Username length and normalization rules are enforced and uniqueness is case-insensitive.
+- Email format and normalization rules are enforced and uniqueness is case-insensitive.
 - Password validation and salted hash verification are enforced server-side.
-- Failed login does not reveal whether a username exists.
-- A new connection authenticated as the same account loads the same profile.
-- `join` cannot create a character for an unauthenticated account.
+- Failed login does not reveal whether an email is registered.
+- A new connection authenticated as the same account loads the same profile and character list.
+- An account cannot own more than 3 characters; creating a 4th is rejected server-side.
+- `join`/character creation cannot happen for an unauthenticated account.
 
-**RED**: Add domain tests for normalization/validation, module tests for register/login/binding, and client tests for authentication states. Cover likely mutants involving username comparison, incorrect passwords, identity binding, and duplicate registration.
+**RED**: Add domain tests for normalization/validation, module tests for register/login/binding, and client tests for authentication states. Cover likely mutants involving email comparison, incorrect passwords, identity binding, duplicate registration, and the 3-character cap (off-by-one at the boundary).
 
-**GREEN**: Add the minimal account schema, WASM-compatible password hashing, atomic reducers, and Bevy authentication state. Keep the existing GM bootstrap separate.
+**GREEN**: Add the minimal account schema, WASM-compatible password hashing, atomic reducers, character-cap enforcement, and Bevy authentication state. Keep the existing GM bootstrap separate.
 
 **MUTATE**: Run mutation testing over validation and authentication tests.
 
@@ -82,13 +87,14 @@ Every slice follows **RED → GREEN → MUTATE → KILL MUTANTS → REFACTOR**. 
 
 **Value**: The same account works on the website and the user can see their own characters/accounts instead of mock data.
 
-**Production path**: Angular form → authenticated gateway endpoint → filtered account/character query → `/profile` → logout/session expiry handling.
+**Production path**: Angular register page + login page (email + password) → authenticated gateway endpoint → filtered account/character/session query → `/profile` (characters + connected sessions) → logout/session expiry handling.
 
 **Acceptance criteria**:
 
-- The real auth service replaces `AuthMockService` for login/register.
+- The real auth service replaces `AuthMockService` for both login and register.
+- A dedicated `/register` page exists alongside `/login`.
 - Session storage and expiry behavior are explicit.
-- `/profile` returns only records belonging to the authenticated user.
+- `/profile` returns only characters and sessions belonging to the authenticated user.
 - Anonymous access redirects to `/login`.
 - Loading, validation, server errors, and logout are covered by tests.
 
@@ -116,53 +122,45 @@ Every slice follows **RED → GREEN → MUTATE → KILL MUTANTS → REFACTOR**. 
 
 **RED/GREEN/MUTATE/KILL MUTANTS**: Test player/admin identities, missing bindings, unknown roles, inverted permission checks, and the temporary `BEVYMMO_GM_IDENTITIES` bootstrap path.
 
-### Slice 4: Add the bottom-left global chat UI and system notifications
+### Slice 4: Chat rate limiting and regression coverage (UI and broadcast already exist)
 
-**Value**: Every player can communicate through a familiar in-game chat control, and gameplay systems can show targeted feedback.
+**Value**: The bottom-left chat widget, focus/submit/escape behavior, and the `send_chat_message` reducer (with `$name: $message` formatting and content validation) already exist in `crates/presentation/src/ui/chat.rs` and `crates/stdb-module/src/reducers/chat.rs`. This slice closes the remaining gap — server-side rate limiting — and locks the existing behavior down with regression tests instead of rebuilding it.
 
-**Production path**: Bottom-left chat widget → click or press **Enter** to focus the input → submit message → `send_chat_message` reducer → validated global event → every subscribed client renders `$name: $message`. Gameplay reducers emit targeted system notifications through the same notification path.
+**Production path**: `send_chat_message` reducer → per-account token bucket check (Decision 8) → validated global event → every subscribed client renders `$name: $message`. Gameplay reducers continue emitting targeted system notifications through the existing `player_message` path.
 
-**UI behavior**:
+**Already implemented (verify with regression tests, do not rebuild)**:
 
-- The chat is visible in the bottom-left of the game screen.
-- Clicking the chat area focuses the text input.
-- Pressing **Enter** focuses the input when chat is not already focused.
-- Pressing **Enter** while the input is focused submits the message.
-- Empty messages are ignored or rejected without a server call.
-- The global chat format is exactly `$name: $message`.
-- Chat input must not steal movement/gameplay keyboard controls while it is unfocused.
-- Escape or an explicit focus-loss action returns keyboard input to gameplay.
+- Bottom-left widget, click-to-focus, Enter-to-focus-when-unfocused, Enter-to-submit-when-focused, Escape-to-release-focus.
+- Empty-message client-side guard before any server call.
+- `$name: $message` formatting resolved server-side from the caller's display name.
+- Visual distinction between chat lines and system notifications (`ui/notices/systems.rs`).
 
-**Acceptance criteria**:
+**New acceptance criteria for this slice**:
 
-- A message sent by one connected player is visible to all connected players.
-- The rendered message contains the server-provided display name and validated text in `$name: $message` format.
-- Empty, oversized, and rate-limited messages are rejected safely.
-- Targeted notifications are delivered only to the intended player.
-- Offline recipients do not cause transaction failures or panics.
-- Chat and system notifications are visually distinct and do not render unsafe HTML/script.
-- Enter/focus behavior is covered without breaking movement or existing shortcuts.
+- A per-account token bucket rejects messages sent faster than the agreed burst/refill rate, without a server-side panic or transaction failure.
+- The rate-limit rejection is surfaced to the sender without affecting other players.
+- Reconnecting does not reset the rate-limit counter.
+- Targeted notifications continue to be delivered only to the intended player, including when the recipient is offline.
 
-**RED/GREEN/MUTATE/KILL MUTANTS**: Test reducer validation and broadcast behavior, then test the Bevy UI focus/submission state. Cover target isolation, length limits, rate limiting, Enter while focused/unfocused, empty submission, and input leakage into gameplay. Add an inventory notification such as “Quest item added to your inventory.”
+**RED/GREEN/MUTATE/KILL MUTANTS**: Add reducer tests for the token-bucket boundary (exactly at limit, one over, after the refill window elapses), plus regression tests for the existing focus/submit/escape/format behavior so the working UI can't silently break while this slice touches the reducer.
 
-### Slice 5: Add optional admin commands through the same chat input
+### Slice 5: Add admin commands through the same chat input
 
 **Value**: An admin can use the same bottom-left UI for debugging without exposing an arbitrary shell, SQL executor, or code evaluator; normal players continue to use it as global chat.
 
-**Production path**: Bottom-left input → command prefix/syntax (to be confirmed) → typed parser/command AST → server dispatcher → role policy → game effect → audit + chat feedback. Ordinary text continues through the global chat path.
+**Production path**: Bottom-left input → `/`-prefixed command syntax (Decision 6/9) → typed parser/command AST → server dispatcher → role policy → game effect → audit + chat feedback. Ordinary text (no `/` prefix) continues through the global chat path unchanged.
 
 **Acceptance criteria**:
 
-- Normal text is always treated as global chat.
-- Only an explicit command syntax is treated as an admin command.
-- Only authorized admins can invoke the dispatcher.
-- Invalid commands have no side effects and return safe usage feedback.
-- `notify <player> <text>` delivers a targeted notification.
-- `give_item` validates item id and quantity and updates inventory atomically.
-- Each command records actor, normalized command, result, and timestamp without passwords or tokens.
+- Normal text is always treated as global chat; only text starting with `/` is parsed as a command.
+- Only authorized admins can invoke the dispatcher; a non-admin sending `/kill ...` is rejected with no side effects, not silently posted as chat.
+- Invalid commands (unknown name, wrong arg count/type, unknown target) have no side effects and return safe usage feedback.
+- `/kill <player>` deals lethal damage through the existing combat/health path, triggering the normal death → respawn flow; it must never delete or otherwise destroy the target's character or account.
+- `/give <player> <item_name>` validates the item exists and the target exists, then updates inventory atomically.
+- Each command records actor, normalized command, target, result, and timestamp — never passwords or tokens.
 - Command responses are visible in the chat UI with a distinct system/admin style.
 
-**RED/GREEN/MUTATE/KILL MUTANTS**: Test parser, allowlist, authorization, target lookup, quantity bounds, retry behavior, transaction effects, and the distinction between normal chat and commands. The client sends structured command data; it never sends Rust code to be evaluated server-side.
+**RED/GREEN/MUTATE/KILL MUTANTS**: Test parser (prefix detection, malformed args), the admin allowlist, target lookup (missing/offline player), `/kill` routing through the real damage/respawn path (not a separate death path), `/give` item/quantity validation, and the boundary between normal chat and command parsing. The client sends structured command data; it never sends Rust code to be evaluated server-side.
 
 ## Pre-PR quality gate
 
@@ -181,7 +179,8 @@ Every slice follows **RED → GREEN → MUTATE → KILL MUTANTS → REFACTOR**. 
 - Never expose password hashes, salts, internal bindings, or unfiltered player tables to the frontend.
 - Admin commands must be a typed allowlist; never `eval`, arbitrary shell, arbitrary SQL, or executable code from the client.
 - Chat requires content length limits, rate limiting, and safe rendering.
+- Chat rate limiting is per-account (Decision 8), not per-connection, so it cannot be bypassed by reconnecting.
 
 ---
 
-This plan remains **Proposed** until the open decisions and Slice 1 acceptance criteria are confirmed.
+All open decisions are confirmed as of 2026-08-17 (see "Decisions" above). This plan is ready to start Slice 1.

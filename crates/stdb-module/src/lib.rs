@@ -39,6 +39,9 @@ pub const TICK_INTERVAL_MS: u64 = 50;
 /// `MovementStats::speed` was 0.15 units per tick at a fixed 60 Hz.
 pub const DEFAULT_SPEED_PER_SECOND: f32 = 0.15 * 60.0;
 
+/// How many characters one account may own at once. See `Player::account_id`.
+pub const MAX_CHARACTERS_PER_ACCOUNT: usize = 3;
+
 /// Normalises a display name into its uniqueness key.
 pub fn normalize_name(name: &str) -> String {
     name.trim().to_lowercase()

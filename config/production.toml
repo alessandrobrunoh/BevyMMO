@@ -12,3 +12,8 @@ bind_addr = "0.0.0.0:5051"
 [client]
 # Client targets the production server.
 server_addr = "193.70.42.29:5051"
+
+[gateway]
+# Accepts connections on all interfaces inside Docker container.
+bind_addr = "0.0.0.0:8001"
+

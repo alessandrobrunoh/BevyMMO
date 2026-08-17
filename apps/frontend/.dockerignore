@@ -1,0 +1,9 @@
+node_modules
+dist
+.angular
+.npm
+.git
+.gitignore
+.editorconfig
+.prettierrc
+npm-debug.log*

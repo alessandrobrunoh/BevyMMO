@@ -103,7 +103,12 @@ impl Settings {
             .add_source(config::File::with_name("config/local").required(false))
             // Env vars override everything. `try_parsing(true)` lets
             // values like "1.0" be parsed as numbers where needed.
-            .add_source(config::Environment::default().try_parsing(true));
+            // Double underscores (e.g. `GATEWAY__BIND_ADDR`) map to nested fields.
+            .add_source(
+                config::Environment::default()
+                    .separator("__")
+                    .try_parsing(true),
+            );
 
         builder
             .build()

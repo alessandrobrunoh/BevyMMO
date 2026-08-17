@@ -1,0 +1,23 @@
+# Build artifacts
+target/
+crates/stdb-module/target/
+apps/frontend/dist/
+apps/frontend/node_modules/
+apps/frontend/.angular/
+
+# Version control and editor
+.git/
+.github/
+.vscode/
+.idea/
+.DS_Store
+
+# Local configs and secrets
+.env
+.env.local
+config/local.toml
+
+# Assets/Blender backups
+*.blend1
+*.blend2
+__pycache__/

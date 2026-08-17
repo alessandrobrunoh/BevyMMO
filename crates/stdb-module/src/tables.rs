@@ -43,20 +43,80 @@ pub fn grid_cell(position: Vec3Row) -> (i32, i32) {
 }
 
 // ---------------------------------------------------------------------------
+// Persistent: accounts
+// ---------------------------------------------------------------------------
+
+/// What an account is allowed to do. Everyone starts as `Player`; promotion to
+/// `Admin` is itself a protected, audited reducer call (Slice 3), never a
+/// value a client can set on itself.
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoleRow {
+    Player,
+    Admin,
+}
+
+/// A permanent login: one email, one password hash, up to
+/// [`crate::MAX_CHARACTERS_PER_ACCOUNT`] characters (see `Player::account_id`).
+///
+/// Deliberately holds no gameplay state of its own — that stays on `Player`
+/// rows, keyed by `account_id` — so an account is exactly the credential plus
+/// the role, and nothing about it needs to change when a character does.
+#[table(accessor = account, public)]
+pub struct Account {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    /// Lowercased, trimmed uniqueness key. See `reducers::account::normalize_email`.
+    #[unique]
+    pub normalized_email: String,
+    /// As the player typed it, for their own profile display.
+    pub email: String,
+    /// Argon2id PHC string (algorithm, salt and hash together) — never the
+    /// plaintext, and never a fast unsalted digest. See `reducers::account`.
+    pub password_hash: String,
+    pub role: RoleRow,
+    pub created_at: Timestamp,
+}
+
+/// Binds one live connection to the account that authenticated it, and to
+/// whichever character (if any) that connection is currently playing.
+///
+/// Rows here are ephemeral — deleted on `client_disconnected` and on
+/// `logout` — unlike `Account`/`Player`, which outlive every session. The
+/// SpacetimeDB `Identity` is a per-connection credential, not a login: this is
+/// the only path a reducer has from `ctx.sender()` to an account, and from
+/// there to a character.
+#[table(accessor = session, public)]
+pub struct Session {
+    #[primary_key]
+    pub identity: Identity,
+    #[index(btree)]
+    pub account_id: u64,
+    /// `None` until `join` selects or creates a character for this session.
+    #[index(btree)]
+    pub character_id: Option<u64>,
+    pub authenticated_at: Timestamp,
+}
+
+// ---------------------------------------------------------------------------
 // Persistent: the character
 // ---------------------------------------------------------------------------
 
-/// A player character. Keyed by `Identity`, not by name.
+/// A player character, owned by an [`Account`].
 ///
-/// The Bevy/Postgres server keyed characters on a normalised name, which meant
-/// anyone who knew a name could log in as that character (netcode ran with an
-/// all-zero private key, so there was nothing else to check). `Identity` is
-/// assigned and verified by SpacetimeDB, so that hole closes by construction;
-/// the name survives as a display label that happens to be unique.
+/// Up to [`crate::MAX_CHARACTERS_PER_ACCOUNT`] rows share an `account_id`.
+/// `character_id` is stable regardless of which connection, if any, is
+/// currently playing the character — see `Session` for that binding — which is
+/// what makes more than one character per account possible: an `Identity` can
+/// be only one `Session.character_id` at a time, but a `Player` row does not
+/// stop existing just because nobody is connected as it right now.
 #[table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
-    pub identity: Identity,
+    #[auto_inc]
+    pub character_id: u64,
+    #[index(btree)]
+    pub account_id: u64,
     #[unique]
     pub normalized_name: String,
     pub display_name: String,
@@ -64,8 +124,8 @@ pub struct Player {
     /// on entity ids, so the character has one like everything else.
     #[unique]
     pub entity_id: u64,
-    /// Whether a connection for this identity is currently open. Distinct from
-    /// row existence: the character outlives the session.
+    /// Whether a connection is currently playing this character. Distinct
+    /// from row existence: the character outlives the session.
     pub online: bool,
     pub last_seen: Timestamp,
 }
@@ -74,28 +134,28 @@ pub struct Player {
 #[table(accessor = player_stats, public)]
 pub struct PlayerStats {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: u64,
     pub stats: StatsRow,
 }
 
 #[table(accessor = hotbar, public)]
 pub struct Hotbar {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: u64,
     pub slots: HotbarRow,
 }
 
 #[table(accessor = inventory, public)]
 pub struct InventoryTable {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: u64,
     pub slots: Vec<Option<ItemInstanceRow>>,
 }
 
 #[table(accessor = equipment, public)]
 pub struct EquipmentTable {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: u64,
     /// Ten slots in `rows::EQUIP_SLOTS` order.
     pub slots: Vec<Option<ItemInstanceRow>>,
 }
@@ -103,7 +163,7 @@ pub struct EquipmentTable {
 #[table(accessor = known_glyphs, public)]
 pub struct KnownGlyphsTable {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: u64,
     pub essences: Vec<String>,
     pub modifiers: Vec<String>,
     pub ancient_words: Vec<String>,
@@ -115,7 +175,7 @@ pub struct KnownGlyphsTable {
 #[table(accessor = known_ancient_language, public)]
 pub struct KnownAncientLanguageTable {
     #[primary_key]
-    pub identity: Identity,
+    pub character_id: u64,
     pub root_words: Vec<String>,
     pub ancient_words: Vec<String>,
     pub base_abilities: Vec<String>,
@@ -123,19 +183,19 @@ pub struct KnownAncientLanguageTable {
 
 /// A player's resonance (XP and level) with an Ancient Word.
 ///
-/// Keyed by auto-increment ID; the natural key `(identity, root_word_id)` is
-/// enforced unique so that a player has at most one row per word.
+/// Keyed by auto-increment ID; the natural key `(character_id, root_word_id)`
+/// is enforced unique so that a character has at most one row per word.
 #[table(
     accessor = resonance,
     public,
-    index(accessor = identity_root_word, btree(columns = [identity, root_word_id]))
+    index(accessor = character_root_word, btree(columns = [character_id, root_word_id]))
 )]
 #[derive(Clone)]
 pub struct Resonance {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
-    pub identity: Identity,
+    pub character_id: u64,
     pub root_word_id: String,
     pub xp: u64,
     pub level: u32,
@@ -225,9 +285,10 @@ pub struct GameEntity {
     #[auto_inc]
     pub entity_id: u64,
     pub kind: EntityKindRow,
-    /// Set for player characters, so a reducer can map caller to entity.
+    /// Set for player characters, so a reducer can map this entity back to
+    /// the character that owns it (see `Player::character_id`).
     #[index(btree)]
-    pub owner: Option<Identity>,
+    pub owner_character_id: Option<u64>,
     pub display_name: String,
     pub color: ColorRow,
     pub position: Vec3Row,

@@ -39,6 +39,13 @@ glam = "0.32"
 # set drags in `heapless`, which nothing here uses. See `build.rs` for why the
 # manifests are not `include_str!`-ed as JSON.
 postcard = { version = "1.1", default-features = false, features = ["alloc"] }
+# Password hashing. Compiles clean on wasm32-unknown-unknown as long as the
+# salt is never sourced from `SaltString::generate`/`OsRng` — that pulls in
+# `getrandom`, which fails to link in this sandbox (no OS entropy source, and
+# `spacetimedb` never registers a custom backend for it). The salt comes from
+# `ctx.rng()` instead — see `reducers::account`.
+argon2 = "0.5"
+password-hash = "0.5"
 
 [build-dependencies]
 # The build script runs on the host, where a filesystem and a JSON parser exist.

@@ -183,7 +183,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         }
         // The caller's own character: reactivate it and make it this
         // connection's active character.
-        select_character(ctx, existing.character_id);
+        set_active_character(ctx, Some(existing.character_id));
         ctx.db.player().character_id().update(Player {
             online: true,
             last_seen: ctx.timestamp,
@@ -290,16 +290,18 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         base_abilities: vec!["arcane_orb".to_string()],
     });
 
-    select_character(ctx, character_id);
+    set_active_character(ctx, Some(character_id));
     Ok(())
 }
 
-/// Points the caller's `Session` at `character_id`.
-fn select_character(ctx: &ReducerContext, character_id: Uuid) {
+/// Points the caller's `Session` at `character_id` (`Some`), or clears it
+/// back to `None` — one write, since "select" and "clear" were the same
+/// `Session` update with a different value for this one field.
+fn set_active_character(ctx: &ReducerContext, character_id: Option<Uuid>) {
     let identity = ctx.sender();
     if let Some(session_row) = ctx.db.session().identity().find(&identity) {
         ctx.db.session().identity().update(Session {
-            character_id: Some(character_id),
+            character_id,
             ..session_row
         });
     }
@@ -340,7 +342,7 @@ pub fn leave(ctx: &ReducerContext) -> Result<(), String> {
     });
     // Free the connection to pick or create a different character without
     // logging out of the account.
-    select_character_cleared(ctx);
+    set_active_character(ctx, None);
     Ok(())
 }
 
@@ -368,7 +370,7 @@ pub fn delete_character(ctx: &ReducerContext, character_id: Uuid) -> Result<(), 
 
     delete_character_rows(ctx, &character);
     if session_row.character_id == Some(character_id) {
-        select_character_cleared(ctx);
+        set_active_character(ctx, None);
     }
     Ok(())
 }
@@ -467,17 +469,6 @@ fn delete_character_rows(ctx: &ReducerContext, character: &Player) {
     ctx.db.hotbar().character_id().delete(&character_id);
     ctx.db.player_stats().character_id().delete(&character_id);
     ctx.db.player().character_id().delete(&character_id);
-}
-
-/// Clears the caller's `Session.character_id` back to `None`.
-fn select_character_cleared(ctx: &ReducerContext) {
-    let identity = ctx.sender();
-    if let Some(session_row) = ctx.db.session().identity().find(&identity) {
-        ctx.db.session().identity().update(Session {
-            character_id: None,
-            ..session_row
-        });
-    }
 }
 
 /// Resolves the caller's active character, if this connection is

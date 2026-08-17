@@ -63,7 +63,7 @@ use crate::rows::{
     equipment_from_rows, equipment_to_rows, inventory_from_rows, inventory_to_rows,
     known_ancient_language_from_rows, known_glyphs_from_rows, HotbarRow,
 };
-use crate::reducers::lifecycle::{caller_character, caller_entity};
+use crate::reducers::lifecycle::caller_character;
 use crate::tables::{
     equipment, game_entity, hotbar, inventory, known_ancient_language, known_glyphs, player,
     EntityKindRow, EquipmentTable, Hotbar, InventoryTable,
@@ -252,7 +252,15 @@ pub fn claim_npc_item(
     item_id: String,
 ) -> Result<(), String> {
     let character = caller_character(ctx)?;
-    let player = caller_entity(ctx)?;
+    // Derived from the already-resolved `character` instead of calling
+    // `caller_entity` (which would resolve `caller_character` a second
+    // time via `ctx.sender() -> Session -> Player`).
+    let player = ctx
+        .db
+        .game_entity()
+        .entity_id()
+        .find(&character.entity_id)
+        .ok_or_else(|| "character has no entity".to_string())?;
     let npc = ctx
         .db
         .game_entity()

@@ -8,26 +8,25 @@
 //! Free of gameplay rules — anything that runs authoritatively on the server
 //! belongs in `bevymmo_domain` — but *not* stateless: `/auth/*` holds one
 //! live SpacetimeDB connection per logged-in browser (see [`stdb::session`]
-//! for why a one-shot HTTP call to SpacetimeDB cannot substitute for one).
+//! for why a one-shot HTTP call to SpacetimeDB cannot substitute for one),
+//! and `/public/*` shares one anonymous connection through
+//! [`stdb::directory::PlayerDirectory`].
+//!
+//! The HTTP surface itself lives in [`api`], one module per area.
 
-mod auth;
+mod api;
 mod stdb;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    http::{HeaderValue, Method, StatusCode, header},
-    response::IntoResponse,
-    routing::{get, post},
-};
-use serde::Serialize;
+use axum::http::{HeaderValue, Method, header};
 use tokio::signal;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::info;
 
 use bevymmo_app_support::settings::Settings;
+use stdb::directory::PlayerDirectory;
 use stdb::session::SessionStore;
 
 #[derive(Clone)]
@@ -40,31 +39,21 @@ struct AppState {
     spacetime_uri: String,
     /// Live SpacetimeDB connections, one per authenticated web session.
     sessions: SessionStore,
+    /// The one shared connection behind `/public/*`. Connects lazily, on the
+    /// first request that needs it, so a missing SpacetimeDB at boot does not
+    /// take the whole gateway down. In an `Arc` because the store inside it
+    /// is a mutex, not clonable — cloning the handle, not the store.
+    directory: Arc<PlayerDirectory>,
     /// Whether the session cookie is marked `Secure`. See
     /// `GatewaySettings::cookie_secure`'s doc comment.
     cookie_secure: bool,
 }
 
-#[derive(Serialize)]
-struct HealthResponse {
-    status: &'static str,
-    service: &'static str,
-}
-
-#[derive(Serialize)]
-struct WelcomeResponse {
-    message: &'static str,
-    service: &'static str,
-    /// The SpacetimeDB module name the gateway is wired to. Useful to confirm
-    /// the gateway and the desktop client are pointing at the same world.
-    spacetime_module: String,
-}
-
 #[tokio::main]
 async fn main() {
-    init_tracing();
-
     let settings = Settings::load();
+    init_tracing(&settings.gateway.log_format);
+
     let bind_addr: SocketAddr = settings
         .gateway
         .bind_addr
@@ -80,13 +69,18 @@ async fn main() {
         .parse()
         .expect("gateway.cors_origin is not a valid header value");
 
+    let directory = Arc::new(PlayerDirectory::new(
+        settings.spacetime_uri.clone(),
+        settings.spacetime_module.clone(),
+    ));
     let state = AppState {
         spacetime_module: settings.spacetime_module,
         spacetime_uri: settings.spacetime_uri,
         sessions,
+        directory,
         cookie_secure: settings.gateway.cookie_secure,
     };
-    let app = build_router(state, cors_origin);
+    let app = api::router(state).layer(cors_layer(cors_origin));
 
     let listener = tokio::net::TcpListener::bind(bind_addr)
         .await
@@ -100,44 +94,36 @@ async fn main() {
         .expect("gateway server crashed");
 }
 
-fn build_router(state: AppState, cors_origin: HeaderValue) -> Router {
-    // `Any` origin is not an option: the session cookie needs
-    // `Access-Control-Allow-Credentials`, which browsers refuse to honor
-    // together with a wildcard `Access-Control-Allow-Origin`. See
-    // `GatewaySettings::cors_origin`'s doc comment.
-    let cors = CorsLayer::new()
-        .allow_origin(cors_origin)
+// `Any` origin is not an option: the session cookie needs
+// `Access-Control-Allow-Credentials`, which browsers refuse to honor
+// together with a wildcard `Access-Control-Allow-Origin`. See
+// `GatewaySettings::cors_origin`'s doc comment.
+fn cors_layer(cors_origin: HeaderValue) -> CorsLayer {
+    CorsLayer::new()
+        // Angular may move to a free port when 4200 is already occupied.
+        // Keep production restricted to the configured origin, but allow
+        // local Angular dev-server ports without falling back to `*` (which
+        // cannot be used with credentialed session cookies).
+        .allow_origin(AllowOrigin::predicate(move |origin, _| {
+            origin == cors_origin || is_local_dev_origin(origin)
+        }))
         .allow_credentials(true)
         .allow_methods([Method::GET, Method::POST])
-        .allow_headers([header::CONTENT_TYPE]);
-
-    Router::new()
-        .route("/", get(welcome))
-        .route("/health", get(health))
-        .route("/auth/register", post(auth::register))
-        .route("/auth/login", post(auth::login))
-        .route("/auth/logout", post(auth::logout))
-        .route("/profile", get(auth::profile))
-        .layer(cors)
-        .with_state(state)
+        .allow_headers([header::CONTENT_TYPE])
 }
 
-async fn welcome(State(state): State<AppState>) -> Json<WelcomeResponse> {
-    Json(WelcomeResponse {
-        message: "Welcome to the BevyMMO gateway",
-        service: "bevymmo_gateway",
-        spacetime_module: state.spacetime_module,
-    })
-}
+fn is_local_dev_origin(origin: &HeaderValue) -> bool {
+    let Ok(origin) = origin.to_str() else {
+        return false;
+    };
 
-async fn health() -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        Json(HealthResponse {
-            status: "ok",
-            service: "bevymmo_gateway",
-        }),
-    )
+    ["http://localhost:", "http://127.0.0.1:"]
+        .iter()
+        .any(|prefix| {
+            origin
+                .strip_prefix(prefix)
+                .is_some_and(|port| !port.is_empty() && port.parse::<u16>().is_ok())
+        })
 }
 
 /// Resolves on the first Ctrl+C / SIGTERM. `axum::serve` then drains in-flight
@@ -164,12 +150,20 @@ async fn shutdown_signal() {
     }
 }
 
-fn init_tracing() {
+fn init_tracing(log_format: &str) {
     use tracing_subscriber::{EnvFilter, fmt};
 
     let filter = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new("info,bevymmo_gateway=debug"))
         .expect("failed to build log filter");
 
-    fmt().with_env_filter(filter).with_target(false).init();
+    // `json`: one object per line for a collector (Loki/ELK/Datadog); the
+    // default `text` stays readable in a terminal. Unknown values fall back
+    // to text — a typo in the format must not stop the gateway from booting.
+    let format = fmt().with_env_filter(filter).with_target(false);
+    if log_format.eq_ignore_ascii_case("json") {
+        format.json().init();
+    } else {
+        format.init();
+    }
 }

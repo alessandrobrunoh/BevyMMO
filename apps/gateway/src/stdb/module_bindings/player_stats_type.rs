@@ -9,7 +9,7 @@ use super::stats_row_type::StatsRow;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PlayerStats {
-    pub character_id: u64,
+    pub character_id: __sdk::Uuid,
     pub stats: StatsRow,
 }
 
@@ -21,7 +21,7 @@ impl __sdk::InModule for PlayerStats {
 ///
 /// Provides typed access to columns for query building.
 pub struct PlayerStatsCols {
-    pub character_id: __sdk::__query_builder::Col<PlayerStats, u64>,
+    pub character_id: __sdk::__query_builder::Col<PlayerStats, __sdk::Uuid>,
     pub stats: __sdk::__query_builder::Col<PlayerStats, StatsRow>,
 }
 
@@ -39,7 +39,7 @@ impl __sdk::__query_builder::HasCols for PlayerStats {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PlayerStatsIxCols {
-    pub character_id: __sdk::__query_builder::IxCol<PlayerStats, u64>,
+    pub character_id: __sdk::__query_builder::IxCol<PlayerStats, __sdk::Uuid>,
 }
 
 impl __sdk::__query_builder::HasIxCols for PlayerStats {

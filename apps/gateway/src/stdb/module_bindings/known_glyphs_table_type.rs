@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct KnownGlyphsTable {
-    pub character_id: u64,
+    pub character_id: __sdk::Uuid,
     pub essences: Vec<String>,
     pub modifiers: Vec<String>,
     pub ancient_words: Vec<String>,
@@ -21,7 +21,7 @@ impl __sdk::InModule for KnownGlyphsTable {
 ///
 /// Provides typed access to columns for query building.
 pub struct KnownGlyphsTableCols {
-    pub character_id: __sdk::__query_builder::Col<KnownGlyphsTable, u64>,
+    pub character_id: __sdk::__query_builder::Col<KnownGlyphsTable, __sdk::Uuid>,
     pub essences: __sdk::__query_builder::Col<KnownGlyphsTable, Vec<String>>,
     pub modifiers: __sdk::__query_builder::Col<KnownGlyphsTable, Vec<String>>,
     pub ancient_words: __sdk::__query_builder::Col<KnownGlyphsTable, Vec<String>>,
@@ -43,7 +43,7 @@ impl __sdk::__query_builder::HasCols for KnownGlyphsTable {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct KnownGlyphsTableIxCols {
-    pub character_id: __sdk::__query_builder::IxCol<KnownGlyphsTable, u64>,
+    pub character_id: __sdk::__query_builder::IxCol<KnownGlyphsTable, __sdk::Uuid>,
 }
 
 impl __sdk::__query_builder::HasIxCols for KnownGlyphsTable {

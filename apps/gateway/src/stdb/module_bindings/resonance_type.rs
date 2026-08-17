@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct Resonance {
     pub id: u64,
-    pub character_id: u64,
+    pub character_id: __sdk::Uuid,
     pub root_word_id: String,
     pub xp: u64,
     pub level: u32,
@@ -23,7 +23,7 @@ impl __sdk::InModule for Resonance {
 /// Provides typed access to columns for query building.
 pub struct ResonanceCols {
     pub id: __sdk::__query_builder::Col<Resonance, u64>,
-    pub character_id: __sdk::__query_builder::Col<Resonance, u64>,
+    pub character_id: __sdk::__query_builder::Col<Resonance, __sdk::Uuid>,
     pub root_word_id: __sdk::__query_builder::Col<Resonance, String>,
     pub xp: __sdk::__query_builder::Col<Resonance, u64>,
     pub level: __sdk::__query_builder::Col<Resonance, u32>,

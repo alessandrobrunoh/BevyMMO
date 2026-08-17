@@ -19,6 +19,7 @@ services:
     environment:
       - APP_ENV=production
       - GATEWAY__BIND_ADDR=0.0.0.0:8001
+      - GATEWAY__LOG_FORMAT=json
       - SPACETIME_URI=ws://spacetimedb:3000
     depends_on:
       - spacetimedb

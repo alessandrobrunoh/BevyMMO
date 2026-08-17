@@ -20,6 +20,7 @@
 //! [`spacetimedb_sdk`]'s `run_async` for as long as the session lives — see
 //! `super::session` for how long that is and how it is torn down.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use spacetimedb_sdk::{DbContext, Table};
@@ -33,9 +34,10 @@ use super::module_bindings::{
 };
 
 /// One of the caller's own characters, for the `/profile` endpoint.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct CharacterSummary {
-    pub character_id: u64,
+    /// Serialized as a hyphenated UUID string in JSON.
+    pub character_id: uuid::Uuid,
     pub display_name: String,
     pub online: bool,
 }
@@ -70,6 +72,10 @@ fn outcome_sender(
 #[derive(Clone)]
 pub struct GatewayConnection {
     conn: Arc<DbConnection>,
+    /// Set by the background task once `run_async` returns, i.e. the socket is
+    /// gone. Read by [`Self::is_closed`] so long-lived holders (the public
+    /// directory) can tell a live cache from a dead one and reconnect.
+    closed: Arc<AtomicBool>,
 }
 
 impl GatewayConnection {
@@ -92,14 +98,17 @@ impl GatewayConnection {
             .map_err(|err| err.to_string())?;
         let conn = Arc::new(conn);
 
+        let closed = Arc::new(AtomicBool::new(false));
         let run_conn = Arc::clone(&conn);
+        let closed_flag = Arc::clone(&closed);
         tokio::spawn(async move {
             if let Err(err) = run_conn.run_async().await {
                 tracing::warn!("gateway SpacetimeDB connection ended: {err}");
             }
+            closed_flag.store(true, Ordering::Release);
         });
 
-        let this = Self { conn };
+        let this = Self { conn, closed };
         this.subscribe().await?;
         Ok(this)
     }
@@ -130,6 +139,15 @@ impl GatewayConnection {
 
         rx.await
             .map_err(|_| "subscription dropped before it applied".to_string())?
+    }
+
+    /// Whether the underlying socket has gone away. Deliberately a flag set
+    /// when `run_async` exits rather than a live check: between the socket
+    /// dropping and the runtime task observing it, readers may briefly see
+    /// stale cache contents — acceptable for a directory that only serves
+    /// already-public rows, and self-heals on the next reconnect.
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
     }
 
     /// This connection's own SpacetimeDB `Identity`, once the handshake has
@@ -167,6 +185,17 @@ impl GatewayConnection {
                 .map(character_summary)
                 .collect(),
         )
+    }
+
+    /// Every `player` row in this connection's local cache — public data, kept
+    /// live by the subscription in [`Self::subscribe`]. The backing store for
+    /// the `/public/accounts/*` endpoints; see `super::directory`.
+    ///
+    /// Collected rather than returned as an iterator: `db()` hands out an
+    /// owned handle whose borrow cannot escape this method. The table is one
+    /// row per character ever created, so the copy is not worth fighting for.
+    pub fn players(&self) -> Vec<Player> {
+        self.conn.db().player().iter().collect()
     }
 
     pub async fn register(&self, email: String, password: String) -> Result<(), String> {
@@ -215,7 +244,7 @@ impl GatewayConnection {
 
 fn character_summary(row: Player) -> CharacterSummary {
     CharacterSummary {
-        character_id: row.character_id,
+        character_id: uuid::Uuid::from_u128(row.character_id.as_u128()),
         display_name: row.display_name,
         online: row.online,
     }

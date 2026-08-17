@@ -98,6 +98,14 @@ pub struct GatewaySettings {
     /// must set this `true` once served over HTTPS.
     #[serde(default)]
     pub cookie_secure: bool,
+
+    /// Log output format: `"text"` (default, human-readable) or `"json"`
+    /// (one JSON object per line, for a log collector). Production sets
+    /// `json` via `GATEWAY__LOG_FORMAT`; an unknown value falls back to
+    /// `text` rather than refusing to boot — a wrong format must not take
+    /// the service down.
+    #[serde(default = "default_gateway_log_format")]
+    pub log_format: String,
 }
 
 impl Settings {
@@ -170,4 +178,8 @@ fn default_gateway_bind_addr() -> String {
 
 fn default_cors_origin() -> String {
     "http://localhost:4200".to_owned()
+}
+
+fn default_gateway_log_format() -> String {
+    "text".to_owned()
 }

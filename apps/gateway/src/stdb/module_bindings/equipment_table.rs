@@ -165,40 +165,9 @@ impl<'ctx> __sdk::WithUpdate for EquipmentTableHandle<'ctx> {
     }
 }
 
-/// Access to the `character_id` unique index on the table `equipment`,
-/// which allows point queries on the field of the same name
-/// via the [`EquipmentCharacterIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.equipment().character_id().find(...)`.
-pub struct EquipmentCharacterIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<EquipmentTable, u64>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> EquipmentTableHandle<'ctx> {
-    /// Get a handle on the `character_id` unique index on the table `equipment`.
-    pub fn character_id(&self) -> EquipmentCharacterIdUnique<'ctx> {
-        EquipmentCharacterIdUnique {
-            imp: self.imp.get_unique_constraint::<u64>("character_id"),
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'ctx> EquipmentCharacterIdUnique<'ctx> {
-    /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u64) -> Option<EquipmentTable> {
-        self.imp.find(col_val)
-    }
-}
-
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<EquipmentTable>("equipment");
-    _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
 }
 
 #[doc(hidden)]

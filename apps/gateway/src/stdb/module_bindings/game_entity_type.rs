@@ -14,7 +14,7 @@ use super::vec_3_row_type::Vec3Row;
 pub struct GameEntity {
     pub entity_id: u64,
     pub kind: EntityKindRow,
-    pub owner_character_id: Option<u64>,
+    pub owner_character_id: Option<__sdk::Uuid>,
     pub display_name: String,
     pub color: ColorRow,
     pub position: Vec3Row,
@@ -38,7 +38,7 @@ impl __sdk::InModule for GameEntity {
 pub struct GameEntityCols {
     pub entity_id: __sdk::__query_builder::Col<GameEntity, u64>,
     pub kind: __sdk::__query_builder::Col<GameEntity, EntityKindRow>,
-    pub owner_character_id: __sdk::__query_builder::Col<GameEntity, Option<u64>>,
+    pub owner_character_id: __sdk::__query_builder::Col<GameEntity, Option<__sdk::Uuid>>,
     pub display_name: __sdk::__query_builder::Col<GameEntity, String>,
     pub color: __sdk::__query_builder::Col<GameEntity, ColorRow>,
     pub position: __sdk::__query_builder::Col<GameEntity, Vec3Row>,
@@ -79,7 +79,7 @@ impl __sdk::__query_builder::HasCols for GameEntity {
 /// Provides typed access to indexed columns for query building.
 pub struct GameEntityIxCols {
     pub entity_id: __sdk::__query_builder::IxCol<GameEntity, u64>,
-    pub owner_character_id: __sdk::__query_builder::IxCol<GameEntity, Option<u64>>,
+    pub owner_character_id: __sdk::__query_builder::IxCol<GameEntity, Option<__sdk::Uuid>>,
 }
 
 impl __sdk::__query_builder::HasIxCols for GameEntity {

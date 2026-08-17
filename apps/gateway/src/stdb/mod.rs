@@ -8,4 +8,5 @@
 pub mod module_bindings;
 
 pub mod connection;
+pub mod directory;
 pub mod session;

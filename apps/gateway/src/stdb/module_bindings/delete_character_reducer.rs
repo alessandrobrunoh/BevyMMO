@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DeleteCharacterArgs {
-    pub character_id: u64,
+    pub character_id: __sdk::Uuid,
 }
 
 impl From<DeleteCharacterArgs> for super::Reducer {
@@ -33,7 +33,7 @@ pub trait delete_character {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_character:delete_character_then`] to run a callback after the reducer completes.
-    fn delete_character(&self, character_id: u64) -> __sdk::Result<()> {
+    fn delete_character(&self, character_id: __sdk::Uuid) -> __sdk::Result<()> {
         self.delete_character_then(character_id, |_, _| {})
     }
 
@@ -45,7 +45,7 @@ pub trait delete_character {
     ///  and its status can be observed with the `callback`.
     fn delete_character_then(
         &self,
-        character_id: u64,
+        character_id: __sdk::Uuid,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -56,7 +56,7 @@ pub trait delete_character {
 impl delete_character for super::RemoteReducers {
     fn delete_character_then(
         &self,
-        character_id: u64,
+        character_id: __sdk::Uuid,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send

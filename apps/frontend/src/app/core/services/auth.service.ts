@@ -4,7 +4,8 @@ import { firstValueFrom } from 'rxjs';
 import { API_BASE_URL } from '../config/api.config';
 
 export interface CharacterSummary {
-  character_id: number;
+  /** Hyphenated UUID string, e.g. "01890000-0000-4000-8000-000000000001". */
+  character_id: string;
   display_name: string;
   online: boolean;
 }

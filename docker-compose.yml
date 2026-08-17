@@ -9,7 +9,7 @@ services:
       - spacetime_data:/stdb
 
   gateway:
-    image: ghcr.io/alessandrobrunoh/eivar_backend:${TAG:-0.0.22}
+    image: ghcr.io/alessandrobrunoh/eivar_backend:latest
     build:
       context: .
       dockerfile: apps/gateway/Dockerfile
@@ -25,7 +25,7 @@ services:
       - spacetimedb
 
   frontend:
-    image: ghcr.io/alessandrobrunoh/eivar_frontend:${TAG:-0.0.22}
+    image: ghcr.io/alessandrobrunoh/eivar_frontend:latest
     build:
       context: apps/frontend
       dockerfile: Dockerfile

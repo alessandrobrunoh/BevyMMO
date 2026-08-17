@@ -1,20 +1,31 @@
 # Build stage
 FROM rust:1-slim-bookworm AS builder
 
+ARG GATEWAY_REPOSITORY_URL="https://github.com/alessandrobrunoh/BevyMMO.git"
+ARG GATEWAY_REPOSITORY_REF="main"
+
 WORKDIR /usr/src/app
 
-# Install compilation prerequisites
+# Install compilation prerequisites. `git` is only used when a deploy tool sends
+# `apps/gateway` as the Docker context instead of the workspace root.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
     pkg-config \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Cargo workspace configuration and source trees
-COPY Cargo.toml Cargo.lock ./
-COPY config/ ./config/
-COPY crates/ ./crates/
-COPY apps/ ./apps/
-COPY bins/ ./bins/
+# Accept both supported build contexts:
+# - repository root: used by docker-compose and local workspace builds;
+# - apps/gateway: used by some deploy tools when the resource path is nested.
+COPY . /tmp/build-context/
+RUN if [ -f /tmp/build-context/Cargo.toml ] && [ -d /tmp/build-context/crates ]; then \
+        cp -a /tmp/build-context/. /usr/src/app/; \
+    else \
+        git clone --depth 1 --branch "${GATEWAY_REPOSITORY_REF}" "${GATEWAY_REPOSITORY_URL}" /usr/src/app; \
+        rm -rf /usr/src/app/apps/gateway; \
+        mkdir -p /usr/src/app/apps/gateway; \
+        cp -a /tmp/build-context/. /usr/src/app/apps/gateway/; \
+    fi
 
 # Build gateway binary in release mode
 RUN cargo build --release --package bevymmo_gateway

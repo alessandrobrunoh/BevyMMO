@@ -38,9 +38,10 @@ use spacetimedb::{ReducerContext, Table, Uuid};
 
 use crate::rows::{equipment_from_rows, StatsRow, EQUIP_SLOTS};
 use crate::tables::{
-    boss_state, crowd_control, damage_event, entity_stats, equipment, game_entity, periodic_effect,
-    player_stats, stat_modifier, threat, BossPhaseRow, BossState, DamageEventRow, EntityKindRow,
-    EntityStateRow, EntityStats, GameEntity, ModifierKindRow, PeriodicEffect, StatModifier,
+    boss_state, crowd_control, damage_event, entity_stats, equipment, game_entity, party_member,
+    periodic_effect, player_stats, stat_modifier, threat, BossPhaseRow, BossState, DamageEventRow,
+    EntityKindRow, EntityStateRow, EntityStats, GameEntity, ModifierKindRow, PeriodicEffect,
+    StatModifier,
 };
 
 // ---------------------------------------------------------------------------
@@ -356,6 +357,15 @@ pub fn apply_damage(ctx: &ReducerContext, target: u64, source: Option<u64>, amou
         return;
     }
 
+    if let Some(source_character_id) = party_friendly_fire_attacker(ctx, &entity, source) {
+        crate::reducers::parties::notify_character(
+            ctx,
+            source_character_id,
+            "You cannot attack a party member.".to_string(),
+        );
+        return;
+    }
+
     let bundle = StatsBundleData::from(row.stats);
     let effective = damage_after_armor(amount, &bundle.combat);
     let current_health = (row.stats.current_health - effective).max(0.0);
@@ -384,6 +394,95 @@ pub fn apply_damage(ctx: &ReducerContext, target: u64, source: Option<u64>, amou
         is_healing: false,
         killed,
     });
+}
+
+/// Whether `source` is a *different* player currently in the same party as
+/// `target`, and if so, the attacker's `character_id` — so [`apply_damage`]
+/// can tell them why nothing happened.
+///
+/// Checks `target.kind` first and bails out for anything that is not
+/// [`EntityKindRow::Player`] without touching `party_member` at all: enemies,
+/// bosses, dummies and NPCs vastly outnumber players in a fight, none of them
+/// can ever be in a party, and this keeps the overwhelmingly common case —
+/// hurting a mob — free of any party lookup rather than merely fast at one.
+///
+/// Fails closed by construction: every early return is "not friendly fire,
+/// let the hit through as normal" (`None`), never "block this hit". A
+/// missing target owner, a missing source, a source that is not a player, or
+/// two players who simply are not in the same party all fall through to
+/// `None` the same way — ambiguous data can only ever mean *more* damage
+/// goes through unmodified, never less, per this plan's security
+/// requirement that this guard must not make a target invulnerable by
+/// accident.
+fn party_friendly_fire_attacker(
+    ctx: &ReducerContext,
+    target: &GameEntity,
+    source: Option<u64>,
+) -> Option<u64> {
+    if target.kind != EntityKindRow::Player {
+        return None;
+    }
+    let source_entity = source.and_then(|id| ctx.db.game_entity().entity_id().find(&id));
+    let source_character_id = source_entity.as_ref().and_then(|e| e.owner_character_id);
+
+    if !is_friendly_fire(
+        target.kind,
+        target.owner_character_id,
+        source_entity.as_ref().map(|e| e.kind),
+        source_character_id,
+        target
+            .owner_character_id
+            .and_then(|id| ctx.db.party_member().character_id().find(&id))
+            .map(|row| row.party_id),
+        source_character_id
+            .and_then(|id| ctx.db.party_member().character_id().find(&id))
+            .map(|row| row.party_id),
+    ) {
+        return None;
+    }
+    source_character_id
+}
+
+/// The pure decision behind [`party_friendly_fire_attacker`], once every row
+/// it might need has already been looked up (or found missing). Split out so
+/// the actual boundary — same character is never friendly fire, different
+/// party is not friendly fire, only the *same* party on *two different*
+/// players is — is unit-testable without a `ReducerContext`.
+///
+/// Every "I don't know" input (a `None` anywhere in `target_character_id`,
+/// `source_kind`, `source_character_id`, or either party id) resolves to
+/// `false` — not friendly fire, let the hit through. That is the fail-closed
+/// direction this plan's security requirement demands: ambiguous data must
+/// never make a target invulnerable by accident.
+fn is_friendly_fire(
+    target_kind: EntityKindRow,
+    target_character_id: Option<u64>,
+    source_kind: Option<EntityKindRow>,
+    source_character_id: Option<u64>,
+    target_party_id: Option<u64>,
+    source_party_id: Option<u64>,
+) -> bool {
+    if target_kind != EntityKindRow::Player {
+        return false;
+    }
+    let Some(target_character_id) = target_character_id else {
+        return false;
+    };
+    if source_kind != Some(EntityKindRow::Player) {
+        return false;
+    }
+    let Some(source_character_id) = source_character_id else {
+        return false;
+    };
+    if source_character_id == target_character_id {
+        // The same character hitting itself (a self-targeted spell) is not
+        // friendly fire; `apply_damage`'s existing behaviour is unaffected.
+        return false;
+    }
+    match (target_party_id, source_party_id) {
+        (Some(target_party_id), Some(source_party_id)) => target_party_id == source_party_id,
+        _ => false,
+    }
 }
 
 /// Heals `target` by `amount`, clamped to its `max_health`.
@@ -885,4 +984,119 @@ fn is_dead(ctx: &ReducerContext, entity_id: u64) -> bool {
 /// stacking duplicates the day they come from a config file.
 fn values_match(left: f32, right: f32) -> bool {
     (left - right).abs() <= f32::EPSILON
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PLAYER: EntityKindRow = EntityKindRow::Player;
+    const ENEMY: EntityKindRow = EntityKindRow::Enemy;
+
+    #[test]
+    fn two_different_players_in_the_same_party_is_friendly_fire() {
+        assert!(is_friendly_fire(
+            PLAYER,
+            Some(1),
+            Some(PLAYER),
+            Some(2),
+            Some(100),
+            Some(100),
+        ));
+    }
+
+    #[test]
+    fn two_players_in_different_parties_is_not_friendly_fire() {
+        assert!(!is_friendly_fire(
+            PLAYER,
+            Some(1),
+            Some(PLAYER),
+            Some(2),
+            Some(100),
+            Some(200),
+        ));
+    }
+
+    #[test]
+    fn a_character_hitting_itself_is_not_friendly_fire_even_in_the_same_party() {
+        assert!(!is_friendly_fire(
+            PLAYER,
+            Some(1),
+            Some(PLAYER),
+            Some(1),
+            Some(100),
+            Some(100),
+        ));
+    }
+
+    #[test]
+    fn a_non_player_target_is_never_friendly_fire() {
+        // Same party ids on both sides: if the `EntityKindRow::Player` guard
+        // were ever dropped, this would flip to `true` and a boss/dummy/enemy
+        // could suddenly become unhittable by a grouped player.
+        assert!(!is_friendly_fire(
+            ENEMY,
+            None,
+            Some(PLAYER),
+            Some(2),
+            Some(100),
+            Some(100),
+        ));
+    }
+
+    #[test]
+    fn a_non_player_source_is_never_friendly_fire() {
+        assert!(!is_friendly_fire(
+            PLAYER,
+            Some(1),
+            Some(ENEMY),
+            None,
+            Some(100),
+            Some(100),
+        ));
+    }
+
+    #[test]
+    fn damage_with_no_source_is_never_friendly_fire() {
+        assert!(!is_friendly_fire(PLAYER, Some(1), None, None, Some(100), None));
+    }
+
+    #[test]
+    fn an_ungrouped_target_is_never_friendly_fire() {
+        assert!(!is_friendly_fire(
+            PLAYER,
+            Some(1),
+            Some(PLAYER),
+            Some(2),
+            None,
+            Some(100),
+        ));
+    }
+
+    #[test]
+    fn an_ungrouped_source_is_never_friendly_fire() {
+        assert!(!is_friendly_fire(
+            PLAYER,
+            Some(1),
+            Some(PLAYER),
+            Some(2),
+            Some(100),
+            None,
+        ));
+    }
+
+    #[test]
+    fn a_player_entity_with_no_owning_character_is_never_friendly_fire() {
+        // Defensive: should not happen in practice (every `Player`-kind
+        // entity is owned), but ambiguous data must fail closed, not panic
+        // or, worse, block a legitimate hit.
+        assert!(!is_friendly_fire(
+            PLAYER,
+            None,
+            Some(PLAYER),
+            Some(2),
+            Some(100),
+            Some(100),
+        ));
+    }
 }

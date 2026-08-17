@@ -9,7 +9,7 @@ use glam::Vec3;
 use super::visuals::SpellVisualEffect;
 use crate::effects::{ApplyStatusEffect, EffectBundle, EffectContext, EffectSpec, StatusId};
 use crate::stats::components::CombatStats;
-use crate::stats::events::{ApplyStatModifierEvent, ModifierEffect, ModifierKind};
+use crate::stats::events::ApplyStatModifierEvent;
 
 /// How a spell selects its targets at cast time.
 ///
@@ -448,51 +448,6 @@ impl<'a> SpellCastContext<'a> {
             spell_id,
             effects,
         );
-    }
-
-    /// Emit an AoE with explicit targeting policy.
-    pub fn emit_aoe_with_targeting(
-        &mut self,
-        center: Vec3,
-        radius: f32,
-        shape: AoeShape,
-        duration_seconds: f32,
-        initial_delay_seconds: f32,
-        spell_id: impl Into<String>,
-        effects: Vec<EffectSpec>,
-        targeting: AoeTargeting,
-    ) {
-        self.pending_aoes.push(AoeSpawnRequest {
-            center,
-            radius,
-            shape,
-            duration_seconds,
-            initial_delay_seconds,
-            spell_id: spell_id.into(),
-            effects,
-            targeting,
-        });
-    }
-
-    /// Emit a one-shot stat modifier (buff/debuff) on a single target.
-    ///
-    /// Utility wrapper around [`ApplyStatModifierEvent`]: spells that only
-    /// need to apply a buff to caster (e.g. Swift) do not need to manually
-    /// construct the event.
-    pub fn emit_modifier(
-        &mut self,
-        target: EntityId,
-        effects: Vec<ModifierEffect>,
-        duration_seconds: Option<f32>,
-        kind: ModifierKind,
-    ) {
-        self.pending_modifiers.push(ApplyStatModifierEvent {
-            target,
-            source: Some(self.caster),
-            effects,
-            duration_seconds,
-            kind,
-        });
     }
 
     /// Emit a replicated visual effect after a successful server-side cast.

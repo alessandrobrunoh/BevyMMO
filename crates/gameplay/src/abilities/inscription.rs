@@ -64,13 +64,6 @@ impl SecondaryWord {
             intensity: default_secondary_intensity(),
         }
     }
-
-    pub fn with_intensity(word_id: AncientWordId, intensity: f32) -> Self {
-        Self {
-            word_id,
-            intensity: intensity.clamp(0.0, 1.0),
-        }
-    }
 }
 
 /// A single slot inscription using the new RootWord-based model.
@@ -148,12 +141,6 @@ pub struct AbilityInscription {
 impl AbilityInscription {
     pub fn is_empty(&self) -> bool {
         self.secondary_words.is_empty()
-    }
-
-    pub fn from_slot(slot: &SlotInscription) -> Self {
-        Self {
-            secondary_words: slot.secondary_words.clone(),
-        }
     }
 }
 

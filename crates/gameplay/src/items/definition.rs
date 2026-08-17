@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::abilities::{AbilityBlueprint, AbilityLoadout, BaseAbility, RuneProfile, WeaponAbilities};
+use crate::abilities::{AbilityBlueprint, AbilityLoadout, BaseAbility, RuneProfile};
 
 use super::components::EquipSlot;
 use super::effects::ItemEffect;
@@ -129,12 +129,6 @@ pub trait Item: Send + Sync + 'static {
         let mut blueprint = ability.blueprint();
         self.transform_ability_blueprint(&mut blueprint);
         blueprint
-    }
-
-    /// Compatibility name for the old weapon-only API.
-    #[deprecated(note = "use Item::ability_loadout")]
-    fn weapon_abilities(&self) -> Option<&WeaponAbilities> {
-        self.ability_loadout()
     }
 
     /// Capacità Runica / Stabilità / Affinità — quanto può reggere inciso.

@@ -10,7 +10,7 @@
 //!
 //! `instance_id` segue l'oggetto ovunque vada (inventario, equipaggiato,
 //! eventualmente scambiato/droppato in futuro); `inscriptions` è `None` per
-//! qualunque item che non ha `weapon_abilities()` nel proprio catalogo
+//! qualunque item che non ha `ability_loadout()` nel proprio catalogo
 //! (armor, pozioni, ...).
 
 use serde::{Deserialize, Serialize};
@@ -58,7 +58,7 @@ pub struct ItemInstance {
     pub instance_id: ItemInstanceId,
     pub item_id: ItemId,
     pub inscriptions: Option<WeaponInscriptions>,
-    /// Which of `Item::weapon_abilities()`'s Primary/Secondary options is
+    /// Which of `Item::ability_loadout()`'s Primary/Secondary options is
     /// active on THIS esemplare — `Default` (nothing picked yet) resolves to
     /// the first offered option via `abilities::resolve_active_ability`.
     #[serde(default)]

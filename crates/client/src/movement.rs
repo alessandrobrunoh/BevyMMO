@@ -4,7 +4,10 @@
 //! policy, and the shared move-towards-target stepping used by both the
 //! authoritative server system and the client-side prediction system.
 
-use bevy::prelude::{Mut, Resource, Vec3};
+use bevy::prelude::{
+    Camera, Camera3d, GlobalTransform, Mut, Query, Ray3d, Resource, Vec3, Window, With,
+};
+use bevy::window::PrimaryWindow;
 
 use bevymmo_gameplay::entity::components::EntityState;
 use bevymmo_network::network::protocol::{Inputs, LookDirection, Position};
@@ -240,6 +243,56 @@ pub fn resolve_ray_to_ground(
     }
 
     None
+}
+
+/// Casts a ray from the primary window's cursor through the first active
+/// `Camera3d`.
+///
+/// Returns `None` if there is no primary window, the cursor is outside it,
+/// no 3D camera exists, or the viewport-to-world projection fails (e.g. a
+/// zero-size viewport) — the same set of checks every mouse-click system in
+/// this crate needs before it can do anything else with the click.
+pub fn cursor_ray(
+    windows: &Query<&Window, With<PrimaryWindow>>,
+    cameras: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+) -> Option<Ray3d> {
+    let window = windows.single().ok()?;
+    let cursor_position = window.cursor_position()?;
+    let (camera, camera_transform) = cameras.iter().next()?;
+    camera.viewport_to_world(camera_transform, cursor_position).ok()
+}
+
+/// Resolves the cursor's camera ray to a world-space ground point for
+/// click-to-move.
+///
+/// Prefers the terrain surface (via [`resolve_ray_to_ground`]) when
+/// `surface_query` has one loaded; otherwise falls back to the horizontal
+/// plane at Y=0. The server ignores the client-sent Y and resolves X/Z
+/// authoritatively against its own collision data, so this only needs to
+/// land *roughly* under the cursor, not exactly on terrain.
+///
+/// This is the single implementation behind what used to be two
+/// independent copies of "read the click, ray-cast from the camera,
+/// resolve to ground" (one driving the click-feedback rings, one driving
+/// the actual move command sent to the server) plus a third, partial copy
+/// of just the camera-ray step in the targeting system.
+pub fn resolve_click_to_ground(
+    windows: &Query<&Window, With<PrimaryWindow>>,
+    cameras: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    surface_query: &ClientSurfaceQuery,
+    max_distance: f32,
+) -> Option<Vec3> {
+    let ray = cursor_ray(windows, cameras)?;
+    Some(
+        surface_query
+            .0
+            .as_ref()
+            .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, max_distance, 0.5))
+            .unwrap_or_else(|| {
+                let t = -ray.origin.y / ray.direction.y;
+                ray.origin + *ray.direction * t
+            }),
+    )
 }
 
 #[cfg(test)]

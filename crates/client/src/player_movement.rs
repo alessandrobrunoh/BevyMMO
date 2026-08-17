@@ -11,7 +11,7 @@ use bevy::color::Color;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use crate::movement::{resolve_ray_to_ground, ClientSurfaceQuery, MoveTarget};
+use crate::movement::{resolve_click_to_ground, ClientSurfaceQuery, MoveTarget};
 use bevymmo_network::network::mode;
 
 const INDICATOR_DURATION: f32 = 0.55;
@@ -36,7 +36,12 @@ impl Plugin for PlayerMovementPlugin {
 }
 
 /// Reads left click on terrain and stores the point to send to the server.
-fn select_move_target(
+///
+/// `pub(crate)` so `crate::stdb::plugin::send_move_commands` can order
+/// itself `.after()` this system: it now reads [`MoveTarget`] instead of
+/// re-resolving the click itself, so it needs this system's write for the
+/// frame to have already happened.
+pub(crate) fn select_move_target(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
@@ -58,30 +63,9 @@ fn select_move_target(
         return;
     }
 
-    let Ok(window) = windows.single() else {
+    let Some(target) = resolve_click_to_ground(&windows, &cameras, &surface_query, 300.0) else {
         return;
     };
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
-    let Some((camera, camera_transform)) = cameras.iter().next() else {
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
-        return;
-    };
-
-    // When no terrain mesh is available, fall back to a horizontal plane at Y=0.
-    // This is safe: the server ignores the client-sent Y and resolves X/Z
-    // authoritatively against its own collision data.
-    let target = surface_query
-        .0
-        .as_ref()
-        .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, 300.0, 0.5))
-        .unwrap_or_else(|| {
-            let t = -ray.origin.y / ray.direction.y;
-            ray.origin + *ray.direction * t
-        });
 
     move_target.0 = Some(target);
 

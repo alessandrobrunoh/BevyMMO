@@ -6,6 +6,7 @@ use bevy::window::PrimaryWindow;
 use bevymmo_gameplay::entity::components::GameEntity;
 use bevymmo_network::network::protocol::Position;
 use bevymmo_gameplay::stats::components::VitalStats;
+use crate::movement::cursor_ray;
 use crate::targeting::CurrentTarget;
 
 const TARGETING_RADIUS: f32 = 1.2;
@@ -82,16 +83,7 @@ pub fn select_target_with_left_click(
         return;
     }
 
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
-    let Some((camera, camera_transform)) = cameras.iter().next() else {
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
+    let Some(ray) = cursor_ray(&windows, &cameras) else {
         return;
     };
 

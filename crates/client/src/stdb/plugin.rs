@@ -44,7 +44,7 @@ use crate::app_state::{
     ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, GameScreen, Screen,
 };
 use bevymmo_gameplay::items::components::{Equipment, Inventory};
-use crate::movement::{resolve_ray_to_ground, ClientSurfaceQuery};
+use crate::movement::MoveTarget;
 use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
 use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
 use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
@@ -488,7 +488,13 @@ impl Plugin for StdbPlugin {
         );
         app.add_systems(
             Update,
-            (send_move_commands, send_combat_inputs)
+            (
+                // `select_move_target` writes the `MoveTarget` this system
+                // consumes; ordering after it keeps the value read here from
+                // the same frame's click instead of one frame stale.
+                send_move_commands.after(crate::player_movement::select_move_target),
+                send_combat_inputs,
+            )
                 .run_if(resource_exists::<StdbConnection>)
                 .run_if(in_gameplay)
                 .run_if(crate::app_state::not_typing),
@@ -1793,13 +1799,21 @@ fn finish_shutdown(
 }
 
 /// Held right mouse button sets the destination, as it always has.
+///
+/// Reads [`MoveTarget`] instead of re-resolving the click itself:
+/// `crate::player_movement::select_move_target` already casts the same
+/// camera ray to the same ground every frame the button is held, to drive
+/// the click-feedback rings. This used to be two independent copies of that
+/// raycast (this one and `select_move_target`'s) computing the same point,
+/// with `MoveTarget` written but never read by anything — now there is one
+/// raycast and one source of truth. `.after(select_move_target)` keeps this
+/// system reading the value `select_move_target` wrote earlier in the same
+/// frame, not one frame stale.
 fn send_move_commands(
     conn: Res<StdbConnection>,
     time: Res<Time>,
     mouse: Option<Res<ButtonInput<MouseButton>>>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    surface_query: Res<ClientSurfaceQuery>,
+    move_target: Res<MoveTarget>,
     mut cooldown: Local<f32>,
 ) {
     let Some(mouse) = mouse else {
@@ -1820,34 +1834,7 @@ fn send_move_commands(
     }
     *cooldown = MOVE_COMMAND_INTERVAL;
 
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let Some(cursor) = window.cursor_position() else {
-        return;
-    };
-    let Some((camera, camera_transform)) = cameras.iter().next() else {
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else {
-        return;
-    };
-    // When no terrain mesh is available, fall back to a horizontal plane at Y=0.
-    // This is safe: the server ignores the client-sent Y and resolves X/Z
-    // authoritatively against its own collision data.
-    //
-    // A ray parallel to that plane never meets it, and dividing by its zero Y
-    // would send an infinite coordinate the module can only reject — so that
-    // case is simply not a click.
-    let Some(point) = surface_query
-        .0
-        .as_ref()
-        .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, 100.0, 0.5))
-        .or_else(|| {
-            let t = -ray.origin.y / ray.direction.y;
-            t.is_finite().then(|| ray.origin + *ray.direction * t)
-        })
-    else {
+    let Some(point) = move_target.0 else {
         return;
     };
 

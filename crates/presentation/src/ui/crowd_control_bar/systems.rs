@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
 use bevymmo_network::network::protocol::Position;
 
-use crate::ui::bar::spawn_bar;
+use crate::ui::bar::{get_or_spawn_root, spawn_bar};
 use crate::ui::crowd_control_bar::components::{
     CrowdControlBarParts, CrowdControlBarRoot, ScreenCrowdControlBar,
 };
@@ -150,28 +150,6 @@ pub fn cleanup_screen_cc_bars(
     for root in roots.iter() {
         commands.entity(root).despawn();
     }
-}
-
-/// Gets the existing root UI node or spawns a new one.
-fn get_or_spawn_root(
-    commands: &mut Commands,
-    query: &Query<Entity, With<CrowdControlBarRoot>>,
-) -> Entity {
-    if let Ok(entity) = query.single() {
-        return entity;
-    }
-
-    commands
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                position_type: PositionType::Absolute,
-                ..default()
-            },
-            CrowdControlBarRoot,
-        ))
-        .id()
 }
 
 /// Spawns a new crowd control bar for a target entity.

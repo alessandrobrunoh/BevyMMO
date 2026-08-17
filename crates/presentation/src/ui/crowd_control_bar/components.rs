@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 /// Root UI node that owns all crowd control screen-space bars.
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct CrowdControlBarRoot;
 
 /// Screen-space crowd control bar projected above a stunned entity.

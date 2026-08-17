@@ -16,14 +16,14 @@ use bevymmo_network::network::protocol::Position;
 use bevymmo_gameplay::stats::components::VitalStats;
 
 use crate::game_state::{GameScreen, Screen};
+use crate::ui::bar::{get_hp_fill_color, get_or_spawn_root};
 use crate::ui::theme::UiTheme;
-use bevy::color::Color;
 use bevy::prelude::*;
 
 use super::{spawn_entity_bar, EntityBarParts, FloatingUi};
 
 /// Root UI Node per tutta la UI flottante.
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct FloatingUiRoot;
 
 /// Marker: entità di gioco che possiede già una UI flottante.
@@ -35,27 +35,6 @@ pub struct FloatingUiAttached;
 /// 0.02 px: abbastanza da evitare il relayout di un bersaglio immobile, troppo
 /// poco per essere percepita come uno scatto su un bersaglio in movimento.
 const VIEWPORT_EPSILON_SQUARED: f32 = 0.0004;
-
-fn get_or_spawn_root(
-    commands: &mut Commands,
-    query: &Query<Entity, With<FloatingUiRoot>>,
-) -> Entity {
-    if let Ok(entity) = query.single() {
-        entity
-    } else {
-        commands
-            .spawn((
-                Node {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    position_type: PositionType::Absolute,
-                    ..default()
-                },
-                FloatingUiRoot,
-            ))
-            .id()
-    }
-}
 
 pub fn spawn_ui_for_new_entities(
     mut commands: Commands,
@@ -275,16 +254,6 @@ pub(crate) fn not_in_gameplay(screen: Res<GameScreen>) -> bool {
 /// - Neutral: giallo
 /// - Hostile: rosso
 /// - None: fallback a theme.hp_fill
-fn get_hp_fill_color(entity_kind: Option<&EntityKind>, theme: &UiTheme) -> Color {
-    match entity_kind {
-        Some(EntityKind::Player) => Color::srgb(0.3, 0.8, 0.5),
-        Some(EntityKind::Friendly) => Color::srgb(0.2, 0.9, 0.3),
-        Some(EntityKind::Neutral) => Color::srgb(0.9, 0.9, 0.2),
-        Some(EntityKind::Hostile) => Color::srgb(0.9, 0.1, 0.1),
-        None => theme.hp_fill,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

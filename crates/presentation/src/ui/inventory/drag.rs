@@ -257,9 +257,7 @@ pub fn end_item_drag(
     let Some(target) = target else {
         // Dropping an inventory item outside every slot opens an explicit,
         // destructive confirmation instead of silently discarding it.
-        if matches!(pending.origin, ItemSlotOrigin::Inventory(_))
-            && pending.instance_id.is_assigned()
-        {
+        if matches!(pending.origin, ItemSlotOrigin::Inventory(_)) {
             let label = registry
                 .get(&pending.item_id)
                 .map(|item| item.display_name().to_string())

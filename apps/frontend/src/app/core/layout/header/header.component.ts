@@ -13,12 +13,15 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
   template: `
     <header class="navbar" [class.scrolled]="isScrolled()">
       <div class="nav-inner">
-        <!-- Compact Horizontal Brand Lockup -->
-        <a routerLink="/" class="brand" (click)="closeMobileMenu()">
-          <img src="assets/branding/eivar-rune.svg" alt="" class="brand-mark" />
+        <!-- Brand Lockup: Seamless, frameless, glowing rune and vector wordmark -->
+        <a routerLink="/" class="brand-link" (click)="closeMobileMenu()">
+          <div class="brand-rune-wrap">
+            <img src="assets/branding/eivar-rune.svg" alt="Eivar Emblem" class="brand-mark" />
+            <span class="rune-glow-effect"></span>
+          </div>
           <span class="brand-divider"></span>
           <span class="brand-text">
-            <span class="brand-title">Eivar</span>
+            <img src="assets/branding/eivar-wordmark.svg" alt="Eivar" class="brand-wordmark" />
             <span class="brand-subtitle">Online</span>
           </span>
         </a>
@@ -49,9 +52,10 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
         <!-- Right Nav Actions Group -->
         <div class="nav-actions">
           <!-- Search Action -->
-          <button class="nav-action search-btn" (click)="searchService.open()" title="Search (Cmd+K)">
+          <button class="nav-action search-btn" (click)="searchService.open()" title="Search (Cmd+K / Ctrl+K)">
             <span class="material-symbols-outlined nav-ico">search</span>
             <span class="action-label">Search</span>
+            <kbd class="key-shortcut">⌘K</kbd>
           </button>
 
           <!-- Community Action -->
@@ -82,7 +86,8 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
           <!-- Discover Eivar Button -->
           <a routerLink="/" fragment="world" class="cta-link">
             <button class="header-cta-button">
-              Discover Eivar
+              <span class="btn-rune-spark">✦</span>
+              <span class="btn-text">Discover Eivar</span>
             </button>
           </a>
 

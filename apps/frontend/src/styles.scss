@@ -34,11 +34,11 @@
 
 body {
   min-height: 100vh;
-  font-family: var(--font-body);
+  font-family: var(--font-sans);
   font-size: 1rem;
   line-height: 1.6;
-  background-color: var(--bg-app);
-  color: var(--text-main);
+  background-color: var(--blue-950);
+  color: var(--text-dark);
   overflow-x: hidden;
   position: relative;
 }
@@ -50,16 +50,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-deep-950);
+  background: var(--blue-950);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-deep-700);
-  border-radius: var(--radius-xs);
-  border: 2px solid var(--color-deep-950);
+  background: var(--blue-700);
+  border-radius: 3px;
+  border: 2px solid var(--blue-950);
 
   &:hover {
-    background: var(--color-sky-600);
+    background: var(--cyan);
   }
 }
 
@@ -71,7 +71,7 @@ body {
 
 // Accessible Focus Outlines
 :focus-visible {
-  outline: 2px solid var(--color-rune-cyan);
+  outline: 2px solid var(--cyan);
   outline-offset: 3px;
 }
 

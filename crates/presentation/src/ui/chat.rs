@@ -1,0 +1,305 @@
+//! Bottom-left global chat widget.
+
+use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::input::{ButtonInput, ButtonState};
+use bevy::prelude::*;
+use bevymmo_client::server_feed::ChatLine;
+use bevymmo_client::stdb::{commands, StdbConnection};
+
+use crate::game_state::{GameScreen, Screen};
+use crate::ui::theme::UiTheme;
+
+const MAX_LOCAL_CHARS: usize = 240;
+const MAX_VISIBLE_LINES: usize = 30;
+
+#[derive(Component)]
+struct ChatRoot;
+
+#[derive(Component)]
+struct ChatHistory;
+
+#[derive(Component)]
+struct ChatInput {
+    value: String,
+    focused: bool,
+}
+
+#[derive(Component)]
+struct ChatInputText;
+
+#[derive(Resource, Default)]
+struct ChatUi {
+    input: Option<Entity>,
+    history: Option<Entity>,
+}
+
+pub struct ChatPlugin;
+
+impl Plugin for ChatPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<ChatUi>();
+        app.add_systems(Startup, setup_chat);
+        app.add_systems(
+            Update,
+            (
+                sync_chat_visibility,
+                focus_chat_on_enter,
+                focus_chat_on_click,
+                edit_chat_input,
+                update_chat_input_display,
+                collect_chat_lines,
+            )
+                .chain(),
+        );
+    }
+}
+
+fn setup_chat(mut commands: Commands, mut chat: ResMut<ChatUi>, theme: Res<UiTheme>) {
+    let root = commands
+        .spawn((
+            ChatRoot,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(16.0),
+                bottom: Val::Px(16.0),
+                width: Val::Px(460.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .id();
+
+    let history = commands
+        .spawn((
+            ChatHistory,
+            Node {
+                width: Val::Percent(100.0),
+                max_height: Val::Px(240.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(2.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .id();
+    commands.entity(root).add_child(history);
+
+    let input = commands
+        .spawn((
+            Button,
+            Node {
+                width: Val::Percent(100.0),
+                min_height: Val::Px(38.0),
+                padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
+                align_items: AlignItems::Center,
+                border: UiRect::all(Val::Px(2.0)),
+                ..default()
+            },
+            BackgroundColor(theme.input_bg),
+            BorderColor::all(theme.input_border),
+            ChatInput {
+                value: String::new(),
+                focused: false,
+            },
+        ))
+        .id();
+    commands.entity(root).add_child(input);
+
+    let input_text = commands
+        .spawn((
+            Text::new("Press Enter to chat…"),
+            TextFont {
+                font_size: FontSize::Px(theme.input_font_size),
+                ..default()
+            },
+            TextColor(theme.muted_text_color),
+            ChatInputText,
+            Pickable::IGNORE,
+        ))
+        .id();
+    commands.entity(input).add_child(input_text);
+
+    chat.input = Some(input);
+    chat.history = Some(history);
+}
+
+fn chat_is_active(screen: &GameScreen) -> bool {
+    matches!(screen.0, Screen::InGame)
+}
+
+fn sync_chat_visibility(
+    screen: Res<GameScreen>,
+    mut roots: Query<&mut Node, With<ChatRoot>>,
+) {
+    let display = if chat_is_active(&screen) {
+        Display::Flex
+    } else {
+        Display::None
+    };
+    for mut node in roots.iter_mut() {
+        node.display = display;
+    }
+}
+
+fn focus_chat_on_enter(
+    keys: Res<ButtonInput<KeyCode>>,
+    screen: Res<GameScreen>,
+    chat: Res<ChatUi>,
+    mut inputs: Query<&mut ChatInput>,
+) {
+    if !chat_is_active(&screen) || !keys.just_pressed(KeyCode::Enter) {
+        return;
+    }
+    let Some(input_entity) = chat.input else {
+        return;
+    };
+    let Ok(mut input) = inputs.get_mut(input_entity) else {
+        return;
+    };
+    if !input.focused {
+        input.focused = true;
+    }
+}
+
+fn focus_chat_on_click(
+    interactions: Query<&Interaction, (With<ChatInput>, Changed<Interaction>)>,
+    mut inputs: Query<&mut ChatInput>,
+) {
+    for interaction in interactions.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        for mut input in inputs.iter_mut() {
+            input.focused = true;
+        }
+    }
+}
+
+fn edit_chat_input(
+    mut events: MessageReader<KeyboardInput>,
+    screen: Res<GameScreen>,
+    chat: Res<ChatUi>,
+    mut inputs: Query<&mut ChatInput>,
+    conn: Option<Res<StdbConnection>>,
+) {
+    if !chat_is_active(&screen) {
+        events.clear();
+        return;
+    }
+    let Some(input_entity) = chat.input else {
+        events.clear();
+        return;
+    };
+    let Ok(mut input) = inputs.get_mut(input_entity) else {
+        events.clear();
+        return;
+    };
+    if !input.focused {
+        events.clear();
+        return;
+    }
+
+    for event in events.read() {
+        if event.state != ButtonState::Pressed {
+            continue;
+        }
+        match &event.logical_key {
+            Key::Backspace => {
+                input.value.pop();
+            }
+            Key::Escape => {
+                input.focused = false;
+            }
+            Key::Enter => {
+                let message = input.value.trim().to_string();
+                if message.is_empty() {
+                    continue;
+                }
+                if let Some(conn) = conn.as_ref() {
+                    if let Err(error) = commands::send_chat_message(conn, message) {
+                        warn!("could not send chat message: {error}");
+                    } else {
+                        input.value.clear();
+                    }
+                }
+            }
+            Key::Space if input.value.chars().count() < MAX_LOCAL_CHARS => {
+                input.value.push(' ');
+            }
+            Key::Character(chars) if input.value.chars().count() < MAX_LOCAL_CHARS => {
+                for character in chars.chars() {
+                    if input.value.chars().count() >= MAX_LOCAL_CHARS {
+                        break;
+                    }
+                    if character.is_ascii_graphic() || character == ' ' {
+                        input.value.push(character);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn update_chat_input_display(
+    theme: Res<UiTheme>,
+    chat: Res<ChatUi>,
+    inputs: Query<&ChatInput, Changed<ChatInput>>,
+    mut text: Query<&mut Text, With<ChatInputText>>,
+    mut borders: Query<&mut BorderColor, With<ChatInput>>,
+) {
+    let Some(input_entity) = chat.input else {
+        return;
+    };
+    let Ok(input) = inputs.get(input_entity) else {
+        return;
+    };
+    let Ok(mut text) = text.single_mut() else {
+        return;
+    };
+    if input.value.is_empty() {
+        text.0 = "Press Enter to chat…".to_string();
+    } else {
+        text.0 = input.value.clone();
+    }
+
+    if let Ok(mut border) = borders.single_mut() {
+        border.set_all(if input.focused {
+            theme.input_border_focused
+        } else {
+            theme.input_border
+        });
+    }
+}
+
+fn collect_chat_lines(
+    mut commands: Commands,
+    mut incoming: MessageReader<ChatLine>,
+    chat: Res<ChatUi>,
+    theme: Res<UiTheme>,
+    mut lines: Local<Vec<Entity>>,
+) {
+    let Some(history) = chat.history else {
+        return;
+    };
+
+    for line in incoming.read() {
+        while lines.len() >= MAX_VISIBLE_LINES {
+            commands.entity(lines.remove(0)).despawn();
+        }
+        let entity = commands
+            .spawn((
+                Text::new(line.text.clone()),
+                TextFont {
+                    font_size: FontSize::Px(theme.input_font_size - 2.0),
+                    ..default()
+                },
+                TextColor(theme.text_color),
+                Pickable::IGNORE,
+            ))
+            .id();
+        commands.entity(history).add_child(entity);
+        lines.push(entity);
+    }
+}

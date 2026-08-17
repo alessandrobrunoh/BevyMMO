@@ -6,6 +6,7 @@ pub mod bar;
 pub mod boss_bar;
 pub mod button;
 pub mod card;
+pub mod chat;
 pub mod connecting;
 pub mod crowd_control_bar;
 pub mod death_screen;

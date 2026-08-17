@@ -190,13 +190,16 @@ pub enum KeyAction {
     CastHelmet,
     CastChestplate,
     CastBoots,
+    CastHelmetSecondary,
+    CastChestplateSecondary,
+    CastBootsSecondary,
     CameraZoomIn,
     CameraZoomOut,
 }
 
 impl KeyAction {
     /// All rebindable actions in display order.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 19] = [
         Self::TogglePause,
         Self::ShowScoreboard,
         Self::ToggleInventory,
@@ -211,6 +214,9 @@ impl KeyAction {
         Self::CastHelmet,
         Self::CastChestplate,
         Self::CastBoots,
+        Self::CastHelmetSecondary,
+        Self::CastChestplateSecondary,
+        Self::CastBootsSecondary,
         Self::CameraZoomIn,
         Self::CameraZoomOut,
     ];
@@ -229,9 +235,12 @@ impl KeyAction {
             Self::CastPrimary => "Cast Weapon Primary",
             Self::CastSecondary => "Cast Weapon Secondary",
             Self::CastUltimate => "Cast Weapon Ultimate",
-            Self::CastHelmet => "Cast Helmet Ability",
-            Self::CastChestplate => "Cast Chestplate Ability",
-            Self::CastBoots => "Cast Boots Ability",
+            Self::CastHelmet => "Cast Helmet Primary",
+            Self::CastChestplate => "Cast Chestplate Primary",
+            Self::CastBoots => "Cast Boots Primary",
+            Self::CastHelmetSecondary => "Cast Helmet Secondary",
+            Self::CastChestplateSecondary => "Cast Chestplate Secondary",
+            Self::CastBootsSecondary => "Cast Boots Secondary",
             Self::CameraZoomIn => "Camera Zoom In",
             Self::CameraZoomOut => "Camera Zoom Out",
         }
@@ -251,9 +260,12 @@ impl KeyAction {
             Self::CastPrimary => KeyCode::Digit1,
             Self::CastSecondary => KeyCode::Digit2,
             Self::CastUltimate => KeyCode::Digit3,
-            Self::CastHelmet => KeyCode::KeyZ,
-            Self::CastChestplate => KeyCode::KeyX,
-            Self::CastBoots => KeyCode::KeyC,
+            Self::CastHelmet => KeyCode::KeyD,
+            Self::CastChestplate => KeyCode::KeyR,
+            Self::CastBoots => KeyCode::KeyF,
+            Self::CastHelmetSecondary => KeyCode::Digit4,
+            Self::CastChestplateSecondary => KeyCode::Digit5,
+            Self::CastBootsSecondary => KeyCode::Digit6,
             Self::CameraZoomIn => KeyCode::PageUp,
             Self::CameraZoomOut => KeyCode::PageDown,
         }

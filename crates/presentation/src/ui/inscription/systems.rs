@@ -8,14 +8,14 @@ use bevymmo_gameplay::abilities::{
     WeaponInscriptions,
 };
 use bevymmo_client::local_player::LocalPlayer;
-use bevymmo_gameplay::items::components::Equipment;
+use bevymmo_gameplay::items::components::{EquipSlot, Equipment};
 use bevymmo_gameplay::items::registry::ItemRegistry;
 
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::UiTheme;
 
-const WINDOW_WIDTH: f32 = 820.0;
-const WINDOW_HEIGHT: f32 = 460.0;
+const WINDOW_WIDTH: f32 = 900.0;
+const WINDOW_HEIGHT: f32 = 560.0;
 const SLOTS: [AbilitySlot; 3] = [
     AbilitySlot::Primary,
     AbilitySlot::Secondary,
@@ -176,6 +176,8 @@ fn spawn_window(
         .with_children(|parent| {
             spawn_header(parent, theme, item.display_name());
 
+            spawn_armor_summary(parent, theme, equipment, item_registry);
+
             parent
                 .spawn((Node {
                     width: Val::Percent(100.0),
@@ -198,6 +200,97 @@ fn spawn_window(
                             essence_registry,
                             modifier_registry,
                         );
+                    }
+                });
+        });
+}
+
+fn armor_key_label(slot: EquipSlot) -> &'static str {
+    match slot {
+        EquipSlot::Helmet => "D",
+        EquipSlot::Armor => "R",
+        EquipSlot::Shoes => "F",
+        _ => "?",
+    }
+}
+
+fn spawn_armor_summary(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiTheme,
+    equipment: &Equipment,
+    item_registry: &ItemRegistry,
+) {
+    parent
+        .spawn((Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
+            padding: UiRect::bottom(Val::Px(6.0)),
+            ..default()
+        },))
+        .with_children(|section| {
+            section.spawn((
+                Text::new("Armor inscriptions"),
+                TextFont {
+                    font_size: FontSize::Px(theme.button_font_size * 0.9),
+                    ..default()
+                },
+                TextColor(theme.muted_text_color),
+            ));
+            section
+                .spawn((Node {
+                    width: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(8.0),
+                    ..default()
+                },))
+                .with_children(|row| {
+                    for slot in [EquipSlot::Helmet, EquipSlot::Armor, EquipSlot::Shoes] {
+                        let label = equipment
+                            .get(slot)
+                            .as_ref()
+                            .and_then(|instance| {
+                                let item_name = item_registry
+                                    .get(&instance.item_id)
+                                    .map(|item| item.display_name().to_string())?;
+                                let inscription = instance.armor_inscription.as_ref();
+                                let root = inscription
+                                    .and_then(|value| value.root_word.as_ref())
+                                    .map(|value| value.as_str().to_string())
+                                    .unwrap_or_else(|| "no root".to_string());
+                                let words = inscription
+                                    .map(|value| {
+                                        value
+                                            .secondary_words
+                                            .iter()
+                                            .map(|word| word.word_id.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    })
+                                    .filter(|value| !value.is_empty())
+                                    .unwrap_or_else(|| "no ancient words".to_string());
+                                Some(format!("{item_name}\n{root} · {words}"))
+                            })
+                            .unwrap_or_else(|| "empty".to_string());
+                        row.spawn((
+                            Node {
+                                width: Val::Percent(33.0),
+                                min_height: Val::Px(54.0),
+                                padding: UiRect::all(Val::Px(5.0)),
+                                ..default()
+                            },
+                            BackgroundColor(theme.button_bg),
+                        ))
+                        .with_children(|card| {
+                            card.spawn((
+                                Text::new(format!("[{}] {}\n{}", armor_key_label(slot), slot.label(), label)),
+                                TextFont {
+                                    font_size: FontSize::Px(theme.button_font_size * 0.62),
+                                    ..default()
+                                },
+                                TextColor(theme.text_color),
+                            ));
+                        });
                     }
                 });
         });

@@ -507,6 +507,7 @@ pub fn eidolon_cast(
 pub fn armor_cast(
     ctx: &ReducerContext,
     armor_slot: String,
+    ability_slot: String,
     target_entity: Option<u64>,
     target_position: Option<Vec3Row>,
 ) -> Result<(), String> {
@@ -536,11 +537,12 @@ pub fn armor_cast(
         .ok_or_else(|| format!("unknown item {:?}", armor.item_id.as_str()))?;
     let abilities = ability_loadout_for_item(item.as_ref())
         .ok_or_else(|| format!("{} has no armor abilities", item.display_name()))?;
+    let ability_slot = parse_slot(&ability_slot)?;
     let ability_id = abilities
-        .primary
+        .options_for(ability_slot)
         .first()
         .cloned()
-        .ok_or_else(|| "armor has no Primary ability".to_string())?;
+        .ok_or_else(|| format!("armor has no {ability_slot:?} ability"))?;
     if spells::is_on_cooldown(ctx, caster.entity_id, ability_id.as_str()) {
         return Err(format!("{:?} is on cooldown", ability_id.as_str()));
     }

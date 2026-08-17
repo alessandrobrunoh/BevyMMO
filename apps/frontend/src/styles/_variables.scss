@@ -1,73 +1,116 @@
 // ============================================================
 // EIVAR ONLINE — DESIGN SYSTEM TOKENS & VARIABLES
-// Matching exact aesthetic from inspiration.html & reference
 // ============================================================
 
 :root {
   // Primary Environmental Skies & Blues
   --sky: #1c91d0;
   --sky-light: #75c4e8;
+  --sky-deep: #147cc1;
 
-  --blue-950: #071a2a;
-  --blue-900: #0c2236;
-  --blue-850: #102d47;
-  --blue-800: #163b58;
-  --blue-700: #1d4b6c;
+  --blue-950: #061626;
+  --blue-900: #0a2034;
+  --blue-850: #0e2a44;
+  --blue-800: #143756;
+  --blue-700: #1a4970;
+  --blue-600: #215c8c;
 
   // Magical Rune Cyans
   --cyan: #3ccbff;
   --cyan-light: #a4eeff;
+  --cyan-bright: #6de2ff;
+  --cyan-glow: rgba(60, 203, 255, 0.45);
 
-  // Ancient Golds
-  --gold: #d0ae61;
-  --gold-dark: #9b742e;
-  --gold-light: #e6cb86;
-  --gold-deep: #805c1e;
+  // Ancient Golds (Radiant & Burnished)
+  --gold: #d4ad57;
+  --gold-dark: #9c7328;
+  --gold-light: #f3dc98;
+  --gold-deep: #785317;
+  --gold-amber: #e6b94d;
+  --gold-glow: rgba(212, 173, 87, 0.45);
+
+  // Button Gradients
+  --btn-gold-bg: linear-gradient(180deg, #d8af56 0%, #b88b32 50%, #87621c 100%);
+  --btn-gold-hover: linear-gradient(180deg, #e8c268 0%, #cba043 50%, #9e7424 100%);
+  --btn-gold-border: #f0d58a;
+  
+  --btn-blue-bg: linear-gradient(180deg, #1b5b88 0%, #114162 50%, #0c2f48 100%);
+  --btn-blue-hover: linear-gradient(180deg, #2474ac 0%, #16527c 50%, #0f3c5d 100%);
+  --btn-blue-border: #56b3e6;
 
   // Ancient Stones
   --stone: #c8bca5;
   --stone-dark: #756b5a;
+  --stone-light: #ded6c5;
 
   // Warm Parchments
   --parchment: #f1e8d6;
   --parchment-2: #e7d6b9;
   --parchment-card: #ded2bb;
   --parchment-news: #eee4d0;
+  --parchment-border: rgba(117, 107, 90, 0.35);
 
   // Readable Texts
   --text-dark: #17283a;
-  --text-dark-muted: #5f625f;
-  --text-dark-dim: #68675f;
+  --text-dark-muted: #525a62;
+  --text-dark-dim: #646b72;
   --text-light: #fffdf7;
-  --text-light-muted: rgba(255, 255, 255, 0.75);
+  --text-light-muted: rgba(240, 246, 255, 0.8);
 
   // Typography
-  --font-serif: Georgia, 'Times New Roman', 'Cinzel', serif;
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: 'Cinzel', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
 
   // Layout
   --container-max: 1280px;
-  --header-height: 76px;
+  --header-height: 74px;
 
   // Shadows
   --shadow: 0 18px 45px rgba(6, 19, 31, 0.16), 0 4px 14px rgba(6, 19, 31, 0.12);
   --shadow-deep: 0 24px 55px rgba(7, 26, 42, 0.22);
-  --shadow-runic: 0 30px 70px rgba(7, 26, 42, 0.25);
+  --shadow-runic: 0 30px 70px rgba(7, 26, 42, 0.3);
+  --shadow-gold-glow: 0 0 24px rgba(212, 173, 87, 0.35);
+  --shadow-cyan-glow: 0 0 24px rgba(60, 203, 255, 0.35);
 
   // Transitions
-  --transition: 220ms ease;
+  --transition: 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-fast: 140ms ease;
+  --transition-normal: var(--transition);
+
+  // Radii
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+
+  // Semantic Colors
+  --color-danger: #c04238;
+  --color-success: #52a65d;
+  --color-warning: #e0982d;
+
+  // Aliases
+  --font-body: var(--font-sans);
+  --font-display: var(--font-serif);
+  --color-gold: var(--gold);
+  --color-rune-cyan: var(--cyan);
+  --color-sky-500: var(--sky);
+  --border-stone: rgba(200, 188, 165, 0.35);
+  --text-gold: var(--gold-light);
+  --text-cyan: var(--cyan-light);
+  --text-stone: var(--stone);
+  --text-muted: rgba(237, 248, 255, 0.7);
+  --text-dim: rgba(237, 248, 255, 0.55);
 }
 
 // SCSS variables
-$blue-950: #071a2a;
-$blue-900: #0c2236;
-$blue-850: #102d47;
-$blue-800: #163b58;
+$blue-950: #061626;
+$blue-900: #0a2034;
+$blue-850: #0e2a44;
+$blue-800: #143756;
 $cyan: #3ccbff;
 $cyan-light: #a4eeff;
-$gold: #d0ae61;
-$gold-dark: #9b742e;
-$gold-light: #e6cb86;
+$gold: #d4ad57;
+$gold-dark: #9c7328;
+$gold-light: #f3dc98;
 $parchment: #f1e8d6;
 $parchment-2: #e7d6b9;
 $stone: #c8bca5;

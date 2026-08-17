@@ -1242,6 +1242,8 @@ struct BaseAbilityDef {
     /// Opzionali: assenti = impatto immediato e nessun controllo.
     impact_delay: Option<LitFloat>,
     stun_seconds: Option<LitFloat>,
+    statuses: Vec<Ident>,
+    cleanse: Option<Ident>,
     /// Optional: "channeling" with tick_interval and movement_policy.
     /// Absent → derived from cast_time (positive = CastTime, zero = Instant).
     cast_mode: Option<CastModeDef>,
@@ -1268,6 +1270,8 @@ impl Parse for BaseAbilityDef {
         let mut impact_vfx = None;
         let mut impact_delay = None;
         let mut stun_seconds = None;
+        let mut statuses = Vec::new();
+        let mut cleanse = None;
         let mut cast_mode = None;
 
         while !input.is_empty() {
@@ -1298,6 +1302,13 @@ impl Parse for BaseAbilityDef {
                 "impact_vfx" => impact_vfx = Some(input.parse::<LitStr>()?),
                 "impact_delay" => impact_delay = Some(input.parse::<LitFloat>()?),
                 "stun_seconds" => stun_seconds = Some(input.parse::<LitFloat>()?),
+                "statuses" => {
+                    let content;
+                    bracketed!(content in input);
+                    let list: Punctuated<Ident, Token![,]> = Punctuated::parse_terminated(&content)?;
+                    statuses = list.into_iter().collect();
+                }
+                "cleanse" => cleanse = Some(input.parse::<Ident>()?),
                 "channeling" => {
                     // Parse channeling(tick_interval = 0.25, movement = InterruptOnMove)
                     let content;
@@ -1331,7 +1342,7 @@ impl Parse for BaseAbilityDef {
                         format!(
                             "unknown key `{other}` in #[base_ability(...)] (expected id, name, tags, range, geometry, \
                              potency, cast_time, cooldown, energy_cost, animation, impact_vfx, impact_delay, \
-                             stun_seconds, channeling)"
+                             stun_seconds, statuses, channeling)"
                         )
                     ))
                 }
@@ -1360,6 +1371,8 @@ impl Parse for BaseAbilityDef {
                 .ok_or_else(|| input.error("#[base_ability(...)] requires `impact_vfx = \"...\"`"))?,
             impact_delay,
             stun_seconds,
+            statuses,
+            cleanse,
             cast_mode,
         })
     }
@@ -1383,6 +1396,42 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
     let energy_cost = &def.energy_cost;
     let animation = &def.animation;
     let impact_vfx = &def.impact_vfx;
+
+    let cleanse_method = match &def.cleanse {
+        Some(filter) => {
+            let filter = match filter.to_string().as_str() {
+                "Buffs" => quote! { crate::effects::StatusFilter::Buffs },
+                "Debuffs" => quote! { crate::effects::StatusFilter::Debuffs },
+                "All" => quote! { crate::effects::StatusFilter::All },
+                other => {
+                    return syn::Error::new_spanned(filter, format!("unknown cleanse filter `{other}`; expected Buffs, Debuffs or All"))
+                        .to_compile_error()
+                        .into();
+                }
+            };
+            quote! {
+                fn cleanse_effect(&self) -> Option<crate::effects::CleanseEffect> {
+                    Some(crate::effects::CleanseEffect {
+                        filter: #filter,
+                        max_statuses: None,
+                        selection: crate::effects::StatusSelection::Newest,
+                    })
+                }
+            }
+        }
+        None => quote! {},
+    };
+
+    let status_effects = def.statuses.iter().map(|status| {
+        let status_id = syn::LitStr::new(&status.to_string().to_ascii_lowercase(), status.span());
+        quote! {
+            crate::effects::EffectSpec::ApplyStatus(crate::effects::ApplyStatusEffect {
+                status_id: crate::effects::StatusId::new(#status_id),
+                duration_override_seconds: None,
+                potency: 1.0,
+            })
+        }
+    });
 
     // `area`/`range` are derived from the geometry if not explicitly given.
     let (geometry_tokens, area, default_range) = match &def.geometry {
@@ -1504,6 +1553,10 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             #impact_delay_method
             #stun_seconds_method
+            #cleanse_method
+            fn additional_effects(&self) -> Vec<crate::effects::EffectSpec> {
+                vec![#(#status_effects),*]
+            }
             #cast_mode_method
         }
 

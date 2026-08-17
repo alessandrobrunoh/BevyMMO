@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 
 use super::{
-    boss_bar, card, connecting, crowd_control_bar, death_screen, debug_position, entity_bar,
+    boss_bar, card, chat, connecting, crowd_control_bar, death_screen, debug_position, entity_bar,
     inscription, inventory, main_menu, notices, npc_sidebar, pause_menu, player_stats, scoreboard,
     scrollbar, settings, spell_selector, status_bar, systems, target_frame, target_indicator,
 };
@@ -23,6 +23,7 @@ impl Plugin for UiPlugin {
         app.add_systems(Startup, setup_ui_camera);
         app.add_plugins((
             card::CardPlugin,
+            chat::ChatPlugin,
             entity_bar::EntityBarPlugin,
             scoreboard::ScoreboardPlugin,
             main_menu::MainMenuPlugin,

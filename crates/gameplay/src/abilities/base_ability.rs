@@ -367,6 +367,7 @@ pub trait BaseAbility: Send + Sync + 'static {
                 potency: 1.0,
             }));
         }
+        effects.extend(self.additional_effects());
 
         self.emit_area_effect(params, ctx, effects);
 
@@ -388,7 +389,9 @@ pub trait BaseAbility: Send + Sync + 'static {
                 // arriva quando arriva lei, non all'istante del lancio.
                 match self.projectile_target(params, ctx) {
                     Some(target) => {
-                        ctx.emit_projectile(target, speed, vec![EffectSpec::Damage(DamageEffect { amount: potency })], PROJECTILE_HIT_RADIUS);
+                        let mut effects = vec![EffectSpec::Damage(DamageEffect { amount: potency })];
+                        effects.extend(self.additional_effects());
+                        ctx.emit_projectile(target, speed, effects, PROJECTILE_HIT_RADIUS);
                         let target_position = ctx
                             .potential_targets
                             .iter()
@@ -417,7 +420,23 @@ pub trait BaseAbility: Send + Sync + 'static {
     /// (o quando quella incisa non è conosciuta). Ha un default generico
     /// derivato dalla geometria, per questo NON serve scrivere logica a
     /// mano per ogni `BaseAbility`.
+    /// Optional cleanse emitted by a self-targeted ability.
+    fn cleanse_effect(&self) -> Option<crate::effects::CleanseEffect> {
+        None
+    }
+
+    /// Additional status/buff/debuff effects declared by content. They are
+    /// appended to the geometry's direct damage and resolved by the same
+    /// authoritative EffectSpec pipeline.
+    fn additional_effects(&self) -> Vec<EffectSpec> {
+        Vec::new()
+    }
+
     fn default_manifestation(&self, params: &AbilityParams, ctx: &mut SpellCastContext) {
+        if let Some(cleanse) = self.cleanse_effect() {
+            ctx.emit_cleanse(ctx.caster, cleanse);
+            return;
+        }
         self.emit_damage_for_geometry(params.potency, params, ctx);
     }
 }

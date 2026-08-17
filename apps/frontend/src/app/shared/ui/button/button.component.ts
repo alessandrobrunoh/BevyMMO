@@ -20,14 +20,13 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
       ]"
       (click)="onClick.emit($event)"
     >
-      <!-- Corner notches -->
-      <span class="notch notch-tl"></span>
-      <span class="notch notch-br"></span>
-
-      <!-- Active glow backdrop -->
+      <!-- Active ambient glow layer -->
       <span class="glow-layer"></span>
 
-      <!-- Content -->
+      <!-- Shimmer light sweep -->
+      <span class="shimmer-layer"></span>
+
+      <!-- Button Content -->
       <span class="btn-content">
         @if (loading) {
           <span class="spinner-rune">ᛟ</span>
@@ -52,3 +51,4 @@ export class EivarButtonComponent {
 
   @Output() onClick = new EventEmitter<MouseEvent>();
 }
+

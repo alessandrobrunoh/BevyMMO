@@ -10,6 +10,7 @@ use super::vec_3_row_type::Vec3Row;
 #[sats(crate = __lib)]
 pub(super) struct ArmorCastArgs {
     pub armor_slot: String,
+    pub ability_slot: String,
     pub target_entity: Option<u64>,
     pub target_position: Option<Vec3Row>,
 }
@@ -18,6 +19,7 @@ impl From<ArmorCastArgs> for super::Reducer {
     fn from(args: ArmorCastArgs) -> Self {
         Self::ArmorCast {
             armor_slot: args.armor_slot,
+            ability_slot: args.ability_slot,
             target_entity: args.target_entity,
             target_position: args.target_position,
         }
@@ -42,10 +44,17 @@ pub trait armor_cast {
     fn armor_cast(
         &self,
         armor_slot: String,
+        ability_slot: String,
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
     ) -> __sdk::Result<()> {
-        self.armor_cast_then(armor_slot, target_entity, target_position, |_, _| {})
+        self.armor_cast_then(
+            armor_slot,
+            ability_slot,
+            target_entity,
+            target_position,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `armor_cast` to run as soon as possible,
@@ -57,6 +66,7 @@ pub trait armor_cast {
     fn armor_cast_then(
         &self,
         armor_slot: String,
+        ability_slot: String,
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
 
@@ -70,6 +80,7 @@ impl armor_cast for super::RemoteReducers {
     fn armor_cast_then(
         &self,
         armor_slot: String,
+        ability_slot: String,
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
 
@@ -80,6 +91,7 @@ impl armor_cast for super::RemoteReducers {
         self.imp.invoke_reducer_with_callback(
             ArmorCastArgs {
                 armor_slot,
+                ability_slot,
                 target_entity,
                 target_position,
             },

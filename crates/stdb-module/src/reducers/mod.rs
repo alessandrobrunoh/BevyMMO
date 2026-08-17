@@ -5,6 +5,7 @@
 //! is no entity to spoof, which removes the whole class of check the Bevy
 //! handlers needed.
 
+pub mod chat;
 pub mod combat;
 pub mod items;
 pub mod lifecycle;

@@ -45,7 +45,7 @@ use crate::app_state::{
 use bevymmo_gameplay::items::components::{Equipment, Inventory};
 use crate::movement::{resolve_ray_to_ground, ClientSurfaceQuery};
 use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
-use crate::server_feed::{ServerNotice, SpellCooldownState};
+use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
 use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
 use bevymmo_network::world_components::{
     EntityColor, LookDirection, NetworkEntityId, Position, ProjectileVisual,
@@ -304,6 +304,8 @@ pub struct StdbPlugin {
 
 impl Plugin for StdbPlugin {
     fn build(&self, app: &mut App) {
+        app.add_message::<ChatLine>();
+
         let uri = self.uri.clone();
         let module = self.module.clone();
 
@@ -576,6 +578,7 @@ fn drain_events(
     mut visual_effects: MessageWriter<SpellVisualEffect>,
     mut cooldowns: MessageWriter<SpellCooldownState>,
     mut notices: MessageWriter<ServerNotice>,
+    mut chat_lines: MessageWriter<ChatLine>,
     mut failure: ResMut<ConnectionFailure>,
     mut screen: ResMut<GameScreen>,
 ) {
@@ -764,6 +767,9 @@ fn drain_events(
                 // reaches this client if the server addressed it here, but the
                 // table is public, so the check is made rather than assumed.
                 if row.target.is_none() || row.target == local_identity {
+                    chat_lines.write(ChatLine {
+                        text: row.text.clone(),
+                    });
                     notices.write(ServerNotice::info(row.text));
                 }
             }

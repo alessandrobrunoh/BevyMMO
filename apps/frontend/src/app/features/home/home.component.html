@@ -22,24 +22,23 @@
         WRITE YOUR LEGEND.
       </div>
 
-      <!-- Hero Unified Dual CTA Bar -->
-      <div class="hero-dual-cta-bar">
-        <!-- Left: Discover Eivar (Burnished Gold) -->
-        <button class="cta-plate cta-discover" (click)="scrollToSection('world')">
-          <img src="assets/images/cta-end-left.svg" alt="" class="cta-cap cap-left" />
-          <span class="cta-label">Discover Eivar</span>
+      <!-- Hero Action Buttons -->
+      <div class="hero-cta-group">
+        <!-- Primary: Discover Eivar (Radiant Gilded Gold) -->
+        <button class="hero-btn hero-btn-discover" (click)="scrollToSection('world')">
+          <span class="btn-shimmer"></span>
+          <span class="btn-rune-spark">✦</span>
+          <span class="btn-text">Discover Eivar</span>
         </button>
 
-        <!-- Center: Celtic/Runic Knotwork Bridge -->
-        <div class="cta-bridge">
-          <img src="assets/images/cta-knotwork-bridge.svg" alt="" class="bridge-svg" />
-        </div>
+        <span class="hero-cta-sep">◈</span>
 
-        <!-- Right: Latest News (Lapis Lazuli Blue) -->
-        <a routerLink="/news" class="cta-news-link">
-          <button class="cta-plate cta-news">
-            <span class="cta-label">Latest News</span>
-            <img src="assets/images/cta-end-right.svg" alt="" class="cta-cap cap-right" />
+        <!-- Secondary: Latest News (Arcane Celestial Blue) -->
+        <a routerLink="/news" class="hero-news-link">
+          <button class="hero-btn hero-btn-news">
+            <span class="btn-shimmer"></span>
+            <span class="btn-text">Latest News</span>
+            <span class="btn-arrow">→</span>
           </button>
         </a>
       </div>

@@ -14,6 +14,10 @@
   padding: 90px 0;
 }
 
+.section-padding {
+  padding: 60px 0 90px;
+}
+
 // Rune Divider with diamond and gradient lines
 .rune-divider {
   display: flex;
@@ -49,7 +53,7 @@
   }
 }
 
-// Authentic Chamfered Button
+// Global Reusable Eivar Button
 .eivar-button {
   position: relative;
   isolation: isolate;
@@ -57,65 +61,100 @@
   align-items: center;
   justify-content: center;
   gap: 9px;
-  min-height: 46px;
-  padding: 0 24px;
+  min-height: 44px;
+  padding: 0 22px;
   overflow: hidden;
-  color: #fff7df;
-  border: 1px solid #c09a4e;
-  background: linear-gradient(180deg, #87662d, #5e451f);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.2), 0 5px 15px rgba(0, 0, 0, 0.2);
-  clip-path: polygon(
-    8px 0,
-    calc(100% - 8px) 0,
-    100% 8px,
-    100% calc(100% - 8px),
-    calc(100% - 8px) 100%,
-    8px 100%,
-    0 calc(100% - 8px),
-    0 8px
-  );
+  border-radius: var(--radius-xs);
   cursor: pointer;
   font-family: var(--font-serif);
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  transition: transform var(--transition), filter var(--transition), box-shadow var(--transition);
+  text-decoration: none;
+  color: #162432;
+  background: linear-gradient(180deg, #f6dc94 0%, #d5aa4e 45%, #ae8027 100%);
+  border: 1px solid #ffecb6;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 4px 16px rgba(0, 0, 0, 0.35),
+    0 0 14px rgba(212, 173, 87, 0.3);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: transform var(--transition), box-shadow var(--transition), filter var(--transition), background var(--transition);
 
   &::before {
     position: absolute;
-    z-index: -1;
-    inset: 2px;
+    inset: 0;
     content: "";
-    border: 1px solid rgba(230, 203, 134, 0.45);
+    border-radius: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.2);
     pointer-events: none;
   }
 
   &:hover {
     transform: translateY(-2px);
-    filter: brightness(1.12);
-    box-shadow: 0 9px 26px rgba(0, 0, 0, 0.25), 0 0 18px rgba(208, 174, 97, 0.13);
+    background: linear-gradient(180deg, #fff0c2 0%, #e2b95a 45%, #c08f30 100%);
+    border-color: #ffffff;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+      0 8px 24px rgba(0, 0, 0, 0.45),
+      0 0 24px rgba(243, 220, 152, 0.65);
+    color: #0c1824;
+  }
+
+  &:active {
+    transform: translateY(1px);
   }
 
   &.secondary {
-    color: white;
-    border-color: rgba(164, 238, 255, 0.45);
-    background: linear-gradient(180deg, rgba(20, 77, 111, 0.95), rgba(11, 45, 70, 0.98));
+    color: #ffffff;
+    background: linear-gradient(180deg, #1e699b 0%, #12466c 45%, #0b314d 100%);
+    border: 1px solid #6cd6ff;
+    box-shadow:
+      inset 0 1px 0 rgba(164, 238, 255, 0.6),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+      0 4px 16px rgba(0, 0, 0, 0.35),
+      0 0 14px rgba(60, 203, 255, 0.3);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 
-    &::before {
-      border-color: rgba(164, 238, 255, 0.3);
+    &:hover {
+      background: linear-gradient(180deg, #277fb9 0%, #175786 45%, #0f3f63 100%);
+      border-color: #a4eeff;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.8),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+        0 8px 24px rgba(0, 0, 0, 0.45),
+        0 0 24px rgba(60, 203, 255, 0.65);
     }
   }
 
   &.sm {
-    min-height: 36px;
-    padding: 0 16px;
+    min-height: 34px;
+    padding: 0 14px;
     font-size: 0.68rem;
+    letter-spacing: 0.1em;
   }
 
   &.lg {
     min-height: 52px;
-    padding: 0 32px;
-    font-size: 0.82rem;
+    padding: 0 30px;
+    font-size: 0.84rem;
+    letter-spacing: 0.14em;
   }
 }
+
+// Ancient Stone Panel / Card container
+.stone-panel {
+  background: var(--parchment-card);
+  border: 1px solid rgba(117, 107, 90, 0.35);
+  box-shadow: var(--shadow);
+  border-radius: var(--radius-xs);
+}
+
+// Chamfer Box helper
+.chamfer-box {
+  border-radius: var(--radius-xs);
+}
+

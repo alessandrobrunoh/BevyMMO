@@ -3,6 +3,8 @@
 use bevymmo_props_macro::item;
 
 use crate::ability_definitions::arcane_orb::ArcaneOrb;
+use crate::ability_definitions::ground_break::GroundBreak;
+use crate::ability_definitions::swift_kick::SwiftKick;
 use crate::items::ItemRegistry;
 
 #[item(
@@ -17,8 +19,8 @@ use crate::items::ItemRegistry;
         stat_bonus(field = Speed, op = Add, value = 0.1),
     ],
     abilities(
-        primary = [ArcaneOrb],
-        secondary = [ArcaneOrb],
+        primary = [SwiftKick],
+        secondary = [GroundBreak],
         ultimate = [ArcaneOrb],
     ),
     rune_profile(capacity = 5, stability = 0.94, affinity = fuoco),
@@ -50,16 +52,14 @@ mod tests {
     }
 
     #[test]
-    fn offers_arcane_orb_for_every_slot() {
+    fn offers_dedicated_boots_abilities() {
         let item = SwiftBoots;
         let abilities = item
             .ability_loadout()
             .expect("swift_boots must grant abilities");
-        let expected = [ArcaneOrb::ID.into()];
-
-        assert_eq!(abilities.options_for(AbilitySlot::Primary), expected);
-        assert_eq!(abilities.options_for(AbilitySlot::Secondary), expected);
-        assert_eq!(abilities.options_for(AbilitySlot::Ultimate), expected);
+        assert_eq!(abilities.options_for(AbilitySlot::Primary), [SwiftKick::ID.into()]);
+        assert_eq!(abilities.options_for(AbilitySlot::Secondary), [GroundBreak::ID.into()]);
+        assert_eq!(abilities.options_for(AbilitySlot::Ultimate), [ArcaneOrb::ID.into()]);
     }
 
     #[test]

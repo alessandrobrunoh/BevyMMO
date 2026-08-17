@@ -87,6 +87,7 @@ pub mod resonance_table;
 pub mod resonance_type;
 pub mod respawn_reducer;
 pub mod secondary_word_row_type;
+pub mod send_chat_message_reducer;
 pub mod set_ability_selection_reducer;
 pub mod set_armor_inscription_reducer;
 pub mod set_hotbar_spell_reducer;
@@ -191,6 +192,7 @@ pub use resonance_table::*;
 pub use resonance_type::Resonance;
 pub use respawn_reducer::respawn;
 pub use secondary_word_row_type::SecondaryWordRow;
+pub use send_chat_message_reducer::send_chat_message;
 pub use set_ability_selection_reducer::set_ability_selection;
 pub use set_armor_inscription_reducer::set_armor_inscription;
 pub use set_hotbar_spell_reducer::set_hotbar_spell;
@@ -224,6 +226,7 @@ pub use weapon_inscriptions_row_type::WeaponInscriptionsRow;
 pub enum Reducer {
     ArmorCast {
         armor_slot: String,
+        ability_slot: String,
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
     },
@@ -282,6 +285,9 @@ pub enum Reducer {
         spell_id: String,
     },
     Respawn,
+    SendChatMessage {
+        text: String,
+    },
     SetAbilitySelection {
         slot: String,
         ability_id: String,
@@ -342,6 +348,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::MoveTo { .. } => "move_to",
             Reducer::ReleaseCast { .. } => "release_cast",
             Reducer::Respawn => "respawn",
+            Reducer::SendChatMessage { .. } => "send_chat_message",
             Reducer::SetAbilitySelection { .. } => "set_ability_selection",
             Reducer::SetArmorInscription { .. } => "set_armor_inscription",
             Reducer::SetHotbarSpell { .. } => "set_hotbar_spell",
@@ -358,10 +365,12 @@ impl __sdk::Reducer for Reducer {
         match self {
             Reducer::ArmorCast {
                 armor_slot,
+                ability_slot,
                 target_entity,
                 target_position,
             } => __sats::bsatn::to_vec(&armor_cast_reducer::ArmorCastArgs {
                 armor_slot: armor_slot.clone(),
+                ability_slot: ability_slot.clone(),
                 target_entity: target_entity.clone(),
                 target_position: target_position.clone(),
             }),
@@ -453,6 +462,11 @@ impl __sdk::Reducer for Reducer {
                 })
             }
             Reducer::Respawn => __sats::bsatn::to_vec(&respawn_reducer::RespawnArgs {}),
+            Reducer::SendChatMessage { text } => {
+                __sats::bsatn::to_vec(&send_chat_message_reducer::SendChatMessageArgs {
+                    text: text.clone(),
+                })
+            }
             Reducer::SetAbilitySelection { slot, ability_id } => {
                 __sats::bsatn::to_vec(&set_ability_selection_reducer::SetAbilitySelectionArgs {
                     slot: slot.clone(),

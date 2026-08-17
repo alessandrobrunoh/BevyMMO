@@ -3,6 +3,8 @@
 use bevymmo_props_macro::item;
 
 use crate::ability_definitions::arcane_orb::ArcaneOrb;
+use crate::ability_definitions::mind_burst::MindWard;
+use crate::ability_definitions::warding_bolt::WardingBolt;
 use crate::items::ItemRegistry;
 
 #[item(
@@ -17,8 +19,8 @@ use crate::items::ItemRegistry;
         stat_bonus(field = MaxHealth, op = Add, value = 50.0),
     ],
     abilities(
-        primary = [ArcaneOrb],
-        secondary = [ArcaneOrb],
+        primary = [WardingBolt],
+        secondary = [MindWard],
         ultimate = [ArcaneOrb],
     ),
     rune_profile(capacity = 7, stability = 0.90, affinity = fuoco),
@@ -50,16 +52,14 @@ mod tests {
     }
 
     #[test]
-    fn offers_arcane_orb_for_every_slot() {
+    fn offers_dedicated_helmet_abilities() {
         let item = WardingHelm;
         let abilities = item
             .ability_loadout()
             .expect("warding_helm must grant abilities");
-        let expected = [ArcaneOrb::ID.into()];
-
-        assert_eq!(abilities.options_for(AbilitySlot::Primary), expected);
-        assert_eq!(abilities.options_for(AbilitySlot::Secondary), expected);
-        assert_eq!(abilities.options_for(AbilitySlot::Ultimate), expected);
+        assert_eq!(abilities.options_for(AbilitySlot::Primary), [WardingBolt::ID.into()]);
+        assert_eq!(abilities.options_for(AbilitySlot::Secondary), [MindWard::ID.into()]);
+        assert_eq!(abilities.options_for(AbilitySlot::Ultimate), [ArcaneOrb::ID.into()]);
     }
 
     #[test]

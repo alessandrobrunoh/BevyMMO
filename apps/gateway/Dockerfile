@@ -40,8 +40,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy configuration files
-COPY config/ ./config/
+# Copy configuration files from the normalized workspace assembled by the builder.
+COPY --from=builder /usr/src/app/config/ ./config/
 
 # Copy compiled binary from builder stage
 COPY --from=builder /usr/src/app/target/release/gateway /app/gateway

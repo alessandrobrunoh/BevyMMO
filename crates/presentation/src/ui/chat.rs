@@ -7,6 +7,7 @@ use bevymmo_client::server_feed::{ChatLine, ServerNotice};
 use bevymmo_client::stdb::{commands, PartyRoster, StdbConnection};
 
 use crate::game_state::{GameScreen, Screen};
+use crate::ui::scrollbar::spawn_scroll_view_with_content;
 use crate::ui::theme::UiTheme;
 
 const MAX_LOCAL_CHARS: usize = 240;
@@ -74,24 +75,27 @@ fn setup_chat(mut commands: Commands, mut chat: ResMut<ChatUi>, theme: Res<UiThe
         ))
         .id();
 
-    let history = commands
-        .spawn((
-            ChatHistory,
-            Node {
-                width: Val::Percent(100.0),
-                max_height: Val::Px(280.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(4.0),
-                // Without this, lines beyond `max_height` overflow visibly
-                // instead of being clipped — see `scrollbar.rs` for the same
-                // pattern on the other scrollable panels.
-                overflow: Overflow::clip_y(),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ))
-        .id();
-    commands.entity(root).add_child(history);
+    let (history_wrapper, history) =
+        spawn_scroll_view_with_content(&mut commands, root, &theme, |commands| {
+            commands
+                .spawn((
+                    ChatHistory,
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(4.0),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .id()
+        });
+    commands.entity(history_wrapper).insert(Node {
+        width: Val::Percent(100.0),
+        height: Val::Px(280.0),
+        flex_direction: FlexDirection::Row,
+        ..default()
+    });
 
     let input = commands
         .spawn((

@@ -56,6 +56,19 @@ pub fn spawn_scroll_view(
     theme: &UiTheme,
     content_builder: impl FnOnce(&mut Commands) -> Entity,
 ) -> Entity {
+    spawn_scroll_view_with_content(commands, parent, theme, content_builder).0
+}
+
+/// Crea una ScrollView e ritorna sia il wrapper sia l'entity del contenuto.
+///
+/// La variante pubblica standard ritorna solo il wrapper; questa serve ai
+/// widget che devono aggiungere dinamicamente figli al contenuto scrollabile.
+pub fn spawn_scroll_view_with_content(
+    commands: &mut Commands,
+    parent: Entity,
+    theme: &UiTheme,
+    content_builder: impl FnOnce(&mut Commands) -> Entity,
+) -> (Entity, Entity) {
     let wrapper = commands
         .spawn((Node {
             width: Val::Percent(100.0),
@@ -137,7 +150,7 @@ pub fn spawn_scroll_view(
         max_scroll: 0.0,
     });
 
-    wrapper
+    (wrapper, content)
 }
 
 fn update_scroll_max(

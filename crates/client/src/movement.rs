@@ -126,90 +126,6 @@ pub fn move_towards_target(
     *state = EntityState::Moving;
 }
 
-// ==================== HEIGHT-AWARE MOVEMENT HELPERS ====================
-
-/// Resolves a 2D position (x, z) to a 3D position (x, y, z) using surface queries.
-///
-/// Returns `None` if the position is not over any walkable surface.
-/// Returns `Some(Vec3)` with the resolved height if a surface is found.
-///
-/// This is the main helper for height-aware movement, allowing 2D movement
-/// commands (like click-to-move) to be resolved to proper 3D positions on terrain.
-pub fn resolve_ground_position(x: f32, z: f32, surface_query: &SurfaceQuery) -> Option<Vec3> {
-    surface_query
-        .ground_at(x, z)
-        .map(|contact| Vec3::new(x, contact.height, z))
-}
-
-/// Validates that movement between two points is valid.
-///
-/// Checks that both the start and end positions are on walkable surfaces,
-/// and that the movement doesn't cross blocking obstacles.
-///
-/// Returns `true` if movement is valid, `false` otherwise.
-pub fn is_valid_movement(
-    from: Vec3,
-    to: Vec3,
-    surface_query: &SurfaceQuery,
-    collision_grid: &bevymmo_world::CollisionGrid,
-) -> bool {
-    // Check if both start and end positions are on walkable surfaces
-    let from_contact = surface_query.ground_at(from.x, from.z);
-    let to_contact = surface_query.ground_at(to.x, to.z);
-
-    if from_contact.is_none() || to_contact.is_none() {
-        return false;
-    }
-
-    // Check if the movement crosses any blocking obstacles
-    // For now, just check the end point against obstacles
-    // In a full implementation, we would check the path between points
-    if collision_grid.is_blocked([to.x, to.y, to.z], 0.35) {
-        return false;
-    }
-
-    true
-}
-
-/// Steps a single entity towards its 2D move target using surface queries for height.
-///
-/// This is similar to `move_towards_target()` but uses surface queries to
-/// resolve the proper height for the target position, making it suitable for
-/// height-aware movement on terrain with varying elevation.
-///
-/// Returns `Some(new_position)` if movement succeeded, `None` if the target
-/// is not on a walkable surface.
-pub fn step_towards_2d_target(
-    current_position: Vec3,
-    target_x: f32,
-    target_z: f32,
-    speed: f32,
-    surface_query: &SurfaceQuery,
-) -> Option<Vec3> {
-    // Resolve the target height using surface queries
-    let target_height = surface_query.ground_at(target_x, target_z)?;
-    let target = Vec3::new(target_x, target_height.height, target_z);
-
-    // Calculate movement direction and distance
-    let offset = target - current_position;
-    let distance = offset.length();
-
-    if distance <= ARRIVAL_DISTANCE {
-        return Some(target); // Arrived at target
-    }
-
-    // Step towards target
-    let step_distance = speed.min(distance);
-    let new_position = current_position + offset.normalize() * step_distance;
-
-    // Resolve height at the new position
-    let new_height = surface_query.ground_at(new_position.x, new_position.z);
-    match new_height {
-        Some(contact) => Some(Vec3::new(new_position.x, contact.height, new_position.z)),
-        None => Some(new_position), // Fallback to unmodified position if no surface
-    }
-}
-
 // The authoritative module and Bevy clients use the same pure terrain rules.
 pub use bevymmo_gameplay::movement::{
     snap_to_ground, step_on_terrain, TerrainStep, SNAP_STEP_BUDGET,
@@ -381,18 +297,6 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_ground_position_on_surface() {
-        let (query, _manifest) = create_test_surface_query();
-
-        // Test resolving a position on the surface
-        let pos = resolve_ground_position(0.0, 0.0, &query)
-            .expect("in-bounds surface point should resolve to a 3D position");
-        assert_eq!(pos.x, 0.0);
-        assert_eq!(pos.z, 0.0);
-        assert_eq!(pos.y, 2.0); // Should match the surface height
-    }
-
-    #[test]
     fn snap_to_ground_lifts_an_entity_stranded_below_the_terrain() {
         let (query, _manifest) = create_test_surface_query();
 
@@ -414,65 +318,6 @@ mod tests {
         let mut position = Vec3::new(100.0, -7.0, 100.0);
         assert!(!snap_to_ground(&mut position, &query, 0.45));
         assert_eq!(position.y, -7.0);
-    }
-
-    #[test]
-    fn test_resolve_ground_position_off_surface() {
-        let (query, _manifest) = create_test_surface_query();
-
-        // Test resolving a position off the surface
-        let result = resolve_ground_position(100.0, 100.0, &query);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_step_towards_2d_target() {
-        let (query, _manifest) = create_test_surface_query();
-
-        let start = Vec3::new(-5.0, 2.0, -5.0);
-        let target_x = 5.0;
-        let target_z = 5.0;
-        let speed = 1.0;
-
-        // Take a step towards the target
-        let new_pos = step_towards_2d_target(start, target_x, target_z, speed, &query)
-            .expect("in-bounds target should produce a height-aware movement step");
-        // Should have moved towards the target
-        assert!(new_pos.x > start.x);
-        assert!(new_pos.z > start.z);
-        // Height should be resolved from the surface
-        assert_eq!(new_pos.y, 2.0);
-    }
-
-    #[test]
-    fn test_step_towards_2d_target_arrival() {
-        let (query, _manifest) = create_test_surface_query();
-
-        let start = Vec3::new(0.0, 2.0, 0.0);
-        let target_x = 0.05; // Very close to start
-        let target_z = 0.05;
-        let speed = 1.0;
-
-        // Should arrive at target immediately
-        let new_pos = step_towards_2d_target(start, target_x, target_z, speed, &query)
-            .expect("nearby in-bounds target should resolve immediately");
-        // Should be at the target position (within arrival distance)
-        assert!((new_pos.x - target_x).abs() < ARRIVAL_DISTANCE);
-        assert!((new_pos.z - target_z).abs() < ARRIVAL_DISTANCE);
-    }
-
-    #[test]
-    fn test_step_towards_2d_invalid_target() {
-        let (query, _manifest) = create_test_surface_query();
-
-        let start = Vec3::new(0.0, 2.0, 0.0);
-        let target_x = 100.0; // Off surface
-        let target_z = 100.0;
-        let speed = 1.0;
-
-        // Should fail because target is not on a walkable surface
-        let result = step_towards_2d_target(start, target_x, target_z, speed, &query);
-        assert!(result.is_none());
     }
 
     // ==================== TERRAIN STEP TESTS ====================

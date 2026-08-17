@@ -1,4 +1,4 @@
-//! Systems for right-click targeting and automatic cleanup.
+//! Systems for left-click targeting and automatic cleanup.
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -57,7 +57,7 @@ fn ray_sphere_intersection(
     }
 }
 
-/// Target selection system with right click.
+/// Target selection system with left click.
 ///
 /// Executes the following steps:
 /// 1. Reads cursor position
@@ -66,7 +66,7 @@ fn ray_sphere_intersection(
 /// 4. Filters dead entities
 /// 5. Ray-sphere test with each entity
 /// 6. Selects closest entity along ray
-pub fn select_target_with_right_click(
+pub fn select_target_with_left_click(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,

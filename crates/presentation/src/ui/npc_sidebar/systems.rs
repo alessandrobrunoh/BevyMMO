@@ -20,7 +20,7 @@ use crate::ui::theme::UiTheme;
 /// Senza questa soglia, `closest_friendly_hit` sceglie sempre l'NPC più
 /// vicino alla retta del raggio, non importa quanto lontano dal cursore
 /// stesso — un click ovunque sullo schermo aprirebbe la sidebar. Stesso
-/// raggio usato da `select_target_with_right_click` per coerenza visiva tra
+/// raggio usato da `select_target_with_left_click` per coerenza visiva tra
 /// le due selezioni.
 const NPC_SELECT_RADIUS: f32 = 1.2;
 

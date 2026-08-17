@@ -6,14 +6,14 @@ use bevymmo_network::network::mode;
 use crate::targeting::CurrentTarget;
 
 use crate::targeting::systems::{
-    cleanup_invalid_target, clear_target_with_escape, select_target_with_right_click,
+    cleanup_invalid_target, clear_target_with_escape, select_target_with_left_click,
 };
 
 /// Plugin per il sistema di targeting.
 ///
 /// Aggiunge:
 /// - [`CurrentTarget`] resource
-/// - Sistema di selezione con tasto destro
+/// - Sistema di selezione con tasto sinistro
 /// - Sistema di pulizia con Escape
 /// - Sistema di pulizia automatica
 pub struct TargetingPlugin;
@@ -24,7 +24,7 @@ impl Plugin for TargetingPlugin {
         app.add_systems(
             Update,
             (
-                select_target_with_right_click,
+                select_target_with_left_click,
                 // Escape is a keybind, unlike the world clicks the other two
                 // systems here react to — must not fire while a text field
                 // has focus, or clearing target and typing "e" both happen.

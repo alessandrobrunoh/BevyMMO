@@ -33,7 +33,6 @@ use bevymmo_domain::spells::components::HotbarSlot;
 use super::module_bindings::armor_cast_reducer::armor_cast as armor_cast_reducer;
 use super::module_bindings::send_chat_message_reducer::send_chat_message as send_chat_message_reducer;
 use super::module_bindings::claim_npc_item_reducer::claim_npc_item as claim_npc_item_reducer;
-use super::module_bindings::cast_spell_reducer::cast_spell as cast_spell_reducer;
 use super::module_bindings::eidolon_cast_reducer::eidolon_cast as eidolon_cast_reducer;
 use super::module_bindings::destroy_item_reducer::destroy_item as destroy_item_reducer;
 use super::module_bindings::equip_item_reducer::equip_item as equip_item_reducer;
@@ -41,10 +40,8 @@ use super::module_bindings::move_item_reducer::move_item as move_item_reducer;
 use super::module_bindings::release_cast_reducer::release_cast as release_cast_reducer;
 use super::module_bindings::respawn_reducer::respawn as respawn_reducer;
 use super::module_bindings::set_ability_selection_reducer::set_ability_selection as set_ability_selection_reducer;
-use super::module_bindings::set_armor_inscription_reducer::set_armor_inscription as set_armor_inscription_reducer;
 use super::module_bindings::set_hotbar_spell_reducer::set_hotbar_spell as set_hotbar_spell_reducer;
 use super::module_bindings::set_inscription_reducer::set_inscription as set_inscription_reducer;
-use super::module_bindings::stop_reducer::stop as stop_reducer;
 use super::module_bindings::unequip_item_reducer::unequip_item as unequip_item_reducer;
 use super::module_bindings::Vec3Row;
 use super::plugin::StdbConnection;
@@ -132,36 +129,6 @@ pub fn set_ability_selection(conn: &StdbConnection, slot: AbilitySlot, ability_i
     )
 }
 
-/// Writes the independent Root Word/Ancient Word inscription for an Armor slot.
-pub fn set_armor_inscription(
-    conn: &StdbConnection,
-    slot: EquipSlot,
-    root_word: Option<String>,
-    secondary_words: Vec<String>,
-) -> Sent {
-    conn.reducers().set_armor_inscription_then(
-        slot.label().to_ascii_lowercase(),
-        root_word,
-        secondary_words,
-        conn.report_rejection("could not write that armor inscription"),
-    )
-}
-
-/// Casts a hotbar spell at an entity, a point, or neither (a self-cast).
-pub fn cast_spell(
-    conn: &StdbConnection,
-    spell_id: String,
-    target_entity: Option<u64>,
-    target_position: Option<Vec3>,
-) -> Sent {
-    conn.reducers().cast_spell_then(
-        spell_id,
-        target_entity,
-        target_position.map(to_row),
-        conn.report_rejection("could not cast"),
-    )
-}
-
 /// Ends a channelled cast. Naming the spell stops a stale release from
 /// cancelling a cast that started after it.
 pub fn release_cast(conn: &StdbConnection, spell_id: String) -> Sent {
@@ -214,15 +181,6 @@ pub fn send_chat_message(conn: &StdbConnection, text: String) -> Sent {
 pub fn respawn(conn: &StdbConnection) -> Sent {
     conn.reducers()
         .respawn_then(conn.report_rejection("could not respawn"))
-}
-
-/// Drops the character's destination, leaving it where it stands.
-///
-/// The one reducer with no wrapper until now, which is why nothing in the UI
-/// could ask a character to halt — the only way to stop was to arrive.
-pub fn stop(conn: &StdbConnection) -> Sent {
-    conn.reducers()
-        .stop_then(conn.report_rejection("could not stop"))
 }
 
 fn hotbar_label(slot: HotbarSlot) -> &'static str {

@@ -1938,7 +1938,7 @@ struct PartyEvents(Receiver<PartyRowEvent>);
 /// One character in the caller's own party.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PartyMemberView {
-    pub character_id: u64,
+    pub character_id: Uuid,
     pub display_name: String,
     pub is_leader: bool,
 }
@@ -1947,13 +1947,13 @@ pub struct PartyMemberView {
 /// `party_member`/`player` rows — never populated by calling a reducer.
 #[derive(Resource, Default)]
 pub struct PartyRoster {
-    local_character_id: Option<u64>,
+    local_character_id: Option<Uuid>,
     parties: HashMap<u64, PartyRow>,
-    members: HashMap<u64, PartyMemberRow>,
+    members: HashMap<Uuid, PartyMemberRow>,
     /// Display names for *any* character seen in a `player` row, not just the
     /// caller's own — `/party list` needs to name every member, not only the
     /// caller.
-    display_names: HashMap<u64, String>,
+    display_names: HashMap<Uuid, String>,
 }
 
 impl PartyRoster {

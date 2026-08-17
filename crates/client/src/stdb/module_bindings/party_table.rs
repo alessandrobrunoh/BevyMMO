@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::party_type::PartyRow;
+use super::party_row_type::PartyRow;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `party`.
@@ -194,41 +194,10 @@ impl<'ctx> PartyPartyIdUnique<'ctx> {
     }
 }
 
-/// Access to the `leader` unique index on the table `party`,
-/// which allows point queries on the field of the same name
-/// via the [`PartyLeaderUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.party().leader().find(...)`.
-pub struct PartyLeaderUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<PartyRow, u64>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> PartyTableHandle<'ctx> {
-    /// Get a handle on the `leader` unique index on the table `party`.
-    pub fn leader(&self) -> PartyLeaderUnique<'ctx> {
-        PartyLeaderUnique {
-            imp: self.imp.get_unique_constraint::<u64>("leader"),
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'ctx> PartyLeaderUnique<'ctx> {
-    /// Find the subscribed row whose `leader` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u64) -> Option<PartyRow> {
-        self.imp.find(col_val)
-    }
-}
-
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PartyRow>("party");
     _table.add_unique_constraint::<u64>("party_id", |row| &row.party_id);
-    _table.add_unique_constraint::<u64>("leader", |row| &row.leader);
 }
 
 #[doc(hidden)]

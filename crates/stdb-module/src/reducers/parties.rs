@@ -24,7 +24,7 @@
 //! plan calls out explicitly, and also just good manners: a caller who typos
 //! a name should not accidentally end up leading a party of one.
 
-use spacetimedb::{reducer, ReducerContext, Table};
+use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
 use crate::reducers::lifecycle::caller_character;
 use crate::tables::{
@@ -50,7 +50,7 @@ fn find_player_by_name(ctx: &ReducerContext, name: &str) -> Result<Player, Strin
 }
 
 /// The caller's current party membership, if any.
-fn member_of(ctx: &ReducerContext, character_id: u64) -> Option<PartyMemberRow> {
+fn member_of(ctx: &ReducerContext, character_id: Uuid) -> Option<PartyMemberRow> {
     ctx.db.party_member().character_id().find(&character_id)
 }
 
@@ -67,8 +67,8 @@ fn party_size(ctx: &ReducerContext, party_id: u64) -> usize {
 /// between the sender and `<name>`".
 fn find_actionable_request(
     ctx: &ReducerContext,
-    actor_id: u64,
-    target_id: u64,
+    actor_id: Uuid,
+    target_id: Uuid,
 ) -> Option<PartyRequestRow> {
     ctx.db
         .party_request()
@@ -82,10 +82,10 @@ fn find_actionable_request(
 /// its recipient and `target_id` is its initiator. Split out so the
 /// direction logic itself, not just its plumbing, is unit-testable.
 fn matches_actionable_request(
-    request_recipient: u64,
-    request_initiator: u64,
-    actor_id: u64,
-    target_id: u64,
+    request_recipient: Uuid,
+    request_initiator: Uuid,
+    actor_id: Uuid,
+    target_id: Uuid,
 ) -> bool {
     request_recipient == actor_id && request_initiator == target_id
 }
@@ -100,8 +100,8 @@ fn matches_actionable_request(
 /// well-defined).
 fn assert_no_pending_conflict(
     ctx: &ReducerContext,
-    actor_id: u64,
-    recipient_id: u64,
+    actor_id: Uuid,
+    recipient_id: Uuid,
 ) -> Result<(), String> {
     if ctx
         .db
@@ -133,7 +133,7 @@ fn assert_no_pending_conflict(
 /// reuses this to tell an attacker why a hit on a party member did nothing,
 /// rather than re-deriving "which identity does this character own right
 /// now" a second time.
-pub(crate) fn notify_character(ctx: &ReducerContext, character_id: u64, text: String) {
+pub(crate) fn notify_character(ctx: &ReducerContext, character_id: Uuid, text: String) {
     let Some(session_row) = ctx
         .db
         .session()
@@ -152,7 +152,7 @@ pub(crate) fn notify_character(ctx: &ReducerContext, character_id: u64, text: St
 // Pure boundary logic
 // ---------------------------------------------------------------------------
 
-fn is_self_target(actor_id: u64, target_id: u64) -> bool {
+fn is_self_target(actor_id: Uuid, target_id: Uuid) -> bool {
     actor_id == target_id
 }
 
@@ -171,7 +171,7 @@ fn party_is_full(size: usize) -> bool {
 /// request: an `Invite`'s `recipient` (the invitee, `actor_id` here) is who
 /// joins; a `JoinRequest`'s `recipient` is the *leader* granting entry, so it
 /// is the `initiator` (the original joiner) who joins instead.
-fn new_member_on_accept(kind: PartyRequestKind, actor_id: u64, initiator_id: u64) -> u64 {
+fn new_member_on_accept(kind: PartyRequestKind, actor_id: Uuid, initiator_id: Uuid) -> Uuid {
     match kind {
         PartyRequestKind::Invite => actor_id,
         PartyRequestKind::JoinRequest => initiator_id,
@@ -183,7 +183,7 @@ fn new_member_on_accept(kind: PartyRequestKind, actor_id: u64, initiator_id: u64
 /// function. Ties (which cannot happen from real gameplay timestamps, but
 /// must still resolve to *something* deterministic) go to the lower
 /// `character_id`.
-fn promote_leader(remaining: &[(u64, i64)]) -> Option<u64> {
+fn promote_leader(remaining: &[(Uuid, i64)]) -> Option<Uuid> {
     remaining
         .iter()
         .min_by_key(|(character_id, joined_at)| (*joined_at, *character_id))
@@ -409,7 +409,7 @@ pub fn party_leave(ctx: &ReducerContext) -> Result<(), String> {
     }
 
     if party_row.leader == actor.character_id {
-        let candidates: Vec<(u64, i64)> = remaining
+        let candidates: Vec<(Uuid, i64)> = remaining
             .iter()
             .map(|row| (row.character_id, row.joined_at.to_micros_since_unix_epoch()))
             .collect();
@@ -437,10 +437,17 @@ pub fn party_leave(ctx: &ReducerContext) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// A deterministic, readable stand-in for a real `ctx.new_uuid_v4()`
+    /// character id — tests only care that these compare equal/unequal
+    /// consistently with the small integer they were built from.
+    fn cid(n: u128) -> Uuid {
+        Uuid::from_u128(n)
+    }
+
     #[test]
     fn self_target_is_detected() {
-        assert!(is_self_target(1, 1));
-        assert!(!is_self_target(1, 2));
+        assert!(is_self_target(cid(1), cid(1)));
+        assert!(!is_self_target(cid(1), cid(2)));
     }
 
     #[test]
@@ -452,36 +459,39 @@ mod tests {
 
     #[test]
     fn accept_resolves_invite_to_the_recipient() {
-        assert_eq!(new_member_on_accept(PartyRequestKind::Invite, 10, 20), 10);
+        assert_eq!(
+            new_member_on_accept(PartyRequestKind::Invite, cid(10), cid(20)),
+            cid(10)
+        );
     }
 
     #[test]
     fn accept_resolves_join_request_to_the_initiator() {
         assert_eq!(
-            new_member_on_accept(PartyRequestKind::JoinRequest, 10, 20),
-            20
+            new_member_on_accept(PartyRequestKind::JoinRequest, cid(10), cid(20)),
+            cid(20)
         );
     }
 
     #[test]
     fn actionable_request_requires_actor_as_recipient_and_target_as_initiator() {
-        assert!(matches_actionable_request(1, 2, 1, 2));
+        assert!(matches_actionable_request(cid(1), cid(2), cid(1), cid(2)));
         // Direction swapped: actor is the initiator, not the recipient.
-        assert!(!matches_actionable_request(2, 1, 1, 2));
+        assert!(!matches_actionable_request(cid(2), cid(1), cid(1), cid(2)));
         // Right recipient, wrong initiator.
-        assert!(!matches_actionable_request(1, 3, 1, 2));
+        assert!(!matches_actionable_request(cid(1), cid(3), cid(1), cid(2)));
     }
 
     #[test]
     fn promote_leader_picks_the_earliest_join() {
-        let candidates = [(3, 500), (1, 100), (2, 200)];
-        assert_eq!(promote_leader(&candidates), Some(1));
+        let candidates = [(cid(3), 500), (cid(1), 100), (cid(2), 200)];
+        assert_eq!(promote_leader(&candidates), Some(cid(1)));
     }
 
     #[test]
     fn promote_leader_breaks_ties_by_lowest_character_id() {
-        let candidates = [(5, 100), (2, 100)];
-        assert_eq!(promote_leader(&candidates), Some(2));
+        let candidates = [(cid(5), 100), (cid(2), 100)];
+        assert_eq!(promote_leader(&candidates), Some(cid(2)));
     }
 
     #[test]

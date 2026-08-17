@@ -249,7 +249,7 @@ pub struct PartyRow {
     #[auto_inc]
     pub party_id: u64,
     #[unique]
-    pub leader: u64,
+    pub leader: Uuid,
     pub created_at: Timestamp,
 }
 
@@ -266,7 +266,7 @@ pub struct PartyRow {
 )]
 pub struct PartyMemberRow {
     #[primary_key]
-    pub character_id: u64,
+    pub character_id: Uuid,
     pub party_id: u64,
     /// Used to break ties when a leader leaves: the longest-tenured
     /// remaining member is promoted (see `reducers::parties::party_leave`).
@@ -306,9 +306,9 @@ pub struct PartyRequestRow {
     pub request_id: u64,
     pub party_id: u64,
     pub kind: PartyRequestKind,
-    pub initiator: u64,
+    pub initiator: Uuid,
     /// Whoever must `/party accept` or `/party decline` this request.
-    pub recipient: u64,
+    pub recipient: Uuid,
     pub created_at: Timestamp,
 }
 

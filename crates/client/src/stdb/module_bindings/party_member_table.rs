@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::party_member_type::PartyMemberRow;
+use super::party_member_row_type::PartyMemberRow;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `party_member`.
@@ -164,40 +164,9 @@ impl<'ctx> __sdk::WithUpdate for PartyMemberTableHandle<'ctx> {
     }
 }
 
-/// Access to the `character_id` unique index on the table `party_member`,
-/// which allows point queries on the field of the same name
-/// via the [`PartyMemberCharacterIdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.party_member().character_id().find(...)`.
-pub struct PartyMemberCharacterIdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<PartyMemberRow, u64>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> PartyMemberTableHandle<'ctx> {
-    /// Get a handle on the `character_id` unique index on the table `party_member`.
-    pub fn character_id(&self) -> PartyMemberCharacterIdUnique<'ctx> {
-        PartyMemberCharacterIdUnique {
-            imp: self.imp.get_unique_constraint::<u64>("character_id"),
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<'ctx> PartyMemberCharacterIdUnique<'ctx> {
-    /// Find the subscribed row whose `character_id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u64) -> Option<PartyMemberRow> {
-        self.imp.find(col_val)
-    }
-}
-
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PartyMemberRow>("party_member");
-    _table.add_unique_constraint::<u64>("character_id", |row| &row.character_id);
 }
 
 #[doc(hidden)]

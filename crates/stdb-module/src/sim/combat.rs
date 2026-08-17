@@ -418,7 +418,7 @@ fn party_friendly_fire_attacker(
     ctx: &ReducerContext,
     target: &GameEntity,
     source: Option<u64>,
-) -> Option<u64> {
+) -> Option<Uuid> {
     if target.kind != EntityKindRow::Player {
         return None;
     }
@@ -456,9 +456,9 @@ fn party_friendly_fire_attacker(
 /// never make a target invulnerable by accident.
 fn is_friendly_fire(
     target_kind: EntityKindRow,
-    target_character_id: Option<u64>,
+    target_character_id: Option<Uuid>,
     source_kind: Option<EntityKindRow>,
-    source_character_id: Option<u64>,
+    source_character_id: Option<Uuid>,
     target_party_id: Option<u64>,
     source_party_id: Option<u64>,
 ) -> bool {
@@ -993,13 +993,20 @@ mod tests {
     const PLAYER: EntityKindRow = EntityKindRow::Player;
     const ENEMY: EntityKindRow = EntityKindRow::Enemy;
 
+    /// A deterministic, readable stand-in for a real `ctx.new_uuid_v4()`
+    /// character id — tests only care that these compare equal/unequal
+    /// consistently with the small integer they were built from.
+    fn cid(n: u128) -> Uuid {
+        Uuid::from_u128(n)
+    }
+
     #[test]
     fn two_different_players_in_the_same_party_is_friendly_fire() {
         assert!(is_friendly_fire(
             PLAYER,
-            Some(1),
+            Some(cid(1)),
             Some(PLAYER),
-            Some(2),
+            Some(cid(2)),
             Some(100),
             Some(100),
         ));
@@ -1009,9 +1016,9 @@ mod tests {
     fn two_players_in_different_parties_is_not_friendly_fire() {
         assert!(!is_friendly_fire(
             PLAYER,
-            Some(1),
+            Some(cid(1)),
             Some(PLAYER),
-            Some(2),
+            Some(cid(2)),
             Some(100),
             Some(200),
         ));
@@ -1021,9 +1028,9 @@ mod tests {
     fn a_character_hitting_itself_is_not_friendly_fire_even_in_the_same_party() {
         assert!(!is_friendly_fire(
             PLAYER,
-            Some(1),
+            Some(cid(1)),
             Some(PLAYER),
-            Some(1),
+            Some(cid(1)),
             Some(100),
             Some(100),
         ));
@@ -1038,7 +1045,7 @@ mod tests {
             ENEMY,
             None,
             Some(PLAYER),
-            Some(2),
+            Some(cid(2)),
             Some(100),
             Some(100),
         ));
@@ -1048,7 +1055,7 @@ mod tests {
     fn a_non_player_source_is_never_friendly_fire() {
         assert!(!is_friendly_fire(
             PLAYER,
-            Some(1),
+            Some(cid(1)),
             Some(ENEMY),
             None,
             Some(100),
@@ -1058,16 +1065,23 @@ mod tests {
 
     #[test]
     fn damage_with_no_source_is_never_friendly_fire() {
-        assert!(!is_friendly_fire(PLAYER, Some(1), None, None, Some(100), None));
+        assert!(!is_friendly_fire(
+            PLAYER,
+            Some(cid(1)),
+            None,
+            None,
+            Some(100),
+            None
+        ));
     }
 
     #[test]
     fn an_ungrouped_target_is_never_friendly_fire() {
         assert!(!is_friendly_fire(
             PLAYER,
-            Some(1),
+            Some(cid(1)),
             Some(PLAYER),
-            Some(2),
+            Some(cid(2)),
             None,
             Some(100),
         ));
@@ -1077,9 +1091,9 @@ mod tests {
     fn an_ungrouped_source_is_never_friendly_fire() {
         assert!(!is_friendly_fire(
             PLAYER,
-            Some(1),
+            Some(cid(1)),
             Some(PLAYER),
-            Some(2),
+            Some(cid(2)),
             Some(100),
             None,
         ));
@@ -1094,7 +1108,7 @@ mod tests {
             PLAYER,
             None,
             Some(PLAYER),
-            Some(2),
+            Some(cid(2)),
             Some(100),
             Some(100),
         ));

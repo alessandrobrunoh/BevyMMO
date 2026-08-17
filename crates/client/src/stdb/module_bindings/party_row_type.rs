@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct PartyRow {
     pub party_id: u64,
-    pub leader: u64,
+    pub leader: __sdk::Uuid,
     pub created_at: __sdk::Timestamp,
 }
 
@@ -21,7 +21,7 @@ impl __sdk::InModule for PartyRow {
 /// Provides typed access to columns for query building.
 pub struct PartyRowCols {
     pub party_id: __sdk::__query_builder::Col<PartyRow, u64>,
-    pub leader: __sdk::__query_builder::Col<PartyRow, u64>,
+    pub leader: __sdk::__query_builder::Col<PartyRow, __sdk::Uuid>,
     pub created_at: __sdk::__query_builder::Col<PartyRow, __sdk::Timestamp>,
 }
 
@@ -40,16 +40,16 @@ impl __sdk::__query_builder::HasCols for PartyRow {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PartyRowIxCols {
+    pub leader: __sdk::__query_builder::IxCol<PartyRow, __sdk::Uuid>,
     pub party_id: __sdk::__query_builder::IxCol<PartyRow, u64>,
-    pub leader: __sdk::__query_builder::IxCol<PartyRow, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for PartyRow {
     type IxCols = PartyRowIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PartyRowIxCols {
-            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
             leader: __sdk::__query_builder::IxCol::new(table_name, "leader"),
+            party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
         }
     }
 }

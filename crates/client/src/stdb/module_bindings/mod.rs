@@ -79,10 +79,13 @@ pub mod party_decline_reducer;
 pub mod party_invite_reducer;
 pub mod party_join_reducer;
 pub mod party_leave_reducer;
+pub mod party_member_row_type;
 pub mod party_member_table;
-pub mod party_member_type;
+pub mod party_request_kind_type;
+pub mod party_request_row_type;
+pub mod party_request_table;
+pub mod party_row_type;
 pub mod party_table;
-pub mod party_type;
 pub mod periodic_effect_table;
 pub mod periodic_effect_type;
 pub mod player_message_event_type;
@@ -201,10 +204,13 @@ pub use party_decline_reducer::party_decline;
 pub use party_invite_reducer::party_invite;
 pub use party_join_reducer::party_join;
 pub use party_leave_reducer::party_leave;
+pub use party_member_row_type::PartyMemberRow;
 pub use party_member_table::*;
-pub use party_member_type::PartyMemberRow;
+pub use party_request_kind_type::PartyRequestKind;
+pub use party_request_row_type::PartyRequestRow;
+pub use party_request_table::*;
+pub use party_row_type::PartyRow;
 pub use party_table::*;
-pub use party_type::PartyRow;
 pub use periodic_effect_table::*;
 pub use periodic_effect_type::PeriodicEffect;
 pub use player_message_event_type::PlayerMessageEvent;
@@ -540,7 +546,9 @@ impl __sdk::Reducer for Reducer {
                 __sats::bsatn::to_vec(&party_accept_reducer::PartyAcceptArgs { name: name.clone() })
             }
             Reducer::PartyDecline { name } => {
-                __sats::bsatn::to_vec(&party_decline_reducer::PartyDeclineArgs { name: name.clone() })
+                __sats::bsatn::to_vec(&party_decline_reducer::PartyDeclineArgs {
+                    name: name.clone(),
+                })
             }
             Reducer::PartyInvite { target_name } => {
                 __sats::bsatn::to_vec(&party_invite_reducer::PartyInviteArgs {
@@ -552,9 +560,7 @@ impl __sdk::Reducer for Reducer {
                     leader_name: leader_name.clone(),
                 })
             }
-            Reducer::PartyLeave => {
-                __sats::bsatn::to_vec(&party_leave_reducer::PartyLeaveArgs {})
-            }
+            Reducer::PartyLeave => __sats::bsatn::to_vec(&party_leave_reducer::PartyLeaveArgs {}),
             Reducer::Register { email, password } => {
                 __sats::bsatn::to_vec(&register_reducer::RegisterArgs {
                     email: email.clone(),
@@ -654,6 +660,7 @@ pub struct DbUpdate {
     known_glyphs: __sdk::TableUpdate<KnownGlyphsTable>,
     party: __sdk::TableUpdate<PartyRow>,
     party_member: __sdk::TableUpdate<PartyMemberRow>,
+    party_request: __sdk::TableUpdate<PartyRequestRow>,
     periodic_effect: __sdk::TableUpdate<PeriodicEffect>,
     player: __sdk::TableUpdate<Player>,
     player_message: __sdk::TableUpdate<PlayerMessageEvent>,
@@ -725,6 +732,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "party_member" => db_update
                     .party_member
                     .append(party_member_table::parse_table_update(table_update)?),
+                "party_request" => db_update
+                    .party_request
+                    .append(party_request_table::parse_table_update(table_update)?),
                 "periodic_effect" => db_update
                     .periodic_effect
                     .append(periodic_effect_table::parse_table_update(table_update)?),
@@ -837,6 +847,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.party_member = cache
             .apply_diff_to_table::<PartyMemberRow>("party_member", &self.party_member)
             .with_updates_by_pk(|row| &row.character_id);
+        diff.party_request = cache
+            .apply_diff_to_table::<PartyRequestRow>("party_request", &self.party_request)
+            .with_updates_by_pk(|row| &row.request_id);
         diff.periodic_effect = cache
             .apply_diff_to_table::<PeriodicEffect>("periodic_effect", &self.periodic_effect)
             .with_updates_by_pk(|row| &row.id);
@@ -926,6 +939,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party_member" => db_update
                     .party_member
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "party_request" => db_update
+                    .party_request
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "periodic_effect" => db_update
                     .periodic_effect
@@ -1027,6 +1043,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "party_member" => db_update
                     .party_member
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "party_request" => db_update
+                    .party_request
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "periodic_effect" => db_update
                     .periodic_effect
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -1095,6 +1114,7 @@ pub struct AppliedDiff<'r> {
     known_glyphs: __sdk::TableAppliedDiff<'r, KnownGlyphsTable>,
     party: __sdk::TableAppliedDiff<'r, PartyRow>,
     party_member: __sdk::TableAppliedDiff<'r, PartyMemberRow>,
+    party_request: __sdk::TableAppliedDiff<'r, PartyRequestRow>,
     periodic_effect: __sdk::TableAppliedDiff<'r, PeriodicEffect>,
     player: __sdk::TableAppliedDiff<'r, Player>,
     player_message: __sdk::TableAppliedDiff<'r, PlayerMessageEvent>,
@@ -1167,6 +1187,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<PartyMemberRow>(
             "party_member",
             &self.party_member,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<PartyRequestRow>(
+            "party_request",
+            &self.party_request,
             event,
         );
         callbacks.invoke_table_row_callbacks::<PeriodicEffect>(
@@ -1882,6 +1907,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         known_glyphs_table::register_table(client_cache);
         party_table::register_table(client_cache);
         party_member_table::register_table(client_cache);
+        party_request_table::register_table(client_cache);
         periodic_effect_table::register_table(client_cache);
         player_table::register_table(client_cache);
         player_message_table::register_table(client_cache);
@@ -1913,6 +1939,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "known_glyphs",
         "party",
         "party_member",
+        "party_request",
         "periodic_effect",
         "player",
         "player_message",

@@ -7,7 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PartyMemberRow {
-    pub character_id: u64,
+    pub character_id: __sdk::Uuid,
     pub party_id: u64,
     pub joined_at: __sdk::Timestamp,
 }
@@ -20,7 +20,7 @@ impl __sdk::InModule for PartyMemberRow {
 ///
 /// Provides typed access to columns for query building.
 pub struct PartyMemberRowCols {
-    pub character_id: __sdk::__query_builder::Col<PartyMemberRow, u64>,
+    pub character_id: __sdk::__query_builder::Col<PartyMemberRow, __sdk::Uuid>,
     pub party_id: __sdk::__query_builder::Col<PartyMemberRow, u64>,
     pub joined_at: __sdk::__query_builder::Col<PartyMemberRow, __sdk::Timestamp>,
 }
@@ -40,7 +40,7 @@ impl __sdk::__query_builder::HasCols for PartyMemberRow {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PartyMemberRowIxCols {
-    pub character_id: __sdk::__query_builder::IxCol<PartyMemberRow, u64>,
+    pub character_id: __sdk::__query_builder::IxCol<PartyMemberRow, __sdk::Uuid>,
     pub party_id: __sdk::__query_builder::IxCol<PartyMemberRow, u64>,
 }
 

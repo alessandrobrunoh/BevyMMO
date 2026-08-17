@@ -175,6 +175,13 @@ enum RowEvent {
 #[derive(Resource, Default)]
 struct PendingRows {
     entities: HashMap<u64, EntityRow>,
+    /// Every `player` row seen, regardless of which account owns it —
+    /// unlike [`CharacterRoster`], which only ever holds *this* account's
+    /// characters. Kept so [`recompute_roster`] can rebuild the roster from
+    /// scratch once [`LocalCharacter::account_id`] becomes known, since
+    /// `player` rows and the `session` row that reveals the account id have
+    /// no guaranteed delivery order — see `RowEvent::Session`'s comment.
+    players: HashMap<u64, Player>,
     offline_players: HashSet<u64>,
     stats: HashMap<u64, EntityStats>,
     inventory: HashMap<u64, InventoryTable>,
@@ -374,6 +381,34 @@ impl CharacterRoster {
     }
 }
 
+/// Rebuilds `roster` from scratch out of every cached `player` row, filtered
+/// to `local.account_id`. A full rebuild rather than an incremental
+/// insert/remove because the order `player` and `session` rows arrive in is
+/// not guaranteed — see the call sites on `RowEvent::Player`/`RowEvent::Session`.
+/// Cheap enough: at most `MAX_CHARACTERS_PER_ACCOUNT` characters ever belong
+/// to one account, and this only runs when one of those two row kinds changes.
+fn recompute_roster(pending: &PendingRows, local: &LocalCharacter, roster: &mut CharacterRoster) {
+    let Some(account_id) = local.account_id else {
+        roster.characters.clear();
+        return;
+    };
+    roster.characters = pending
+        .players
+        .values()
+        .filter(|player| player.account_id == account_id)
+        .map(|player| {
+            (
+                player.character_id,
+                RosterCharacter {
+                    character_id: player.character_id,
+                    display_name: player.display_name.clone(),
+                    online: player.online,
+                },
+            )
+        })
+        .collect();
+}
+
 /// The client-side replication state, bundled into one [`SystemParam`] so
 /// `drain_events` — which already touches every mirrored table — does not
 /// cross the workspace's raised `too-many-arguments` threshold (see
@@ -449,18 +484,37 @@ impl Plugin for StdbPlugin {
         app.add_systems(Update, finish_logout);
         app.add_systems(
             Update,
-            (
-                auth_on_request,
-                delete_character_on_request,
-                join_on_request,
-                send_move_commands,
-                send_heartbeat,
-                send_combat_inputs,
-            )
+            (auth_on_request, delete_character_on_request, join_on_request)
                 .run_if(resource_exists::<StdbConnection>),
+        );
+        app.add_systems(
+            Update,
+            (send_move_commands, send_combat_inputs)
+                .run_if(resource_exists::<StdbConnection>)
+                .run_if(in_gameplay),
+        );
+        app.add_systems(
+            Update,
+            send_heartbeat.run_if(resource_exists::<StdbConnection>),
         );
         app.add_systems(Update, predict_and_reconcile);
     }
+}
+
+/// Whether gameplay actions (movement, casting) are meaningful right now —
+/// i.e. a character exists in the world. `Paused` counts: it is a
+/// client-side overlay only and does not pause the network or the
+/// simulation (see [`Screen`]'s doc comment), so a cast queued while the
+/// pause menu is open still has somewhere to go.
+///
+/// Without this, [`send_move_commands`]/[`send_combat_inputs`] read the raw
+/// keyboard/mouse state unconditionally — including at the main menu, where
+/// they have no character to act through and the server just rejects every
+/// call. Worse, cast keybinds default to plain letters (`D`, `R`, `F`, ...),
+/// so typing an email into the login form could — and did — fire spurious
+/// `armor_cast` calls for every letter that happened to match one.
+fn in_gameplay(screen: Res<GameScreen>) -> bool {
+    matches!(screen.0, Screen::InGame | Screen::Paused)
 }
 
 /// Produces a filesystem-safe cache key per SpacetimeDB instance and module.
@@ -736,6 +790,7 @@ fn drain_events(
                     state.pending.equipment.remove(&character_id);
                     state.pending.hotbar.remove(&character_id);
                     state.pending.known_glyphs.remove(&character_id);
+                    state.pending.players.remove(&character_id);
                     state.roster.characters.remove(&character_id);
                     if state.local.character_id == Some(character_id) {
                         state.local.character_id = None;
@@ -764,22 +819,15 @@ fn drain_events(
             RowEvent::Player(row) => {
                 state.map.entity_of_character.insert(row.character_id, row.entity_id);
 
-                // Populate the character-select roster with every character
-                // that belongs to the same account as this connection —
-                // never with other accounts' characters, even though
-                // `player` is public and carries every one of them.
-                if state.local.account_id == Some(row.account_id) {
-                    state.roster.characters.insert(
-                        row.character_id,
-                        RosterCharacter {
-                            character_id: row.character_id,
-                            display_name: row.display_name.clone(),
-                            online: row.online,
-                        },
-                    );
-                } else {
-                    state.roster.characters.remove(&row.character_id);
-                }
+                // Cached regardless of account, then filtered back out in
+                // `recompute_roster` — this row can arrive before the
+                // `Session` row that reveals which account is ours (initial
+                // subscription snapshots have no ordering guarantee), and
+                // without the full cache that character would never make it
+                // into the roster: nothing re-scans `player` rows once
+                // `Session` finally does resolve the account id.
+                state.pending.players.insert(row.character_id, row.clone());
+                recompute_roster(&state.pending, &state.local, &mut state.roster);
 
                 if row.online {
                     state.pending.offline_players.remove(&row.character_id);
@@ -827,6 +875,10 @@ fn drain_events(
                 }
                 state.local.account_id = Some(row.account_id);
                 state.local.character_id = row.character_id;
+                // Catches every `player` row that already arrived before
+                // this `Session` row told us which account they should be
+                // filtered against — see the comment on `RowEvent::Player`.
+                recompute_roster(&state.pending, &state.local, &mut state.roster);
 
                 // The `game_entity`/`player` rows for this character may well
                 // have already arrived before this `Session` row confirmed

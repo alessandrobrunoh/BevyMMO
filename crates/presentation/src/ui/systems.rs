@@ -218,7 +218,7 @@ pub fn update_text_input_keyboard(
             Key::Backspace => {
                 input.value.pop();
             }
-            Key::Enter => {
+            Key::Enter | Key::Escape => {
                 input.focused = false;
             }
             Key::Space if len < input.max_chars => {

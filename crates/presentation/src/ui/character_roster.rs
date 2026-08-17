@@ -87,6 +87,23 @@ fn rebuild_roster_list(
     let mut characters: Vec<&RosterCharacter> = roster.iter().collect();
     characters.sort_by(|a, b| a.display_name.cmp(&b.display_name));
 
+    if characters.is_empty() {
+        // Otherwise an empty roster is indistinguishable from one that
+        // hasn't loaded yet — nothing tells the player their account really
+        // has zero characters and the field below is how to fix that.
+        commands.entity(list).with_children(|list| {
+            list.spawn((
+                Text::new("No characters yet — create one below."),
+                TextFont {
+                    font_size: FontSize::Px(theme.input_font_size - 2.0),
+                    ..default()
+                },
+                TextColor(theme.muted_text_color),
+            ));
+        });
+        return;
+    }
+
     for character in characters {
         spawn_roster_row(&mut commands, list, character, &theme);
     }

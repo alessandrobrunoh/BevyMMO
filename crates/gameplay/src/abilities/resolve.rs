@@ -75,6 +75,51 @@ fn manifest_blueprint(
     }
 }
 
+/// Shared tail of [`cast_armor_inscribed_ability`] and
+/// [`cast_root_inscribed_slot`]: both are `resolve_* → manifest_blueprint →
+/// Ok(())`, differing only in which `resolve_*` produced the preview. Takes
+/// the already-evaluated `Result` rather than a closure — the caller always
+/// wants to resolve eagerly before manifesting, so there is no laziness to
+/// preserve, and this avoids a boxed/generic closure parameter for no
+/// behavioral gain.
+fn manifest_from_preview(
+    preview: Result<SlotPreview, CastBlockedReason>,
+    ctx: &mut SpellCastContext,
+) -> Result<(), CastBlockedReason> {
+    manifest_blueprint(&preview?, ctx);
+    Ok(())
+}
+
+/// Applies each already-sorted secondary Ancient Word to `blueprint`: checks
+/// the caster knows it, checks it is tag-compatible with the blueprint so
+/// far, then lets it transform the blueprint — erroring identically on an
+/// unknown or incompatible word either way.
+///
+/// Shared by the weapon (Root Word inscription, secondary words sorted by
+/// phase then word id) and armor (sorted by word id only) paths; the sort
+/// order is the only real difference between them, so it stays the
+/// caller's job and this only takes the already-sorted slice.
+fn apply_secondary_words(
+    blueprint: &mut AbilityBlueprint,
+    words: &[super::inscription::SecondaryWord],
+    known: &KnownAncientLanguage,
+    ancient_words: &AncientWordRegistry,
+) -> Result<(), CastBlockedReason> {
+    for secondary in words {
+        if !known.knows_ancient_word(&secondary.word_id) {
+            return Err(CastBlockedReason::UnknownAncientWord);
+        }
+        let word = ancient_words
+            .get(&secondary.word_id)
+            .ok_or(CastBlockedReason::UnknownAncientWord)?;
+        if !word.metadata().is_compatible_with(&blueprint.tags) {
+            return Err(CastBlockedReason::IncompatibleAncientWord);
+        }
+        word.transform_blueprint(blueprint);
+    }
+    Ok(())
+}
+
 /// Prima metà di [`cast_inscribed_slot`]: risolve il gesto attivo, verifica i
 /// Glifi conosciuti e applica i Modificatori, ma **non emette nulla**.
 ///
@@ -178,18 +223,7 @@ pub fn resolve_root_inscribed_slot(
             .then_with(|| left.word_id.as_str().cmp(right.word_id.as_str()))
     });
 
-    for secondary in words {
-        if !known.knows_ancient_word(&secondary.word_id) {
-            return Err(CastBlockedReason::UnknownAncientWord);
-        }
-        let word = ancient_words
-            .get(&secondary.word_id)
-            .ok_or(CastBlockedReason::UnknownAncientWord)?;
-        if !word.metadata().is_compatible_with(&blueprint.tags) {
-            return Err(CastBlockedReason::IncompatibleAncientWord);
-        }
-        word.transform_blueprint(&mut blueprint);
-    }
+    apply_secondary_words(&mut blueprint, &words, known, ancient_words)?;
 
     let params = blueprint.params;
     Ok(SlotPreview {
@@ -238,18 +272,7 @@ pub fn resolve_armor_inscribed_ability(
     root.apply_to_blueprint(&mut blueprint, &root_params);
     let mut words = inscription.secondary_words.clone();
     words.sort_by(|left, right| left.word_id.as_str().cmp(right.word_id.as_str()));
-    for secondary in words {
-        if !known.knows_ancient_word(&secondary.word_id) {
-            return Err(CastBlockedReason::UnknownAncientWord);
-        }
-        let word = ancient_words
-            .get(&secondary.word_id)
-            .ok_or(CastBlockedReason::UnknownAncientWord)?;
-        if !word.metadata().is_compatible_with(&blueprint.tags) {
-            return Err(CastBlockedReason::IncompatibleAncientWord);
-        }
-        word.transform_blueprint(&mut blueprint);
-    }
+    apply_secondary_words(&mut blueprint, &words, known, ancient_words)?;
     let params = blueprint.params;
     Ok(SlotPreview { ability, blueprint, params })
 }
@@ -267,17 +290,18 @@ pub fn cast_armor_inscribed_ability(
     ctx: &mut SpellCastContext,
     item: Option<&dyn Item>,
 ) -> Result<(), CastBlockedReason> {
-    let preview = resolve_armor_inscribed_ability(
-        ability_id,
-        inscription,
-        known,
-        ability_registry,
-        root_words,
-        ancient_words,
-        item,
-    )?;
-    manifest_blueprint(&preview, ctx);
-    Ok(())
+    manifest_from_preview(
+        resolve_armor_inscribed_ability(
+            ability_id,
+            inscription,
+            known,
+            ability_registry,
+            root_words,
+            ancient_words,
+            item,
+        ),
+        ctx,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -293,19 +317,20 @@ pub fn cast_root_inscribed_slot(
     ctx: &mut SpellCastContext,
     item: Option<&dyn Item>,
 ) -> Result<(), CastBlockedReason> {
-    let preview = resolve_root_inscribed_slot(
-        slot,
-        abilities,
-        selection,
-        inscription,
-        known,
-        ability_registry,
-        root_words,
-        ancient_words,
-        item,
-    )?;
-    manifest_blueprint(&preview, ctx);
-    Ok(())
+    manifest_from_preview(
+        resolve_root_inscribed_slot(
+            slot,
+            abilities,
+            selection,
+            inscription,
+            known,
+            ability_registry,
+            root_words,
+            ancient_words,
+            item,
+        ),
+        ctx,
+    )
 }
 
 /// Lancia lo slot `slot` dell’arma incisa `inscriptions`.

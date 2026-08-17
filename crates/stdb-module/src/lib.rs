@@ -42,6 +42,9 @@ pub const DEFAULT_SPEED_PER_SECOND: f32 = 0.15 * 60.0;
 /// How many characters one account may own at once. See `Player::account_id`.
 pub const MAX_CHARACTERS_PER_ACCOUNT: usize = 3;
 
+/// How many characters one party may hold at once. See `tables::PartyRow`.
+pub const MAX_PARTY_SIZE: usize = 5;
+
 /// Normalises a display name into its uniqueness key.
 pub fn normalize_name(name: &str) -> String {
     name.trim().to_lowercase()

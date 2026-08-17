@@ -222,6 +222,96 @@ pub struct Resonance {
     pub level: u32,
 }
 
+// ---------------------------------------------------------------------------
+// Persistent: parties
+// ---------------------------------------------------------------------------
+//
+// Keyed on `character_id`, not `Identity`. A party is a relationship between
+// *characters* — the persistent things a player builds up gear and resonance
+// on — not between connections. A player can reconnect under a fresh
+// `Identity` (a new browser tab, a dropped socket) and keep the same
+// character; the party must follow the character through that, not evaporate
+// because the old `Identity` disconnected. See `reducers::lifecycle::caller_character`
+// for how a reducer resolves "which character is calling", and `Session` for
+// how a character's *current* `Identity`, if any, is found when a party
+// notification needs somewhere to go.
+
+/// One party of up to [`crate::MAX_PARTY_SIZE`] characters.
+///
+/// `leader` is `#[unique]`: [`PartyMemberRow`] guarantees a character is
+/// never in more than one party at a time, and the leader is always also a
+/// member (see `reducers::parties`), so a character can never lead two
+/// parties simultaneously — the uniqueness constraint documents that
+/// invariant rather than merely hoping for it.
+#[table(accessor = party, public)]
+pub struct PartyRow {
+    #[primary_key]
+    #[auto_inc]
+    pub party_id: u64,
+    #[unique]
+    pub leader: u64,
+    pub created_at: Timestamp,
+}
+
+/// One character's membership in one party.
+///
+/// Keyed by `character_id` rather than an auto-inc id: that primary key *is*
+/// the "one party per character at a time" guarantee, the same way
+/// `Player::entity_id` being `#[unique]` guarantees one entity per character.
+/// No separate uniqueness check is needed anywhere in `reducers::parties`.
+#[table(
+    accessor = party_member,
+    public,
+    index(accessor = by_party, btree(columns = [party_id]))
+)]
+pub struct PartyMemberRow {
+    #[primary_key]
+    pub character_id: u64,
+    pub party_id: u64,
+    /// Used to break ties when a leader leaves: the longest-tenured
+    /// remaining member is promoted (see `reducers::parties::party_leave`).
+    pub joined_at: Timestamp,
+}
+
+/// Which direction a pending [`PartyRequestRow`] runs.
+///
+/// Both kinds are resolved identically by `party_accept`/`party_decline`:
+/// whoever is named in `recipient` is the one who must act. The kind exists
+/// only so `party_accept` knows who joins the party on acceptance — the
+/// invitee for an `Invite`, the original joiner (not the accepting leader)
+/// for a `JoinRequest`.
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartyRequestKind {
+    /// The party's leader invited someone outside it.
+    Invite,
+    /// An outsider asked to join a named leader's party.
+    JoinRequest,
+}
+
+/// A pending invite or join request, waiting on `recipient` to accept or
+/// decline.
+///
+/// At most one live request may connect any two characters — enforced in
+/// `reducers::parties`, not by the schema — so `party_accept`/`party_decline`
+/// resolving "whichever pending request exists between the sender and the
+/// named character" is never ambiguous.
+#[table(
+    accessor = party_request,
+    public,
+    index(accessor = by_recipient, btree(columns = [recipient]))
+)]
+pub struct PartyRequestRow {
+    #[primary_key]
+    #[auto_inc]
+    pub request_id: u64,
+    pub party_id: u64,
+    pub kind: PartyRequestKind,
+    pub initiator: u64,
+    /// Whoever must `/party accept` or `/party decline` this request.
+    pub recipient: u64,
+    pub created_at: Timestamp,
+}
+
 /// GM edits to a map's props: moved, retinted or removed.
 ///
 /// Overlaid on the manifest at seed time. The Postgres version of this table had

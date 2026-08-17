@@ -17,6 +17,8 @@ publish = false
 # Build with `spacetime build`/`spacetime publish`, never plain `cargo build`
 # from the workspace root.
 
+[workspace]
+
 [lib]
 crate-type = ["cdylib"]
 

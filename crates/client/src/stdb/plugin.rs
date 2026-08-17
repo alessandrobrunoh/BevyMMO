@@ -460,9 +460,13 @@ impl Plugin for StdbPlugin {
             uri: uri.clone(),
             module: module.clone(),
         });
+        app.init_resource::<PartyRoster>();
         app.add_systems(Startup, move |world: &mut World| {
             match connect(&uri, &module) {
-                Ok(connection) => world.insert_resource(connection),
+                Ok((connection, party_events)) => {
+                    world.insert_resource(connection);
+                    world.insert_resource(party_events);
+                }
                 // Not fatal: the menu stays usable and the player can retry
                 // rather than the process dying on a cold database.
                 Err(err) => error!("SpacetimeDB connection to {uri} failed: {err}"),
@@ -479,6 +483,13 @@ impl Plugin for StdbPlugin {
             (pump_connection, drain_events)
                 .chain()
                 .run_if(resource_exists::<StdbConnection>),
+        );
+        app.add_systems(
+            PreUpdate,
+            drain_party_events
+                .after(pump_connection)
+                .run_if(resource_exists::<StdbConnection>)
+                .run_if(resource_exists::<PartyEvents>),
         );
         app.add_systems(Update, finish_shutdown);
         app.add_systems(
@@ -562,7 +573,10 @@ fn forget_cached_credentials(uri: &str, module: &str) {
     }
 }
 
-fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error::Error>> {
+fn connect(
+    uri: &str,
+    module: &str,
+) -> Result<(StdbConnection, PartyEvents), Box<dyn std::error::Error>> {
     let (tx, events) = unbounded();
     let reports = tx.clone();
     let credential_key = credential_key(uri, module);
@@ -587,6 +601,9 @@ fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error
 
     register_callbacks(&conn, tx);
 
+    let (party_tx, party_events) = unbounded();
+    register_party_callbacks(&conn, party_tx);
+
     conn.subscription_builder()
         .on_applied(|_ctx| info!("SpacetimeDB subscription applied"))
         .on_error(|_ctx, err| error!("SpacetimeDB subscription failed: {err}"))
@@ -610,13 +627,18 @@ fn connect(uri: &str, module: &str) -> Result<StdbConnection, Box<dyn std::error
             "SELECT * FROM cast_ended",
             "SELECT * FROM spell_visual_effect",
             "SELECT * FROM player_message",
+            "SELECT * FROM party",
+            "SELECT * FROM party_member",
         ]);
 
-    Ok(StdbConnection {
-        conn,
-        events,
-        reports,
-    })
+    Ok((
+        StdbConnection {
+            conn,
+            events,
+            reports,
+        },
+        PartyEvents(party_events),
+    ))
 }
 
 /// Builds and opens the actual SDK connection, with or without a token.
@@ -1875,6 +1897,173 @@ fn predict_and_reconcile(time: Res<Time>, mut query: Query<(&mut Position, &Stdb
 
 fn to_vec3(v: &Vec3Row) -> Vec3 {
     Vec3::new(v.x, v.y, v.z)
+}
+
+// ---------------------------------------------------------------------------
+// Party roster
+// ---------------------------------------------------------------------------
+//
+// `/party list` and bare `/party` (`crates/presentation/src/ui/chat.rs`)
+// render entirely from already-subscribed `party`/`party_member` rows — no
+// reducer call, per `plans/party-system.md`. This section is deliberately
+// self-contained: its own channel, its own resource, its own drain system,
+// registered independently of `register_callbacks`/`drain_events` above, so
+// adding party support cannot perturb any already-shipped replication path.
+// It reuses `session`'s *existing* subscription (no new query needed) via a
+// second, independent listener, to learn the caller's own `character_id` —
+// the one thing `party_member` alone cannot answer.
+
+use super::module_bindings::party_member_table::PartyMemberTableAccess;
+use super::module_bindings::party_table::PartyTableAccess;
+use super::module_bindings::{PartyMemberRow, PartyRow};
+
+enum PartyRowEvent {
+    Member(PartyMemberRow),
+    MemberRemoved(PartyMemberRow),
+    PartyChanged(PartyRow),
+    PartyRemoved(PartyRow),
+    /// A `session` row, forwarded regardless of whose it is — `local_identity`
+    /// is only known inside [`drain_party_events`], the same reason
+    /// `RowEvent::Session` is handled that way above.
+    SessionSeen(Session),
+    /// A `player` row, forwarded so `/party list` can show display names
+    /// instead of bare character ids, without depending on the private
+    /// `PendingRows` cache above.
+    PlayerSeen(Player),
+}
+
+#[derive(Resource)]
+struct PartyEvents(Receiver<PartyRowEvent>);
+
+/// One character in the caller's own party.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartyMemberView {
+    pub character_id: u64,
+    pub display_name: String,
+    pub is_leader: bool,
+}
+
+/// The caller's own party, built entirely from subscribed `party`/
+/// `party_member`/`player` rows — never populated by calling a reducer.
+#[derive(Resource, Default)]
+pub struct PartyRoster {
+    local_character_id: Option<u64>,
+    parties: HashMap<u64, PartyRow>,
+    members: HashMap<u64, PartyMemberRow>,
+    /// Display names for *any* character seen in a `player` row, not just the
+    /// caller's own — `/party list` needs to name every member, not only the
+    /// caller.
+    display_names: HashMap<u64, String>,
+}
+
+impl PartyRoster {
+    /// The caller's own party roster, if they are currently in one. `None`
+    /// means "not in a party" — `/party list`/bare `/party` render that as
+    /// "You are not in a party."
+    pub fn my_party(&self) -> Option<Vec<PartyMemberView>> {
+        let character_id = self.local_character_id?;
+        let membership = self.members.get(&character_id)?;
+        let leader = self.parties.get(&membership.party_id).map(|row| row.leader);
+        let mut members: Vec<PartyMemberView> = self
+            .members
+            .values()
+            .filter(|row| row.party_id == membership.party_id)
+            .map(|row| PartyMemberView {
+                character_id: row.character_id,
+                display_name: self
+                    .display_names
+                    .get(&row.character_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("character #{}", row.character_id)),
+                is_leader: Some(row.character_id) == leader,
+            })
+            .collect();
+        members.sort_by_key(|member| member.character_id);
+        Some(members)
+    }
+}
+
+/// Registers the party subsystem's own row callbacks. Kept separate from
+/// [`register_callbacks`] so a mistake here cannot touch any table that
+/// subsystem already mirrors.
+fn register_party_callbacks(conn: &DbConnection, tx: Sender<PartyRowEvent>) {
+    let member_inserted = tx.clone();
+    conn.db().party_member().on_insert(move |_ctx, row| {
+        let _ = member_inserted.send(PartyRowEvent::Member(row.clone()));
+    });
+    let member_updated = tx.clone();
+    conn.db()
+        .party_member()
+        .on_update(move |_ctx, _old, new| {
+            let _ = member_updated.send(PartyRowEvent::Member(new.clone()));
+        });
+    let member_deleted = tx.clone();
+    conn.db().party_member().on_delete(move |_ctx, row| {
+        let _ = member_deleted.send(PartyRowEvent::MemberRemoved(row.clone()));
+    });
+
+    let party_inserted = tx.clone();
+    conn.db().party().on_insert(move |_ctx, row| {
+        let _ = party_inserted.send(PartyRowEvent::PartyChanged(row.clone()));
+    });
+    let party_updated = tx.clone();
+    conn.db().party().on_update(move |_ctx, _old, new| {
+        let _ = party_updated.send(PartyRowEvent::PartyChanged(new.clone()));
+    });
+    let party_deleted = tx.clone();
+    conn.db().party().on_delete(move |_ctx, row| {
+        let _ = party_deleted.send(PartyRowEvent::PartyRemoved(row.clone()));
+    });
+
+    let session_inserted = tx.clone();
+    conn.db().session().on_insert(move |_ctx, row| {
+        let _ = session_inserted.send(PartyRowEvent::SessionSeen(row.clone()));
+    });
+    let session_updated = tx.clone();
+    conn.db().session().on_update(move |_ctx, _old, new| {
+        let _ = session_updated.send(PartyRowEvent::SessionSeen(new.clone()));
+    });
+
+    let player_inserted = tx.clone();
+    conn.db().player().on_insert(move |_ctx, row| {
+        let _ = player_inserted.send(PartyRowEvent::PlayerSeen(row.clone()));
+    });
+    let player_updated = tx;
+    conn.db().player().on_update(move |_ctx, _old, new| {
+        let _ = player_updated.send(PartyRowEvent::PlayerSeen(new.clone()));
+    });
+}
+
+fn drain_party_events(
+    conn: Res<StdbConnection>,
+    events: Res<PartyEvents>,
+    mut roster: ResMut<PartyRoster>,
+) {
+    let local_identity = conn.identity();
+    while let Ok(event) = events.0.try_recv() {
+        match event {
+            PartyRowEvent::Member(row) => {
+                roster.members.insert(row.character_id, row);
+            }
+            PartyRowEvent::MemberRemoved(row) => {
+                roster.members.remove(&row.character_id);
+            }
+            PartyRowEvent::PartyChanged(row) => {
+                roster.parties.insert(row.party_id, row);
+            }
+            PartyRowEvent::PartyRemoved(row) => {
+                roster.parties.remove(&row.party_id);
+            }
+            PartyRowEvent::SessionSeen(row) => {
+                if Some(row.identity) == local_identity {
+                    roster.local_character_id = row.character_id;
+                }
+            }
+            PartyRowEvent::PlayerSeen(row) => {
+                roster.display_names.insert(row.character_id, row.display_name);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

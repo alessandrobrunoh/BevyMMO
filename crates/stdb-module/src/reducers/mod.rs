@@ -11,5 +11,6 @@ pub mod combat;
 pub mod items;
 pub mod lifecycle;
 pub mod movement;
+pub mod parties;
 pub mod resonance;
 pub mod spells;

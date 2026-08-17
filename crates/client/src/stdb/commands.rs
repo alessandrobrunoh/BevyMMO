@@ -37,6 +37,11 @@ use super::module_bindings::eidolon_cast_reducer::eidolon_cast as eidolon_cast_r
 use super::module_bindings::destroy_item_reducer::destroy_item as destroy_item_reducer;
 use super::module_bindings::equip_item_reducer::equip_item as equip_item_reducer;
 use super::module_bindings::move_item_reducer::move_item as move_item_reducer;
+use super::module_bindings::party_accept_reducer::party_accept as party_accept_reducer;
+use super::module_bindings::party_decline_reducer::party_decline as party_decline_reducer;
+use super::module_bindings::party_invite_reducer::party_invite as party_invite_reducer;
+use super::module_bindings::party_join_reducer::party_join as party_join_reducer;
+use super::module_bindings::party_leave_reducer::party_leave as party_leave_reducer;
 use super::module_bindings::release_cast_reducer::release_cast as release_cast_reducer;
 use super::module_bindings::respawn_reducer::respawn as respawn_reducer;
 use super::module_bindings::set_ability_selection_reducer::set_ability_selection as set_ability_selection_reducer;
@@ -175,6 +180,39 @@ pub fn armor_cast(
 pub fn send_chat_message(conn: &StdbConnection, text: String) -> Sent {
     conn.reducers()
         .send_chat_message_then(text, conn.report_rejection("could not send chat message"))
+}
+
+/// `/party invite <name>` — invites `target_name`, implicitly creating a
+/// party with the sender as leader if they are not already in one.
+pub fn party_invite(conn: &StdbConnection, target_name: String) -> Sent {
+    conn.reducers()
+        .party_invite_then(target_name, conn.report_rejection("could not invite"))
+}
+
+/// `/party join <name>` — asks to join `leader_name`'s party.
+pub fn party_join(conn: &StdbConnection, leader_name: String) -> Sent {
+    conn.reducers()
+        .party_join_then(leader_name, conn.report_rejection("could not ask to join"))
+}
+
+/// `/party accept <name>` — accepts the pending request between the caller
+/// and `name`, whichever direction it runs.
+pub fn party_accept(conn: &StdbConnection, name: String) -> Sent {
+    conn.reducers()
+        .party_accept_then(name, conn.report_rejection("could not accept"))
+}
+
+/// `/party decline <name>` — declines the pending request between the caller
+/// and `name`, whichever direction it runs.
+pub fn party_decline(conn: &StdbConnection, name: String) -> Sent {
+    conn.reducers()
+        .party_decline_then(name, conn.report_rejection("could not decline"))
+}
+
+/// `/party leave` — leaves the caller's current party.
+pub fn party_leave(conn: &StdbConnection) -> Sent {
+    conn.reducers()
+        .party_leave_then(conn.report_rejection("could not leave the party"))
 }
 
 /// Brings a dead character back at its spawn point.

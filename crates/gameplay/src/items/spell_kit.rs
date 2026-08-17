@@ -80,7 +80,10 @@ mod tests {
             vec![SpellId::new("fireball")],
             SpellId::new("meteorite"),
         );
-        assert_eq!(kit.candidates_for(HotbarSlot::E), &[SpellId::new("meteorite")]);
+        assert_eq!(
+            kit.candidates_for(HotbarSlot::E),
+            &[SpellId::new("meteorite")]
+        );
     }
 
     #[test]
@@ -96,12 +99,20 @@ mod tests {
     #[test]
     #[should_panic(expected = "SpellKit::q must have at least one spell")]
     fn new_panics_on_empty_q() {
-        SpellKit::new(vec![], vec![SpellId::new("fireball")], SpellId::new("meteorite"));
+        SpellKit::new(
+            vec![],
+            vec![SpellId::new("fireball")],
+            SpellId::new("meteorite"),
+        );
     }
 
     #[test]
     #[should_panic(expected = "SpellKit::w must have at least one spell")]
     fn new_panics_on_empty_w() {
-        SpellKit::new(vec![SpellId::new("attack")], vec![], SpellId::new("meteorite"));
+        SpellKit::new(
+            vec![SpellId::new("attack")],
+            vec![],
+            SpellId::new("meteorite"),
+        );
     }
 }

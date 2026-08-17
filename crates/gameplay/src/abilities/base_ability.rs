@@ -284,7 +284,11 @@ pub trait BaseAbility: Send + Sync + 'static {
     /// Il bersaglio selezionato vince, ma solo se è davvero davanti e a
     /// portata; altrimenti si aggancia la prima entità nel corridoio frontale
     /// (nessuna selezione richiesta — si spara dove si guarda).
-    fn projectile_target(&self, params: &AbilityParams, ctx: &SpellCastContext) -> Option<EntityId> {
+    fn projectile_target(
+        &self,
+        params: &AbilityParams,
+        ctx: &SpellCastContext,
+    ) -> Option<EntityId> {
         let AbilityGeometry::Projectile { .. } = self.geometry() else {
             return None;
         };
@@ -379,7 +383,12 @@ pub trait BaseAbility: Send + Sync + 'static {
     /// abilità. Helper condiviso: qualunque Essenza offensiva lo riusa per
     /// non duplicare il dispatch-per-geometria, cambiando solo `potency` (es.
     /// Fuoco lo amplifica) — vedi `content/essences/fuoco/`.
-    fn emit_damage_for_geometry(&self, potency: f32, params: &AbilityParams, ctx: &mut SpellCastContext) {
+    fn emit_damage_for_geometry(
+        &self,
+        potency: f32,
+        params: &AbilityParams,
+        ctx: &mut SpellCastContext,
+    ) {
         match self.geometry() {
             AbilityGeometry::Cone { .. } | AbilityGeometry::Circle { .. } => {
                 self.emit_area_impact(params, potency, ctx);
@@ -389,7 +398,8 @@ pub trait BaseAbility: Send + Sync + 'static {
                 // arriva quando arriva lei, non all'istante del lancio.
                 match self.projectile_target(params, ctx) {
                     Some(target) => {
-                        let mut effects = vec![EffectSpec::Damage(DamageEffect { amount: potency })];
+                        let mut effects =
+                            vec![EffectSpec::Damage(DamageEffect { amount: potency })];
                         effects.extend(self.additional_effects());
                         ctx.emit_projectile(target, speed, effects, PROJECTILE_HIT_RADIUS);
                         let target_position = ctx
@@ -398,12 +408,17 @@ pub trait BaseAbility: Send + Sync + 'static {
                             .find(|(entity, _)| *entity == target)
                             .map(|(_, position)| *position)
                             .unwrap_or(ctx.caster_position);
-                        ctx.emit_visual(self.id().as_str().to_string(), ctx.caster_position, target_position);
+                        ctx.emit_visual(
+                            self.id().as_str().to_string(),
+                            ctx.caster_position,
+                            target_position,
+                        );
                     }
                     None => {
                         // Colpo a vuoto: nessuno davanti. Il gesto si vede
                         // comunque, altrimenti il tasto sembra rotto.
-                        let end = ctx.caster_position + flat_direction(ctx.caster_look_direction) * params.range;
+                        let end = ctx.caster_position
+                            + flat_direction(ctx.caster_look_direction) * params.range;
                         ctx.emit_visual(self.id().as_str().to_string(), ctx.caster_position, end);
                     }
                 }
@@ -486,7 +501,14 @@ mod tests {
             AbilityGeometry::Circle { radius: 3.0 }
         }
         fn base_params(&self) -> AbilityParams {
-            AbilityParams { potency: 100.0, area: 3.0, range: 0.0, cast_time: 0.5, cooldown: 5.0, energy_cost: 10.0 }
+            AbilityParams {
+                potency: 100.0,
+                area: 3.0,
+                range: 0.0,
+                cast_time: 0.5,
+                cooldown: 5.0,
+                energy_cost: 10.0,
+            }
         }
         fn animation(&self) -> &'static str {
             "dummy_anim"
@@ -517,41 +539,98 @@ mod tests {
 
     struct InstantAbility;
     impl BaseAbility for InstantAbility {
-        fn id(&self) -> AbilityId { AbilityId::new("instant") }
-        fn display_name(&self) -> &'static str { "Instant" }
-        fn tags(&self) -> &'static [AbilityTag] { &[] }
-        fn geometry(&self) -> AbilityGeometry { AbilityGeometry::Circle { radius: 2.0 } }
-        fn base_params(&self) -> AbilityParams {
-            AbilityParams { potency: 50.0, area: 0.0, range: 2.0, cast_time: 0.0, cooldown: 1.0, energy_cost: 5.0 }
+        fn id(&self) -> AbilityId {
+            AbilityId::new("instant")
         }
-        fn animation(&self) -> &'static str { "swing" }
-        fn impact_vfx(&self) -> &'static str { "slash" }
+        fn display_name(&self) -> &'static str {
+            "Instant"
+        }
+        fn tags(&self) -> &'static [AbilityTag] {
+            &[]
+        }
+        fn geometry(&self) -> AbilityGeometry {
+            AbilityGeometry::Circle { radius: 2.0 }
+        }
+        fn base_params(&self) -> AbilityParams {
+            AbilityParams {
+                potency: 50.0,
+                area: 0.0,
+                range: 2.0,
+                cast_time: 0.0,
+                cooldown: 1.0,
+                energy_cost: 5.0,
+            }
+        }
+        fn animation(&self) -> &'static str {
+            "swing"
+        }
+        fn impact_vfx(&self) -> &'static str {
+            "slash"
+        }
     }
 
     struct CastTimeAbility;
     impl BaseAbility for CastTimeAbility {
-        fn id(&self) -> AbilityId { AbilityId::new("cast_time") }
-        fn display_name(&self) -> &'static str { "CastTime" }
-        fn tags(&self) -> &'static [AbilityTag] { &[AbilityTag::Ranged] }
-        fn geometry(&self) -> AbilityGeometry { AbilityGeometry::Projectile { speed: 30.0 } }
-        fn base_params(&self) -> AbilityParams {
-            AbilityParams { potency: 80.0, area: 0.0, range: 20.0, cast_time: 0.8, cooldown: 6.0, energy_cost: 15.0 }
+        fn id(&self) -> AbilityId {
+            AbilityId::new("cast_time")
         }
-        fn animation(&self) -> &'static str { "draw" }
-        fn impact_vfx(&self) -> &'static str { "bolt" }
+        fn display_name(&self) -> &'static str {
+            "CastTime"
+        }
+        fn tags(&self) -> &'static [AbilityTag] {
+            &[AbilityTag::Ranged]
+        }
+        fn geometry(&self) -> AbilityGeometry {
+            AbilityGeometry::Projectile { speed: 30.0 }
+        }
+        fn base_params(&self) -> AbilityParams {
+            AbilityParams {
+                potency: 80.0,
+                area: 0.0,
+                range: 20.0,
+                cast_time: 0.8,
+                cooldown: 6.0,
+                energy_cost: 15.0,
+            }
+        }
+        fn animation(&self) -> &'static str {
+            "draw"
+        }
+        fn impact_vfx(&self) -> &'static str {
+            "bolt"
+        }
     }
 
     struct ChannelingAbility;
     impl BaseAbility for ChannelingAbility {
-        fn id(&self) -> AbilityId { AbilityId::new("channeling") }
-        fn display_name(&self) -> &'static str { "Channeling" }
-        fn tags(&self) -> &'static [AbilityTag] { &[AbilityTag::Area, AbilityTag::RepeatCompatible] }
-        fn geometry(&self) -> AbilityGeometry { AbilityGeometry::Circle { radius: 4.0 } }
-        fn base_params(&self) -> AbilityParams {
-            AbilityParams { potency: 20.0, area: 4.0, range: 0.0, cast_time: 3.0, cooldown: 10.0, energy_cost: 30.0 }
+        fn id(&self) -> AbilityId {
+            AbilityId::new("channeling")
         }
-        fn animation(&self) -> &'static str { "channel" }
-        fn impact_vfx(&self) -> &'static str { "beam" }
+        fn display_name(&self) -> &'static str {
+            "Channeling"
+        }
+        fn tags(&self) -> &'static [AbilityTag] {
+            &[AbilityTag::Area, AbilityTag::RepeatCompatible]
+        }
+        fn geometry(&self) -> AbilityGeometry {
+            AbilityGeometry::Circle { radius: 4.0 }
+        }
+        fn base_params(&self) -> AbilityParams {
+            AbilityParams {
+                potency: 20.0,
+                area: 4.0,
+                range: 0.0,
+                cast_time: 3.0,
+                cooldown: 10.0,
+                energy_cost: 30.0,
+            }
+        }
+        fn animation(&self) -> &'static str {
+            "channel"
+        }
+        fn impact_vfx(&self) -> &'static str {
+            "beam"
+        }
         fn cast_mode(&self) -> AbilityCastMode {
             AbilityCastMode::Channeling {
                 tick_interval_seconds: 0.25,
@@ -578,13 +657,15 @@ mod tests {
     fn explicit_channeling_overrides_cast_time_derivation() {
         let ability = ChannelingAbility;
         match ability.cast_mode() {
-            AbilityCastMode::Channeling { tick_interval_seconds, .. } => {
+            AbilityCastMode::Channeling {
+                tick_interval_seconds,
+                ..
+            } => {
                 assert!((tick_interval_seconds - 0.25).abs() < f32::EPSILON);
             }
             other => panic!("expected Channeling, got {:?}", other),
         }
     }
-
 
     #[test]
     fn channeling_required_seconds_has_minimum() {
@@ -617,17 +698,23 @@ mod tests {
         // The server should store this as a bool.
         fn should_interrupt_on_move(mode: &AbilityCastMode) -> bool {
             match mode {
-                AbilityCastMode::Channeling { movement_policy, .. } => {
+                AbilityCastMode::Channeling {
+                    movement_policy, ..
+                } => {
                     matches!(movement_policy, ChannelMovementPolicy::InterruptOnMove)
                 }
                 _ => true, // Non-channeling modes always interrupt (CastTime) or don't check (Instant)
             }
         }
 
-        assert!(should_interrupt_on_move(&interrupt_on_move),
-            "InterruptOnMove should return true");
-        assert!(!should_interrupt_on_move(&allow_movement),
-            "AllowMovement should return false");
+        assert!(
+            should_interrupt_on_move(&interrupt_on_move),
+            "InterruptOnMove should return true"
+        );
+        assert!(
+            !should_interrupt_on_move(&allow_movement),
+            "AllowMovement should return false"
+        );
     }
 
     #[test]
@@ -653,7 +740,10 @@ mod tests {
     fn circle_impact_center_preserves_target_height_on_mountain() {
         use crate::stats::components::CombatStats;
         let ability = InstantAbility;
-        let combat = CombatStats { attack_power: 10.0, armor: 0.0 };
+        let combat = CombatStats {
+            attack_power: 10.0,
+            armor: 0.0,
+        };
         let caster_pos = Vec3::new(0.0, 12.0, 0.0);
         let target_on_mountain = Vec3::new(1.0, 14.0, 1.0);
         let ctx = SpellCastContext::new(

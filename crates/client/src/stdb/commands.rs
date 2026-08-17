@@ -31,10 +31,9 @@ use bevymmo_domain::items::EquipSlot;
 use bevymmo_domain::spells::components::HotbarSlot;
 
 use super::module_bindings::armor_cast_reducer::armor_cast as armor_cast_reducer;
-use super::module_bindings::send_chat_message_reducer::send_chat_message as send_chat_message_reducer;
 use super::module_bindings::claim_npc_item_reducer::claim_npc_item as claim_npc_item_reducer;
-use super::module_bindings::eidolon_cast_reducer::eidolon_cast as eidolon_cast_reducer;
 use super::module_bindings::destroy_item_reducer::destroy_item as destroy_item_reducer;
+use super::module_bindings::eidolon_cast_reducer::eidolon_cast as eidolon_cast_reducer;
 use super::module_bindings::equip_item_reducer::equip_item as equip_item_reducer;
 use super::module_bindings::move_item_reducer::move_item as move_item_reducer;
 use super::module_bindings::party_accept_reducer::party_accept as party_accept_reducer;
@@ -44,6 +43,7 @@ use super::module_bindings::party_join_reducer::party_join as party_join_reducer
 use super::module_bindings::party_leave_reducer::party_leave as party_leave_reducer;
 use super::module_bindings::release_cast_reducer::release_cast as release_cast_reducer;
 use super::module_bindings::respawn_reducer::respawn as respawn_reducer;
+use super::module_bindings::send_chat_message_reducer::send_chat_message as send_chat_message_reducer;
 use super::module_bindings::set_ability_selection_reducer::set_ability_selection as set_ability_selection_reducer;
 use super::module_bindings::set_hotbar_spell_reducer::set_hotbar_spell as set_hotbar_spell_reducer;
 use super::module_bindings::set_inscription_reducer::set_inscription as set_inscription_reducer;
@@ -74,8 +74,10 @@ pub fn claim_npc_item(conn: &StdbConnection, npc_entity_id: u64, item_id: String
 
 /// Permanently destroys an item instance from the inventory.
 pub fn destroy_item(conn: &StdbConnection, instance_id: u64) -> Sent {
-    conn.reducers()
-        .destroy_item_then(instance_id, conn.report_rejection("could not destroy that item"))
+    conn.reducers().destroy_item_then(
+        instance_id,
+        conn.report_rejection("could not destroy that item"),
+    )
 }
 
 /// Moves an inventory item into the equipment slot its definition allows.

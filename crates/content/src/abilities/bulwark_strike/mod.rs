@@ -1,7 +1,7 @@
 //! Bulwark Strike — chestplate primary ability.
 
-use bevymmo_props_macro::base_ability;
 use crate::abilities::BaseAbilityRegistry;
+use bevymmo_props_macro::base_ability;
 
 #[base_ability(
     id = "bulwark_strike",
@@ -19,4 +19,6 @@ use crate::abilities::BaseAbilityRegistry;
 )]
 pub struct BulwarkStrike;
 
-pub fn register(registry: &mut BaseAbilityRegistry) { BulwarkStrike::register(registry); }
+pub fn register(registry: &mut BaseAbilityRegistry) {
+    BulwarkStrike::register(registry);
+}

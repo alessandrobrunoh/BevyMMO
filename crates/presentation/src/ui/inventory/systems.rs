@@ -1,8 +1,8 @@
 //! Systems for Inventory UI rendering, input handling, and server communication.
 
 use bevy::prelude::*;
-use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_gameplay::items::{
     components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY},
     registry::ItemRegistry,

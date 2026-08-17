@@ -16,7 +16,10 @@ use bevy_ecs::reflect::ReflectComponent;
 use serde::{Deserialize, Serialize};
 
 /// Movement stats.
-#[cfg_attr(feature = "bevy", derive(bevy_ecs::component::Component, bevy_reflect::Reflect))]
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::component::Component, bevy_reflect::Reflect)
+)]
 #[cfg_attr(feature = "bevy", reflect(Component))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct MovementStats {
@@ -24,7 +27,10 @@ pub struct MovementStats {
 }
 
 /// Combat stats.
-#[cfg_attr(feature = "bevy", derive(bevy_ecs::component::Component, bevy_reflect::Reflect))]
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::component::Component, bevy_reflect::Reflect)
+)]
 #[cfg_attr(feature = "bevy", reflect(Component))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct CombatStats {
@@ -44,7 +50,10 @@ impl CombatStats {
 }
 
 /// Vital stats: current/max health, mana, and regeneration.
-#[cfg_attr(feature = "bevy", derive(bevy_ecs::component::Component, bevy_reflect::Reflect))]
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::component::Component, bevy_reflect::Reflect)
+)]
 #[cfg_attr(feature = "bevy", reflect(Component))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct VitalStats {

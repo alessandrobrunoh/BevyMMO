@@ -1,7 +1,7 @@
 //! ECS components for spell-related runtime state.
 
-use glam::Vec3;
 use crate::EntityId;
+use glam::Vec3;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -119,7 +119,9 @@ pub struct SpellCooldowns {
 impl SpellCooldowns {
     /// Check if a spell is currently on cooldown.
     pub fn is_on_cooldown(&self, id: &SpellId) -> bool {
-        self.timers.get(id).is_some_and(|timer| !timer.is_finished())
+        self.timers
+            .get(id)
+            .is_some_and(|timer| !timer.is_finished())
     }
 
     /// Start a cooldown for a spell.

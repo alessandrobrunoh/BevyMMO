@@ -1,8 +1,8 @@
 use super::components::*;
 use super::SpellSelectorUiState;
 use bevy::prelude::*;
-use bevymmo_client::stdb::{commands, StdbConnection};
 use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_client::stdb::{commands, StdbConnection};
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
 use bevymmo_gameplay::items::AvailableSpellChoices;

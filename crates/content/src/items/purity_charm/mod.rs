@@ -44,7 +44,10 @@ mod tests {
     #[test]
     fn category_is_accessory() {
         let item = PurityCharm;
-        assert!(matches!(item.config().category, crate::items::ItemCategory::Accessory));
+        assert!(matches!(
+            item.config().category,
+            crate::items::ItemCategory::Accessory
+        ));
     }
 
     #[test]
@@ -74,8 +77,13 @@ mod tests {
     #[test]
     fn has_a_rune_profile_with_holy_affinity() {
         let item = PurityCharm;
-        let profile = item.rune_profile().expect("purity_charm must grant a rune profile");
+        let profile = item
+            .rune_profile()
+            .expect("purity_charm must grant a rune profile");
         assert_eq!(profile.capacity, 4);
-        assert_eq!(profile.affinity.as_ref().map(|id| id.as_str()), Some("sacro"));
+        assert_eq!(
+            profile.affinity.as_ref().map(|id| id.as_str()),
+            Some("sacro")
+        );
     }
 }

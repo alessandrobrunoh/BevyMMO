@@ -12,8 +12,6 @@ pub struct Amplia;
 impl Amplia {
     pub const AREA_MULTIPLIER: f32 = 1.35;
     pub const POTENCY_MULTIPLIER: f32 = 0.90;
-
-
 }
 
 impl AncientWordEffect for Amplia {
@@ -59,6 +57,8 @@ mod tests {
 
         assert_eq!(blueprint.ability_id, AbilityId::new("arcane_orb"));
         assert!((blueprint.params.potency - 90.0).abs() < f32::EPSILON);
-        assert!((matches!(blueprint.geometry, AbilityGeometry::Circle { radius } if (radius - 5.4).abs() < f32::EPSILON)));
+        assert!(
+            (matches!(blueprint.geometry, AbilityGeometry::Circle { radius } if (radius - 5.4).abs() < f32::EPSILON))
+        );
     }
 }

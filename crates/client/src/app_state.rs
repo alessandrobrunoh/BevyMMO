@@ -233,10 +233,7 @@ mod tests {
 
     #[test]
     fn validate_email_rejects_missing_at_sign() {
-        assert_eq!(
-            validate_email("no-at-sign.com"),
-            Err(EmailError::MissingAt)
-        );
+        assert_eq!(validate_email("no-at-sign.com"), Err(EmailError::MissingAt));
     }
 
     #[test]
@@ -245,10 +242,7 @@ mod tests {
             validate_email("@example.com"),
             Err(EmailError::EmptyLocalOrDomain)
         );
-        assert_eq!(
-            validate_email("user@"),
-            Err(EmailError::EmptyLocalOrDomain)
-        );
+        assert_eq!(validate_email("user@"), Err(EmailError::EmptyLocalOrDomain));
     }
 
     #[test]

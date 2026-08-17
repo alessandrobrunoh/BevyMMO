@@ -1,6 +1,5 @@
 //! Targeting system resources.
 
-
 use bevy::prelude::*;
 /// Target currently selected by the player.
 ///
@@ -9,8 +8,7 @@ use bevy::prelude::*;
 /// - is despawned
 /// - loses required components (`Position` or `VitalStats`)
 /// - dies (`VitalStats::is_dead()`)
-#[derive(Resource)]
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Resource, Default, Debug, Clone, Copy)]
 pub struct CurrentTarget {
     /// Entity handle of the selected target.
     pub entity: Option<Entity>,
@@ -65,6 +63,9 @@ mod tests {
         let mut target = CurrentTarget::default();
         assert!(target.entity.is_none());
         target.set(Entity::from_raw_u32(200).expect("valid entity index"));
-        assert_eq!(target.entity, Some(Entity::from_raw_u32(200).expect("valid entity index")));
+        assert_eq!(
+            target.entity,
+            Some(Entity::from_raw_u32(200).expect("valid entity index"))
+        );
     }
 }

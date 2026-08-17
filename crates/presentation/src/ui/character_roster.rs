@@ -10,7 +10,9 @@ use bevy::prelude::*;
 
 use bevymmo_client::stdb::{CharacterRoster, RosterCharacter};
 
-use crate::game_state::{ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, GameScreen, Screen};
+use crate::game_state::{
+    ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, GameScreen, Screen,
+};
 use crate::ui::theme::UiTheme;
 
 /// Marker: the column that holds one row per character. Rebuilt whole
@@ -64,7 +66,11 @@ impl Plugin for CharacterRosterPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (rebuild_roster_list, handle_roster_play, handle_roster_delete),
+            (
+                rebuild_roster_list,
+                handle_roster_play,
+                handle_roster_delete,
+            ),
         );
     }
 }
@@ -207,10 +213,7 @@ fn handle_roster_play(
 
 fn handle_roster_delete(
     mut delete_request: ResMut<DeleteCharacterRequest>,
-    mut buttons: Query<
-        (&Interaction, &mut RosterDeleteButton, &Children),
-        Changed<Interaction>,
-    >,
+    mut buttons: Query<(&Interaction, &mut RosterDeleteButton, &Children), Changed<Interaction>>,
     mut labels: Query<&mut Text>,
 ) {
     for (interaction, mut state, children) in buttons.iter_mut() {

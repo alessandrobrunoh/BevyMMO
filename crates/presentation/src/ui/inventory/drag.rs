@@ -15,8 +15,8 @@
 //!    restores the origin slot with no command sent.
 
 use bevy::prelude::*;
-use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_gameplay::items::{
     components::{Equipment, Inventory},
     instance::ItemInstanceId,
@@ -262,12 +262,7 @@ pub fn end_item_drag(
                 .get(&pending.item_id)
                 .map(|item| item.display_name().to_string())
                 .unwrap_or_else(|| pending.item_id.as_str().to_string());
-            spawn_destroy_dialog(
-                &mut commands,
-                &theme,
-                pending.instance_id.0,
-                &label,
-            );
+            spawn_destroy_dialog(&mut commands, &theme, pending.instance_id.0, &label);
         }
         return;
     };
@@ -366,13 +361,11 @@ fn spawn_destroy_dialog(
                 TextColor(theme.muted_text_color),
             ));
             dialog
-                .spawn((
-                    Node {
-                        flex_direction: FlexDirection::Row,
-                        column_gap: Val::Px(10.0),
-                        ..default()
-                    },
-                ))
+                .spawn((Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(10.0),
+                    ..default()
+                },))
                 .with_children(|buttons| {
                     buttons
                         .spawn((
@@ -430,7 +423,9 @@ pub fn handle_destroy_dialog(
         .iter()
         .find(|(interaction, _)| **interaction == Interaction::Pressed)
         .map(|(_, button)| button.instance_id);
-    let cancelled = cancel.iter().any(|interaction| *interaction == Interaction::Pressed);
+    let cancelled = cancel
+        .iter()
+        .any(|interaction| *interaction == Interaction::Pressed);
 
     if let Some(instance_id) = confirmed {
         if let Some(connection) = connection {

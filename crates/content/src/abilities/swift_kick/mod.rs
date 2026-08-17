@@ -1,7 +1,7 @@
 //! Swift Kick — boots primary ability.
 
-use bevymmo_props_macro::base_ability;
 use crate::abilities::BaseAbilityRegistry;
+use bevymmo_props_macro::base_ability;
 
 #[base_ability(
     id = "swift_kick",
@@ -19,4 +19,6 @@ use crate::abilities::BaseAbilityRegistry;
 )]
 pub struct SwiftKick;
 
-pub fn register(registry: &mut BaseAbilityRegistry) { SwiftKick::register(registry); }
+pub fn register(registry: &mut BaseAbilityRegistry) {
+    SwiftKick::register(registry);
+}

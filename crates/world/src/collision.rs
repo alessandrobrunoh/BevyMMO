@@ -496,12 +496,20 @@ mod tests {
 
     #[test]
     fn scaled_aabb_stretches_the_unscaled_box_around_its_center() {
-        let unscaled = scaled_aabb([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], CollisionShape::Box {
-            half_extents: [1.0, 1.0, 1.0],
-        });
-        let doubled = scaled_aabb([0.0, 0.0, 0.0], [2.0, 2.0, 2.0], CollisionShape::Box {
-            half_extents: [1.0, 1.0, 1.0],
-        });
+        let unscaled = scaled_aabb(
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            CollisionShape::Box {
+                half_extents: [1.0, 1.0, 1.0],
+            },
+        );
+        let doubled = scaled_aabb(
+            [0.0, 0.0, 0.0],
+            [2.0, 2.0, 2.0],
+            CollisionShape::Box {
+                half_extents: [1.0, 1.0, 1.0],
+            },
+        );
         assert_eq!(unscaled.min, [-1.0, -1.0, -1.0]);
         assert_eq!(unscaled.max, [1.0, 1.0, 1.0]);
         assert_eq!(doubled.min, [-2.0, -2.0, -2.0]);
@@ -510,21 +518,33 @@ mod tests {
 
     #[test]
     fn scaled_aabb_recenters_on_a_translated_origin() {
-        let obstacle = scaled_aabb([5.0, 0.0, -3.0], [1.0, 1.0, 1.0], CollisionShape::Box {
-            half_extents: [0.5, 0.5, 0.5],
-        });
+        let obstacle = scaled_aabb(
+            [5.0, 0.0, -3.0],
+            [1.0, 1.0, 1.0],
+            CollisionShape::Box {
+                half_extents: [0.5, 0.5, 0.5],
+            },
+        );
         assert_eq!(obstacle.min, [4.5, -0.5, -3.5]);
         assert_eq!(obstacle.max, [5.5, 0.5, -2.5]);
     }
 
     #[test]
     fn scaled_aabb_treats_a_negative_scale_the_same_as_its_absolute_value() {
-        let positive = scaled_aabb([0.0, 0.0, 0.0], [3.0, 1.0, 1.0], CollisionShape::Box {
-            half_extents: [1.0, 1.0, 1.0],
-        });
-        let negative = scaled_aabb([0.0, 0.0, 0.0], [-3.0, 1.0, 1.0], CollisionShape::Box {
-            half_extents: [1.0, 1.0, 1.0],
-        });
+        let positive = scaled_aabb(
+            [0.0, 0.0, 0.0],
+            [3.0, 1.0, 1.0],
+            CollisionShape::Box {
+                half_extents: [1.0, 1.0, 1.0],
+            },
+        );
+        let negative = scaled_aabb(
+            [0.0, 0.0, 0.0],
+            [-3.0, 1.0, 1.0],
+            CollisionShape::Box {
+                half_extents: [1.0, 1.0, 1.0],
+            },
+        );
         assert_eq!(positive.min, negative.min);
         assert_eq!(positive.max, negative.max);
     }
@@ -1769,10 +1789,7 @@ mod tests {
             max_z: 10.0,
         };
         // 2x2 heightfield: rises from 0.0 to 20.0 over 10 units in X (slope > 60 deg)
-        let heights = vec![
-            0.0, 0.0,
-            20.0, 20.0,
-        ];
+        let heights = vec![0.0, 0.0, 20.0, 20.0];
         let hf = HeightfieldData::new(1, bounds, heights);
         let manifest = MapManifest {
             version: 2,
@@ -1825,8 +1842,14 @@ mod tests {
 
         // surface_contact_at must return Some with height 10.0 for aiming/raycasting.
         let contact = query.surface_contact_at(5.0, 5.0);
-        assert!(contact.is_some(), "surface_contact_at should resolve steep mountain height");
+        assert!(
+            contact.is_some(),
+            "surface_contact_at should resolve steep mountain height"
+        );
         let contact = contact.unwrap();
-        assert!((contact.height - 10.0).abs() < 1e-3, "Height should be 10.0 on the slope");
+        assert!(
+            (contact.height - 10.0).abs() < 1e-3,
+            "Height should be 10.0 on the slope"
+        );
     }
 }

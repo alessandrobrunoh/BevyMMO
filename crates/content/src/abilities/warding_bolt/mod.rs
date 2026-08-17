@@ -1,7 +1,7 @@
 //! Warding Bolt — helmet primary ability.
 
-use bevymmo_props_macro::base_ability;
 use crate::abilities::BaseAbilityRegistry;
+use bevymmo_props_macro::base_ability;
 
 #[base_ability(
     id = "warding_bolt",
@@ -19,4 +19,6 @@ use crate::abilities::BaseAbilityRegistry;
 )]
 pub struct WardingBolt;
 
-pub fn register(registry: &mut BaseAbilityRegistry) { WardingBolt::register(registry); }
+pub fn register(registry: &mut BaseAbilityRegistry) {
+    WardingBolt::register(registry);
+}

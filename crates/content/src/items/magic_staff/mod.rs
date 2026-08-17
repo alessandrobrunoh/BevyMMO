@@ -38,8 +38,8 @@ pub fn register(registry: &mut ItemRegistry) {
 mod tests {
     use super::*;
     use crate::abilities::AbilitySlot;
-    use crate::items::components::EquipSlot;
     use crate::abilities::BaseAbility;
+    use crate::items::components::EquipSlot;
     use crate::items::definition::Item;
 
     #[test]
@@ -61,8 +61,8 @@ mod tests {
     fn offers_arcane_orb_and_selectable_ultimates() {
         let staff = MagicStaff;
         let abilities = staff
-                    .ability_loadout()
-                    .expect("magic_staff must grant weapon abilities");
+            .ability_loadout()
+            .expect("magic_staff must grant weapon abilities");
         let arcane_orb = [ArcaneOrb::ID.into()];
         let ultimate = [AstralNova::ID.into(), MeteorLance::ID.into()];
 
@@ -82,9 +82,14 @@ mod tests {
     #[test]
     fn has_a_rune_profile_with_fire_affinity() {
         let staff = MagicStaff;
-        let profile = staff.rune_profile().expect("magic_staff must grant a rune profile");
+        let profile = staff
+            .rune_profile()
+            .expect("magic_staff must grant a rune profile");
         assert_eq!(profile.capacity, 8);
-        assert_eq!(profile.affinity.as_ref().map(|id| id.as_str()), Some("fuoco"));
+        assert_eq!(
+            profile.affinity.as_ref().map(|id| id.as_str()),
+            Some("fuoco")
+        );
     }
 
     #[test]

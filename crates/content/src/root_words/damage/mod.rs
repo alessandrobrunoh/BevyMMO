@@ -6,7 +6,12 @@ use bevymmo_props_macro::root_word;
 
 use crate::abilities::{AbilityBlueprint, AbilityParams, RootWordEffect, RootWordRegistry};
 
-#[root_word(id = "damage", name = "Danno", description = "Infligge danno ai bersagli", rune_cost = 1)]
+#[root_word(
+    id = "damage",
+    name = "Danno",
+    description = "Infligge danno ai bersagli",
+    rune_cost = 1
+)]
 pub struct DamageRootWord;
 
 /// Adds this content package to the root word registry.

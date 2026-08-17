@@ -12,8 +12,8 @@
 //! `FloatingUiAttached` sui target, così il re-entry può ri-spawnare le barre.
 
 use bevymmo_gameplay::entity::components::{EntityKind, PlayerName};
-use bevymmo_network::network::protocol::Position;
 use bevymmo_gameplay::stats::components::VitalStats;
+use bevymmo_network::network::protocol::Position;
 
 use crate::game_state::{GameScreen, Screen};
 use crate::ui::bar::{get_hp_fill_color, get_or_spawn_root};

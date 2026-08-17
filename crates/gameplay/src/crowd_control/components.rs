@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 /// open so future CC types (Root, Silence, Slow, Fear) can share the same
 /// component, replication, UI, and gating plumbing without further plumbing
 /// changes.
-#[cfg_attr(feature = "bevy", derive(bevy_ecs::component::Component, bevy_reflect::Reflect))]
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::component::Component, bevy_reflect::Reflect)
+)]
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "bevy", reflect(Component))]
 pub enum CrowdControlKind {
@@ -70,7 +73,10 @@ pub struct ActiveCrowdControl {
 /// state.apply(CrowdControlKind::Stun, 2.0);
 /// assert!(state.has_blocking_cc());
 /// ```
-#[cfg_attr(feature = "bevy", derive(bevy_ecs::component::Component, bevy_reflect::Reflect))]
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::component::Component, bevy_reflect::Reflect)
+)]
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "bevy", reflect(Component))]
 pub struct CrowdControlState {

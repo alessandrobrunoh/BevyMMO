@@ -1,7 +1,7 @@
 //! Self-targeted debuff removal spell.
 
-use bevymmo_props_macro::spell;
 use bevymmo_gameplay::effects::{StatusFilter, StatusSelection};
+use bevymmo_props_macro::spell;
 
 use crate::spells::{SpellCast, SpellCastContext};
 

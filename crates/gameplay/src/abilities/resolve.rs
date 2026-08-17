@@ -3,13 +3,13 @@
 //! spell "classiche" — riusa tutta la pipeline di cast/rete esistente.
 
 use super::ancient_word::AncientWordRegistry;
-use super::base_ability::{AbilityParams, ArcBaseAbility, BaseAbilityRegistry, AbilityTag};
+use super::base_ability::{AbilityParams, AbilityTag, ArcBaseAbility, BaseAbilityRegistry};
 use super::blueprint::AbilityBlueprint;
 use super::essence::EssenceRegistry;
 use super::inscription::{ArmorInscription, WeaponInscription, WeaponInscriptions};
 use super::known_glyphs::{KnownAncientLanguage, KnownGlyphs};
-use super::root_word::RootWordRegistry;
 use super::modifier::ModifierRegistry;
+use super::root_word::RootWordRegistry;
 use super::slot::AbilitySlot;
 use super::weapon_abilities::{resolve_active_ability, AbilitySelection, WeaponAbilities};
 use crate::items::Item;
@@ -60,13 +60,12 @@ pub struct SlotPreview {
     pub params: AbilityParams,
 }
 
-fn manifest_blueprint(
-    preview: &SlotPreview,
-    ctx: &mut SpellCastContext,
-) {
+fn manifest_blueprint(preview: &SlotPreview, ctx: &mut SpellCastContext) {
     preview.ability.default_manifestation(&preview.params, ctx);
-    if matches!(preview.blueprint.execution, super::blueprint::BlueprintExecution::Echo)
-        && preview.blueprint.has_tag(AbilityTag::EchoCompatible)
+    if matches!(
+        preview.blueprint.execution,
+        super::blueprint::BlueprintExecution::Echo
+    ) && preview.blueprint.has_tag(AbilityTag::EchoCompatible)
     {
         // Echo is a second manifestation of the already-resolved blueprint;
         // it never re-enters item/root/word resolution, so recursive echoes
@@ -157,11 +156,8 @@ pub fn resolve_slot_preview(
         Some(i) => i.ability_blueprint(ability.as_ref()),
         None => ability.blueprint(),
     };
-    blueprint.params = resolve_ability_params(
-        blueprint.params,
-        &inscription.modifiers,
-        modifier_registry,
-    );
+    blueprint.params =
+        resolve_ability_params(blueprint.params, &inscription.modifiers, modifier_registry);
     let params = blueprint.params;
 
     Ok(SlotPreview {
@@ -192,7 +188,12 @@ pub fn resolve_root_inscribed_slot(
         .get(ability_id)
         .ok_or(CastBlockedReason::MissingRegistryEntry)?;
 
-    if !known.knows_root_word(inscription.root_word.as_ref().ok_or(CastBlockedReason::UnknownRootWord)?) {
+    if !known.knows_root_word(
+        inscription
+            .root_word
+            .as_ref()
+            .ok_or(CastBlockedReason::UnknownRootWord)?,
+    ) {
         return Err(CastBlockedReason::UnknownRootWord);
     }
 
@@ -201,7 +202,10 @@ pub fn resolve_root_inscribed_slot(
         None => ability.blueprint(),
     };
 
-    let root_id = inscription.root_word.as_ref().ok_or(CastBlockedReason::UnknownRootWord)?;
+    let root_id = inscription
+        .root_word
+        .as_ref()
+        .ok_or(CastBlockedReason::UnknownRootWord)?;
     let root = root_words
         .get(root_id)
         .ok_or(CastBlockedReason::UnknownRootWord)?;
@@ -258,7 +262,10 @@ pub fn resolve_armor_inscribed_ability(
             ability,
         });
     };
-    let root_id = inscription.root_word.as_ref().ok_or(CastBlockedReason::UnknownRootWord)?;
+    let root_id = inscription
+        .root_word
+        .as_ref()
+        .ok_or(CastBlockedReason::UnknownRootWord)?;
     if !known.knows_root_word(root_id) {
         return Err(CastBlockedReason::UnknownRootWord);
     }
@@ -274,7 +281,11 @@ pub fn resolve_armor_inscribed_ability(
     words.sort_by(|left, right| left.word_id.as_str().cmp(right.word_id.as_str()));
     apply_secondary_words(&mut blueprint, &words, known, ancient_words)?;
     let params = blueprint.params;
-    Ok(SlotPreview { ability, blueprint, params })
+    Ok(SlotPreview {
+        ability,
+        blueprint,
+        params,
+    })
 }
 
 /// Executes a RootWord inscription using the same preview blueprint. This is
@@ -376,18 +387,24 @@ pub fn cast_inscribed_slot(
 
     match &inscription.essence {
         Some(essence_id) => {
-            let essence = essence_registry.get(essence_id).ok_or(CastBlockedReason::MissingRegistryEntry)?;
+            let essence = essence_registry
+                .get(essence_id)
+                .ok_or(CastBlockedReason::MissingRegistryEntry)?;
             essence.manifest(ability.as_ref(), &params, ctx);
         }
         None => ability.default_manifestation(&params, ctx),
     }
 
-    if matches!(blueprint.execution, super::blueprint::BlueprintExecution::Echo)
-        && blueprint.has_tag(AbilityTag::EchoCompatible)
+    if matches!(
+        blueprint.execution,
+        super::blueprint::BlueprintExecution::Echo
+    ) && blueprint.has_tag(AbilityTag::EchoCompatible)
     {
         match &inscription.essence {
             Some(essence_id) => {
-                let essence = essence_registry.get(essence_id).ok_or(CastBlockedReason::MissingRegistryEntry)?;
+                let essence = essence_registry
+                    .get(essence_id)
+                    .ok_or(CastBlockedReason::MissingRegistryEntry)?;
                 essence.manifest(ability.as_ref(), &params, ctx);
             }
             None => ability.default_manifestation(&params, ctx),
@@ -395,7 +412,9 @@ pub fn cast_inscribed_slot(
     }
 
     if let Some(word_id) = &inscription.ancient_word {
-        let word = ancient_word_registry.get(word_id).ok_or(CastBlockedReason::MissingRegistryEntry)?;
+        let word = ancient_word_registry
+            .get(word_id)
+            .ok_or(CastBlockedReason::MissingRegistryEntry)?;
         word.post_process(ability.as_ref(), &params, ctx);
     }
 

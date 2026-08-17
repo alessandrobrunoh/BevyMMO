@@ -40,7 +40,12 @@ impl From<&'static str> for AncientWordId {
 }
 
 pub trait AncientWordEffect: Send + Sync + 'static {
-    fn post_process(&self, ability: &dyn BaseAbility, params: &AbilityParams, ctx: &mut SpellCastContext);
+    fn post_process(
+        &self,
+        ability: &dyn BaseAbility,
+        params: &AbilityParams,
+        ctx: &mut SpellCastContext,
+    );
 
     fn transform_blueprint(&self, _blueprint: &mut AbilityBlueprint) {}
 }
@@ -101,7 +106,12 @@ pub trait AncientWord: Send + Sync + 'static {
     fn display_name(&self) -> &'static str;
     fn required_tag(&self) -> AbilityTag;
     fn rune_cost(&self) -> u32;
-    fn post_process(&self, ability: &dyn BaseAbility, params: &AbilityParams, ctx: &mut SpellCastContext);
+    fn post_process(
+        &self,
+        ability: &dyn BaseAbility,
+        params: &AbilityParams,
+        ctx: &mut SpellCastContext,
+    );
 
     /// Metadati statici completi di questa Parola Antica.
     ///

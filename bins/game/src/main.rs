@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy::window::PresentMode;
 use clap::{Parser, Subcommand};
 use core::time::Duration;
+use std::path::{Path, PathBuf};
 
 use bevymmo_app_support::paths;
 use bevymmo_app_support::settings::Settings;
@@ -41,6 +42,7 @@ struct AppConfig {
     tick_rate: f64,
     spacetime_uri: String,
     spacetime_module: String,
+    assets_root: PathBuf,
 }
 
 impl AppConfig {
@@ -53,15 +55,49 @@ impl AppConfig {
             log_filter: settings.log_filter.clone(),
             spacetime_uri: uri.unwrap_or(settings.spacetime_uri),
             spacetime_module: module.unwrap_or(settings.spacetime_module),
+            assets_root: paths::assets_root(),
         }
     }
 }
 
-fn main() {
+fn main() -> Result<(), String> {
     let settings = Settings::load();
     let config = AppConfig::resolve(Cli::parse().mode, settings);
+    ensure_assets_root_exists(&config.assets_root)?;
     println!("Starting {:?}", config.mode);
     build_app(&config).run();
+    Ok(())
+}
+
+/// Converts missing client assets into one actionable startup error.
+///
+/// Bevy otherwise logs one error per missing image or GLB, which hides the real
+/// deployment issue: `game.exe` was copied without the sibling `assets/` folder.
+/// Keeping this check in the composition root avoids coupling lower-level
+/// crates to packaging concerns.
+///
+/// # Errors
+/// Returns a message suitable for CLI output when the resolved assets folder is
+/// absent.
+///
+/// # Example
+/// ```rust,ignore
+/// let assets_root = bevymmo_app_support::paths::assets_root();
+/// ensure_assets_root_exists(&assets_root)?;
+/// ```
+fn ensure_assets_root_exists(assets_root: &Path) -> Result<(), String> {
+    if assets_root.is_dir() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Could not find the client assets directory at '{}'.\n\
+         Run from the repository root, or distribute the client as a folder with \
+         'game.exe' next to the 'assets' directory.\n\
+         Windows bundle command: powershell -ExecutionPolicy Bypass -File \
+         .\\scripts\\package-client.ps1",
+        assets_root.display()
+    ))
 }
 
 fn build_app(config: &AppConfig) -> App {
@@ -132,7 +168,7 @@ fn add_platform_plugins(app: &mut App, config: &AppConfig) {
                     // whether launched via `cargo run` or by double-clicking
                     // `target/debug/game.exe`.
                     .set(AssetPlugin {
-                        file_path: paths::assets_root().to_string_lossy().into_owned(),
+                        file_path: config.assets_root.to_string_lossy().into_owned(),
                         ..default()
                     })
                     .set(LogPlugin {

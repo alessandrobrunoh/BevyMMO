@@ -1,6 +1,5 @@
 //! Components specific to the Dummy entity.
 
-
 /// Marker component to identify a Dummy entity.
 ///
 /// The Dummy is a static target with massive HP, used for testing

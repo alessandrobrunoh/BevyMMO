@@ -5,10 +5,10 @@ use crate::ui::target_frame::components::{TargetFrame, TargetFrameParts, TargetF
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 use bevy::prelude::*;
-use bevymmo_gameplay::entity::components::{EntityKind, PlayerName};
-use bevymmo_network::network::protocol::Position;
-use bevymmo_gameplay::stats::components::VitalStats;
 use bevymmo_client::targeting::CurrentTarget;
+use bevymmo_gameplay::entity::components::{EntityKind, PlayerName};
+use bevymmo_gameplay::stats::components::VitalStats;
+use bevymmo_network::network::protocol::Position;
 
 const FRAME_WIDTH: f32 = 200.0;
 const HP_BAR_HEIGHT: f32 = 12.0;

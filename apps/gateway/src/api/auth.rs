@@ -8,17 +8,17 @@
 //! `reducers::account` — this layer never re-implements them, only reports
 //! what the module decided.
 
-use axum::Json;
-use axum::Router;
 use axum::extract::State;
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::Json;
+use axum::Router;
 use serde::{Deserialize, Serialize};
 
-use crate::AppState;
 use crate::api::error::AppError;
 use crate::stdb::connection::{CharacterSummary, GatewayConnection};
+use crate::AppState;
 
 const SESSION_COOKIE_NAME: &str = "bevymmo_session";
 
@@ -129,7 +129,10 @@ pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Respon
         (status = 401, description = "No session, or the session expired", body = crate::api::error::ErrorResponse),
     ),
 )]
-pub async fn profile(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<ProfileResponse>, AppError> {
+pub async fn profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ProfileResponse>, AppError> {
     let Some(id) = session_id_from_cookie(&headers) else {
         return Err(AppError::Unauthorized);
     };
@@ -164,7 +167,10 @@ async fn open_connection(state: &AppState) -> Result<GatewayConnection, AppError
 /// Common tail of `register`/`login`: the reducer call already succeeded on
 /// `connection`, so mint a session id for it, cookie the response, and
 /// return the same profile shape `/profile` would.
-async fn authenticated_response(state: &AppState, connection: GatewayConnection) -> Result<Response, AppError> {
+async fn authenticated_response(
+    state: &AppState,
+    connection: GatewayConnection,
+) -> Result<Response, AppError> {
     let account_id = connection.account_id();
     let characters = connection.characters().unwrap_or_default();
     let id = state.sessions.create(connection).await;
@@ -179,9 +185,11 @@ async fn authenticated_response(state: &AppState, connection: GatewayConnection)
         // only happens after `bind_session` writes the `Session` row this
         // reads back — but fail closed with a real status rather than
         // panicking on the `unwrap` that would otherwise be tempting here.
-        None => return Err(AppError::Internal(
-            "authenticated but no session was recorded".to_string(),
-        )),
+        None => {
+            return Err(AppError::Internal(
+                "authenticated but no session was recorded".to_string(),
+            ))
+        }
     };
     response
         .headers_mut()

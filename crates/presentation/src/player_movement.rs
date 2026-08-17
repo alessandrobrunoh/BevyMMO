@@ -10,15 +10,15 @@ use bevy::prelude::*;
 use lightyear::prelude::input::native::ActionState;
 use lightyear::prelude::*;
 
-use bevymmo_gameplay::crowd_control::CrowdControlState;
-use bevymmo_gameplay::entity::components::EntityState;
-use bevymmo_gameplay::entity::player::components::Player;
 use bevymmo_client::movement::{
     effective_movement_speed, move_towards_target, snap_to_ground, step_on_terrain, TerrainStep,
 };
+use bevymmo_gameplay::crowd_control::CrowdControlState;
+use bevymmo_gameplay::entity::components::EntityState;
+use bevymmo_gameplay::entity::player::components::Player;
+use bevymmo_gameplay::spells::{ChannelMovementPolicy, SpellId, SpellRegistry};
 use bevymmo_network::network::mode;
 use bevymmo_network::network::protocol::{Inputs, LookDirection, NetworkEntityId, Position};
-use bevymmo_gameplay::spells::{ChannelMovementPolicy, SpellId, SpellRegistry};
 
 use bevymmo_gameplay::stats::components::{MovementStats, VitalStats};
 use bevymmo_gameplay::stats::modifiers::ActiveStatModifiers;

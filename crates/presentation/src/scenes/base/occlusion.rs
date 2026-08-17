@@ -39,7 +39,6 @@ use bevymmo_network::network::protocol::Position;
 use super::systems::GameCamera;
 use crate::world::{MapPropVisual, MapSceneVisual};
 
-
 /// Suffix marking the half of a prop that must never fade: trunks, floors,
 /// anything that would look wrong left floating.
 pub const OCCLUDER_BASE_SUFFIX: &str = "_Base";
@@ -195,7 +194,6 @@ pub fn tag_occludables(
         ));
     }
 }
-
 
 fn is_descendant_of(entity: Entity, root: Entity, parents: &Query<&ChildOf>) -> bool {
     let mut current = entity;

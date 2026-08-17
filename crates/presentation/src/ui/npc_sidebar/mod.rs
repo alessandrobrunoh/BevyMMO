@@ -8,8 +8,8 @@ pub mod systems;
 
 use bevy::prelude::*;
 
-use crate::ui::systems::in_gameplay;
 use crate::ui::npc_sidebar::systems::{claim_vendor_item, npc_sidebar_on_click};
+use crate::ui::systems::in_gameplay;
 
 /// Plugin che registra il sistema di click-to-inspect per gli NPC.
 pub struct NpcSidebarPlugin;

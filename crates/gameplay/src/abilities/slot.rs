@@ -15,5 +15,9 @@ pub enum AbilitySlot {
 }
 
 impl AbilitySlot {
-    pub const ALL: [AbilitySlot; 3] = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate];
+    pub const ALL: [AbilitySlot; 3] = [
+        AbilitySlot::Primary,
+        AbilitySlot::Secondary,
+        AbilitySlot::Ultimate,
+    ];
 }

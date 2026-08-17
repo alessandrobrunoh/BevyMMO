@@ -1,7 +1,7 @@
 //! Ground Break — boots secondary ability.
 
-use bevymmo_props_macro::base_ability;
 use crate::abilities::BaseAbilityRegistry;
+use bevymmo_props_macro::base_ability;
 
 #[base_ability(
     id = "ground_break",
@@ -19,4 +19,6 @@ use crate::abilities::BaseAbilityRegistry;
 )]
 pub struct GroundBreak;
 
-pub fn register(registry: &mut BaseAbilityRegistry) { GroundBreak::register(registry); }
+pub fn register(registry: &mut BaseAbilityRegistry) {
+    GroundBreak::register(registry);
+}

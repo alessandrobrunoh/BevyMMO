@@ -46,7 +46,12 @@ impl From<&'static str> for EssenceId {
 /// Logica di manifestazione — SOLO questa è scritta a mano dall'autore
 /// dell'Essenza. Tutto il resto (`Essence`) è generato dalla macro.
 pub trait EssenceEffect: Send + Sync + 'static {
-    fn manifest(&self, ability: &dyn BaseAbility, params: &AbilityParams, ctx: &mut SpellCastContext);
+    fn manifest(
+        &self,
+        ability: &dyn BaseAbility,
+        params: &AbilityParams,
+        ctx: &mut SpellCastContext,
+    );
 }
 
 pub trait Essence: Send + Sync + 'static {
@@ -57,7 +62,12 @@ pub trait Essence: Send + Sync + 'static {
     /// dedicato (Vita → alleati, Fuoco → nemici, ecc.).
     fn default_targeting(&self) -> AoeTargeting;
     fn visual_theme(&self) -> EssenceVisualTheme;
-    fn manifest(&self, ability: &dyn BaseAbility, params: &AbilityParams, ctx: &mut SpellCastContext);
+    fn manifest(
+        &self,
+        ability: &dyn BaseAbility,
+        params: &AbilityParams,
+        ctx: &mut SpellCastContext,
+    );
 }
 
 pub type ArcEssence = Arc<dyn Essence>;

@@ -399,11 +399,7 @@ impl GameSettingsResource {
     /// Needed because a single physical key can be bound to several actions —
     /// `Escape` is `TogglePause` *and* `ClearTarget` — and the most specific
     /// handler must be able to claim it before the others react.
-    pub fn consume_press(
-        &self,
-        action: KeyAction,
-        keys: &mut bevy::input::ButtonInput<KeyCode>,
-    ) {
+    pub fn consume_press(&self, action: KeyAction, keys: &mut bevy::input::ButtonInput<KeyCode>) {
         keys.clear_just_pressed(self.0.keybinds.get(action).key);
     }
 }

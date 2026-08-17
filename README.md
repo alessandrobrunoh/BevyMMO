@@ -159,6 +159,31 @@ cargo run -- client --uri ws://192.168.1.10:3000 --module bevymmo
 
 The authoritative server is the SpacetimeDB module, not a Bevy process, so the old `server` and `host-client` modes no longer exist. `--uri` and `--module` override `config/default.toml`.
 
+### Build a distributable Windows client
+
+Do not distribute `game.exe` by itself. Bevy loads textures, UI sprites, models, and map GLBs from the filesystem, so the executable must be shipped next to the repository `assets/` directory.
+
+From a full checkout on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-client.ps1
+```
+
+This creates:
+
+```text
+dist/client-windows/
+├── game.exe
+├── run-client.bat
+└── assets/
+```
+
+Then zip or copy the whole `dist/client-windows/` folder. Run the remote client with:
+
+```bat
+run-client.bat --uri ws://193.70.42.29:3000 --module bevymmo-v2
+```
+
 ## Cargo Features
 
 The binary is a client, so there is only one feature and it is on by default:
@@ -364,6 +389,18 @@ To add a replicated entity:
 See [`docs/create-a-new-plugin.md`](docs/create-a-new-plugin.md) for the detailed guide.
 
 ## Troubleshooting
+
+### The client reports missing `assets/...` files
+
+The executable was launched without the sibling `assets/` directory. Copying only `game.exe` into `Downloads` is not enough; the runtime expects this layout:
+
+```text
+client-folder/
+├── game.exe
+└── assets/
+```
+
+Use `scripts/package-client.ps1` to create the folder automatically, then distribute that folder instead of the standalone executable.
 
 ### The client connects but no character appears
 

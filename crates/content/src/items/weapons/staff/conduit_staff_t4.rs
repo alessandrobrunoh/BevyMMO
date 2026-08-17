@@ -7,7 +7,6 @@ use crate::ability_definitions::astral_nova::AstralNova;
 use crate::ability_definitions::meteor_lance::MeteorLance;
 use crate::items::ItemRegistry;
 
-
 #[item(
     id = "conduit_staff_t4",
     name = "Conduit Staff T4",

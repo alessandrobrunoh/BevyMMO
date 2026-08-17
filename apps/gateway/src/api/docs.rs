@@ -6,10 +6,10 @@
 //! Scalar's renderer from a CDN, which means `/docs` needs internet access —
 //! fine for a development gateway, and the JSON endpoint works without it.
 
-use axum::Json;
-use axum::Router;
 use axum::response::Html;
 use axum::routing::get;
+use axum::Json;
+use axum::Router;
 use utoipa::OpenApi;
 
 use crate::AppState;

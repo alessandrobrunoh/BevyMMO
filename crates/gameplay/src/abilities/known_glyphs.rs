@@ -42,7 +42,10 @@ impl KnownGlyphs {
             .essence
             .as_ref()
             .is_none_or(|id| self.essences.contains(id))
-            && inscription.modifiers.iter().all(|id| self.modifiers.contains(id))
+            && inscription
+                .modifiers
+                .iter()
+                .all(|id| self.modifiers.contains(id))
             && inscription
                 .ancient_word
                 .as_ref()
@@ -144,7 +147,10 @@ mod tests {
     #[test]
     fn fully_knows_false_when_essence_missing() {
         let known = KnownGlyphs::default();
-        let inscription = Inscription { essence: Some(EssenceId::new("fuoco")), ..Default::default() };
+        let inscription = Inscription {
+            essence: Some(EssenceId::new("fuoco")),
+            ..Default::default()
+        };
         assert!(!known.fully_knows(&inscription));
     }
 
@@ -213,7 +219,9 @@ mod tests {
     #[test]
     fn knows_item_inscription_false_for_legacy() {
         let known = KnownAncientLanguage::default();
-        let item = ItemInscription::Legacy(crate::abilities::inscription::legacy::WeaponInscriptions::default());
+        let item = ItemInscription::Legacy(
+            crate::abilities::inscription::legacy::WeaponInscriptions::default(),
+        );
         assert!(!known.knows_item_inscription(&item));
     }
 

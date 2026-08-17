@@ -90,7 +90,10 @@ mod tests {
         });
 
         assert!(registry.contains(&id));
-        assert_eq!(registry.get(&id).map(|family| family.display_name), Some("Staff"));
+        assert_eq!(
+            registry.get(&id).map(|family| family.display_name),
+            Some("Staff")
+        );
         assert_eq!(registry.len(), 1);
     }
 }

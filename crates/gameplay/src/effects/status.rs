@@ -83,12 +83,8 @@ pub struct StatModifierSpec {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PeriodicEffect {
-    Damage {
-        amount: f32,
-    },
-    Heal {
-        amount: f32,
-    },
+    Damage { amount: f32 },
+    Heal { amount: f32 },
 }
 
 impl PeriodicEffect {
@@ -96,10 +92,8 @@ impl PeriodicEffect {
         match self {
             Self::Damage { amount } => {
                 EffectSpec::Damage(super::spec::DamageEffect { amount: *amount })
-            },
-            Self::Heal { amount } => {
-                EffectSpec::Heal(super::spec::HealEffect { amount: *amount })
             }
+            Self::Heal { amount } => EffectSpec::Heal(super::spec::HealEffect { amount: *amount }),
         }
     }
 }
@@ -243,6 +237,12 @@ mod tests {
 
         registry.register(definition);
         assert_eq!(registry.len(), 1);
-        assert_eq!(registry.get(&StatusId::new("stun")).unwrap().duration_seconds, 2.0);
+        assert_eq!(
+            registry
+                .get(&StatusId::new("stun"))
+                .unwrap()
+                .duration_seconds,
+            2.0
+        );
     }
 }

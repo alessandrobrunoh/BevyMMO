@@ -24,21 +24,21 @@ pub mod public;
 
 use std::time::{Duration, Instant};
 
-use axum::Json;
-use axum::Router;
 use axum::error_handling::HandleErrorLayer;
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
+use axum::Json;
+use axum::Router;
 use serde::Serialize;
 use tower::ServiceBuilder;
 use tower_http::catch_panic::CatchPanicLayer;
 use uuid::Uuid;
 
-use crate::AppState;
 use crate::api::error::AppError;
+use crate::AppState;
 
 /// Hard upper bound for any one request, SpacetimeDB round-trips included. A
 /// hung upstream must fail fast (504) instead of pinning connections until
@@ -163,8 +163,7 @@ async fn observe_request(mut request: Request, next: Next) -> Response {
         .map(str::to_owned)
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     // ASCII by construction: header values are, and so is a UUID.
-    let request_id_value =
-        HeaderValue::from_str(&request_id).expect("request id is valid ASCII");
+    let request_id_value = HeaderValue::from_str(&request_id).expect("request id is valid ASCII");
     request
         .headers_mut()
         .insert(REQUEST_ID_HEADER, request_id_value.clone());

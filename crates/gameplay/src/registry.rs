@@ -123,9 +123,6 @@ mod tests {
 
         let sorted = registry.sorted_by(|a, b| a.cmp(b));
 
-        assert_eq!(
-            sorted,
-            vec![(2, "apple"), (1, "banana"), (3, "cherry")]
-        );
+        assert_eq!(sorted, vec![(2, "apple"), (1, "banana"), (3, "cherry")]);
     }
 }

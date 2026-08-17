@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
-use bevymmo_gameplay::entity::components::PlayerName;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
+use bevymmo_gameplay::entity::components::PlayerName;
 
 use crate::ui::theme::UiTheme;
 

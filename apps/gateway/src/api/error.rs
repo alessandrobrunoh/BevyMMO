@@ -19,9 +19,9 @@
 //! Not RFC 9457 `application/problem+json` on purpose: it would be a
 //! coordinated change across `apps/frontend` for no gain at this size.
 
-use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::Json;
 use serde::Serialize;
 use thiserror::Error;
 

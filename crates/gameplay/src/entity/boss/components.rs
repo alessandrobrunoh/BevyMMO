@@ -31,7 +31,10 @@ pub struct Boss;
 ///
 /// Transitions are server-decided (HP thresholds + enrage timer) and written
 /// from `boss/systems.rs::update_boss_phase`.
-#[cfg_attr(feature = "bevy", derive(bevy_ecs::component::Component, bevy_reflect::Reflect))]
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::component::Component, bevy_reflect::Reflect)
+)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "bevy", reflect(Component))]
 pub enum BossPhase {
@@ -53,7 +56,10 @@ pub enum BossPhase {
 /// The server flips `is_engaged` to true the first time a living player crosses
 /// `radius` around `center`; it never resets in v1. Clients read the replicated
 /// component to draw the pulsing red ring and fade it on engage.
-#[cfg_attr(feature = "bevy", derive(bevy_ecs::component::Component, bevy_reflect::Reflect))]
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::component::Component, bevy_reflect::Reflect)
+)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "bevy", reflect(Component))]
 pub struct BossArena {

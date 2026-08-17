@@ -4,7 +4,9 @@
 //! and later the item's Root Words/Ancient Words. Persisted state contains only
 //! stable ids and selections.
 
-use super::base_ability::{AbilityCastMode, AbilityGeometry, AbilityId, AbilityParams, AbilityTag, BaseAbility};
+use super::base_ability::{
+    AbilityCastMode, AbilityGeometry, AbilityId, AbilityParams, AbilityTag, BaseAbility,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlueprintExecution {

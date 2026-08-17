@@ -5,8 +5,8 @@ use bevy::prelude::*;
 use super::{
     boss_bar, card, character_roster, chat, connecting, crowd_control_bar, death_screen,
     debug_position, entity_bar, inscription, inventory, login, main_menu, notices, npc_sidebar,
-    pause_menu, player_stats, scoreboard, scrollbar, settings, spell_selector, status_bar,
-    systems, target_frame, target_indicator,
+    pause_menu, player_stats, scoreboard, scrollbar, settings, spell_selector, status_bar, systems,
+    target_frame, target_indicator,
 };
 
 use crate::game_state::not_typing;

@@ -6,15 +6,15 @@
 //! returns everything public about that character plus the `account_id` that
 //! owns it. See `stdb::directory` for where the rows come from.
 
-use axum::Json;
-use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::routing::get;
+use axum::Json;
+use axum::Router;
 use serde::Deserialize;
 
-use crate::AppState;
 use crate::api::error::AppError;
 use crate::stdb::directory::PlayerEntry;
+use crate::AppState;
 
 /// Page size used when the caller does not send `limit`.
 const DEFAULT_SEARCH_LIMIT: usize = 50;

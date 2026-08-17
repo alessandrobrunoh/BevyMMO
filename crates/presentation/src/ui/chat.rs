@@ -135,10 +135,7 @@ fn chat_is_active(screen: &GameScreen) -> bool {
     matches!(screen.0, Screen::InGame)
 }
 
-fn sync_chat_visibility(
-    screen: Res<GameScreen>,
-    mut roots: Query<&mut Node, With<ChatRoot>>,
-) {
+fn sync_chat_visibility(screen: Res<GameScreen>, mut roots: Query<&mut Node, With<ChatRoot>>) {
     let display = if chat_is_active(&screen) {
         Display::Flex
     } else {
@@ -198,7 +195,10 @@ fn defocus_chat_on_world_click(
     // A `Pressed` interaction anywhere in the UI means this click landed on
     // some clickable element — possibly chat's own input, already handled by
     // `focus_chat_on_click` — not on the game world.
-    if ui_interactions.iter().any(|interaction| *interaction == Interaction::Pressed) {
+    if ui_interactions
+        .iter()
+        .any(|interaction| *interaction == Interaction::Pressed)
+    {
         return;
     }
     for mut input in inputs.iter_mut() {

@@ -62,4 +62,3 @@ mod tests {
         assert_eq!(flat_direction_towards(origin, target), None);
     }
 }
-

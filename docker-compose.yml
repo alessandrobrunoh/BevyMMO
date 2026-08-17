@@ -20,7 +20,10 @@ services:
       - APP_ENV=production
       - GATEWAY__BIND_ADDR=0.0.0.0:8001
       - GATEWAY__LOG_FORMAT=json
+      - GATEWAY__CORS_ORIGIN=http://193.70.42.29:5001
+      - GATEWAY__COOKIE_SECURE=false
       - SPACETIME_URI=ws://spacetimedb:3000
+      - SPACETIME_MODULE=bevymmo-v2
     depends_on:
       - spacetimedb
 

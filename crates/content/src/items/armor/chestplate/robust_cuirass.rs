@@ -45,7 +45,10 @@ mod tests {
     #[test]
     fn category_is_armor() {
         let item = RobustCuirass;
-        assert!(matches!(item.config().category, crate::items::ItemCategory::Armor));
+        assert!(matches!(
+            item.config().category,
+            crate::items::ItemCategory::Armor
+        ));
     }
 
     #[test]
@@ -54,17 +57,31 @@ mod tests {
         let abilities = item
             .ability_loadout()
             .expect("robust_cuirass must grant abilities");
-        assert_eq!(abilities.options_for(AbilitySlot::Primary), [BulwarkStrike::ID.into()]);
-        assert_eq!(abilities.options_for(AbilitySlot::Secondary), [IronWave::ID.into()]);
-        assert_eq!(abilities.options_for(AbilitySlot::Ultimate), [ArcaneOrb::ID.into()]);
+        assert_eq!(
+            abilities.options_for(AbilitySlot::Primary),
+            [BulwarkStrike::ID.into()]
+        );
+        assert_eq!(
+            abilities.options_for(AbilitySlot::Secondary),
+            [IronWave::ID.into()]
+        );
+        assert_eq!(
+            abilities.options_for(AbilitySlot::Ultimate),
+            [ArcaneOrb::ID.into()]
+        );
     }
 
     #[test]
     fn has_a_rune_profile_with_fire_affinity() {
         let item = RobustCuirass;
-        let profile = item.rune_profile().expect("robust_cuirass must grant a rune profile");
+        let profile = item
+            .rune_profile()
+            .expect("robust_cuirass must grant a rune profile");
         assert_eq!(profile.capacity, 6);
-        assert_eq!(profile.affinity.as_ref().map(|id| id.as_str()), Some("fuoco"));
+        assert_eq!(
+            profile.affinity.as_ref().map(|id| id.as_str()),
+            Some("fuoco")
+        );
     }
 
     #[test]

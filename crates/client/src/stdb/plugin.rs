@@ -23,6 +23,13 @@
 //! world data, so reconciliation remains responsible for correcting local
 //! prediction around slopes and blockers.
 
+use crate::app_state::{
+    AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus, ConnectionFailure,
+    ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, GameScreen, Screen,
+};
+use crate::local_player::LocalPlayer;
+use crate::movement::MoveTarget;
+use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
 use bevymmo_domain::movement::{self, Step};
@@ -34,25 +41,20 @@ use bevymmo_domain::stats::modifiers::{
 };
 use bevymmo_domain::EntityId;
 use bevymmo_gameplay::abilities::{AncientWordId, EssenceId, KnownGlyphs, ModifierId};
-use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
 use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
+use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
 use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
 use bevymmo_gameplay::entity::components::{EntityKind, EntityState, GameEntity, PlayerName};
-use crate::local_player::LocalPlayer;
-use crate::app_state::{
-    AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus, ConnectionFailure,
-    ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, GameScreen, Screen,
-};
 use bevymmo_gameplay::items::components::{Equipment, Inventory};
-use crate::movement::MoveTarget;
-use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
-use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
 use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
+use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
 use bevymmo_network::world_components::{
     EntityColor, LookDirection, NetworkEntityId, Position, ProjectileVisual,
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use spacetimedb_sdk::{credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey, Uuid};
+use spacetimedb_sdk::{
+    credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey, Uuid,
+};
 use std::collections::{HashMap, HashSet};
 
 use super::combat_input::send_combat_inputs;
@@ -70,23 +72,23 @@ use super::module_bindings::heartbeat_reducer::heartbeat;
 use super::module_bindings::hotbar_table::HotbarTableAccess;
 use super::module_bindings::inventory_table::InventoryTableAccess;
 use super::module_bindings::join_reducer::join;
+use super::module_bindings::known_glyphs_table::KnownGlyphsTableAccess;
 use super::module_bindings::leave_reducer::leave;
 use super::module_bindings::login_reducer::login;
 use super::module_bindings::logout_reducer::logout;
-use super::module_bindings::register_reducer::register;
-use super::module_bindings::known_glyphs_table::KnownGlyphsTableAccess;
 use super::module_bindings::move_to_reducer::move_to;
 use super::module_bindings::periodic_effect_table::PeriodicEffectTableAccess;
 use super::module_bindings::player_message_table::PlayerMessageTableAccess;
 use super::module_bindings::player_table::PlayerTableAccess;
 use super::module_bindings::projectile_table::ProjectileTableAccess;
+use super::module_bindings::register_reducer::register;
 use super::module_bindings::session_table::SessionTableAccess;
 use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAccess;
 use super::module_bindings::stat_modifier_table::StatModifierTableAccess;
 use super::module_bindings::{
     ActiveStatus, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState, ColorRow,
-    Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow, EntityStats,
-    EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable, ItemInstanceRow,
+    Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow,
+    EntityStats, EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable, ItemInstanceRow,
     KnownGlyphsTable, ModifierKindRow, PeriodicEffect, Player, PlayerMessageEvent, Projectile,
     ReducerEventContext, RemoteReducers, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
 };
@@ -310,8 +312,7 @@ impl StdbConnection {
 
 /// What a `*_then` callback is handed: the module's own `Result`, or the SDK
 /// failing to decode one.
-type ReducerOutcome =
-    Result<Result<(), String>, spacetimedb_sdk::__codegen::InternalError>;
+type ReducerOutcome = Result<Result<(), String>, spacetimedb_sdk::__codegen::InternalError>;
 
 /// Maps server entity ids to the Bevy entities mirroring them.
 #[derive(Resource, Default)]
@@ -494,7 +495,11 @@ impl Plugin for StdbPlugin {
         app.add_systems(Update, finish_shutdown);
         app.add_systems(
             Update,
-            (auth_on_request, delete_character_on_request, join_on_request)
+            (
+                auth_on_request,
+                delete_character_on_request,
+                join_on_request,
+            )
                 .run_if(resource_exists::<StdbConnection>),
         );
         app.add_systems(
@@ -581,7 +586,10 @@ fn connect(
     let reports = tx.clone();
     let credential_key = credential_key(uri, module);
 
-    let cached_token = credentials::File::new(&credential_key).load().ok().flatten();
+    let cached_token = credentials::File::new(&credential_key)
+        .load()
+        .ok()
+        .flatten();
     let conn = match build_connection(uri, module, &credential_key, cached_token.clone()) {
         Ok(conn) => conn,
         // A cached token is signed by the server that issued it. A dev server
@@ -592,7 +600,9 @@ fn connect(
         // instead, the same recovery `forget_cached_credentials` already does
         // for an explicit logout.
         Err(err) if cached_token.is_some() && looks_like_auth_rejection(&*err) => {
-            warn!("cached SpacetimeDB token was rejected ({err}); reconnecting with a fresh identity");
+            warn!(
+                "cached SpacetimeDB token was rejected ({err}); reconnecting with a fresh identity"
+            );
             forget_cached_credentials(uri, module);
             build_connection(uri, module, &credential_key, None)?
         }
@@ -789,14 +799,22 @@ fn drain_events(
                 let entity_id = row.entity_id;
                 let owner = row.owner_character_id;
                 state.pending.entities.insert(entity_id, row.clone());
-                if owner.is_some_and(|character_id| state.pending.offline_players.contains(&character_id)) {
+                if owner.is_some_and(|character_id| {
+                    state.pending.offline_players.contains(&character_id)
+                }) {
                     continue;
                 }
 
                 apply_entity(&mut commands, &mut state.map, &row, &state.local);
                 replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
                 if let Some(character_id) = owner {
-                    replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
+                    replay_character(
+                        &mut commands,
+                        &state.map,
+                        &state.pending,
+                        character_id,
+                        state.local.character_id,
+                    );
                 }
             }
             RowEvent::EntityRemoved(entity_id) => {
@@ -806,7 +824,8 @@ fn drain_events(
                 // Everything keyed by this entity goes with it — including the
                 // per-character rows, which are keyed by `character_id` and so
                 // were outliving the character they belonged to.
-                let owners: Vec<Uuid> = state.map
+                let owners: Vec<Uuid> = state
+                    .map
                     .entity_of_character
                     .iter()
                     .filter(|(_, id)| **id == entity_id)
@@ -827,15 +846,21 @@ fn drain_events(
                 state.pending.entities.remove(&entity_id);
                 state.pending.stats.remove(&entity_id);
                 state.pending.boss_state.remove(&entity_id);
-                state.pending
+                state
+                    .pending
                     .active_status
                     .retain(|_, row| row.entity_id != entity_id);
                 state.pending.applied.remove(&entity_id);
-                state.pending.crowd_control.retain(|_, cc| cc.entity_id != entity_id);
-                state.pending
+                state
+                    .pending
+                    .crowd_control
+                    .retain(|_, cc| cc.entity_id != entity_id);
+                state
+                    .pending
                     .stat_modifier
                     .retain(|_, row| row.entity_id != entity_id);
-                state.pending
+                state
+                    .pending
                     .periodic_effect
                     .retain(|_, row| row.entity_id != entity_id);
             }
@@ -845,7 +870,10 @@ fn drain_events(
                 replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
             }
             RowEvent::Player(row) => {
-                state.map.entity_of_character.insert(row.character_id, row.entity_id);
+                state
+                    .map
+                    .entity_of_character
+                    .insert(row.character_id, row.entity_id);
 
                 // Cached regardless of account, then filtered back out in
                 // `recompute_roster` — this row can arrive before the
@@ -863,7 +891,13 @@ fn drain_events(
                         apply_entity(&mut commands, &mut state.map, &entity_row, &state.local);
                         replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
                     }
-                    replay_character(&mut commands, &state.map, &state.pending, row.character_id, state.local.character_id);
+                    replay_character(
+                        &mut commands,
+                        &state.map,
+                        &state.pending,
+                        row.character_id,
+                        state.local.character_id,
+                    );
                 } else {
                     state.pending.offline_players.insert(row.character_id);
                     if let Some(entity) = state.map.by_entity_id.remove(&row.entity_id) {
@@ -874,23 +908,47 @@ fn drain_events(
             RowEvent::Inventory(row) => {
                 let character_id = row.character_id;
                 state.pending.inventory.insert(character_id, row);
-                replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
+                replay_character(
+                    &mut commands,
+                    &state.map,
+                    &state.pending,
+                    character_id,
+                    state.local.character_id,
+                );
             }
             RowEvent::Equipment(row) => {
                 let character_id = row.character_id;
                 state.pending.equipment.insert(character_id, row);
-                replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
+                replay_character(
+                    &mut commands,
+                    &state.map,
+                    &state.pending,
+                    character_id,
+                    state.local.character_id,
+                );
             }
             RowEvent::Hotbar(row) => {
                 let character_id = row.character_id;
                 state.pending.hotbar.insert(character_id, row);
-                replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
+                replay_character(
+                    &mut commands,
+                    &state.map,
+                    &state.pending,
+                    character_id,
+                    state.local.character_id,
+                );
             }
             RowEvent::KnownGlyphs(row) => {
                 let character_id = row.character_id;
                 state.pending.known_glyphs.insert(character_id, row);
                 if state.local.character_id == Some(character_id) {
-                    replay_character(&mut commands, &state.map, &state.pending, character_id, state.local.character_id);
+                    replay_character(
+                        &mut commands,
+                        &state.map,
+                        &state.pending,
+                        character_id,
+                        state.local.character_id,
+                    );
                 }
             }
             RowEvent::Session(row) => {
@@ -1225,7 +1283,12 @@ fn status_signature_for(entity_id: u64, pending: &PendingRows) -> Vec<(u64, u32)
         .active_status
         .values()
         .filter(|row| row.entity_id == entity_id)
-        .map(|row| (row.id, row.remaining_seconds.to_bits() ^ u32::from(row.stacks)))
+        .map(|row| {
+            (
+                row.id,
+                row.remaining_seconds.to_bits() ^ u32::from(row.stacks),
+            )
+        })
         .collect();
     signature.sort_unstable();
     signature
@@ -1272,7 +1335,12 @@ fn modifier_signature_for(entity_id: u64, pending: &PendingRows) -> Vec<(u64, u3
         .stat_modifier
         .values()
         .filter(|row| row.entity_id == entity_id)
-        .map(|row| (row.id, row.remaining_seconds.unwrap_or(f32::INFINITY).to_bits()))
+        .map(|row| {
+            (
+                row.id,
+                row.remaining_seconds.unwrap_or(f32::INFINITY).to_bits(),
+            )
+        })
         .chain(
             pending
                 .periodic_effect
@@ -1525,7 +1593,7 @@ fn equipment_from(slots: &[Option<ItemInstanceRow>]) -> Equipment {
     equipment
 }
 
-	fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instance::ItemInstance {
+fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instance::ItemInstance {
     use bevymmo_gameplay::abilities::inscription::{
         ArmorInscription, Inscription, SecondaryWord, SlotInscription, WeaponInscription,
         WeaponInscriptions,
@@ -1598,12 +1666,14 @@ fn auth_on_request(
     auth_failure.0 = None;
 
     let result = match intent {
-        AuthIntent::Register { email, password } => conn
-            .reducers()
-            .register_then(email, password, conn.report_auth_outcome()),
-        AuthIntent::Login { email, password } => conn
-            .reducers()
-            .login_then(email, password, conn.report_auth_outcome()),
+        AuthIntent::Register { email, password } => {
+            conn.reducers()
+                .register_then(email, password, conn.report_auth_outcome())
+        }
+        AuthIntent::Login { email, password } => {
+            conn.reducers()
+                .login_then(email, password, conn.report_auth_outcome())
+        }
     };
     if let Err(err) = result {
         auth_state.0 = AuthStatus::Rejected;
@@ -1992,11 +2062,9 @@ fn register_party_callbacks(conn: &DbConnection, tx: Sender<PartyRowEvent>) {
         let _ = member_inserted.send(PartyRowEvent::Member(row.clone()));
     });
     let member_updated = tx.clone();
-    conn.db()
-        .party_member()
-        .on_update(move |_ctx, _old, new| {
-            let _ = member_updated.send(PartyRowEvent::Member(new.clone()));
-        });
+    conn.db().party_member().on_update(move |_ctx, _old, new| {
+        let _ = member_updated.send(PartyRowEvent::Member(new.clone()));
+    });
     let member_deleted = tx.clone();
     conn.db().party_member().on_delete(move |_ctx, row| {
         let _ = member_deleted.send(PartyRowEvent::MemberRemoved(row.clone()));
@@ -2060,7 +2128,9 @@ fn drain_party_events(
                 }
             }
             PartyRowEvent::PlayerSeen(row) => {
-                roster.display_names.insert(row.character_id, row.display_name);
+                roster
+                    .display_names
+                    .insert(row.character_id, row.display_name);
             }
         }
     }
@@ -2188,9 +2258,10 @@ mod tests {
     #[test]
     fn unchanged_effects_are_not_rewritten() {
         let mut pending = PendingRows::default();
-        pending
-            .crowd_control
-            .insert(1, crowd_control_row(1, 7, CrowdControlKindRow::Stun, 1.5, 2.0));
+        pending.crowd_control.insert(
+            1,
+            crowd_control_row(1, 7, CrowdControlKindRow::Stun, 1.5, 2.0),
+        );
 
         let first = AppliedEffects {
             active_status: active_statuses_for(7, &pending),
@@ -2208,9 +2279,10 @@ mod tests {
         };
         assert_eq!(pending.applied.get(&7), Some(&unchanged));
 
-        pending
-            .crowd_control
-            .insert(1, crowd_control_row(1, 7, CrowdControlKindRow::Stun, 1.0, 2.0));
+        pending.crowd_control.insert(
+            1,
+            crowd_control_row(1, 7, CrowdControlKindRow::Stun, 1.0, 2.0),
+        );
         let ticked = AppliedEffects {
             active_status: active_statuses_for(7, &pending),
             crowd_control: crowd_control_state_for(7, &pending),

@@ -45,7 +45,9 @@ mod tests {
 
     #[test]
     fn offers_two_ultimate_choices() {
-        let abilities = EchoStaff.ability_loadout().expect("Echo Staff has abilities");
+        let abilities = EchoStaff
+            .ability_loadout()
+            .expect("Echo Staff has abilities");
         assert_eq!(
             abilities.options_for(AbilitySlot::Ultimate),
             [MeteorLance::ID.into(), AstralNova::ID.into()]

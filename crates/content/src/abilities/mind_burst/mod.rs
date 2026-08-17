@@ -1,7 +1,7 @@
 //! Mind Ward — helmet secondary cleanse ability.
 
-use bevymmo_props_macro::base_ability;
 use crate::abilities::BaseAbilityRegistry;
+use bevymmo_props_macro::base_ability;
 
 #[base_ability(
     id = "mind_ward",
@@ -19,4 +19,6 @@ use crate::abilities::BaseAbilityRegistry;
 )]
 pub struct MindWard;
 
-pub fn register(registry: &mut BaseAbilityRegistry) { MindWard::register(registry); }
+pub fn register(registry: &mut BaseAbilityRegistry) {
+    MindWard::register(registry);
+}

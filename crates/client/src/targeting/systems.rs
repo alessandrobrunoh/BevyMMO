@@ -3,11 +3,11 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use bevymmo_gameplay::entity::components::GameEntity;
-use bevymmo_network::network::protocol::Position;
-use bevymmo_gameplay::stats::components::VitalStats;
 use crate::movement::cursor_ray;
 use crate::targeting::CurrentTarget;
+use bevymmo_gameplay::entity::components::GameEntity;
+use bevymmo_gameplay::stats::components::VitalStats;
+use bevymmo_network::network::protocol::Position;
 
 const TARGETING_RADIUS: f32 = 1.2;
 
@@ -215,4 +215,3 @@ mod tests {
         assert!(hit.is_none());
     }
 }
-

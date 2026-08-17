@@ -1,13 +1,13 @@
 use super::components::*;
 use super::InscriptionUiState;
 use bevy::prelude::*;
+use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_gameplay::abilities::{
     resolve_active_ability, AbilitySelection, AbilitySlot, BaseAbilityRegistry, EssenceId,
     EssenceRegistry, Inscription, KnownGlyphs, ModifierId, ModifierRegistry, WeaponAbilities,
     WeaponInscriptions,
 };
-use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_gameplay::items::components::{EquipSlot, Equipment};
 use bevymmo_gameplay::items::registry::ItemRegistry;
 
@@ -283,7 +283,12 @@ fn spawn_armor_summary(
                         ))
                         .with_children(|card| {
                             card.spawn((
-                                Text::new(format!("[{}] {}\n{}", armor_key_label(slot), slot.label(), label)),
+                                Text::new(format!(
+                                    "[{}] {}\n{}",
+                                    armor_key_label(slot),
+                                    slot.label(),
+                                    label
+                                )),
                                 TextFont {
                                     font_size: FontSize::Px(theme.button_font_size * 0.62),
                                     ..default()

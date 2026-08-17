@@ -10,12 +10,12 @@ use bevy::prelude::{
 use bevy::window::PrimaryWindow;
 
 use bevymmo_gameplay::entity::components::EntityState;
-use bevymmo_network::network::protocol::{Inputs, LookDirection, Position};
 use bevymmo_gameplay::spells::{CastKind, CastProgress};
 use bevymmo_gameplay::stats::events::ModifierOp;
 use bevymmo_gameplay::stats::events::StatField;
 use bevymmo_gameplay::stats::modifiers::ActiveStatModifiers;
 use bevymmo_gameplay::stats::modifiers::StatModifierInstance;
+use bevymmo_network::network::protocol::{Inputs, LookDirection, Position};
 use bevymmo_world::SurfaceQuery;
 
 /// Distance (in world units) under which a move command is considered satisfied.
@@ -84,7 +84,8 @@ pub fn should_block_movement_for_cast(cast: Option<&CastProgress>) -> bool {
     match cast.kind {
         CastKind::CastTime => true,
         CastKind::Channeling => {
-            cast.channel_movement == bevymmo_gameplay::spells::ChannelMovementPolicy::InterruptOnMove
+            cast.channel_movement
+                == bevymmo_gameplay::spells::ChannelMovementPolicy::InterruptOnMove
         }
         CastKind::Instant => false,
     }
@@ -204,7 +205,8 @@ pub fn resolve_ray_to_ground(
     for step in 0..=num_steps {
         let t = (step as f32 * step_size).min(max_distance);
         let sample_point = ray_origin + normalized_direction * t;
-        let Some(ground_contact) = surface_query.surface_contact_at(sample_point.x, sample_point.z) else {
+        let Some(ground_contact) = surface_query.surface_contact_at(sample_point.x, sample_point.z)
+        else {
             previous = None;
             continue;
         };
@@ -218,7 +220,9 @@ pub fn resolve_ray_to_ground(
         if is_crossing {
             // Refine the crossing so coarse ray steps do not move the click
             // target noticeably on steep terrain.
-            let mut low = previous.map(|(pt, _)| pt).unwrap_or((t - step_size).max(0.0));
+            let mut low = previous
+                .map(|(pt, _)| pt)
+                .unwrap_or((t - step_size).max(0.0));
             let mut high = t;
             for _ in 0..8 {
                 let middle = (low + high) * 0.5;
@@ -259,7 +263,9 @@ pub fn cursor_ray(
     let window = windows.single().ok()?;
     let cursor_position = window.cursor_position()?;
     let (camera, camera_transform) = cameras.iter().next()?;
-    camera.viewport_to_world(camera_transform, cursor_position).ok()
+    camera
+        .viewport_to_world(camera_transform, cursor_position)
+        .ok()
 }
 
 /// Resolves the cursor's camera ray to a world-space ground point for
@@ -654,10 +660,7 @@ mod tests {
             max_z: 10.0,
         };
         // 2x2 heightfield: rises from 0.0 to 20.0 over 10 units in X (slope > 60 deg)
-        let heights = vec![
-            0.0, 0.0,
-            20.0, 20.0,
-        ];
+        let heights = vec![0.0, 0.0, 20.0, 20.0];
         let hf = HeightfieldData::new(1, bounds, heights);
         let manifest = MapManifest {
             version: 2,
@@ -708,6 +711,10 @@ mod tests {
         let result = resolve_ray_to_ground(camera_pos, ray_dir, &query, 100.0, 0.5);
         assert!(result.is_some(), "Ray should hit steep mountain");
         let hit = result.unwrap();
-        assert!((hit.y - 10.0).abs() < 0.1, "Hit height should be ~10.0 on the mountain, got {}", hit.y);
+        assert!(
+            (hit.y - 10.0).abs() < 0.1,
+            "Hit height should be ~10.0 on the mountain, got {}",
+            hit.y
+        );
     }
 }

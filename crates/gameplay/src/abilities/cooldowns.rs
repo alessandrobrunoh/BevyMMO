@@ -16,7 +16,9 @@ pub struct AbilityCooldowns {
 
 impl AbilityCooldowns {
     pub fn is_on_cooldown(&self, id: &AbilityId) -> bool {
-        self.timers.get(id).is_some_and(|timer| !timer.is_finished())
+        self.timers
+            .get(id)
+            .is_some_and(|timer| !timer.is_finished())
     }
 
     pub fn start_cooldown(&mut self, id: AbilityId, duration_seconds: f32) {

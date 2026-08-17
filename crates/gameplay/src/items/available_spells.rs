@@ -15,7 +15,6 @@
 //! replicated — both sides derive the same value locally instead of paying
 //! network cost for it.
 
-
 use super::components::{EquipSlot, Equipment};
 use super::registry::ItemRegistry;
 use crate::spells::components::HotbarSlot;
@@ -51,7 +50,10 @@ impl AvailableSpellChoices {
 /// [`AvailableSpellChoices`]. Pure and deterministic: same `equipment` +
 /// same `registry` always yields the same result, which is exactly what lets
 /// the client recompute it locally instead of receiving it over the network.
-pub fn compute_available_choices(equipment: &Equipment, registry: &ItemRegistry) -> AvailableSpellChoices {
+pub fn compute_available_choices(
+    equipment: &Equipment,
+    registry: &ItemRegistry,
+) -> AvailableSpellChoices {
     let mut choices = AvailableSpellChoices::default();
 
     for slot in EquipSlot::ALL {
@@ -59,7 +61,10 @@ pub fn compute_available_choices(equipment: &Equipment, registry: &ItemRegistry)
             continue;
         };
         let Some(item) = registry.get(&item_instance.item_id) else {
-            log::warn!("equipped item {} not in registry", item_instance.item_id.as_str());
+            log::warn!(
+                "equipped item {} not in registry",
+                item_instance.item_id.as_str()
+            );
             continue;
         };
         let Some(kit) = item.spell_kit() else {
@@ -113,6 +118,4 @@ mod tests {
         assert!(choices.contains(HotbarSlot::Q, &SpellId::new("fireball")));
         assert!(!choices.contains(HotbarSlot::W, &SpellId::new("fireball")));
     }
-
-
 }

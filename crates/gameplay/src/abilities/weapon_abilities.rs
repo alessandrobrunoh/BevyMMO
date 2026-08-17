@@ -21,11 +21,28 @@ impl AbilityLoadout {
     /// Builds a loadout, panicking with a clear message if any slot is empty.
     /// Prefer the `#[item(..., abilities(...))]` macro for content definitions,
     /// which validates the shape at compile time.
-    pub fn new(primary: Vec<AbilityId>, secondary: Vec<AbilityId>, ultimate: Vec<AbilityId>) -> Self {
-        assert!(!primary.is_empty(), "AbilityLoadout::primary must offer at least one ability");
-        assert!(!secondary.is_empty(), "AbilityLoadout::secondary must offer at least one ability");
-        assert!(!ultimate.is_empty(), "AbilityLoadout::ultimate must offer at least one ability");
-        Self { primary, secondary, ultimate }
+    pub fn new(
+        primary: Vec<AbilityId>,
+        secondary: Vec<AbilityId>,
+        ultimate: Vec<AbilityId>,
+    ) -> Self {
+        assert!(
+            !primary.is_empty(),
+            "AbilityLoadout::primary must offer at least one ability"
+        );
+        assert!(
+            !secondary.is_empty(),
+            "AbilityLoadout::secondary must offer at least one ability"
+        );
+        assert!(
+            !ultimate.is_empty(),
+            "AbilityLoadout::ultimate must offer at least one ability"
+        );
+        Self {
+            primary,
+            secondary,
+            ultimate,
+        }
     }
 
     pub fn options_for(&self, slot: AbilitySlot) -> &[AbilityId] {
@@ -62,7 +79,7 @@ impl AbilitySelection {
         match slot {
             AbilitySlot::Primary => self.primary = ability,
             AbilitySlot::Secondary => self.secondary = ability,
-            AbilitySlot::Ultimate => self.ultimate = ability
+            AbilitySlot::Ultimate => self.ultimate = ability,
         }
     }
 }
@@ -97,7 +114,11 @@ mod tests {
     #[test]
     #[should_panic(expected = "AbilityLoadout::primary must offer at least one ability")]
     fn new_panics_on_empty_primary() {
-        AbilityLoadout::new(vec![], vec![AbilityId::new("wave")], vec![AbilityId::new("convergence")]);
+        AbilityLoadout::new(
+            vec![],
+            vec![AbilityId::new("wave")],
+            vec![AbilityId::new("convergence")],
+        );
     }
 
     #[test]

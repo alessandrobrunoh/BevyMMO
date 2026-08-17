@@ -13,8 +13,8 @@ use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::game_state::{
     validate_email, validate_password, validate_player_name, AuthIntent, AuthRequest,
-    ConnectionFailure, ConnectionIntent, ConnectionRequest, EmailError, GameScreen,
-    PasswordError, PlayerNameError, Screen, TypingFocus,
+    ConnectionFailure, ConnectionIntent, ConnectionRequest, EmailError, GameScreen, PasswordError,
+    PlayerNameError, Screen, TypingFocus,
 };
 use crate::ui::button::{UiButton, UiButtonAction, UiButtonImages};
 use crate::ui::chat::ChatInput;
@@ -38,8 +38,8 @@ pub(crate) fn sync_typing_focus(
     text_inputs: Query<&TextInput>,
     mut typing: ResMut<TypingFocus>,
 ) {
-    let focused =
-        chat_inputs.iter().any(|input| input.focused) || text_inputs.iter().any(|input| input.focused);
+    let focused = chat_inputs.iter().any(|input| input.focused)
+        || text_inputs.iter().any(|input| input.focused);
     if typing.0 != focused {
         typing.0 = focused;
     }

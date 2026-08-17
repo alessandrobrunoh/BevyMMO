@@ -40,7 +40,11 @@ pub struct EntityHit {
 /// o `None` se la lista è vuota.
 pub fn closest_friendly_hit(hits: &[EntityHit]) -> Option<Entity> {
     hits.iter()
-        .min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal))
+        .min_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .map(|hit| hit.entity)
 }
 
@@ -104,7 +108,13 @@ pub fn npc_sidebar_on_click(
         .unwrap_or_else(|_| "NPC".to_string());
 
     // Spawn nuova Card
-    spawn_npc_sidebar(&mut commands, &theme, target_entity, &npc_name, &item_registry);
+    spawn_npc_sidebar(
+        &mut commands,
+        &theme,
+        target_entity,
+        &npc_name,
+        &item_registry,
+    );
 }
 
 /// Calcola la distanza tra un punto e un raggio (linea infinita).
@@ -152,7 +162,9 @@ fn spawn_npc_sidebar(
                 },
                 TextColor(theme.text_color),
             ));
-            for (_, item) in item_registry.sorted_items().into_iter()
+            for (_, item) in item_registry
+                .sorted_items()
+                .into_iter()
                 .filter(|(_, item)| item.config().equippable_into.is_some())
             {
                 body.spawn((
@@ -170,7 +182,8 @@ fn spawn_npc_sidebar(
                         npc: target_entity,
                         item_id: item.id(),
                     },
-                )).with_children(|button| {
+                ))
+                .with_children(|button| {
                     button.spawn((
                         Text::new(item.display_name().to_string()),
                         TextFont {
@@ -234,10 +247,7 @@ mod tests {
             entity: Entity::PLACEHOLDER,
             distance: 5.0,
         }];
-        assert_eq!(
-            closest_friendly_hit(&hits),
-            Some(Entity::PLACEHOLDER)
-        );
+        assert_eq!(closest_friendly_hit(&hits), Some(Entity::PLACEHOLDER));
     }
 
     #[test]
@@ -245,8 +255,14 @@ mod tests {
         let far = Entity::from_raw_u32(1).expect("valid entity index");
         let close = Entity::from_raw_u32(2).expect("valid entity index");
         let hits = vec![
-            EntityHit { entity: far, distance: 100.0 },
-            EntityHit { entity: close, distance: 10.0 },
+            EntityHit {
+                entity: far,
+                distance: 100.0,
+            },
+            EntityHit {
+                entity: close,
+                distance: 10.0,
+            },
         ];
         assert_eq!(closest_friendly_hit(&hits), Some(close));
     }
@@ -256,8 +272,14 @@ mod tests {
         let a = Entity::from_raw_u32(1).expect("valid entity index");
         let b = Entity::from_raw_u32(2).expect("valid entity index");
         let hits = vec![
-            EntityHit { entity: a, distance: 50.0 },
-            EntityHit { entity: b, distance: 50.0 },
+            EntityHit {
+                entity: a,
+                distance: 50.0,
+            },
+            EntityHit {
+                entity: b,
+                distance: 50.0,
+            },
         ];
         // Qualsiasi dei due è accettabile; verifichiamo solo che sia uno dei due
         let result = closest_friendly_hit(&hits);

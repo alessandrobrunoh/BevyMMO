@@ -4,13 +4,13 @@
 //! primitives. A future asset registry will replace these meshes with GLB
 //! scenes without changing the map manifest contract.
 
+use crate::game_state::{GameScreen, Screen};
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::Indices;
 use bevy::prelude::*;
 use bevy::render::render_resource::PrimitiveTopology;
-use crate::game_state::{GameScreen, Screen};
-use bevymmo_client::movement::ClientSurfaceQuery;
 use bevymmo_app_support::paths;
+use bevymmo_client::movement::ClientSurfaceQuery;
 use bevymmo_gameplay::placeables::{AssetHint, PlaceableRegistry};
 use bevymmo_world::{CollisionGrid, MapManifest, Prop, SurfaceQuery, Terrain};
 

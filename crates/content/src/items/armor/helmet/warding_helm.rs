@@ -48,7 +48,10 @@ mod tests {
     #[test]
     fn category_is_armor() {
         let item = WardingHelm;
-        assert!(matches!(item.config().category, crate::items::ItemCategory::Armor));
+        assert!(matches!(
+            item.config().category,
+            crate::items::ItemCategory::Armor
+        ));
     }
 
     #[test]
@@ -57,17 +60,31 @@ mod tests {
         let abilities = item
             .ability_loadout()
             .expect("warding_helm must grant abilities");
-        assert_eq!(abilities.options_for(AbilitySlot::Primary), [WardingBolt::ID.into()]);
-        assert_eq!(abilities.options_for(AbilitySlot::Secondary), [MindWard::ID.into()]);
-        assert_eq!(abilities.options_for(AbilitySlot::Ultimate), [ArcaneOrb::ID.into()]);
+        assert_eq!(
+            abilities.options_for(AbilitySlot::Primary),
+            [WardingBolt::ID.into()]
+        );
+        assert_eq!(
+            abilities.options_for(AbilitySlot::Secondary),
+            [MindWard::ID.into()]
+        );
+        assert_eq!(
+            abilities.options_for(AbilitySlot::Ultimate),
+            [ArcaneOrb::ID.into()]
+        );
     }
 
     #[test]
     fn has_a_rune_profile_with_fire_affinity() {
         let item = WardingHelm;
-        let profile = item.rune_profile().expect("warding_helm must grant a rune profile");
+        let profile = item
+            .rune_profile()
+            .expect("warding_helm must grant a rune profile");
         assert_eq!(profile.capacity, 7);
-        assert_eq!(profile.affinity.as_ref().map(|id| id.as_str()), Some("fuoco"));
+        assert_eq!(
+            profile.affinity.as_ref().map(|id| id.as_str()),
+            Some("fuoco")
+        );
     }
 
     #[test]

@@ -16,18 +16,18 @@ use std::f32::consts::TAU;
 
 use bevy::color::palettes::css;
 use bevy::prelude::*;
+use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::base_ability::FORWARD_LANE_HALF_WIDTH;
 use bevymmo_gameplay::abilities::{
     resolve_slot_preview, AbilityAim, AbilityGeometry, BaseAbilityRegistry, KnownGlyphs,
     ModifierRegistry, SlotPreview,
 };
-use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
-use bevymmo_network::network::protocol::{LookDirection, Position};
 use bevymmo_gameplay::spells::context::{AoeShape, SpellCastContext};
 use bevymmo_gameplay::stats::components::CombatStats;
-use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
+use bevymmo_network::network::protocol::{LookDirection, Position};
 
 use crate::spells::ui::SpellHudState;
 
@@ -94,7 +94,10 @@ pub fn draw_ability_aim_preview(
     // Slot bloccato (Glifo sconosciuto, o dati incoerenti): niente forma da
     // disegnare, ma un cerchietto rosso ai piedi del personaggio è meglio del
     // silenzio — dice "questo tasto non farà nulla" prima del rilascio.
-    let Ok(SlotPreview { ability, params, .. }) = preview else {
+    let Ok(SlotPreview {
+        ability, params, ..
+    }) = preview
+    else {
         draw_flat_circle(&mut gizmos, position.0, 1.0, BLOCKED_COLOR);
         return;
     };
@@ -147,7 +150,13 @@ pub fn draw_ability_aim_preview(
             }
         }
         AbilityGeometry::Projectile { .. } => {
-            draw_forward_lane(&mut gizmos, position.0, look_direction.0, params.range, color);
+            draw_forward_lane(
+                &mut gizmos,
+                position.0,
+                look_direction.0,
+                params.range,
+                color,
+            );
         }
         AbilityGeometry::SelfBuff { .. } => {
             draw_flat_circle(&mut gizmos, position.0, 1.0, color);
@@ -270,7 +279,6 @@ mod tests {
     use bevy::prelude::*;
     use bevymmo_gameplay::abilities::AbilitySlot;
 
-
     use super::*;
 
     fn app() -> App {
@@ -323,6 +331,4 @@ mod tests {
             .resource::<ButtonInput<KeyCode>>()
             .just_pressed(KeyCode::Escape));
     }
-
-
 }

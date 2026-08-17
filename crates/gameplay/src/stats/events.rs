@@ -4,7 +4,6 @@
 //! communicate _what_ should happen. Systems in [`crate::stats::systems`]
 //! decide _how_ to apply it (clamping, armor reduction, expiration, etc.).
 
-
 use crate::EntityId;
 
 /// Stat field targetable by a modifier.
@@ -35,13 +34,15 @@ pub enum ModifierKind {
     Debuff,
 }
 
-
 /// Request to inflict `amount` damage on `target`.
 ///
 /// Damage is intended as a _raw_ value, before armor reduction.
 /// The [`crate::stats::systems::apply_damage`] system applies the armor
 /// reduction formula and clamps health.
-#[cfg_attr(feature = "bevy", derive(bevy_ecs::message::Message, bevy_ecs::event::Event))]
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::message::Message, bevy_ecs::event::Event)
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct DamageEvent {
     pub target: EntityId,
@@ -52,7 +53,10 @@ pub struct DamageEvent {
 /// Request to heal `target` by `amount`.
 ///
 /// Heal is clamped to `VitalStats.max_health`.
-#[cfg_attr(feature = "bevy", derive(bevy_ecs::message::Message, bevy_ecs::event::Event))]
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::message::Message, bevy_ecs::event::Event)
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct HealEvent {
     pub target: EntityId,

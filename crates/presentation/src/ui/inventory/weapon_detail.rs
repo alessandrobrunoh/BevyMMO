@@ -146,7 +146,17 @@ pub fn summarize_weapon(
 
     let slots = AbilitySlot::ALL
         .iter()
-        .filter_map(|&slot| summarize_slot(slot, instance, abilities, &inscriptions, glyphs, known, item.as_ref()))
+        .filter_map(|&slot| {
+            summarize_slot(
+                slot,
+                instance,
+                abilities,
+                &inscriptions,
+                glyphs,
+                known,
+                item.as_ref(),
+            )
+        })
         .collect();
 
     Some(WeaponSummary { runes, slots })
@@ -458,7 +468,6 @@ mod tests {
             .essences
             .insert(bevymmo_gameplay::abilities::EssenceId::new("fuoco"));
 
-
         let summary = summarize(&app, &instance, &known);
         let primary = &summary.slots[0];
 
@@ -533,9 +542,7 @@ mod tests {
     #[test]
     fn geometry_is_described_per_shape() {
         assert_eq!(
-            describe_geometry(AbilityGeometry::Projectile {
-                speed: 24.0
-            }),
+            describe_geometry(AbilityGeometry::Projectile { speed: 24.0 }),
             "Projectile @ 24 m/s"
         );
         assert_eq!(

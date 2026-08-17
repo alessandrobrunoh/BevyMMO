@@ -20,7 +20,7 @@ mod stdb;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::http::{HeaderValue, Method, header};
+use axum::http::{header, HeaderValue, Method};
 use tokio::signal;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::info;
@@ -130,7 +130,9 @@ fn is_local_dev_origin(origin: &HeaderValue) -> bool {
 /// requests before returning, so a deploy does not sever a request mid-flight.
 async fn shutdown_signal() {
     let ctrl_c = async {
-        signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
     };
 
     #[cfg(unix)]
@@ -151,7 +153,7 @@ async fn shutdown_signal() {
 }
 
 fn init_tracing(log_format: &str) {
-    use tracing_subscriber::{EnvFilter, fmt};
+    use tracing_subscriber::{fmt, EnvFilter};
 
     let filter = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new("info,bevymmo_gateway=debug"))

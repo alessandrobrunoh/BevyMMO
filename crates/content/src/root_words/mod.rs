@@ -25,7 +25,9 @@ mod tests {
     #[test]
     fn root_word_metadata_is_correct() {
         let reg = default_root_words();
-        let word = reg.get(&crate::abilities::RootWordId::from("damage")).unwrap();
+        let word = reg
+            .get(&crate::abilities::RootWordId::from("damage"))
+            .unwrap();
         let meta = word.metadata();
         assert_eq!(meta.display_name, "Danno");
         assert_eq!(meta.rune_cost, 1);

@@ -7,9 +7,8 @@
 //! sapere se Esc è già stato consumato per annullare la mira invece di
 //! deselezionare il bersaglio).
 
-
-use glam::Vec3;
 use super::slot::AbilitySlot;
+use glam::Vec3;
 
 /// Stato della mira in corso. Puramente client-side: il server non la vede
 /// mai, riceve solo il `EidolonCastCommand` finale.

@@ -1,11 +1,11 @@
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
 
-use bevymmo_client::network::types::ClientConnectionConfig;
 use bevymmo_client::movement::effective_movement_speed;
-use bevymmo_network::network::protocol::PlayerId;
+use bevymmo_client::network::types::ClientConnectionConfig;
 use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
 use bevymmo_gameplay::stats::modifiers::ActiveStatModifiers;
+use bevymmo_network::network::protocol::PlayerId;
 
 use crate::game_state::{GameScreen, Screen};
 
@@ -85,12 +85,7 @@ pub fn update_player_stats(
         return;
     };
 
-    let new_text = format_stats(
-        movement,
-        combat,
-        vital,
-        modifiers,
-    );
+    let new_text = format_stats(movement, combat, vital, modifiers);
     if *last_text != new_text {
         text.0 = new_text.clone();
         *last_text = new_text;

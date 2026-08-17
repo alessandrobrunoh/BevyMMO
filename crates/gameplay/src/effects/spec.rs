@@ -123,7 +123,10 @@ mod tests {
         assert_eq!(context.target, EntityId::new(42));
         assert_eq!(context.source, Some(EntityId::new(7)));
         assert_eq!(context.original_caster, Some(EntityId::new(3)));
-        assert_eq!(context.ability_id.as_ref().map(AbilityId::as_str), Some("fireball"));
+        assert_eq!(
+            context.ability_id.as_ref().map(AbilityId::as_str),
+            Some("fireball")
+        );
     }
 
     #[test]
@@ -149,6 +152,9 @@ mod tests {
             EffectSpec::Heal(HealEffect { amount: 5.0 }),
         );
 
-        assert_eq!(bundle.effects, vec![EffectSpec::Heal(HealEffect { amount: 5.0 })]);
+        assert_eq!(
+            bundle.effects,
+            vec![EffectSpec::Heal(HealEffect { amount: 5.0 })]
+        );
     }
 }

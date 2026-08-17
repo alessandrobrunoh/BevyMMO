@@ -13,7 +13,7 @@ use bevy::prelude::*;
 
 use bevymmo_client::stdb::CharacterRoster;
 
-use crate::game_state::{AuthState, AuthStatus, GameScreen, MAX_CHARACTERS_PER_ACCOUNT, Screen};
+use crate::game_state::{AuthState, AuthStatus, GameScreen, Screen, MAX_CHARACTERS_PER_ACCOUNT};
 use crate::ui::button::{spawn_button, UiButtonAction};
 use crate::ui::character_roster::spawn_roster_list;
 use crate::ui::text::spawn_text;
@@ -50,7 +50,10 @@ impl Plugin for MainMenuPlugin {
         app.add_systems(Startup, setup_main_menu);
         app.add_systems(
             Update,
-            (update_main_menu_visibility, update_create_character_visibility),
+            (
+                update_main_menu_visibility,
+                update_create_character_visibility,
+            ),
         );
     }
 }

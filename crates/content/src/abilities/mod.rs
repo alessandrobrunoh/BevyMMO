@@ -3,9 +3,9 @@
 pub mod arcane_orb;
 pub mod astral_nova;
 pub mod bulwark_strike;
+pub mod cleanse;
 pub mod ground_break;
 pub mod iron_wave;
-pub mod cleanse;
 pub mod meteor_lance;
 pub mod mind_burst;
 pub mod purge;

@@ -478,8 +478,14 @@ impl KvPair {
 
 /// One entry of `effects = [...]`.
 enum EffectDef {
-    StatBonus { field: Ident, op: Ident, value: LitFloat },
-    InstantHeal { amount: LitFloat },
+    StatBonus {
+        field: Ident,
+        op: Ident,
+        value: LitFloat,
+    },
+    InstantHeal {
+        amount: LitFloat,
+    },
 }
 
 impl Parse for EffectDef {
@@ -690,7 +696,11 @@ impl AbilitiesDef {
             ));
         }
 
-        Ok(Self { primary, secondary, ultimate })
+        Ok(Self {
+            primary,
+            secondary,
+            ultimate,
+        })
     }
 }
 
@@ -731,8 +741,10 @@ impl RuneProfileDef {
         }
 
         Ok(Self {
-            capacity: capacity.ok_or_else(|| content.error("rune_profile(...) requires `capacity = ...`"))?,
-            stability: stability.ok_or_else(|| content.error("rune_profile(...) requires `stability = ...`"))?,
+            capacity: capacity
+                .ok_or_else(|| content.error("rune_profile(...) requires `capacity = ...`"))?,
+            stability: stability
+                .ok_or_else(|| content.error("rune_profile(...) requires `stability = ...`"))?,
             affinity,
         })
     }
@@ -881,7 +893,8 @@ impl ItemDef {
                 "Charge" => quote! { crate::abilities::BlueprintExecution::Charge },
                 "Echo" => quote! { crate::abilities::BlueprintExecution::Echo },
                 other => {
-                    let message = format!("unknown item execution `{other}` (expected Charge or Echo)");
+                    let message =
+                        format!("unknown item execution `{other}` (expected Charge or Echo)");
                     return syn::Error::new_spanned(execution, message).to_compile_error();
                 }
             };
@@ -1077,7 +1090,8 @@ impl Parse for WeaponFamilyDef {
 
         Ok(Self {
             id: id.ok_or_else(|| input.error("#[weapon_family(...)] requires `id = \"...\"`"))?,
-            name: name.ok_or_else(|| input.error("#[weapon_family(...)] requires `name = \"...\"`"))?,
+            name: name
+                .ok_or_else(|| input.error("#[weapon_family(...)] requires `name = \"...\"`"))?,
             primary,
             secondary,
             ultimate,
@@ -1097,7 +1111,9 @@ pub fn weapon_family(attr: TokenStream, item: TokenStream) -> TokenStream {
     let display_name = &def.name;
 
     let ability_loadout = match (&def.primary, &def.secondary, &def.ultimate) {
-        (Some(primary), Some(secondary), Some(ultimate)) if !primary.is_empty() && !secondary.is_empty() && !ultimate.is_empty() => {
+        (Some(primary), Some(secondary), Some(ultimate))
+            if !primary.is_empty() && !secondary.is_empty() && !ultimate.is_empty() =>
+        {
             let expanded = quote! {
                 Some(crate::abilities::AbilityLoadout::new(
                     vec![#(crate::abilities::AbilityId::new(#primary::ID)),*],
@@ -1147,7 +1163,8 @@ pub fn weapon_family(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Rejects anything but a bare unit struct — every macro in this file only
 /// generates trait impls from literals, never from struct fields.
 fn require_unit_struct(input: &DeriveInput, macro_name: &str) -> Result<(), TokenStream> {
-    let ok = matches!(&input.data, syn::Data::Struct(data) if matches!(data.fields, syn::Fields::Unit));
+    let ok =
+        matches!(&input.data, syn::Data::Struct(data) if matches!(data.fields, syn::Fields::Unit));
     if ok {
         Ok(())
     } else {
@@ -1185,11 +1202,22 @@ fn require_unit_struct(input: &DeriveInput, macro_name: &str) -> Result<(), Toke
 // ```
 
 enum GeometryDef {
-    Cone { radius: LitFloat, angle_deg: LitFloat },
+    Cone {
+        radius: LitFloat,
+        angle_deg: LitFloat,
+    },
     /// `range` è la gittata entro cui si può piazzare il cerchio (se non specificata a livello radice).
-    Circle { radius: LitFloat, range: Option<LitFloat> },
-    Projectile { speed: LitFloat, range: Option<LitFloat> },
-    SelfBuff { duration_seconds: LitFloat },
+    Circle {
+        radius: LitFloat,
+        range: Option<LitFloat>,
+    },
+    Projectile {
+        speed: LitFloat,
+        range: Option<LitFloat>,
+    },
+    SelfBuff {
+        duration_seconds: LitFloat,
+    },
 }
 
 fn parse_geometry(kind: Ident, fields: Punctuated<KvPair, Token![,]>) -> syn::Result<GeometryDef> {
@@ -1200,24 +1228,35 @@ fn parse_geometry(kind: Ident, fields: Punctuated<KvPair, Token![,]>) -> syn::Re
                 .ok_or_else(|| syn::Error::new_spanned(&kind, "cone(...) requires `radius = ...`"))?
                 .float_value()?,
             angle_deg: field("angle_deg")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "cone(...) requires `angle_deg = ...`"))?
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(&kind, "cone(...) requires `angle_deg = ...`")
+                })?
                 .float_value()?,
         }),
         "circle" => Ok(GeometryDef::Circle {
             radius: field("radius")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "circle(...) requires `radius = ...`"))?
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(&kind, "circle(...) requires `radius = ...`")
+                })?
                 .float_value()?,
             range: field("range").map(|pair| pair.float_value()).transpose()?,
         }),
         "projectile" => Ok(GeometryDef::Projectile {
             speed: field("speed")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "projectile(...) requires `speed = ...`"))?
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(&kind, "projectile(...) requires `speed = ...`")
+                })?
                 .float_value()?,
             range: field("range").map(|pair| pair.float_value()).transpose()?,
         }),
         "self_buff" => Ok(GeometryDef::SelfBuff {
             duration_seconds: field("duration_seconds")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "self_buff(...) requires `duration_seconds = ...`"))?
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(
+                        &kind,
+                        "self_buff(...) requires `duration_seconds = ...`",
+                    )
+                })?
                 .float_value()?,
         }),
         other => Err(syn::Error::new_spanned(
@@ -1356,19 +1395,26 @@ impl Parse for BaseAbilityDef {
 
         Ok(Self {
             id: id.ok_or_else(|| input.error("#[base_ability(...)] requires `id = \"...\"`"))?,
-            name: name.ok_or_else(|| input.error("#[base_ability(...)] requires `name = \"...\"`"))?,
+            name: name
+                .ok_or_else(|| input.error("#[base_ability(...)] requires `name = \"...\"`"))?,
             tags,
             range,
-            geometry: geometry.ok_or_else(|| input.error("#[base_ability(...)] requires `geometry = ...`"))?,
-            potency: potency.ok_or_else(|| input.error("#[base_ability(...)] requires `potency = ...`"))?,
-            cast_time: cast_time.ok_or_else(|| input.error("#[base_ability(...)] requires `cast_time = ...`"))?,
-            cooldown: cooldown.ok_or_else(|| input.error("#[base_ability(...)] requires `cooldown = ...`"))?,
+            geometry: geometry
+                .ok_or_else(|| input.error("#[base_ability(...)] requires `geometry = ...`"))?,
+            potency: potency
+                .ok_or_else(|| input.error("#[base_ability(...)] requires `potency = ...`"))?,
+            cast_time: cast_time
+                .ok_or_else(|| input.error("#[base_ability(...)] requires `cast_time = ...`"))?,
+            cooldown: cooldown
+                .ok_or_else(|| input.error("#[base_ability(...)] requires `cooldown = ...`"))?,
             energy_cost: energy_cost
                 .ok_or_else(|| input.error("#[base_ability(...)] requires `energy_cost = ...`"))?,
-            animation: animation
-                .ok_or_else(|| input.error("#[base_ability(...)] requires `animation = \"...\"`"))?,
-            impact_vfx: impact_vfx
-                .ok_or_else(|| input.error("#[base_ability(...)] requires `impact_vfx = \"...\"`"))?,
+            animation: animation.ok_or_else(|| {
+                input.error("#[base_ability(...)] requires `animation = \"...\"`")
+            })?,
+            impact_vfx: impact_vfx.ok_or_else(|| {
+                input.error("#[base_ability(...)] requires `impact_vfx = \"...\"`")
+            })?,
             impact_delay,
             stun_seconds,
             statuses,
@@ -1404,9 +1450,12 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
                 "Debuffs" => quote! { crate::effects::StatusFilter::Debuffs },
                 "All" => quote! { crate::effects::StatusFilter::All },
                 other => {
-                    return syn::Error::new_spanned(filter, format!("unknown cleanse filter `{other}`; expected Buffs, Debuffs or All"))
-                        .to_compile_error()
-                        .into();
+                    return syn::Error::new_spanned(
+                        filter,
+                        format!("unknown cleanse filter `{other}`; expected Buffs, Debuffs or All"),
+                    )
+                    .to_compile_error()
+                    .into();
                 }
             };
             quote! {
@@ -1492,7 +1541,10 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Cast mode override: if channeling is specified, generate cast_mode().
     // Otherwise the default trait method derives from cast_time.
     let cast_mode_method = match &def.cast_mode {
-        Some(CastModeDef { tick_interval, movement_policy }) => {
+        Some(CastModeDef {
+            tick_interval,
+            movement_policy,
+        }) => {
             let policy = match movement_policy.to_string().as_str() {
                 "InterruptOnMove" => quote! { crate::abilities::ChannelMovementPolicy::InterruptOnMove },
                 "AllowMovement" => quote! { crate::abilities::ChannelMovementPolicy::AllowMovement },
@@ -1638,10 +1690,13 @@ impl Parse for EssenceDef {
         Ok(Self {
             id: id.ok_or_else(|| input.error("#[essence(...)] requires `id = \"...\"`"))?,
             name: name.ok_or_else(|| input.error("#[essence(...)] requires `name = \"...\"`"))?,
-            rune_cost: rune_cost.ok_or_else(|| input.error("#[essence(...)] requires `rune_cost = ...`"))?,
-            targets: targets
-                .ok_or_else(|| input.error("#[essence(...)] requires `targets = allies | enemies`"))?,
-            color: color.ok_or_else(|| input.error("#[essence(...)] requires `color = (r, g, b)`"))?,
+            rune_cost: rune_cost
+                .ok_or_else(|| input.error("#[essence(...)] requires `rune_cost = ...`"))?,
+            targets: targets.ok_or_else(|| {
+                input.error("#[essence(...)] requires `targets = allies | enemies`")
+            })?,
+            color: color
+                .ok_or_else(|| input.error("#[essence(...)] requires `color = (r, g, b)`"))?,
         })
     }
 }
@@ -1669,7 +1724,9 @@ pub fn essence(attr: TokenStream, item: TokenStream) -> TokenStream {
         other => {
             return syn::Error::new_spanned(
                 &def.targets,
-                format!("unknown `targets = {other}` in #[essence(...)] (expected allies or enemies)"),
+                format!(
+                    "unknown `targets = {other}` in #[essence(...)] (expected allies or enemies)"
+                ),
             )
             .to_compile_error()
             .into();
@@ -1761,8 +1818,11 @@ impl Parse for ModifierDef {
         Ok(Self {
             id: id.ok_or_else(|| input.error("#[modifier(...)] requires `id = \"...\"`"))?,
             name: name.ok_or_else(|| input.error("#[modifier(...)] requires `name = \"...\"`"))?,
-            tag: tag.ok_or_else(|| input.error("#[modifier(...)] requires `tag = ...` (an AbilityTag)"))?,
-            rune_cost: rune_cost.ok_or_else(|| input.error("#[modifier(...)] requires `rune_cost = ...`"))?,
+            tag: tag.ok_or_else(|| {
+                input.error("#[modifier(...)] requires `tag = ...` (an AbilityTag)")
+            })?,
+            rune_cost: rune_cost
+                .ok_or_else(|| input.error("#[modifier(...)] requires `rune_cost = ...`"))?,
         })
     }
 }
@@ -1892,8 +1952,10 @@ impl Parse for StatusDef {
                 }
                 modifier = Some(StatusModifierDef {
                     stat: stat.ok_or_else(|| input.error("modifier(...) requires `stat = ...`"))?,
-                    operation: operation.ok_or_else(|| input.error("modifier(...) requires `operation = ...`"))?,
-                    value: value.ok_or_else(|| input.error("modifier(...) requires `value = ...`"))?,
+                    operation: operation
+                        .ok_or_else(|| input.error("modifier(...) requires `operation = ...`"))?,
+                    value: value
+                        .ok_or_else(|| input.error("modifier(...) requires `value = ...`"))?,
                 });
                 if input.peek(Token![,]) {
                     input.parse::<Token![,]>()?;
@@ -1925,8 +1987,10 @@ impl Parse for StatusDef {
                     }
                 }
                 periodic = Some(PeriodicDef {
-                    interval: interval.ok_or_else(|| input.error("periodic(...) requires `interval = ...`"))?,
-                    amount: amount.ok_or_else(|| input.error("periodic(...) requires `amount = ...`"))?,
+                    interval: interval
+                        .ok_or_else(|| input.error("periodic(...) requires `interval = ...`"))?,
+                    amount: amount
+                        .ok_or_else(|| input.error("periodic(...) requires `amount = ...`"))?,
                 });
                 if input.peek(Token![,]) {
                     input.parse::<Token![,]>()?;
@@ -1965,8 +2029,10 @@ impl Parse for StatusDef {
             id: id.ok_or_else(|| input.error("#[status(...)] requires `id = \"...\"`"))?,
             name,
             icon,
-            category: category.ok_or_else(|| input.error("#[status(...)] requires `category = Buff|Debuff`"))?,
-            duration: duration.ok_or_else(|| input.error("#[status(...)] requires `duration = ...`"))?,
+            category: category
+                .ok_or_else(|| input.error("#[status(...)] requires `category = Buff|Debuff`"))?,
+            duration: duration
+                .ok_or_else(|| input.error("#[status(...)] requires `duration = ...`"))?,
             cleanseable,
             purgeable,
             stacking,
@@ -2120,9 +2186,13 @@ impl Parse for AncientWordDef {
 
         Ok(Self {
             id: id.ok_or_else(|| input.error("#[ancient_word(...)] requires `id = \"...\"`"))?,
-            name: name.ok_or_else(|| input.error("#[ancient_word(...)] requires `name = \"...\"`"))?,
-            tag: tag.ok_or_else(|| input.error("#[ancient_word(...)] requires `tag = ...` (an AbilityTag)"))?,
-            rune_cost: rune_cost.ok_or_else(|| input.error("#[ancient_word(...)] requires `rune_cost = ...`"))?,
+            name: name
+                .ok_or_else(|| input.error("#[ancient_word(...)] requires `name = \"...\"`"))?,
+            tag: tag.ok_or_else(|| {
+                input.error("#[ancient_word(...)] requires `tag = ...` (an AbilityTag)")
+            })?,
+            rune_cost: rune_cost
+                .ok_or_else(|| input.error("#[ancient_word(...)] requires `rune_cost = ...`"))?,
         })
     }
 }
@@ -2233,8 +2303,10 @@ impl Parse for RootWordDef {
         Ok(Self {
             id: id.ok_or_else(|| input.error("#[root_word(...)] requires `id = \"...\"`"))?,
             name: name.ok_or_else(|| input.error("#[root_word(...)] requires `name = \"...\"`"))?,
-            description: description.ok_or_else(|| input.error("#[root_word(...)] requires `description = \"...\"`"))?,
-            rune_cost: rune_cost.ok_or_else(|| input.error("#[root_word(...)] requires `rune_cost = ...`"))?,
+            description: description
+                .ok_or_else(|| input.error("#[root_word(...)] requires `description = \"...\"`"))?,
+            rune_cost: rune_cost
+                .ok_or_else(|| input.error("#[root_word(...)] requires `rune_cost = ...`"))?,
         })
     }
 }
@@ -2325,12 +2397,26 @@ pub fn root_word(attr: TokenStream, item: TokenStream) -> TokenStream {
 // }
 // ```
 enum SpellConfigShape {
-    RangedSingleTarget { cooldown: LitFloat, range: LitFloat, targeting: Ident },
-    MeleeAoe { cooldown: LitFloat, area: LitFloat },
-    RangedAoe { cooldown: LitFloat, range: LitFloat, area: LitFloat },
+    RangedSingleTarget {
+        cooldown: LitFloat,
+        range: LitFloat,
+        targeting: Ident,
+    },
+    MeleeAoe {
+        cooldown: LitFloat,
+        area: LitFloat,
+    },
+    RangedAoe {
+        cooldown: LitFloat,
+        range: LitFloat,
+        area: LitFloat,
+    },
 }
 
-fn parse_spell_config(kind: Ident, fields: Punctuated<KvPair, Token![,]>) -> syn::Result<SpellConfigShape> {
+fn parse_spell_config(
+    kind: Ident,
+    fields: Punctuated<KvPair, Token![,]>,
+) -> syn::Result<SpellConfigShape> {
     let field = |name: &str| fields.iter().find(|p| p.key == name);
     match kind.to_string().as_str() {
         "ranged_single_target" => Ok(SpellConfigShape::RangedSingleTarget {
@@ -2510,7 +2596,11 @@ pub fn spell(attr: TokenStream, item: TokenStream) -> TokenStream {
         SpellConfigDef::Explicit(SpellConfigShape::MeleeAoe { cooldown, area }) => {
             quote! { crate::spells::SpellConfig::melee_aoe(#cooldown, #area) }
         }
-        SpellConfigDef::Explicit(SpellConfigShape::RangedSingleTarget { cooldown, range, targeting }) => {
+        SpellConfigDef::Explicit(SpellConfigShape::RangedSingleTarget {
+            cooldown,
+            range,
+            targeting,
+        }) => {
             quote! {
                 crate::spells::SpellConfig::ranged_single_target(
                     #cooldown, #range,
@@ -2518,82 +2608,89 @@ pub fn spell(attr: TokenStream, item: TokenStream) -> TokenStream {
                 )
             }
         }
-        SpellConfigDef::Explicit(SpellConfigShape::RangedAoe { cooldown, range, area }) => {
+        SpellConfigDef::Explicit(SpellConfigShape::RangedAoe {
+            cooldown,
+            range,
+            area,
+        }) => {
             quote! { crate::spells::SpellConfig::ranged_aoe(#cooldown, #range, #area) }
         }
-        SpellConfigDef::Inferred { cooldown, targeting, range, area } => {
-            match targeting.to_string().as_str() {
-                "SelfCentered" => {
-                    let area = match area {
-                        Some(a) => a.clone(),
-                        None => {
-                            return syn::Error::new_spanned(
-                                targeting,
-                                "#[spell(...)] with `targeting = SelfCentered` requires `area = ...`",
-                            )
-                            .to_compile_error()
-                            .into();
-                        }
-                    };
-                    quote! { crate::spells::SpellConfig::melee_aoe(#cooldown, #area) }
-                }
-                "SingleEntity" | "DirectionalLine" => {
-                    let range = match range {
-                        Some(r) => r.clone(),
-                        None => {
-                            return syn::Error::new_spanned(
+        SpellConfigDef::Inferred {
+            cooldown,
+            targeting,
+            range,
+            area,
+        } => match targeting.to_string().as_str() {
+            "SelfCentered" => {
+                let area = match area {
+                    Some(a) => a.clone(),
+                    None => {
+                        return syn::Error::new_spanned(
+                            targeting,
+                            "#[spell(...)] with `targeting = SelfCentered` requires `area = ...`",
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
+                };
+                quote! { crate::spells::SpellConfig::melee_aoe(#cooldown, #area) }
+            }
+            "SingleEntity" | "DirectionalLine" => {
+                let range = match range {
+                    Some(r) => r.clone(),
+                    None => {
+                        return syn::Error::new_spanned(
                                 targeting,
                                 "#[spell(...)] with `targeting = SingleEntity | DirectionalLine` requires `range = ...`",
                             )
                             .to_compile_error()
                             .into();
-                        }
-                    };
-                    quote! {
-                        crate::spells::SpellConfig::ranged_single_target(
-                            #cooldown, #range,
-                            crate::spells::TargetingMode::#targeting,
-                        )
                     }
-                }
-                "GroundAoe" => {
-                    let range = match range {
-                        Some(r) => r.clone(),
-                        None => {
-                            return syn::Error::new_spanned(
-                                targeting,
-                                "#[spell(...)] with `targeting = GroundAoe` requires `range = ...`",
-                            )
-                            .to_compile_error()
-                            .into();
-                        }
-                    };
-                    let area = match area {
-                        Some(a) => a.clone(),
-                        None => {
-                            return syn::Error::new_spanned(
-                                targeting,
-                                "#[spell(...)] with `targeting = GroundAoe` requires `area = ...`",
-                            )
-                            .to_compile_error()
-                            .into();
-                        }
-                    };
-                    quote! { crate::spells::SpellConfig::ranged_aoe(#cooldown, #range, #area) }
-                }
-                other => {
-                    return syn::Error::new_spanned(
-                        targeting,
-                        format!(
-                            "unknown targeting `{other}` (expected \
-                             SelfCentered | SingleEntity | DirectionalLine | GroundAoe)"
-                        ),
+                };
+                quote! {
+                    crate::spells::SpellConfig::ranged_single_target(
+                        #cooldown, #range,
+                        crate::spells::TargetingMode::#targeting,
                     )
-                    .to_compile_error()
-                    .into();
                 }
             }
-        }
+            "GroundAoe" => {
+                let range = match range {
+                    Some(r) => r.clone(),
+                    None => {
+                        return syn::Error::new_spanned(
+                            targeting,
+                            "#[spell(...)] with `targeting = GroundAoe` requires `range = ...`",
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
+                };
+                let area = match area {
+                    Some(a) => a.clone(),
+                    None => {
+                        return syn::Error::new_spanned(
+                            targeting,
+                            "#[spell(...)] with `targeting = GroundAoe` requires `area = ...`",
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
+                };
+                quote! { crate::spells::SpellConfig::ranged_aoe(#cooldown, #range, #area) }
+            }
+            other => {
+                return syn::Error::new_spanned(
+                    targeting,
+                    format!(
+                        "unknown targeting `{other}` (expected \
+                             SelfCentered | SingleEntity | DirectionalLine | GroundAoe)"
+                    ),
+                )
+                .to_compile_error()
+                .into();
+            }
+        },
     };
 
     // Optional cast_time builder.

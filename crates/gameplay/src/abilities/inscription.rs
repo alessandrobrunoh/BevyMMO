@@ -394,11 +394,21 @@ pub fn validate_weapon_inscriptions(
         let Some(ability_id) = resolve_active_ability(slot, abilities, selection) else {
             continue;
         };
-        validate_slot(inscription, ability_id, ability_registry, essences, modifiers, ancient_words)?;
+        validate_slot(
+            inscription,
+            ability_id,
+            ability_registry,
+            essences,
+            modifiers,
+            ancient_words,
+        )?;
         total_cost += inscription_cost(inscription, profile, essences, modifiers, ancient_words);
     }
     if total_cost > profile.capacity {
-        return Err(InscriptionError::CapacityExceeded { cost: total_cost, capacity: profile.capacity });
+        return Err(InscriptionError::CapacityExceeded {
+            cost: total_cost,
+            capacity: profile.capacity,
+        });
     }
     Ok(())
 }

@@ -133,7 +133,9 @@ mod tests {
 
     fn player(name: &str) -> Player {
         Player {
-            character_id: spacetimedb_sdk::Uuid::from_u128(0x0189_0000_0000_4000_8000_0000_0000_0001),
+            character_id: spacetimedb_sdk::Uuid::from_u128(
+                0x0189_0000_0000_4000_8000_0000_0000_0001,
+            ),
             account_id: 7,
             normalized_name: name.to_lowercase(),
             display_name: name.to_string(),

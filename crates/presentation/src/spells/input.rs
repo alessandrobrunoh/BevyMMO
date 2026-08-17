@@ -18,18 +18,18 @@
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
-use bevymmo_gameplay::abilities::{
-    resolve_active_ability, AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility, BaseAbilityRegistry,
-    BlueprintExecution,
-};
 use bevymmo_client::local_player::LocalPlayer;
-use bevymmo_gameplay::items::components::Equipment;
-use bevymmo_gameplay::items::registry::ItemRegistry;
 use bevymmo_client::movement::ClientSurfaceQuery;
-use bevymmo_network::network::protocol::{LookDirection, NetworkEntityId, Position};
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_client::targeting::CurrentTarget;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
+use bevymmo_gameplay::abilities::{
+    resolve_active_ability, AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility,
+    BaseAbilityRegistry, BlueprintExecution,
+};
+use bevymmo_gameplay::items::components::Equipment;
+use bevymmo_gameplay::items::registry::ItemRegistry;
+use bevymmo_network::network::protocol::{LookDirection, NetworkEntityId, Position};
 
 use crate::game_state::{GameScreen, Screen};
 use crate::spells::cast_bar::ObservedCasts;
@@ -131,13 +131,15 @@ pub fn cast_abilities_on_key(
         };
 
         // Determine if this is a Charge execution (hold-to-charge, fires on release).
-        let is_charge = item
-            .ability_blueprint(ability.as_ref())
-            .execution == BlueprintExecution::Charge;
+        let is_charge =
+            item.ability_blueprint(ability.as_ref()).execution == BlueprintExecution::Charge;
 
         match (ability.cast_mode(), is_charge) {
-            (bevymmo_gameplay::abilities::AbilityCastMode::Instant
-            | bevymmo_gameplay::abilities::AbilityCastMode::CastTime, false) => {
+            (
+                bevymmo_gameplay::abilities::AbilityCastMode::Instant
+                | bevymmo_gameplay::abilities::AbilityCastMode::CastTime,
+                false,
+            ) => {
                 // Open aim; the release below will confirm and send.
                 aim.begin(slot);
             }
@@ -209,13 +211,15 @@ pub fn cast_abilities_on_key(
         };
 
         // Determine if this is a Charge execution.
-        let is_charge = item
-            .ability_blueprint(ability.as_ref())
-            .execution == BlueprintExecution::Charge;
+        let is_charge =
+            item.ability_blueprint(ability.as_ref()).execution == BlueprintExecution::Charge;
 
         match (ability.cast_mode(), is_charge) {
-            (bevymmo_gameplay::abilities::AbilityCastMode::Instant
-            | bevymmo_gameplay::abilities::AbilityCastMode::CastTime, false) => {
+            (
+                bevymmo_gameplay::abilities::AbilityCastMode::Instant
+                | bevymmo_gameplay::abilities::AbilityCastMode::CastTime,
+                false,
+            ) => {
                 if aim.slot != Some(slot) {
                     continue;
                 }

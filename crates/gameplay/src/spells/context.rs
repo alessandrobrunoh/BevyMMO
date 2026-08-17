@@ -196,7 +196,6 @@ pub struct ProjectileSpawnRequest {
     pub hit_radius: f32,
 }
 
-
 /// Forma dell'area coperta da una regione AoE.
 ///
 /// Esiste per una ragione precisa: il client disegna l'anteprima di mira con
@@ -361,7 +360,8 @@ impl<'a> SpellCastContext<'a> {
     fn emit_effect(&mut self, target: EntityId, effect: EffectSpec) {
         let mut context = EffectContext::new(target);
         context.source = Some(self.caster);
-        self.pending_effects.push(EffectBundle::single(context, effect));
+        self.pending_effects
+            .push(EffectBundle::single(context, effect));
     }
 
     /// Emit a unified status application request.
@@ -377,7 +377,6 @@ impl<'a> SpellCastContext<'a> {
             }),
         ));
     }
-
 
     /// Emit a projectile spawn request (for homing/projectile spells).
     pub fn emit_projectile(
@@ -616,8 +615,16 @@ mod tests {
         let (center, radius, shape) = wave();
         let inside = 34.0_f32.to_radians();
         let outside = 36.0_f32.to_radians();
-        assert!(shape.contains(center, radius, Vec3::new(inside.sin() * 4.0, 0.0, inside.cos() * 4.0)));
-        assert!(!shape.contains(center, radius, Vec3::new(outside.sin() * 4.0, 0.0, outside.cos() * 4.0)));
+        assert!(shape.contains(
+            center,
+            radius,
+            Vec3::new(inside.sin() * 4.0, 0.0, inside.cos() * 4.0)
+        ));
+        assert!(!shape.contains(
+            center,
+            radius,
+            Vec3::new(outside.sin() * 4.0, 0.0, outside.cos() * 4.0)
+        ));
     }
 
     #[test]
@@ -653,8 +660,7 @@ mod tests {
         };
         let caster = EntityId::new(1);
         let target = EntityId::new(2);
-        let mut ctx =
-            SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
+        let mut ctx = SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
 
         ctx.emit_status(target, StatusId::new("stun"));
 
@@ -680,8 +686,7 @@ mod tests {
         };
         let caster = EntityId::new(1);
         let target = EntityId::new(2);
-        let mut ctx =
-            SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
+        let mut ctx = SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
 
         ctx.emit_cleanse(
             target,
@@ -732,15 +737,16 @@ mod tests {
             armor: 0.0,
         };
         let caster = EntityId::new(1);
-        let mut ctx =
-            SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
+        let mut ctx = SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
 
         ctx.emit_aoe_circle(
             Vec3::ZERO,
             3.0,
             1.0,
             "test",
-            vec![EffectSpec::Damage(crate::effects::DamageEffect { amount: 1.0 })],
+            vec![EffectSpec::Damage(crate::effects::DamageEffect {
+                amount: 1.0,
+            })],
         );
 
         assert_eq!(ctx.pending_aoes[0].shape, AoeShape::Circle);

@@ -18,8 +18,8 @@ pub mod prelude {
         ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen, GameStatePlugin,
         PlayerNameError, Screen,
     };
-    pub use crate::user_settings::{GameSettingsResource, KeyAction};
     pub use crate::local_player::LocalPlayer;
     pub use crate::network::types::{ClientConnectionConfig, ConnectedClient};
     pub use crate::targeting::TargetingPlugin;
+    pub use crate::user_settings::{GameSettingsResource, KeyAction};
 }

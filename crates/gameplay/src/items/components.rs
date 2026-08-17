@@ -141,9 +141,11 @@ impl Equipment {
     /// `instance_id` — per-instance, not per-type: se il giocatore ha due
     /// Flame Staff, questo trova quello specifico, non "un" Flame Staff.
     pub fn slot_holding(&self, instance_id: ItemInstanceId) -> Option<EquipSlot> {
-        EquipSlot::ALL
-            .into_iter()
-            .find(|slot| self.get(*slot).as_ref().is_some_and(|item| item.instance_id == instance_id))
+        EquipSlot::ALL.into_iter().find(|slot| {
+            self.get(*slot)
+                .as_ref()
+                .is_some_and(|item| item.instance_id == instance_id)
+        })
     }
 }
 

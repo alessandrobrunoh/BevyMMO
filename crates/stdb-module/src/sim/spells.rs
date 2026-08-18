@@ -55,11 +55,12 @@ use crate::rows::{
     EffectPayloadFilterRow, EffectPayloadKindRow, EffectPayloadRow, EffectPayloadSelectionRow,
     Vec3Row,
 };
+use crate::sim::targets;
 use crate::tables::{
-    aoe_region, cast_ended, cast_state, cooldown, entity_stats, game_entity,
-    grid_cell, projectile, spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow,
-    CastEndedEvent, CastKindRow, CastSourceRow, CastState, Cooldown, EntityStateRow,
-    GameEntity, ModifierKindRow, Projectile, SpellVisualEffectEvent,
+    aoe_region, cast_ended, cast_state, cooldown, entity_stats, game_entity, grid_cell, projectile,
+    spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow, CastEndedEvent, CastKindRow,
+    CastSourceRow, CastState, Cooldown, EntityStateRow, GameEntity, ModifierKindRow, Projectile,
+    SpellVisualEffectEvent,
 };
 
 /// Resolves an item's ability pools, falling back to its weapon family when
@@ -181,11 +182,16 @@ pub fn potential_targets(ctx: &ReducerContext, center: Vec3, radius: f32) -> Vec
         z: center.z + radius,
     });
 
-    let mut targets = Vec::new();
+    let mut found = Vec::new();
+    let online = targets::online_character_ids(ctx);
     for cell_x in min_x..=max_x {
         // The index is `(cell_x, cell_z)`, so the scan fixes the first column
         // and ranges over the second — one syscall per column of cells.
         for entity in ctx.db.game_entity().cell().filter((cell_x, min_z..=max_z)) {
+            let online_flag = entity.owner_character_id.map(|id| online.contains(&id));
+            if !targets::is_valid_spell_target(entity.kind, entity.state, online_flag) {
+                continue;
+            }
             if !is_alive(ctx, &entity) {
                 continue;
             }
@@ -193,10 +199,10 @@ pub fn potential_targets(ctx: &ReducerContext, center: Vec3, radius: f32) -> Vec
             if flat_distance(center, position) > radius {
                 continue;
             }
-            targets.push((EntityId::new(entity.entity_id), position));
+            found.push((EntityId::new(entity.entity_id), position));
         }
     }
-    targets
+    found
 }
 
 /// Horizontal distance. Height is discarded everywhere in this game's maths

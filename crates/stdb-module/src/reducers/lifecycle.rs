@@ -558,6 +558,18 @@ pub fn expire_stale_presence(ctx: &ReducerContext) {
 
     for player in stale {
         log::info!("{} timed out", player.display_name);
+        if let Some(entity) = ctx.db.game_entity().entity_id().find(&player.entity_id) {
+            ctx.db.game_entity().entity_id().update(GameEntity {
+                move_target: None,
+                state: if entity.state == EntityStateRow::Dead {
+                    entity.state
+                } else {
+                    EntityStateRow::Idle
+                },
+                ..entity
+            });
+        }
+        ctx.db.cast_state().entity_id().delete(&player.entity_id);
         ctx.db.player().character_id().update(Player {
             online: false,
             ..player

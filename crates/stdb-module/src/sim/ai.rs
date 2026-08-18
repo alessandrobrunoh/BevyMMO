@@ -40,16 +40,17 @@
 //! there is no index on `kind`, so the mobs have to be found by looking. It is
 //! one pass for the whole tick rather than one per mob.
 
+use bevymmo_domain::content::spells::fireball::FireballSpell;
 use bevymmo_domain::entity::boss::components::{Boss, BossPhase, BossRotationState, BossSpellbook};
 use bevymmo_domain::entity::enemy::components::AggroRange;
 use bevymmo_domain::movement;
-use bevymmo_domain::content::spells::fireball::FireballSpell;
-use bevymmo_domain::spells::{CastKind, Spell, SpellId};
 use bevymmo_domain::spells::context::ChannelMovementPolicy as SpellChannelMovementPolicy;
+use bevymmo_domain::spells::{CastKind, Spell, SpellId};
 use glam::Vec3;
 use spacetimedb::{ReducerContext, Table};
 
 use crate::rows::Vec3Row;
+use crate::sim::targets;
 use crate::sim::{crowd_control, spells};
 use crate::tables::{
     boss_state, cast_state, entity_stats, game_entity, grid_cell, threat, BossPhaseRow, BossState,
@@ -779,10 +780,12 @@ fn living_players_near(ctx: &ReducerContext, center: Vec3, radius: f32) -> Vec<P
     let (min_x, min_z) = grid_cell(Vec3Row::from(center - Vec3::splat(radius)));
     let (max_x, max_z) = grid_cell(Vec3Row::from(center + Vec3::splat(radius)));
     let radius_squared = radius * radius;
+    let online = targets::online_character_ids(ctx);
 
     for cell_x in min_x..=max_x {
         for entity in ctx.db.game_entity().cell().filter((cell_x, min_z..=max_z)) {
-            if entity.kind != EntityKindRow::Player || entity.state == EntityStateRow::Dead {
+            let online_flag = entity.owner_character_id.map(|id| online.contains(&id));
+            if !targets::is_online_living_player(entity.kind, entity.state, online_flag) {
                 continue;
             }
             let position = Vec3::from(entity.position);

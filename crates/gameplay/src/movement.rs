@@ -136,12 +136,92 @@ pub fn snap_to_ground(
     true
 }
 
+/// Longest horizontal distance resolved in one collision probe.
+///
+/// [`step_on_terrain`] samples blockers at the *end* of a step, not along it,
+/// so a step longer than the blocked band around an obstacle jumps clean over
+/// it. That band is the obstacle's own thickness plus `STEP_COLLISION_RADIUS`
+/// on each side, so it is never narrower than `2 * STEP_COLLISION_RADIUS` —
+/// capping a probe at one radius therefore guarantees at least one sample
+/// lands inside any obstacle the path crosses, whatever its thickness.
+///
+/// This is not a theoretical bound. A player walks at 9 u/s and the module
+/// clamps a stalled tick's `dt` to 0.25 s, so one tick can ask for 2.25 m of
+/// travel — over map_02's 0.6 m arena parapets in a single step, dropping the
+/// character off the podium. At the nominal 50 ms tick the budget is 0.45 m
+/// and this splits nothing, so the common path pays no extra queries.
+const MAX_PROBE_TRAVEL: f32 = STEP_COLLISION_RADIUS;
+
 /// Advances an entity toward an X/Z target across walkable terrain.
 ///
 /// `max_travel` is the horizontal distance available for this simulation step;
 /// callers with per-second speed should pass `speed * dt`. Height is always
 /// resolved from the authoritative surface query, never from the target.
+///
+/// Long steps are split into [`MAX_PROBE_TRAVEL`] chunks so collision cannot
+/// be tunnelled through; the split is invisible to callers, which still get
+/// one outcome for the whole step.
 pub fn step_on_terrain(
+    current: Vec3,
+    target_x: f32,
+    target_z: f32,
+    max_travel: f32,
+    surface_query: &crate::world::SurfaceQuery,
+    collision_grid: &crate::world::CollisionGrid,
+    max_step_height: f32,
+) -> TerrainStep {
+    let mut position = current;
+    let mut remaining = max_travel.max(0.0);
+    let mut moved = false;
+
+    loop {
+        let budget = remaining.min(MAX_PROBE_TRAVEL);
+        let outcome = probe_terrain_step(
+            position,
+            target_x,
+            target_z,
+            budget,
+            surface_query,
+            collision_grid,
+            max_step_height,
+        );
+
+        let next = match outcome {
+            // Arriving ends the step wherever it happens.
+            TerrainStep::Arrived(next) => return TerrainStep::Arrived(next),
+            TerrainStep::Moved(next) => next,
+            // Running into a wall (or off the map) part-way through is still
+            // progress for the chunks already taken.
+            blocked => {
+                return if moved {
+                    TerrainStep::Moved(position)
+                } else {
+                    blocked
+                }
+            }
+        };
+
+        let advanced = ((next.x - position.x).powi(2) + (next.z - position.z).powi(2)).sqrt();
+        position = next;
+        moved = true;
+        remaining -= budget;
+
+        // A blocker recovery walks *backwards*, further than the budget it was
+        // given; continuing to probe forward would only shove the character
+        // back into the blocker it was just pushed out of. A zero-length step
+        // cannot make progress either, and would spin here forever.
+        if advanced > budget + ARRIVAL_EPSILON || advanced <= ARRIVAL_EPSILON {
+            return TerrainStep::Moved(position);
+        }
+        if remaining <= ARRIVAL_EPSILON {
+            return TerrainStep::Moved(position);
+        }
+    }
+}
+
+/// One collision probe of at most [`MAX_PROBE_TRAVEL`], the body
+/// [`step_on_terrain`] repeats.
+fn probe_terrain_step(
     current: Vec3,
     target_x: f32,
     target_z: f32,
@@ -282,9 +362,46 @@ fn try_terrain_step(
 mod tests {
     use super::*;
     use crate::world::{
-        CollisionGrid, MapBounds, MapManifest, SurfaceBounds, SurfaceKind, SurfaceQuery,
-        WalkableSurface, WorldMetrics,
+        BlockerData, BlockerKind, CollisionGrid, CollisionShape, MapBounds, MapManifest,
+        SurfaceBounds, SurfaceKind, SurfaceQuery, TransformData, WalkableSurface, WorldMetrics,
     };
+
+    /// A flat world with a thin wall across `x = 0`, mirroring map_02's
+    /// 0.6 m arena parapets — the geometry a long step used to jump over.
+    fn walled_world(height: f32) -> (SurfaceQuery, CollisionGrid) {
+        let (surfaces, _) = flat_world(height);
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "wall_test".to_string(),
+            display_name: "Wall Test".to_string(),
+            bounds: MapBounds {
+                min_x: -10.0,
+                max_x: 10.0,
+                min_z: -10.0,
+                max_z: 10.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: Some(WorldMetrics::default()),
+            surfaces: vec![],
+            traversals: vec![],
+            blockers: vec![BlockerData {
+                id: "wall".to_string(),
+                kind: BlockerKind::Box,
+                object: None,
+                transform: Some(TransformData::at(0.0, height + 1.0, 0.0)),
+                shape: Some(CollisionShape::Box {
+                    half_extents: [0.3, 1.0, 10.0],
+                }),
+                blocks_movement: true,
+            }],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+        (surfaces, CollisionGrid::build(&manifest))
+    }
 
     fn flat_world(height: f32) -> (SurfaceQuery, CollisionGrid) {
         let manifest = MapManifest {
@@ -394,6 +511,39 @@ mod tests {
         assert_eq!(
             step_on_terrain(current, 2.0, 0.0, 0.5, &surfaces, &collision, 0.45),
             TerrainStep::Moved(Vec3::new(0.5, 2.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn a_long_step_cannot_tunnel_through_a_thin_wall() {
+        let (surfaces, collision) = walled_world(0.0);
+        let start = Vec3::new(-2.0, 0.0, 0.0);
+
+        // 4.5 m in one step: what a 9 u/s character asks for when the module
+        // clamps a stalled tick to its 0.25 s ceiling, ten times the wall's
+        // thickness. Before sub-stepping this landed on the far side.
+        let step = step_on_terrain(start, 8.0, 0.0, 4.5, &surfaces, &collision, 0.45);
+        let TerrainStep::Moved(position) = step else {
+            panic!("expected the character to advance up to the wall, got {step:?}");
+        };
+        assert!(
+            position.x < -STEP_COLLISION_RADIUS,
+            "character tunnelled through the wall at x = 0, ending at {position}"
+        );
+    }
+
+    #[test]
+    fn sub_stepping_still_covers_the_whole_budget_in_the_open() {
+        // Splitting a step must not shorten it: the same 4.5 m of travel with
+        // no wall in the way has to land exactly where one step would.
+        let (surfaces, collision) = flat_world(0.0);
+        let step = step_on_terrain(Vec3::ZERO, 9.0, 0.0, 4.5, &surfaces, &collision, 0.45);
+        let TerrainStep::Moved(position) = step else {
+            panic!("expected to still be moving, got {step:?}");
+        };
+        assert!(
+            (position.x - 4.5).abs() < 1e-3,
+            "expected to cover the full 4.5 units, reached {position}"
         );
     }
 

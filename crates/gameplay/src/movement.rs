@@ -266,7 +266,7 @@ fn probe_terrain_step(
         return TerrainStep::Blocked;
     }
 
-    if let Some(position) = try_terrain_step(
+    if let Some(position) = advance_to_contact(
         current,
         nx,
         nz,
@@ -278,17 +278,27 @@ fn probe_terrain_step(
         return TerrainStep::Moved(position);
     }
 
+    // Slide: give up the axis the wall refuses and keep the other. Each axis
+    // gets only the *projection* of the step onto it, never the whole budget.
+    // Spending the full travel sideways is what made a character shove into a
+    // wall dead-on oscillate along it forever: with the target straight ahead
+    // the sideways component is a rounding error, yet the slide moved a full
+    // step in whichever direction that error happened to point, overshot, and
+    // flipped the sign — every tick, for as long as the button was held. It is
+    // also simply the right speed: approaching a wall at a shallow angle should
+    // scrub off the blocked component, not convert it into free sideways
+    // travel.
     let (first, second) = if nx.abs() >= nz.abs() {
         ((nx, 0.0), (0.0, nz))
     } else {
         ((0.0, nz), (nx, 0.0))
     };
     for (step_x, step_z) in [first, second] {
-        if let Some(position) = try_terrain_step(
+        if let Some(position) = advance_to_contact(
             current,
             step_x,
             step_z,
-            travel,
+            travel * step_x.hypot(step_z),
             surface_query,
             collision_grid,
             max_step_height,
@@ -330,6 +340,79 @@ fn recover_from_blocker(
         }
     }
     None
+}
+
+/// Bisection steps spent looking for the wall after a full step is refused.
+///
+/// Each halving doubles the precision of the contact point; six of them put a
+/// server tick's 0.45 m budget inside 7 mm, well under what the render
+/// smoothing can show.
+const CONTACT_REFINEMENTS: u32 = 6;
+
+/// Advances as far along `(direction_x, direction_z)` as the terrain and the
+/// blockers allow, up to `travel`.
+///
+/// Taking the whole step or nothing is what made a character *judder* against a
+/// wall. Client and server run this with different budgets — a render frame's
+/// 0.15 m against a tick's 0.45 m — so each stopped at whatever multiple of its
+/// own step size last fitted, up to 0.3 m apart. Reconciliation then pulled the
+/// predicted position back off the wall, the next frame's step walked it
+/// forward again, and the character shook between the two at frame rate.
+///
+/// Stopping at the contact point instead makes the answer independent of the
+/// budget: both sides converge on the same place, the error goes to zero, and
+/// there is nothing left for reconciliation to fight. It also just looks right
+/// — the character stands against the wall rather than a step short of it.
+///
+/// Returns `None` when even a hair of movement is refused, so the caller can
+/// fall through to its slide axes and ultimately report `Blocked` (which is
+/// what keeps a character standing still out of its walk animation).
+fn advance_to_contact(
+    current: Vec3,
+    direction_x: f32,
+    direction_z: f32,
+    travel: f32,
+    surface_query: &crate::world::SurfaceQuery,
+    collision_grid: &crate::world::CollisionGrid,
+    max_step_height: f32,
+) -> Option<Vec3> {
+    if let Some(position) = try_terrain_step(
+        current,
+        direction_x,
+        direction_z,
+        travel,
+        surface_query,
+        collision_grid,
+        max_step_height,
+    ) {
+        return Some(position);
+    }
+
+    let mut admissible = 0.0;
+    let mut refused = travel;
+    let mut contact = None;
+    for _ in 0..CONTACT_REFINEMENTS {
+        let candidate_travel = 0.5 * (admissible + refused);
+        match try_terrain_step(
+            current,
+            direction_x,
+            direction_z,
+            candidate_travel,
+            surface_query,
+            collision_grid,
+            max_step_height,
+        ) {
+            Some(position) => {
+                contact = Some(position);
+                admissible = candidate_travel;
+            }
+            None => refused = candidate_travel,
+        }
+    }
+
+    // Already touching: report the refusal so the caller tries to slide instead
+    // of inching forward by a rounding error every tick.
+    contact.filter(|_| admissible > ARRIVAL_EPSILON)
 }
 
 fn try_terrain_step(
@@ -544,6 +627,55 @@ mod tests {
         assert!(
             (position.x - 4.5).abs() < 1e-3,
             "expected to cover the full 4.5 units, reached {position}"
+        );
+    }
+
+    /// Walks into the wall until nothing more fits, and reports where it stopped.
+    fn walk_into_the_wall(travel: f32, surfaces: &SurfaceQuery, collision: &CollisionGrid) -> Vec3 {
+        let mut position = Vec3::new(-2.0, 0.0, 0.0);
+        for _ in 0..200 {
+            match step_on_terrain(position, 8.0, 0.0, travel, surfaces, collision, 0.45) {
+                TerrainStep::Moved(next) | TerrainStep::Arrived(next) => position = next,
+                _ => break,
+            }
+        }
+        position
+    }
+
+    #[test]
+    fn different_step_budgets_stop_at_the_same_contact_point() {
+        // The judder the players saw: the client steps once per rendered frame
+        // and the server once per tick, so without contact seeking each stopped
+        // at whatever multiple of its own budget last fitted — up to 0.3 apart.
+        // Reconciliation then dragged the predicted character back and forth
+        // between the two every frame.
+        let (surfaces, collision) = walled_world(0.0);
+
+        let client = walk_into_the_wall(0.15, &surfaces, &collision);
+        let server = walk_into_the_wall(0.45, &surfaces, &collision);
+
+        assert!(
+            (client.x - server.x).abs() < 0.01,
+            "client stopped at {client}, server at {server}"
+        );
+        // Both against the wall's blocked band (half-extent 0.3 + radius 0.45),
+        // not a step short of it.
+        assert!(
+            (client.x + 0.75).abs() < 0.01,
+            "expected to stand against the wall, stopped at {client}"
+        );
+    }
+
+    #[test]
+    fn walking_straight_into_a_wall_does_not_slide_sideways() {
+        // The slide axes exist to round a wall that is in the way, not to shove
+        // a character along one it is facing head on. Spending the whole step
+        // budget on the leftover axis used to send it skating left and right.
+        let (surfaces, collision) = walled_world(0.0);
+        let stopped = walk_into_the_wall(0.15, &surfaces, &collision);
+        assert!(
+            stopped.z.abs() < 0.01,
+            "drifted sideways along the wall to {stopped}"
         );
     }
 

@@ -19,6 +19,7 @@ use bevymmo_network::network::mode::has_client;
 use bevymmo_network::network::protocol::NetworkEntityId;
 
 use crate::game_state::{GameScreen, Screen};
+use crate::spells::input::WEAPON_HUD_BINDINGS;
 use crate::ui::theme::UiTheme;
 
 /// What a HUD cooldown countdown is keyed by.
@@ -77,11 +78,7 @@ pub fn spell_hud_systems(app: &mut App) {
     app.add_systems(Startup, setup_spell_hud.run_if(has_client));
     app.add_systems(
         Update,
-        (
-            sync_spell_hud,
-            adopt_server_cooldowns,
-            update_spell_hud,
-        )
+        (sync_spell_hud, adopt_server_cooldowns, update_spell_hud)
             .chain()
             .run_if(has_client)
             .run_if(in_gameplay_or_paused),
@@ -124,7 +121,6 @@ fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
 /// A single logical hotbar slot: which piece of equipment and which ability
 /// slot within it, plus the `KeyAction` used to read the current binding label.
 struct HotbarSlotDef {
-
     action: KeyAction,
     slot: AbilitySlot,
     /// Extracts the relevant `ItemInstance` from `Equipment`.
@@ -132,14 +128,39 @@ struct HotbarSlotDef {
 }
 
 /// All 6 hotbar columns in display order: three weapon slots and one active
-/// ability for each armor piece.
+/// ability for each armor piece. Weapon actions are [`WEAPON_HUD_BINDINGS`]
+/// so the printed keys are the ones `cast_abilities_on_key` actually reads.
 const HOTBAR_SLOTS: [HotbarSlotDef; 6] = [
-    HotbarSlotDef { action: KeyAction::CastPrimary,          slot: AbilitySlot::Primary,   equip_fn: |e| &e.weapon },
-    HotbarSlotDef { action: KeyAction::CastSecondary,        slot: AbilitySlot::Secondary, equip_fn: |e| &e.weapon },
-    HotbarSlotDef { action: KeyAction::CastUltimate,         slot: AbilitySlot::Ultimate,  equip_fn: |e| &e.weapon },
-    HotbarSlotDef { action: KeyAction::CastHelmet,     slot: AbilitySlot::Primary, equip_fn: |e| &e.helmet },
-    HotbarSlotDef { action: KeyAction::CastChestplate, slot: AbilitySlot::Primary, equip_fn: |e| &e.armor },
-    HotbarSlotDef { action: KeyAction::CastBoots,      slot: AbilitySlot::Primary, equip_fn: |e| &e.shoes },
+    HotbarSlotDef {
+        action: WEAPON_HUD_BINDINGS[0].0,
+        slot: WEAPON_HUD_BINDINGS[0].1,
+        equip_fn: |e| &e.weapon,
+    },
+    HotbarSlotDef {
+        action: WEAPON_HUD_BINDINGS[1].0,
+        slot: WEAPON_HUD_BINDINGS[1].1,
+        equip_fn: |e| &e.weapon,
+    },
+    HotbarSlotDef {
+        action: WEAPON_HUD_BINDINGS[2].0,
+        slot: WEAPON_HUD_BINDINGS[2].1,
+        equip_fn: |e| &e.weapon,
+    },
+    HotbarSlotDef {
+        action: KeyAction::CastHelmet,
+        slot: AbilitySlot::Primary,
+        equip_fn: |e| &e.helmet,
+    },
+    HotbarSlotDef {
+        action: KeyAction::CastChestplate,
+        slot: AbilitySlot::Primary,
+        equip_fn: |e| &e.armor,
+    },
+    HotbarSlotDef {
+        action: KeyAction::CastBoots,
+        slot: AbilitySlot::Primary,
+        equip_fn: |e| &e.shoes,
+    },
 ];
 
 /// Resolves the active ability for one equipped item + ability-slot pair.
@@ -197,10 +218,7 @@ fn sync_spell_hud(
         );
 
         let (cooldown_key, display_name) = match &resolved {
-            Some((id, name)) => (
-                Some(HudCooldownKey::Ability(id.clone())),
-                name.clone(),
-            ),
+            Some((id, name)) => (Some(HudCooldownKey::Ability(id.clone())), name.clone()),
             None => (None, "Empty".to_string()),
         };
         let key_label = display_key_label(&settings.0.keybinds.get(def.action).label());
@@ -435,6 +453,17 @@ mod tests {
         assert_eq!(HOTBAR_SLOTS[3].action, KeyAction::CastHelmet);
         assert_eq!(HOTBAR_SLOTS[4].action, KeyAction::CastChestplate);
         assert_eq!(HOTBAR_SLOTS[5].action, KeyAction::CastBoots);
+    }
+
+    #[test]
+    fn weapon_hud_keys_match_the_cast_system() {
+        // HUD advertising Digit1 while input only listens to KeyQ is how
+        // Charge casts started and never released. These two tables must
+        // name the same actions for the same slots.
+        for (i, (action, slot)) in WEAPON_HUD_BINDINGS.iter().enumerate() {
+            assert_eq!(HOTBAR_SLOTS[i].action, *action);
+            assert_eq!(HOTBAR_SLOTS[i].slot, *slot);
+        }
     }
 
     #[test]

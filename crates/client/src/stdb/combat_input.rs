@@ -1,7 +1,9 @@
-//! Bevy input for authoritative weapon and armor casts.
+//! Bevy input for authoritative armor casts.
 //!
-//! This system deliberately sends only slot/source and the currently selected
-//! target. Ability resolution, inscriptions, cast timing and cooldowns remain
+//! Weapon Q/W/E and 1/2/3 go through `cast_abilities_on_key` so Charge
+//! abilities get a press (`eidolon_cast`) and a release (`release_cast`).
+//! This system only sends armor slot/source plus the selected target.
+//! Ability resolution, inscriptions, cast timing and cooldowns remain
 //! server-authoritative in SpacetimeDB.
 
 use bevy::prelude::*;
@@ -32,16 +34,6 @@ pub fn send_combat_inputs(
         .and_then(|entity| target_entities.get(entity).ok())
         .map(|(network_id, position)| (Some(network_id.0), Some(position.0)));
     let (target_entity, target_position) = target.unwrap_or((None, None));
-
-    for (action, slot) in [
-        (KeyAction::CastPrimary, AbilitySlot::Primary),
-        (KeyAction::CastSecondary, AbilitySlot::Secondary),
-        (KeyAction::CastUltimate, AbilitySlot::Ultimate),
-    ] {
-        if settings.just_pressed(action, &keyboard) {
-            let _ = commands::eidolon_cast(&connection, slot, target_entity, target_position);
-        }
-    }
 
     for (action, slot) in [
         (KeyAction::CastHelmet, EquipSlot::Helmet),

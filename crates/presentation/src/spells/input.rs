@@ -1,8 +1,9 @@
 //! Unified player ability input for the Eidolon cast pipeline.
 //!
-//! Routes Q/W/E to `EidolonCastCommand` for **all** equipped weapons that
-//! expose `Item::ability_loadout()`. The legacy `SpellHotbar` path is no
-//! longer used for player input — it remains only for NPC/boss entities.
+//! Routes the weapon HUD keys (default 1/2/3) and their Q/W/E aliases to the
+//! same press/aim/release path for every equipped weapon that exposes
+//! `Item::ability_loadout()`. The legacy `SpellHotbar` path is no longer used
+//! for player input — it remains only for NPC/boss entities.
 //!
 //! # Cast behavior by [`AbilityCastMode`]
 //!
@@ -24,8 +25,8 @@ use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_client::targeting::CurrentTarget;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::{
-    resolve_active_ability, AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility,
-    BaseAbilityRegistry, BlueprintExecution,
+    resolve_active_ability, weapon_cast_intent, AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility,
+    BaseAbilityRegistry,
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -36,13 +37,28 @@ use crate::spells::cast_bar::ObservedCasts;
 use crate::spells::cursor::{cursor_ground_point, flat_direction_towards};
 use crate::spells::ui::{HudCooldownKey, SpellHudCooldownStarted, SpellHudState};
 
-/// Key ↔ slot mapping.  Lives here (not on `AbilitySlot`) because the link
-/// between a physical key and its gameplay role is an input-layer concern.
-pub const SLOT_BINDINGS: [(KeyAction, AbilitySlot); 3] = [
+/// Canonical HUD + input mapping for the three weapon slots.
+///
+/// The hotbar labels these actions, and [`cast_abilities_on_key`] reads them
+/// so a Charge bound to the printed key starts on press and fires on release.
+pub const WEAPON_HUD_BINDINGS: [(KeyAction, AbilitySlot); 3] = [
+    (KeyAction::CastPrimary, AbilitySlot::Primary),
+    (KeyAction::CastSecondary, AbilitySlot::Secondary),
+    (KeyAction::CastUltimate, AbilitySlot::Ultimate),
+];
+
+/// Q/W/E aliases for the same slots. They keep the historical spell keys
+/// working without a second, press-only send path.
+pub const WEAPON_KEY_ALIASES: [(KeyAction, AbilitySlot); 3] = [
     (KeyAction::CastSpellQ, AbilitySlot::Primary),
     (KeyAction::CastSpellW, AbilitySlot::Secondary),
     (KeyAction::CastSpellE, AbilitySlot::Ultimate),
 ];
+
+/// Every key that drives a weapon slot through the aim / charge / release path.
+pub fn weapon_slot_bindings() -> impl Iterator<Item = (KeyAction, AbilitySlot)> {
+    WEAPON_HUD_BINDINGS.into_iter().chain(WEAPON_KEY_ALIASES)
+}
 
 /// Raycast and surface query parameters bundled for aiming.
 #[derive(SystemParam)]
@@ -117,9 +133,9 @@ pub fn cast_abilities_on_key(
         .map(|net_id| net_id.0);
 
     // ── Press handling ────────────────────────────────────────────────
-    // Press opens the aim window (Instant/CastTime) or starts the channel
-    // immediately (Channeling).
-    for (action, slot) in SLOT_BINDINGS {
+    // Instant/CastTime open aim; Charge starts the server-side charge and
+    // keeps the preview open; Channeling starts immediately.
+    for (action, slot) in weapon_slot_bindings() {
         if !settings.just_pressed(action, &keys) {
             continue;
         }
@@ -130,55 +146,30 @@ pub fn cast_abilities_on_key(
             continue;
         };
 
-        // Determine if this is a Charge execution (hold-to-charge, fires on release).
-        let is_charge =
-            item.ability_blueprint(ability.as_ref()).execution == BlueprintExecution::Charge;
+        let blueprint = item.ability_blueprint(ability.as_ref());
+        let intent = weapon_cast_intent(true, false, blueprint.execution, ability.cast_mode());
 
-        match (ability.cast_mode(), is_charge) {
-            (
-                bevymmo_gameplay::abilities::AbilityCastMode::Instant
-                | bevymmo_gameplay::abilities::AbilityCastMode::CastTime,
-                false,
-            ) => {
-                // Open aim; the release below will confirm and send.
-                aim.begin(slot);
+        if intent.open_aim {
+            aim.begin(slot);
+        }
+        if !intent.start_cast {
+            continue;
+        }
+        if hud_state.ability_on_cooldown(&ability_id) {
+            continue;
+        }
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::eidolon_cast(conn, slot, target_id, target_position) {
+                error!("could not start Eidolon cast: {err}");
             }
-            (_, true) => {
-                // Charge: start charging immediately on press, but keep the aim
-                // window open so the player sees the same preview while holding.
-                // The server opens a Charge CastState that waits for release.
-                aim.begin(slot);
-                if hud_state.ability_on_cooldown(&ability_id) {
-                    continue;
-                }
-                if let Some(conn) = conn.as_deref() {
-                    if let Err(err) =
-                        stdb_commands::eidolon_cast(conn, slot, target_id, target_position)
-                    {
-                        error!("could not start Eidolon charge: {err}");
-                    }
-                }
-                // Don't start cooldown yet — cooldown starts on release when the
-                // ability actually fires (server handles this in release_cast).
-            }
-            (bevymmo_gameplay::abilities::AbilityCastMode::Channeling { .. }, false) => {
-                // Channeling starts immediately on press — no aim window.
-                if hud_state.ability_on_cooldown(&ability_id) {
-                    continue;
-                }
-                if let Some(conn) = conn.as_deref() {
-                    if let Err(err) =
-                        stdb_commands::eidolon_cast(conn, slot, target_id, target_position)
-                    {
-                        error!("could not start Eidolon channel: {err}");
-                    }
-                }
-                // Optimistic cooldown: server starts its cooldown at channel-start too.
-                hud_cooldowns.write(SpellHudCooldownStarted {
-                    key: HudCooldownKey::Ability(ability_id.clone()),
-                    cooldown_seconds: ability.base_params().cooldown,
-                });
-            }
+        }
+        // Channel cooldown starts on press (server does the same). Charge
+        // waits for release_cast.
+        if ability.cast_mode().is_channeling() {
+            hud_cooldowns.write(SpellHudCooldownStarted {
+                key: HudCooldownKey::Ability(ability_id.clone()),
+                cooldown_seconds: ability.base_params().cooldown,
+            });
         }
     }
 
@@ -195,13 +186,10 @@ pub fn cast_abilities_on_key(
     }
 
     // ── Release handling ─────────────────────────────────────────────
-    // Release confirms an aimed cast (Instant/CastTime) or ends a channel.
-    //
-    // Only Instant/CastTime open an aim window on press (see above), so
-    // gating this whole loop on `aim.slot == Some(slot)` made the Channeling
-    // arm below unreachable: its release never had an aim to match, and a
-    // channel could only end by moving or by the server's own timeout.
-    for (action, slot) in SLOT_BINDINGS {
+    // Instant/CastTime confirm the aimed `eidolon_cast`. Charge and
+    // Channeling call `release_cast`. Channeling is not gated on `aim.slot`
+    // because it never opens an aim window.
+    for (action, slot) in weapon_slot_bindings() {
         if !settings.just_released(action, &keys) {
             continue;
         }
@@ -212,97 +200,67 @@ pub fn cast_abilities_on_key(
             continue;
         };
 
-        // Determine if this is a Charge execution.
-        let is_charge =
-            item.ability_blueprint(ability.as_ref()).execution == BlueprintExecution::Charge;
+        let blueprint = item.ability_blueprint(ability.as_ref());
+        let intent = weapon_cast_intent(false, true, blueprint.execution, ability.cast_mode());
 
-        match (ability.cast_mode(), is_charge) {
-            (
-                bevymmo_gameplay::abilities::AbilityCastMode::Instant
-                | bevymmo_gameplay::abilities::AbilityCastMode::CastTime,
-                false,
-            ) => {
-                if aim.slot != Some(slot) {
-                    continue;
-                }
-                let cancelled = aim.cancelled;
-                aim.clear();
-                if cancelled {
-                    continue;
-                }
+        if intent.start_cast {
+            if aim.slot != Some(slot) {
+                continue;
+            }
+            let cancelled = aim.cancelled;
+            aim.clear();
+            if cancelled {
+                continue;
+            }
+            if hud_state.ability_on_cooldown(&ability_id) {
+                continue;
+            }
 
-                // Confirm the aimed cast.
-                if hud_state.ability_on_cooldown(&ability_id) {
-                    continue;
-                }
+            let face_direction = target_position
+                .and_then(|target| flat_direction_towards(player_position.0, target));
+            if let Some(direction) = face_direction {
+                look_direction.0 = direction;
+            }
+            if stops_movement_for_ability(ability.cast_mode()) {
+                move_target.0 = None;
+            }
 
-                // Immediate local feedback: snap facing and stop movement so the
-                // player feels the cast instantly instead of waiting ~100ms for
-                // SpellCastProgress replication.
-                let face_direction = target_position
-                    .and_then(|target| flat_direction_towards(player_position.0, target));
-                if let Some(direction) = face_direction {
-                    look_direction.0 = direction;
+            if let Some(conn) = conn.as_deref() {
+                if let Err(err) =
+                    stdb_commands::eidolon_cast(conn, slot, target_id, target_position)
+                {
+                    error!("could not cast Eidolon ability: {err}");
                 }
-                if stops_movement_for_ability(ability.cast_mode()) {
-                    move_target.0 = None;
-                }
+            }
 
+            if ability.cast_mode().is_instant() {
+                hud_cooldowns.write(SpellHudCooldownStarted {
+                    key: HudCooldownKey::Ability(ability_id.clone()),
+                    cooldown_seconds: ability.base_params().cooldown,
+                });
+            }
+        }
+
+        if intent.release_cast {
+            let is_this_cast = observed_casts
+                .0
+                .get(&local_network_id.0)
+                .is_some_and(|cast| cast.spell_id == ability_id.as_str());
+            aim.clear();
+
+            if is_this_cast {
                 if let Some(conn) = conn.as_deref() {
                     if let Err(err) =
-                        stdb_commands::eidolon_cast(conn, slot, target_id, target_position)
+                        stdb_commands::release_cast(conn, ability_id.as_str().to_owned())
                     {
-                        error!("could not cast Eidolon ability: {err}");
+                        error!("could not release cast: {err}");
                     }
                 }
-
-                // Instant abilities start cooldown locally; CastTime waits for
-                // server completion (cast_bar.rs handles that).
-                if ability.cast_mode().is_instant() {
+                if !ability.cast_mode().is_channeling() {
                     hud_cooldowns.write(SpellHudCooldownStarted {
                         key: HudCooldownKey::Ability(ability_id.clone()),
                         cooldown_seconds: ability.base_params().cooldown,
                     });
-                }
-            }
-            (_, true) => {
-                // Release fires the charged ability (server resolves in release_cast).
-                let is_charging_this = observed_casts
-                    .0
-                    .get(&local_network_id.0)
-                    .is_some_and(|cast| cast.spell_id == ability_id.as_str());
-                aim.clear();
-
-                if is_charging_this {
-                    if let Some(conn) = conn.as_deref() {
-                        if let Err(err) =
-                            stdb_commands::release_cast(conn, ability_id.as_str().to_owned())
-                        {
-                            error!("could not release charge cast: {err}");
-                        }
-                    }
-                    // Cooldown starts now — server starts it in release_cast too.
-                    hud_cooldowns.write(SpellHudCooldownStarted {
-                        key: HudCooldownKey::Ability(ability_id.clone()),
-                        cooldown_seconds: ability.base_params().cooldown,
-                    });
-                }
-            }
-            (bevymmo_gameplay::abilities::AbilityCastMode::Channeling { .. }, false) => {
-                // Release ends the channel early.
-                let is_channeling_this = observed_casts
-                    .0
-                    .get(&local_network_id.0)
-                    .is_some_and(|cast| cast.spell_id == ability_id.as_str());
-
-                if is_channeling_this {
-                    if let Some(conn) = conn.as_deref() {
-                        if let Err(err) =
-                            stdb_commands::release_cast(conn, ability_id.as_str().to_owned())
-                        {
-                            error!("could not release channel: {err}");
-                        }
-                    }
                 }
             }
         }
@@ -335,5 +293,50 @@ fn stops_movement_for_ability(cast_mode: bevymmo_gameplay::abilities::AbilityCas
         AbilityCastMode::Channeling {
             movement_policy, ..
         } => movement_policy == ChannelMovementPolicy::InterruptOnMove,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hud_and_alias_keys_drive_the_same_slots() {
+        assert_eq!(WEAPON_HUD_BINDINGS[0].1, AbilitySlot::Primary);
+        assert_eq!(WEAPON_HUD_BINDINGS[1].1, AbilitySlot::Secondary);
+        assert_eq!(WEAPON_HUD_BINDINGS[2].1, AbilitySlot::Ultimate);
+        assert_eq!(
+            WEAPON_KEY_ALIASES[0],
+            (KeyAction::CastSpellQ, AbilitySlot::Primary)
+        );
+        assert_eq!(
+            WEAPON_KEY_ALIASES[1],
+            (KeyAction::CastSpellW, AbilitySlot::Secondary)
+        );
+        assert_eq!(
+            WEAPON_KEY_ALIASES[2],
+            (KeyAction::CastSpellE, AbilitySlot::Ultimate)
+        );
+
+        let slots: Vec<AbilitySlot> = weapon_slot_bindings().map(|(_, slot)| slot).collect();
+        assert_eq!(
+            slots,
+            vec![
+                AbilitySlot::Primary,
+                AbilitySlot::Secondary,
+                AbilitySlot::Ultimate,
+                AbilitySlot::Primary,
+                AbilitySlot::Secondary,
+                AbilitySlot::Ultimate,
+            ]
+        );
+    }
+
+    #[test]
+    fn hud_bindings_are_not_the_qwe_aliases() {
+        // Digit1 advertised while only KeyQ is read was the Charge-never-fires
+        // bug. The HUD table must be the primary bindings, aliases extra.
+        assert_ne!(WEAPON_HUD_BINDINGS[0].0, KeyAction::CastSpellQ);
+        assert_eq!(WEAPON_HUD_BINDINGS[0].0, KeyAction::CastPrimary);
     }
 }

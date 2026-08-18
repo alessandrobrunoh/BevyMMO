@@ -101,6 +101,11 @@ impl AbilityCastMode {
         matches!(self, AbilityCastMode::Instant)
     }
 
+    /// Whether this mode repeats while the key is held.
+    pub fn is_channeling(&self) -> bool {
+        matches!(self, AbilityCastMode::Channeling { .. })
+    }
+
     /// Total duration for the progress bar (cast_time or max channel time).
     /// For channeling this is caller-defined; for CastTime it is the ability's cast_time.
     pub fn required_seconds(&self, cast_time: f32) -> f32 {

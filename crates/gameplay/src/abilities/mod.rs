@@ -8,6 +8,7 @@ pub mod aim;
 pub mod ancient_word;
 pub mod base_ability;
 pub mod blueprint;
+pub mod cast_intent;
 pub mod cooldowns;
 
 pub mod events;
@@ -28,6 +29,7 @@ pub use base_ability::{
     BaseAbility, BaseAbilityRegistry, ChannelMovementPolicy,
 };
 pub use blueprint::{AbilityBlueprint, BlueprintExecution};
+pub use cast_intent::{weapon_cast_intent, WeaponCastIntent};
 pub use cooldowns::AbilityCooldowns;
 
 pub use events::EidolonCastRequest;
@@ -42,11 +44,11 @@ pub use root_word::{
 pub use known_glyphs::KnownAncientLanguage;
 
 pub use resolve::{
-    cast_armor_inscribed_ability, cast_root_inscribed_slot,
-    resolve_armor_inscribed_ability, resolve_root_inscribed_slot, CastBlockedReason,
-    SlotPreview,
+    cast_armor_inscribed_ability, cast_root_inscribed_slot, resolve_armor_inscribed_ability,
+    resolve_root_inscribed_slot, CastBlockedReason, SlotPreview,
 };
 pub use slot::AbilitySlot;
 pub use weapon_abilities::{
-    resolve_active_ability, resolve_armor_ability, AbilityLoadout, AbilitySelection, WeaponAbilities,
+    resolve_active_ability, resolve_armor_ability, AbilityLoadout, AbilitySelection,
+    WeaponAbilities,
 };

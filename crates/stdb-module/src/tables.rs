@@ -538,6 +538,8 @@ pub struct AoeRegion {
     pub direction: Vec3Row,
     pub radius: f32,
     pub shape: AoeShapeRow,
+    /// Total cone aperture in degrees. Unused for circles (`0.0`).
+    pub angle_deg: f32,
     pub remaining_seconds: f32,
     /// Time before the region starts applying its effect. Meteorite's warning
     /// circle exists during this window without doing anything.

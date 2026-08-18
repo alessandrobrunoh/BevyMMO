@@ -624,18 +624,9 @@ fn modifier_row_kind(kind: ModifierKind) -> ModifierKindRow {
 
 /// Spawns a requested AoE region, or applies it on the spot.
 ///
-/// `aoe_region` can carry a burst of damage or healing over a circle, and
-/// nothing else: there is no column for a cone's aperture, for `AoeTargeting`,
-/// for a crowd control payload or for a stat modifier payload. A request the
-/// table cannot hold faithfully is therefore resolved *now*, against whoever is
-/// inside the shape at cast time, using the domain's own `AoeShape::contains`
-/// and `AoeTargeting::allows`.
-///
-/// That trade is deliberate. The alternative — dropping what does not fit —
-/// turns Stun Field, Binding Seal, Wing Buffet and Healing Circle into no-ops,
-/// which is further from the Bevy server than losing a wind-up. What is lost is
-/// the telegraph delay and the "someone walks in later" case; see the report on
-/// the columns `aoe_region` still needs.
+/// Circles and cones with a lifetime persist so their `pending_delay_seconds`
+/// telegraph can play out. Zero-duration requests (melee swings) still resolve
+/// immediately — they would be applied and despawned on the next tick anyway.
 fn spawn_aoe_region(ctx: &ReducerContext, caster: u64, request: AoeSpawnRequest) {
     let Some(row) = persistable_region(caster, &request) else {
         apply_aoe_now(ctx, caster, &request);
@@ -644,7 +635,7 @@ fn spawn_aoe_region(ctx: &ReducerContext, caster: u64, request: AoeSpawnRequest)
     ctx.db.aoe_region().insert(row);
 }
 
-/// The row for `request`, or `None` when the table would misrepresent it.
+/// The row for `request`, or `None` when it should resolve immediately.
 fn persistable_region(caster: u64, request: &AoeSpawnRequest) -> Option<AoeRegion> {
     // A region with no lifetime would be applied and despawned on the tick
     // after it spawned, so resolving it at cast time is the same thing one tick
@@ -652,15 +643,17 @@ fn persistable_region(caster: u64, request: &AoeSpawnRequest) -> Option<AoeRegio
     if request.duration_seconds <= 0.0 {
         return None;
     }
-    // Only a circle survives storage: `AoeShapeRow::Cone` has a `direction` but
-    // no aperture, and guessing one would silently resize the hitbox.
-    let AoeShape::Circle = request.shape else {
-        return None;
-    };
     if request.effects.is_empty() {
         // No effects to persist — take the immediate path.
         return None;
     }
+    let (shape, direction, angle_deg) = match request.shape {
+        AoeShape::Circle => (AoeShapeRow::Circle, Vec3Row::default(), 0.0),
+        AoeShape::Cone {
+            direction,
+            angle_deg,
+        } => (AoeShapeRow::Cone, direction.into(), angle_deg),
+    };
     // `affected` seeds the caster for ExcludeCaster so the row alone enforces
     // the policy without a separate targeting column read at tick time.
     let affected = match request.targeting {
@@ -674,15 +667,32 @@ fn persistable_region(caster: u64, request: &AoeSpawnRequest) -> Option<AoeRegio
         caster,
         spell_id: request.spell_id.clone(),
         center: request.center.into(),
-        direction: Vec3Row::default(),
+        direction,
         radius: request.radius,
-        shape: AoeShapeRow::Circle,
+        shape,
+        angle_deg,
         remaining_seconds: request.duration_seconds,
         pending_delay_seconds: request.initial_delay_seconds.max(0.0),
         affected,
         targeting: targeting_row(request.targeting),
         effects: request.effects.iter().map(EffectPayloadRow::from).collect(),
     })
+}
+
+/// Reconstructs the domain shape stored on a region row.
+fn region_shape(region: &AoeRegion) -> AoeShape {
+    match region.shape {
+        AoeShapeRow::Circle => AoeShape::Circle,
+        AoeShapeRow::Cone => AoeShape::Cone {
+            direction: Vec3::from(region.direction),
+            angle_deg: region.angle_deg,
+        },
+    }
+}
+
+/// `true` once the telegraph has elapsed and the region may apply its payload.
+fn region_applies_this_tick(pending_delay_seconds: f32) -> bool {
+    pending_delay_seconds <= 0.0
 }
 
 /// Applies an AoE request immediately to everything currently inside it.
@@ -1062,19 +1072,8 @@ fn update_aoe_regions(ctx: &ReducerContext, dt: f32) {
         // The order matters and is the original's: the delay is ticked first,
         // so a region whose lifetime equals its delay (Meteorite) still gets its
         // one impact on the tick it expires.
-        if region.pending_delay_seconds <= 0.0 {
-            let shape = match region.shape {
-                AoeShapeRow::Circle => AoeShape::Circle,
-                AoeShapeRow::Cone => {
-                    // Unreachable with the rows this module writes — cones take
-                    // the immediate path, because the aperture has no column.
-                    log::warn!(
-                        "aoe_region {} is a cone with no aperture; skipping its effect",
-                        region.id
-                    );
-                    continue;
-                }
-            };
+        if region_applies_this_tick(region.pending_delay_seconds) {
+            let shape = region_shape(&region);
             let center = Vec3::from(region.center);
             let targeting = targeting_from_row(region.targeting);
             let caster_id = EntityId::new(region.caster);
@@ -1148,5 +1147,94 @@ fn targeting_from_row(row: AoeTargetingRow) -> AoeTargeting {
         AoeTargetingRow::Everyone => AoeTargeting::Everyone,
         AoeTargetingRow::CasterOnly => AoeTargeting::CasterOnly,
         AoeTargetingRow::ExcludeCaster => AoeTargeting::ExcludeCaster,
+    }
+}
+
+#[cfg(test)]
+mod persistable_region_tests {
+    use super::*;
+
+    fn damage_request(shape: AoeShape, duration: f32, delay: f32) -> AoeSpawnRequest {
+        AoeSpawnRequest {
+            center: Vec3::ZERO,
+            radius: 8.0,
+            shape,
+            duration_seconds: duration,
+            initial_delay_seconds: delay,
+            spell_id: "arcane_wave".into(),
+            effects: vec![EffectSpec::Damage(DamageEffect { amount: 10.0 })],
+            targeting: AoeTargeting::Everyone,
+        }
+    }
+
+    #[test]
+    fn delayed_cone_persists_with_its_aperture() {
+        let request = damage_request(
+            AoeShape::Cone {
+                direction: Vec3::Z,
+                angle_deg: 70.0,
+            },
+            0.15,
+            0.15,
+        );
+        let row = persistable_region(1, &request).expect("delayed cone");
+        assert_eq!(row.shape, AoeShapeRow::Cone);
+        assert_eq!(row.angle_deg, 70.0);
+        assert!(row.pending_delay_seconds > 0.0);
+        assert!(!region_applies_this_tick(row.pending_delay_seconds));
+        match region_shape(&row) {
+            AoeShape::Cone { angle_deg, .. } => assert_eq!(angle_deg, 70.0),
+            other => panic!("expected cone, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn zero_duration_cone_resolves_immediately() {
+        let request = damage_request(
+            AoeShape::Cone {
+                direction: Vec3::Z,
+                angle_deg: 70.0,
+            },
+            0.0,
+            0.0,
+        );
+        assert!(persistable_region(1, &request).is_none());
+    }
+
+    #[test]
+    fn delayed_circle_still_persists() {
+        let request = damage_request(AoeShape::Circle, 1.0, 0.4);
+        let row = persistable_region(1, &request).expect("delayed circle");
+        assert_eq!(row.shape, AoeShapeRow::Circle);
+        assert_eq!(region_shape(&row), AoeShape::Circle);
+    }
+
+    #[test]
+    fn persisted_cone_does_not_zero_the_aperture() {
+        let request = damage_request(
+            AoeShape::Cone {
+                direction: Vec3::X,
+                angle_deg: 50.0,
+            },
+            0.2,
+            0.2,
+        );
+        let row = persistable_region(7, &request).expect("cone");
+        assert_ne!(row.angle_deg, 0.0);
+        assert_eq!(row.angle_deg, 50.0);
+    }
+
+    #[test]
+    fn windup_does_not_apply_before_delay_elapses() {
+        assert!(!region_applies_this_tick(0.15));
+        assert!(region_applies_this_tick(0.0));
+    }
+
+    #[test]
+    fn exclude_caster_still_seeds_affected() {
+        let mut request = damage_request(AoeShape::Circle, 1.0, 0.0);
+        request.targeting = AoeTargeting::ExcludeCaster;
+        let row = persistable_region(42, &request).expect("circle");
+        assert_eq!(row.affected, vec![42]);
     }
 }

@@ -24,8 +24,9 @@
 //! prediction around slopes and blockers.
 
 use crate::app_state::{
-    AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus, ConnectionFailure,
-    ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, GameScreen, Screen,
+    screen_after_connection_loss, AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus,
+    ConnectionFailure, ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, GameScreen,
+    Screen,
 };
 use crate::local_player::LocalPlayer;
 use crate::movement::MoveTarget;
@@ -499,6 +500,7 @@ impl Plugin for StdbPlugin {
                 .run_if(resource_exists::<PartyEvents>),
         );
         app.add_systems(Update, finish_shutdown);
+        app.add_systems(Update, retry_connect_on_play);
         app.add_systems(
             Update,
             (
@@ -777,9 +779,25 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
 /// returns rather than owning a thread. That keeps every row callback on the
 /// main thread and inside the Bevy frame, which is why [`drain_events`] can run
 /// immediately after and see a consistent batch.
-fn pump_connection(conn: Res<StdbConnection>) {
-    if let Err(err) = conn.conn.frame_tick() {
-        error!("SpacetimeDB frame_tick failed: {err}");
+fn pump_connection(
+    conn: Res<StdbConnection>,
+    mut screen: ResMut<GameScreen>,
+    mut failure: ResMut<ConnectionFailure>,
+) {
+    let lost = match conn.conn.frame_tick() {
+        Err(err) => {
+            error!("SpacetimeDB frame_tick failed: {err}");
+            Some(format!("Connessione persa: {err}"))
+        }
+        Ok(()) if !conn.conn.is_active() => Some("Connessione a SpacetimeDB chiusa".to_string()),
+        Ok(()) => None,
+    };
+    let Some(message) = lost else {
+        return;
+    };
+    if let Some(next) = screen_after_connection_loss(screen.0) {
+        failure.0 = Some(message);
+        screen.0 = next;
     }
 }
 
@@ -1743,6 +1761,35 @@ fn delete_character_on_request(
 /// nothing to wait for a grace period on — see the removed `finish_logout`
 /// commit for the disconnect/reconnect dance this used to require back when
 /// an `Identity` had no account behind it to keep authenticating as.
+/// If Play is pressed without a live socket, try `connect` once more instead
+/// of leaving the player on Connecting forever.
+fn retry_connect_on_play(
+    mut commands: Commands,
+    mut request: ResMut<ConnectionRequest>,
+    mut screen: ResMut<GameScreen>,
+    mut failure: ResMut<ConnectionFailure>,
+    conn: Option<Res<StdbConnection>>,
+    config: Res<StdbConnectionConfig>,
+) {
+    if conn.is_some() {
+        return;
+    }
+    if !matches!(request.0, Some(ConnectionIntent::Connect { .. })) {
+        return;
+    }
+    match connect(&config.uri, &config.module) {
+        Ok((connection, party_events)) => {
+            commands.insert_resource(connection);
+            commands.insert_resource(party_events);
+        }
+        Err(err) => {
+            request.0 = None;
+            failure.0 = Some(format!("Impossibile connettersi: {err}"));
+            screen.0 = Screen::MainMenu;
+        }
+    }
+}
+
 fn join_on_request(
     conn: Res<StdbConnection>,
     mut request: ResMut<ConnectionRequest>,

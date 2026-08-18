@@ -79,6 +79,17 @@ pub enum ConnectionIntent {
 #[derive(Resource, Debug, Default)]
 pub struct ConnectionFailure(pub Option<String>);
 
+/// Where to send the player when the SpacetimeDB socket dies.
+///
+/// `None` means stay put — the main menu before the first Play must not
+/// flash a disconnect overlay.
+pub fn screen_after_connection_loss(current: Screen) -> Option<Screen> {
+    match current {
+        Screen::InGame | Screen::Paused | Screen::Connecting => Some(Screen::MainMenu),
+        Screen::MainMenu | Screen::Settings => None,
+    }
+}
+
 /// Where the connection stands with respect to an [`Account`](crate) login.
 ///
 /// Distinct from [`Screen`]: `Screen` is which panel is on-screen, `AuthStatus`
@@ -257,5 +268,23 @@ mod tests {
     fn validate_password_enforces_minimum_length() {
         assert_eq!(validate_password("1234567"), Err(PasswordError::TooShort));
         assert_eq!(validate_password("12345678"), Ok(()));
+    }
+
+    #[test]
+    fn connection_loss_leaves_gameplay_but_not_the_idle_menu() {
+        assert_eq!(
+            screen_after_connection_loss(Screen::InGame),
+            Some(Screen::MainMenu)
+        );
+        assert_eq!(
+            screen_after_connection_loss(Screen::Connecting),
+            Some(Screen::MainMenu)
+        );
+        assert_eq!(
+            screen_after_connection_loss(Screen::Paused),
+            Some(Screen::MainMenu)
+        );
+        assert_eq!(screen_after_connection_loss(Screen::MainMenu), None);
+        assert_eq!(screen_after_connection_loss(Screen::Settings), None);
     }
 }

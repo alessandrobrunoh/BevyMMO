@@ -2,8 +2,11 @@
 
 use spacetimedb::{reducer, ReducerContext};
 
+use bevymmo_domain::movement::{movement_intent_allowed, MovementLock};
+
 use crate::reducers::lifecycle::caller_entity;
 use crate::rows::Vec3Row;
+use crate::sim::crowd_control;
 use crate::tables::{cast_state, game_entity, CastKindRow, EntityStateRow, GameEntity};
 use crate::world;
 
@@ -25,9 +28,18 @@ pub fn move_to(ctx: &ReducerContext, x: f32, y: f32, z: f32) -> Result<(), Strin
     if entity.state == EntityStateRow::Dead {
         return Err("dead characters do not walk".to_string());
     }
-    if matches!(
-        ctx.db.cast_state().entity_id().find(&entity.entity_id),
-        Some(cast) if matches!(cast.kind, CastKindRow::CastTime)
+    let lock = match ctx.db.cast_state().entity_id().find(&entity.entity_id) {
+        Some(cast) => match cast.kind {
+            CastKindRow::Instant => MovementLock::None,
+            CastKindRow::CastTime => MovementLock::CastTime,
+            CastKindRow::Charge => MovementLock::Charge,
+            CastKindRow::Channeling => MovementLock::Channel,
+        },
+        None => MovementLock::None,
+    };
+    if !movement_intent_allowed(
+        lock,
+        crowd_control::is_movement_blocked(ctx, entity.entity_id),
     ) {
         return Err("you cannot move while casting".to_string());
     }

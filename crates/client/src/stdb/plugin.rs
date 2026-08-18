@@ -33,6 +33,7 @@ use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
 use bevymmo_domain::movement::{self, Step};
+use bevymmo_domain::movement::{movement_intent_allowed, MovementLock};
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
 use bevymmo_domain::stats::events::{ModifierKind, ModifierOp, StatField};
@@ -133,6 +134,11 @@ pub struct StdbAuthoritative {
     pub move_target: Option<Vec3>,
     pub speed: f32,
 }
+
+/// Local mirror of the lock `move_to` consults, so a held RMB does not
+/// spam Charge-cancelling destinations.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct ActiveCastLock(pub MovementLock);
 
 /// Row changes handed from the SDK's thread to the Bevy schedule.
 enum RowEvent {
@@ -983,6 +989,11 @@ fn drain_events(
             }
             RowEvent::CastState(row) => {
                 cast_progress.write(cast_progress_from(&row));
+                if let Some(entity) = state.map.get(row.entity_id) {
+                    commands
+                        .entity(entity)
+                        .insert(ActiveCastLock(movement_lock_from_cast(row.kind)));
+                }
             }
             RowEvent::CastEnded(row) => {
                 cast_ended.write(SpellCastEnded {
@@ -990,6 +1001,9 @@ fn drain_events(
                     spell_id: row.spell_id,
                     completed: !row.interrupted,
                 });
+                if let Some(entity) = state.map.get(row.entity_id) {
+                    commands.entity(entity).remove::<ActiveCastLock>();
+                }
             }
             RowEvent::SpellVisualEffect(row) => {
                 visual_effects.write(SpellVisualEffect {
@@ -1213,9 +1227,33 @@ fn hotbar_from(row: &Hotbar) -> SpellHotbar {
 
 fn known_ancient_language_from(row: &KnownAncientLanguageTable) -> KnownAncientLanguage {
     KnownAncientLanguage {
-        root_words: row.root_words.iter().cloned().map(bevymmo_gameplay::abilities::RootWordId::new).collect(),
-        ancient_words: row.ancient_words.iter().cloned().map(AncientWordId::new).collect(),
-        base_abilities: row.base_abilities.iter().cloned().map(bevymmo_gameplay::abilities::AbilityId::new).collect(),
+        root_words: row
+            .root_words
+            .iter()
+            .cloned()
+            .map(bevymmo_gameplay::abilities::RootWordId::new)
+            .collect(),
+        ancient_words: row
+            .ancient_words
+            .iter()
+            .cloned()
+            .map(AncientWordId::new)
+            .collect(),
+        base_abilities: row
+            .base_abilities
+            .iter()
+            .cloned()
+            .map(bevymmo_gameplay::abilities::AbilityId::new)
+            .collect(),
+    }
+}
+
+fn movement_lock_from_cast(kind: CastKindRow) -> MovementLock {
+    match kind {
+        CastKindRow::Instant => MovementLock::None,
+        CastKindRow::CastTime => MovementLock::CastTime,
+        CastKindRow::Charge => MovementLock::Charge,
+        CastKindRow::Channeling => MovementLock::Channel,
     }
 }
 
@@ -1890,6 +1928,7 @@ fn send_move_commands(
     time: Res<Time>,
     mouse: Option<Res<ButtonInput<MouseButton>>>,
     move_target: Res<MoveTarget>,
+    local_player: Query<(Option<&ActiveCastLock>, Option<&CrowdControlState>), With<LocalPlayer>>,
     mut cooldown: Local<f32>,
 ) {
     let Some(mouse) = mouse else {
@@ -1898,6 +1937,13 @@ fn send_move_commands(
     if !mouse.pressed(MouseButton::Right) {
         *cooldown = 0.0;
         return;
+    }
+    if let Ok((lock, cc)) = local_player.single() {
+        let lock = lock.map(|lock| lock.0).unwrap_or(MovementLock::None);
+        let cc_blocks = cc.is_some_and(|state| state.has_blocking_cc());
+        if !movement_intent_allowed(lock, cc_blocks) {
+            return;
+        }
     }
 
     let just_pressed = mouse.just_pressed(MouseButton::Right);

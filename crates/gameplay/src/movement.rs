@@ -52,6 +52,33 @@ pub fn step_towards(position: Vec3, target: Vec3, speed: f32, dt: f32) -> Step {
     Step::Moving(position + offset / distance * travel)
 }
 
+/// Why a `move_to` request should be accepted or refused.
+///
+/// Charge and CastTime freeze the character. Channeling still accepts a
+/// destination so movement can cancel an InterruptOnMove channel — the
+/// tick, not the reducer, ends that cast.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MovementLock {
+    None,
+    CastTime,
+    Charge,
+    Channel,
+}
+
+/// Whether the player may issue a new destination.
+///
+/// `cc_blocks` covers Stun/Root. Channel is allowed so a held right-click
+/// can interrupt; Charge is not, or the starter staff cancels itself.
+pub fn movement_intent_allowed(lock: MovementLock, cc_blocks: bool) -> bool {
+    if cc_blocks {
+        return false;
+    }
+    match lock {
+        MovementLock::None | MovementLock::Channel => true,
+        MovementLock::CastTime | MovementLock::Charge => false,
+    }
+}
+
 /// Horizontal facing implied by moving from `position` to `target`.
 ///
 /// Returns `None` when the two are vertically aligned, in which case the caller
@@ -371,6 +398,28 @@ mod tests {
         assert_eq!(
             step_on_terrain(Vec3::ZERO, 20.0, 0.0, 1.0, &surfaces, &collision, 0.45),
             TerrainStep::NoSurface
+        );
+    }
+
+    #[test]
+    fn charge_and_cast_time_block_movement_intent() {
+        assert!(!movement_intent_allowed(MovementLock::Charge, false));
+        assert!(!movement_intent_allowed(MovementLock::CastTime, false));
+        assert!(movement_intent_allowed(MovementLock::None, false));
+        assert!(movement_intent_allowed(MovementLock::Channel, false));
+    }
+
+    #[test]
+    fn stun_blocks_even_when_not_casting() {
+        assert!(!movement_intent_allowed(MovementLock::None, true));
+        assert!(!movement_intent_allowed(MovementLock::Channel, true));
+    }
+
+    #[test]
+    fn charge_is_not_treated_as_channel() {
+        assert_ne!(
+            movement_intent_allowed(MovementLock::Charge, false),
+            movement_intent_allowed(MovementLock::Channel, false)
         );
     }
 }

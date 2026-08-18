@@ -121,41 +121,43 @@ pub fn populate_registry(registry: &mut AbilityVfxRegistry) {
 pub fn animate_lifecycle(
     time: Res<Time>,
     mut commands: Commands,
-    mut expand_fades: Query<(Entity, &mut Transform, &mut lifecycle::VfxExpandFade)>,
-    mut pulse_rings: Query<(Entity, &mut Transform, &mut lifecycle::VfxPulseRing)>,
-    mut lifetimes: Query<(Entity, &mut lifecycle::VfxLifetime)>,
-    mut falls: Query<(Entity, &mut Transform, &mut lifecycle::VfxFall)>,
-    mut spin_expands: Query<(Entity, &mut Transform, &mut lifecycle::VfxSpinExpand)>,
-    mut oscillates: Query<(Entity, &mut Transform, &mut lifecycle::VfxOscillate)>,
+    mut queries: ParamSet<(
+        Query<(Entity, &mut Transform, &mut lifecycle::VfxExpandFade)>,
+        Query<(Entity, &mut Transform, &mut lifecycle::VfxPulseRing)>,
+        Query<(Entity, &mut lifecycle::VfxLifetime)>,
+        Query<(Entity, &mut Transform, &mut lifecycle::VfxFall)>,
+        Query<(Entity, &mut Transform, &mut lifecycle::VfxSpinExpand)>,
+        Query<(Entity, &mut Transform, &mut lifecycle::VfxOscillate)>,
+    )>,
 ) {
     let delta = time.delta_secs();
 
-    for (entity, mut transform, mut comp) in expand_fades.iter_mut() {
+    for (entity, mut transform, mut comp) in queries.p0().iter_mut() {
         if comp.tick(delta, &mut transform) {
             commands.entity(entity).despawn();
         }
     }
-    for (entity, mut transform, mut comp) in pulse_rings.iter_mut() {
+    for (entity, mut transform, mut comp) in queries.p1().iter_mut() {
         if comp.tick(delta, &mut transform) {
             commands.entity(entity).despawn();
         }
     }
-    for (entity, mut comp) in lifetimes.iter_mut() {
+    for (entity, mut comp) in queries.p2().iter_mut() {
         if comp.tick(delta) {
             commands.entity(entity).despawn();
         }
     }
-    for (entity, mut transform, mut comp) in falls.iter_mut() {
+    for (entity, mut transform, mut comp) in queries.p3().iter_mut() {
         if comp.tick(delta, &mut transform) {
             commands.entity(entity).despawn();
         }
     }
-    for (entity, mut transform, mut comp) in spin_expands.iter_mut() {
+    for (entity, mut transform, mut comp) in queries.p4().iter_mut() {
         if comp.tick(delta, &mut transform) {
             commands.entity(entity).despawn();
         }
     }
-    for (entity, mut transform, mut comp) in oscillates.iter_mut() {
+    for (entity, mut transform, mut comp) in queries.p5().iter_mut() {
         if comp.tick(delta, &mut transform) {
             commands.entity(entity).despawn();
         }

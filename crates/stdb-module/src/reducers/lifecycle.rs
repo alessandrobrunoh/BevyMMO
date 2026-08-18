@@ -268,37 +268,41 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         character_id,
         slots: inventory_to_rows(&Default::default()),
     });
-    crate::reducers::items::grant_item(ctx, character_id, "conduit_staff_t4")?;
+    crate::reducers::items::grant_item(ctx, character_id, "mage_staff")?;
     ctx.db.equipment().insert(EquipmentTable {
         character_id,
         slots: equipment_to_rows(&Default::default()),
     });
 
-    ctx.db.known_ancient_language().insert(KnownAncientLanguageTable {
-        character_id,
-        root_words: vec![
-            "damage".to_string(),
-            "flame".to_string(),
-            "frost".to_string(),
-            "storm".to_string(),
-            "life".to_string(),
-            "void".to_string(),
-            "stone".to_string(),
-        ],
-        ancient_words: vec![
-            "echo".to_string(),
-            "twin".to_string(),
-            "return".to_string(),
-            "hunger".to_string(),
-            "anchor".to_string(),
-            "reversal".to_string(),
-        ],
-        base_abilities: vec![
-            "arcane_bolt".to_string(),
-            "arcane_wave".to_string(),
-            "great_manifestation".to_string(),
-        ],
-    });
+    ctx.db
+        .known_ancient_language()
+        .insert(KnownAncientLanguageTable {
+            character_id,
+            root_words: vec![
+                "damage".to_string(),
+                "flame".to_string(),
+                "frost".to_string(),
+                "storm".to_string(),
+                "life".to_string(),
+                "void".to_string(),
+                "stone".to_string(),
+            ],
+            ancient_words: vec![
+                "echo".to_string(),
+                "twin".to_string(),
+                "return".to_string(),
+                "hunger".to_string(),
+                "anchor".to_string(),
+                "reversal".to_string(),
+            ],
+            base_abilities: vec![
+                "arcane_bolt".to_string(),
+                "arcane_wave".to_string(),
+                "great_manifestation".to_string(),
+            ],
+        });
+
+    crate::reducers::items::equip_granted_starter_staff(ctx, character_id, character.entity_id)?;
 
     set_active_character(ctx, Some(character_id));
     Ok(())

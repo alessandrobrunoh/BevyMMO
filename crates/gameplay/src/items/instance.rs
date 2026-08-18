@@ -61,6 +61,12 @@ pub struct ItemInstance {
     pub armor_inscription: Option<ArmorInscription>,
 }
 
+/// Catalogue id of the weapon granted to a new character.
+pub const STARTER_WEAPON_ITEM_ID: &str = "mage_staff";
+
+/// Root Word inscribed on that starter weapon so the first cast is legal.
+pub const STARTER_WEAPON_ROOT_WORD: &str = "damage";
+
 impl ItemInstance {
     /// Crea un nuovo esemplare senza incisione né selezione (stato
     /// "vergine"), con un `instance_id` fresco. Usato ovunque un item venga
@@ -74,6 +80,22 @@ impl ItemInstance {
             armor_inscription: None,
         }
     }
+
+    /// Writes the default Root Word so a new character can cast immediately.
+    ///
+    /// Does not change `item_id` or `instance_id`. Existing inscriptions are
+    /// replaced — callers must only use this on a freshly granted starter.
+    pub fn inscribe_starter_root_word(&mut self) {
+        use crate::abilities::inscription::{SlotInscription, WeaponInscription};
+        use crate::abilities::RootWordId;
+
+        self.root_inscription = Some(WeaponInscription {
+            root_word: Some(RootWordId::new(STARTER_WEAPON_ROOT_WORD)),
+            primary: SlotInscription::default(),
+            secondary: SlotInscription::default(),
+            ultimate: SlotInscription::default(),
+        });
+    }
 }
 
 #[cfg(test)]
@@ -86,8 +108,8 @@ mod tests {
         // minted a random UUID. Ids are now issued by the database, so the
         // guarantee moved: a fresh instance has *no* id, and anything that
         // needs to tell two copies apart must store them first.
-        let a = ItemInstance::new(ItemId::new("conduit_staff_t4"));
-        let b = ItemInstance::new(ItemId::new("conduit_staff_t4"));
+        let a = ItemInstance::new(ItemId::new("mage_staff"));
+        let b = ItemInstance::new(ItemId::new("mage_staff"));
         assert_eq!(a.item_id, b.item_id);
         assert!(!a.instance_id.is_assigned());
         assert!(!b.instance_id.is_assigned());
@@ -97,5 +119,37 @@ mod tests {
     fn an_id_from_the_database_reads_as_assigned() {
         assert!(ItemInstanceId(7).is_assigned());
         assert!(!ItemInstanceId::unassigned().is_assigned());
+    }
+
+    #[test]
+    fn starter_inscription_is_damage_on_the_same_instance() {
+        let mut instance = ItemInstance::new(ItemId::new(STARTER_WEAPON_ITEM_ID));
+        instance.instance_id = ItemInstanceId(42);
+        instance.inscribe_starter_root_word();
+
+        assert_eq!(instance.item_id.as_str(), STARTER_WEAPON_ITEM_ID);
+        assert_eq!(instance.instance_id, ItemInstanceId(42));
+        let inscription = instance.root_inscription.expect("starter is inscribed");
+        assert_eq!(
+            inscription.root_word.as_ref().map(|word| word.as_str()),
+            Some(STARTER_WEAPON_ROOT_WORD)
+        );
+        assert!(inscription.primary.is_empty());
+        assert!(inscription.secondary.is_empty());
+        assert!(inscription.ultimate.is_empty());
+    }
+
+    #[test]
+    fn starter_inscription_is_not_flame() {
+        let mut instance = ItemInstance::new(ItemId::new(STARTER_WEAPON_ITEM_ID));
+        instance.inscribe_starter_root_word();
+        assert_ne!(
+            instance
+                .root_inscription
+                .as_ref()
+                .and_then(|inscription| inscription.root_word.as_ref())
+                .map(|word| word.as_str()),
+            Some("flame")
+        );
     }
 }

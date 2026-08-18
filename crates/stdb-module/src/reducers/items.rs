@@ -41,28 +41,30 @@
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use bevymmo_domain::abilities::inscription::{ArmorInscription, SecondaryWord, SlotInscription, WeaponInscription};
+use bevymmo_domain::abilities::inscription::{
+    ArmorInscription, SecondaryWord, SlotInscription, WeaponInscription,
+};
 use bevymmo_domain::abilities::{
     resolve_active_ability, AbilityId, AbilitySlot, AncientWordId, AncientWordRegistry,
     BaseAbilityRegistry, RootWordId, RootWordRegistry,
 };
 use bevymmo_domain::items::components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY};
 use bevymmo_domain::items::definition::EquipRequirement;
-use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId};
+use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId, STARTER_WEAPON_ITEM_ID};
 use bevymmo_domain::items::registry::{ItemId, ItemRegistry};
 use bevymmo_domain::items::{compute_available_choices, AvailableSpellChoices};
 use bevymmo_domain::spells::components::{HotbarSlot, SpellHotbar};
 use bevymmo_domain::spells::registry::SpellId;
 use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
+use crate::reducers::lifecycle::caller_character;
 use crate::rows::{
     equipment_from_rows, equipment_to_rows, inventory_from_rows, inventory_to_rows,
     known_ancient_language_from_rows, HotbarRow,
 };
-use crate::reducers::lifecycle::caller_character;
 use crate::tables::{
-    equipment, game_entity, hotbar, inventory, known_ancient_language, player,
-    EntityKindRow, EquipmentTable, Hotbar, InventoryTable,
+    equipment, game_entity, hotbar, inventory, known_ancient_language, player, EntityKindRow,
+    EquipmentTable, Hotbar, InventoryTable,
 };
 
 // ---------------------------------------------------------------------------
@@ -745,6 +747,36 @@ pub fn grant_item(ctx: &ReducerContext, character_id: Uuid, item_id: &str) -> Re
     inventory.slots[free] = Some(instance);
     store_inventory(ctx, character_id, &inventory);
     Ok(free as u8)
+}
+
+/// Moves the granted starter staff from inventory onto the weapon slot and
+/// inscribes the default Root Word. Called from `join` after both tables exist.
+pub(crate) fn equip_granted_starter_staff(
+    ctx: &ReducerContext,
+    character_id: Uuid,
+    entity_id: u64,
+) -> Result<(), String> {
+    let mut inventory = load_inventory(ctx, character_id)?;
+    let slot = inventory
+        .slots
+        .iter()
+        .position(|entry| {
+            entry
+                .as_ref()
+                .is_some_and(|item| item.item_id.as_str() == STARTER_WEAPON_ITEM_ID)
+        })
+        .ok_or_else(|| "starter weapon was not granted".to_string())?;
+    let mut instance = inventory.slots[slot]
+        .take()
+        .expect("slot was just found occupied");
+    instance.inscribe_starter_root_word();
+
+    let mut equipment = load_equipment(ctx, character_id)?;
+    *equipment.get_mut(EquipSlot::Weapon) = Some(instance);
+    store_inventory(ctx, character_id, &inventory);
+    store_equipment(ctx, character_id, &equipment);
+    crate::sim::combat::recalculate_effective_stats(ctx, entity_id);
+    Ok(())
 }
 
 /// The next free `ItemInstanceId`: one past the highest one stored anywhere.

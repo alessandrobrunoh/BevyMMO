@@ -20,7 +20,9 @@ pub use components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY};
 pub use definition::{Item, ItemCategory, ItemConfig, ItemRarity};
 pub use effects::ItemEffect;
 pub use events::{EquipItemCommand, MoveItemCommand, UnequipItemCommand};
-pub use instance::{ItemInstance, ItemInstanceId};
+pub use instance::{
+    ItemInstance, ItemInstanceId, STARTER_WEAPON_ITEM_ID, STARTER_WEAPON_ROOT_WORD,
+};
 pub use registry::{ItemId, ItemRegistry};
 pub use spell_kit::SpellKit;
 pub use weapon_family::{WeaponFamily, WeaponFamilyId, WeaponFamilyMetadata, WeaponFamilyRegistry};

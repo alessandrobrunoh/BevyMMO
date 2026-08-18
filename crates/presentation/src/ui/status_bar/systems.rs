@@ -19,18 +19,34 @@ struct StatusBarRoot;
 #[derive(Component)]
 struct StatusCard;
 
+#[derive(Component, Default)]
+struct StatusBarIdentity(Vec<(u64, u16)>);
+
+#[derive(Component)]
+struct StatusCardTimer {
+    remaining: f32,
+    total: f32,
+}
+
+#[derive(Component)]
+struct StatusRemainingText;
+
+#[derive(Component)]
+struct StatusDurationFill;
+
 pub struct StatusBarPlugin;
 
 impl Plugin for StatusBarPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_status_bar)
-            .add_systems(Update, sync_status_bar);
+            .add_systems(Update, (sync_status_bar, tick_status_card_timers).chain());
     }
 }
 
 fn setup_status_bar(mut commands: Commands) {
     commands.spawn((
         StatusBarRoot,
+        StatusBarIdentity::default(),
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(STATUS_BAR_TOP),
@@ -51,12 +67,17 @@ fn sync_status_bar(
     mut commands: Commands,
     local_player: Query<&ActiveStatuses, (With<LocalPlayer>, Changed<ActiveStatuses>)>,
     status_registry: Res<StatusRegistry>,
-    root: Single<(Entity, &mut Visibility), With<StatusBarRoot>>,
+    root: Single<(Entity, &mut Visibility, &mut StatusBarIdentity), With<StatusBarRoot>>,
 ) {
     let Ok(statuses) = local_player.single() else {
         return;
     };
-    let (root_entity, mut visibility) = root.into_inner();
+    let (root_entity, mut visibility, mut identity) = root.into_inner();
+    let next_identity = status_set_identity(statuses);
+    if identity.0 == next_identity {
+        return;
+    }
+    identity.0 = next_identity;
 
     commands.entity(root_entity).despawn_related::<Children>();
     if statuses.statuses.is_empty() {
@@ -73,6 +94,51 @@ fn sync_status_bar(
             spawn_status_card(parent, status, &status_registry);
         }
     });
+}
+
+fn status_set_identity(statuses: &ActiveStatuses) -> Vec<(u64, u16)> {
+    let mut identity: Vec<_> = statuses
+        .statuses
+        .iter()
+        .map(|status| (status.instance_id, status.stacks))
+        .collect();
+    identity.sort_unstable();
+    identity
+}
+
+fn tick_status_card_timers(
+    time: Res<Time>,
+    mut cards: Query<(&mut StatusCardTimer, &Children)>,
+    mut remaining_text: Query<&mut Text, With<StatusRemainingText>>,
+    mut fills: Query<&mut Node, With<StatusDurationFill>>,
+    children_query: Query<&Children>,
+) {
+    let dt = time.delta_secs();
+    if dt <= 0.0 {
+        return;
+    }
+    for (mut timer, children) in &mut cards {
+        timer.remaining = (timer.remaining - dt).max(0.0);
+        let remaining = format_remaining(timer.remaining);
+        let ratio = duration_ratio(timer.remaining, timer.total);
+        visit_descendants(children, &children_query, |entity| {
+            if let Ok(mut label) = remaining_text.get_mut(entity) {
+                label.0 = remaining.clone();
+            }
+            if let Ok(mut node) = fills.get_mut(entity) {
+                node.width = Val::Percent(ratio * 100.0);
+            }
+        });
+    }
+}
+
+fn visit_descendants(children: &Children, tree: &Query<&Children>, mut visit: impl FnMut(Entity)) {
+    for child in children {
+        visit(*child);
+        if let Ok(nested) = tree.get(*child) {
+            visit_descendants(nested, tree, &mut visit);
+        }
+    }
 }
 
 fn status_priority(status: &ActiveStatusSnapshot) -> (u8, u64) {
@@ -115,6 +181,10 @@ fn spawn_status_card(
     parent
         .spawn((
             StatusCard,
+            StatusCardTimer {
+                remaining: status.remaining_seconds,
+                total: status.total_seconds,
+            },
             Node {
                 width: Val::Px(STATUS_CARD_WIDTH),
                 height: Val::Px(STATUS_CARD_HEIGHT),
@@ -146,6 +216,7 @@ fn spawn_status_card(
                 TextColor(category),
             ));
             card.spawn((
+                StatusRemainingText,
                 Text::new(remaining),
                 TextFont {
                     font_size: FontSize::Px(11.0),
@@ -163,6 +234,7 @@ fn spawn_status_card(
             ))
             .with_children(|bar| {
                 bar.spawn((
+                    StatusDurationFill,
                     Node {
                         width: Val::Percent(duration_ratio * 100.0),
                         height: Val::Percent(100.0),
@@ -247,6 +319,25 @@ mod tests {
     fn status_icons_have_a_neutral_fallback() {
         assert_eq!(status_icon_text("status_burn"), "🔥");
         assert_eq!(status_icon_text("unknown"), "◆");
+    }
+
+    #[test]
+    fn status_set_identity_ignores_remaining_seconds() {
+        let mut statuses = ActiveStatuses::default();
+        statuses.statuses.push(ActiveStatusSnapshot {
+            instance_id: 3,
+            status_id: "slow".to_string(),
+            source: None,
+            stacks: 1,
+            potency: 1.0,
+            remaining_seconds: 3.0,
+            total_seconds: 3.0,
+        });
+        let first = status_set_identity(&statuses);
+        statuses.statuses[0].remaining_seconds = 0.4;
+        assert_eq!(first, status_set_identity(&statuses));
+        statuses.statuses[0].stacks = 2;
+        assert_ne!(first, status_set_identity(&statuses));
     }
 
     #[test]

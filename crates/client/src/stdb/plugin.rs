@@ -1312,16 +1312,22 @@ fn active_statuses_for(entity_id: u64, pending: &PendingRows) -> ActiveStatuses 
 }
 
 fn status_signature_for(entity_id: u64, pending: &PendingRows) -> Vec<(u64, u32)> {
-    let mut signature: Vec<_> = pending
-        .active_status
-        .values()
-        .filter(|row| row.entity_id == entity_id)
-        .map(|row| {
-            (
-                row.id,
-                row.remaining_seconds.to_bits() ^ u32::from(row.stacks),
-            )
-        })
+    status_identity_signature(
+        pending
+            .active_status
+            .values()
+            .filter(|row| row.entity_id == entity_id)
+            .map(|row| (row.id, row.stacks)),
+    )
+}
+
+/// Identity of an entity's status set: instance id + stacks, not remaining time.
+pub(crate) fn status_identity_signature(
+    rows: impl IntoIterator<Item = (u64, u16)>,
+) -> Vec<(u64, u32)> {
+    let mut signature: Vec<_> = rows
+        .into_iter()
+        .map(|(id, stacks)| (id, u32::from(stacks)))
         .collect();
     signature.sort_unstable();
     signature
@@ -2170,6 +2176,15 @@ fn drain_party_events(
 mod tests {
     use super::*;
     use crate::stdb::module_bindings::CastSourceRow;
+
+    #[test]
+    fn status_signature_ignores_remaining_time() {
+        let ticking = status_identity_signature([(7, 1), (3, 2)]);
+        let later = status_identity_signature([(3, 2), (7, 1)]);
+        assert_eq!(ticking, later);
+        let stacked = status_identity_signature([(7, 2), (3, 2)]);
+        assert_ne!(ticking, stacked);
+    }
 
     #[test]
     fn color_row_becomes_entity_color() {

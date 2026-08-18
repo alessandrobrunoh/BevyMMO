@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 
+use crate::pointer::PointerOnHud;
 use crate::targeting::CurrentTarget;
 use bevymmo_network::network::mode;
 
@@ -21,6 +22,7 @@ pub struct TargetingPlugin;
 impl Plugin for TargetingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CurrentTarget>();
+        app.init_resource::<PointerOnHud>();
         app.add_systems(
             Update,
             (

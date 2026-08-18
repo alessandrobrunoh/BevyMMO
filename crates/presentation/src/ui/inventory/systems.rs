@@ -179,6 +179,10 @@ fn spawn_inventory_window(
         })
         .collect();
 
+    let destroy_bg = theme.button_pressed_bg;
+    let destroy_text = theme.text_color;
+    let destroy_font = theme.button_font_size;
+
     CardBuilder::new(CardKind::Inventory, "Inventory")
         .width(Val::Px(INVENTORY_CARD_WIDTH))
         .height(Val::Px(INVENTORY_CARD_HEIGHT))
@@ -186,6 +190,34 @@ fn spawn_inventory_window(
         .scrollable()
         .closeable()
         .exclusive()
+        .with_footer(move |footer| {
+            footer
+                .spawn((
+                    Button,
+                    Node {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(36.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        border: UiRect::all(Val::Px(1.5)),
+                        border_radius: BorderRadius::all(Val::Px(6.0)),
+                        ..default()
+                    },
+                    BackgroundColor(destroy_bg),
+                    BorderColor::all(Color::srgba(0.85, 0.35, 0.35, 0.85)),
+                    DestroyDropZone,
+                ))
+                .with_children(|zone| {
+                    zone.spawn((
+                        Text::new("Drag here to destroy"),
+                        TextFont {
+                            font_size: FontSize::Px(destroy_font * 0.7),
+                            ..default()
+                        },
+                        TextColor(destroy_text),
+                    ));
+                });
+        })
         .with_body(move |body| {
             body.spawn((Node {
                 width: Val::Percent(100.0),

@@ -12,6 +12,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use crate::movement::{resolve_click_to_ground, ClientSurfaceQuery, MoveTarget};
+use crate::pointer::{hud_wants_pointer, PointerOnHud};
 use bevymmo_network::network::mode;
 
 const INDICATOR_DURATION: f32 = 0.55;
@@ -28,6 +29,7 @@ impl Plugin for PlayerMovementPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MoveTarget>();
         app.init_resource::<ClientSurfaceQuery>();
+        app.init_resource::<PointerOnHud>();
         app.add_systems(
             Update,
             (select_move_target, animate_click_indicators).run_if(mode::has_client),
@@ -43,6 +45,7 @@ impl Plugin for PlayerMovementPlugin {
 /// frame to have already happened.
 pub(crate) fn select_move_target(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
+    pointer_on_hud: Res<PointerOnHud>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &Transform), With<Camera3d>>,
     mut move_target: ResMut<MoveTarget>,
@@ -54,6 +57,9 @@ pub(crate) fn select_move_target(
     let Some(mouse_buttons) = mouse_buttons else {
         return;
     };
+    if hud_wants_pointer(&pointer_on_hud) {
+        return;
+    }
 
     // We distinguish initial click (with visual indicator) from held key:
     // in the latter case we only update destination without spamming rings.

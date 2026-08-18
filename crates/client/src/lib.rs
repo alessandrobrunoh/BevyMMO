@@ -8,6 +8,7 @@ pub mod local_player;
 pub mod movement;
 pub mod network;
 pub mod player_movement;
+pub mod pointer;
 pub mod server_feed;
 pub mod stdb;
 pub mod targeting;

@@ -1,18 +1,9 @@
 //! Drag-and-drop for inventory/equipment slots.
 //!
-//! Mirrors the press/hold/release pattern already used by `ui::card::systems::handle_card_drag`,
-//! applied to individual item slots instead of whole card windows:
-//!
-//! 1. [`start_item_drag`]: mouse-down on an occupied slot immediately spawns a
-//!    square "ghost" icon centered on the cursor — the item visually leaves
-//!    its slot (which dims) and follows the pointer from that first frame.
-//! 2. [`update_item_drag`]: while the mouse stays held, the ghost is glued to
-//!    the cursor every frame, so it can be carried anywhere on screen.
-//! 3. [`end_item_drag`]: on mouse-up, whichever slot is currently `Hovered`
-//!    is the drop target. The (origin, target) pair decides which network
-//!    command to send — the server is always the final authority; an
-//!    inconsistent drop (e.g. wrong equip slot type, empty space) simply
-//!    restores the origin slot with no command sent.
+//! Press on a slot records the origin. A ghost appears only after the pointer
+//! travels [`DRAG_THRESHOLD_PX`]. Release then resolves through
+//! [`drag_outcome`]: a click inspects, a drop on another slot moves, a drop on
+//! the destroy zone asks for confirmation, and anything else cancels.
 
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
@@ -24,8 +15,8 @@ use bevymmo_gameplay::items::{
 };
 
 use super::components::{
-    CancelDestroyButton, ConfirmDestroyButton, DestroyItemDialog, EquipSlotButton, ItemDragGhost,
-    ItemSlotButton, ItemSlotOrigin,
+    CancelDestroyButton, ConfirmDestroyButton, DestroyDropZone, DestroyItemDialog, EquipSlotButton,
+    ItemDragGhost, ItemSlotButton, ItemSlotOrigin,
 };
 use crate::ui::{
     card::components::CardWindow, inventory::detail::despawn_detail_cards, scale::window_to_ui_px,
@@ -35,18 +26,61 @@ use crate::ui::{
 /// Size of the floating item icon that follows the cursor while dragging.
 const DRAG_GHOST_SIZE: f32 = 48.0;
 
+/// Pixels the pointer must travel before a press becomes a drag.
+pub const DRAG_THRESHOLD_PX: f32 = 6.0;
+
+/// What happens when the pointer is released after picking a slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DragOutcome {
+    /// Movement stayed under the threshold: inspect, never destroy.
+    ClickInspect,
+    /// Drag ended over another slot: move or equip.
+    MoveItem,
+    /// Drag ended over empty space: put the item back.
+    Cancel,
+    /// Drag ended over the dedicated destroy zone.
+    RequestDestroy,
+}
+
+/// Resolves a slot press/release into inspect, move, cancel, or destroy.
+///
+/// A click (distance below `threshold`) is always inspect, even if the pointer
+/// is no longer over a slot. Destroy only happens when the pointer actually
+/// travelled and landed on the destroy zone.
+pub fn drag_outcome(
+    start: Vec2,
+    end: Vec2,
+    over_slot: bool,
+    over_destroy_zone: bool,
+    threshold: f32,
+) -> DragOutcome {
+    if start.distance(end) < threshold {
+        return DragOutcome::ClickInspect;
+    }
+    if over_slot {
+        return DragOutcome::MoveItem;
+    }
+    if over_destroy_zone {
+        return DragOutcome::RequestDestroy;
+    }
+    DragOutcome::Cancel
+}
+
 /// Background alpha applied to the origin slot while its item is being
 /// carried, so it visibly reads as "picked up" rather than duplicated.
 const DRAGGED_FROM_ALPHA: f32 = 0.25;
 
 /// A drag in progress: the slot it was picked up from, the item being
-/// carried, and the floating ghost entity following the cursor.
+/// carried, and the floating ghost entity following the cursor (spawned
+/// only after the pointer travels [`DRAG_THRESHOLD_PX`]).
 struct PendingDrag {
     origin: ItemSlotOrigin,
     origin_entity: Entity,
     item_id: ItemId,
     instance_id: ItemInstanceId,
-    ghost: Entity,
+    start: Vec2,
+    label: String,
+    ghost: Option<Entity>,
 }
 
 /// Tracks the currently in-progress item drag, if any.
@@ -55,8 +89,8 @@ pub struct ItemDragState {
     pending: Option<PendingDrag>,
 }
 
-/// Mouse-down on an occupied slot: picks the item up immediately — spawns the
-/// cursor-following ghost and dims the origin slot in the same frame.
+/// Mouse-down on an occupied slot: records the origin. The ghost is spawned
+/// later, once the pointer has moved past [`DRAG_THRESHOLD_PX`].
 pub fn start_item_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
@@ -65,10 +99,7 @@ pub fn start_item_drag(
     equip_presses: Query<(Entity, &Interaction, &EquipSlotButton), Changed<Interaction>>,
     player_query: Query<(&Inventory, &Equipment), With<LocalPlayer>>,
     registry: Res<ItemRegistry>,
-    theme: Res<UiTheme>,
-    mut backgrounds: Query<&mut BackgroundColor>,
     mut drag_state: ResMut<ItemDragState>,
-    mut commands: Commands,
 ) {
     if !mouse.just_pressed(MouseButton::Left) || drag_state.pending.is_some() {
         return;
@@ -122,59 +153,19 @@ pub fn start_item_drag(
         return;
     };
 
-    if let Ok(mut bg) = backgrounds.get_mut(origin_entity) {
-        bg.0.set_alpha(DRAGGED_FROM_ALPHA);
-    }
-
     let label = registry
         .get(&item_id)
         .map(|item| item.display_name().to_string())
         .unwrap_or_else(|| item_id.as_str().to_string());
-
-    let ghost = commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(cursor.x - DRAG_GHOST_SIZE * 0.5),
-                top: Val::Px(cursor.y - DRAG_GHOST_SIZE * 0.5),
-                width: Val::Px(DRAG_GHOST_SIZE),
-                height: Val::Px(DRAG_GHOST_SIZE),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                padding: UiRect::all(Val::Px(3.0)),
-                border: UiRect::all(Val::Px(2.0)),
-                border_radius: BorderRadius::all(Val::Px(8.0)),
-                ..default()
-            },
-            BackgroundColor(theme.button_pressed_bg.with_alpha(0.92)),
-            BorderColor::all(Color::srgba(0.6, 0.8, 1.0, 0.95)),
-            GlobalZIndex(1000),
-            // The ghost renders on top of everything and follows the cursor,
-            // so it would otherwise win every pointer hit-test and hide the
-            // real slot underneath from `end_item_drag`'s hover lookup.
-            Pickable::IGNORE,
-            ItemDragGhost,
-        ))
-        .with_children(|ghost| {
-            ghost.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.55),
-                    ..default()
-                },
-                TextColor(theme.text_color),
-                TextLayout::justify(Justify::Center),
-                Pickable::IGNORE,
-            ));
-        })
-        .id();
 
     drag_state.pending = Some(PendingDrag {
         origin,
         origin_entity,
         item_id,
         instance_id,
-        ghost,
+        start: cursor,
+        label,
+        ghost: None,
     });
 }
 
@@ -203,13 +194,27 @@ pub fn update_item_drag(
         cancel_pending_drag(&mut drag_state, &theme, &mut backgrounds, &mut commands);
         return;
     };
-    let Some(pending) = drag_state.pending.as_ref() else {
+    let Some(pending) = drag_state.pending.as_mut() else {
         return;
     };
 
-    if let Ok(mut node) = ghost_nodes.get_mut(pending.ghost) {
-        node.left = Val::Px(cursor.x - DRAG_GHOST_SIZE * 0.5);
-        node.top = Val::Px(cursor.y - DRAG_GHOST_SIZE * 0.5);
+    if pending.ghost.is_none() && pending.start.distance(cursor) >= DRAG_THRESHOLD_PX {
+        if let Ok(mut bg) = backgrounds.get_mut(pending.origin_entity) {
+            bg.0.set_alpha(DRAGGED_FROM_ALPHA);
+        }
+        pending.ghost = Some(spawn_drag_ghost(
+            &mut commands,
+            &theme,
+            cursor,
+            &pending.label,
+        ));
+    }
+
+    if let Some(ghost) = pending.ghost {
+        if let Ok(mut node) = ghost_nodes.get_mut(ghost) {
+            node.left = Val::Px(cursor.x - DRAG_GHOST_SIZE * 0.5);
+            node.top = Val::Px(cursor.y - DRAG_GHOST_SIZE * 0.5);
+        }
     }
 }
 
@@ -221,9 +226,12 @@ pub fn update_item_drag(
 #[allow(clippy::too_many_arguments)]
 pub fn end_item_drag(
     mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    ui_scale: Res<UiScale>,
     mut drag_state: ResMut<ItemDragState>,
     slot_hover: Query<(&Interaction, &ItemSlotButton)>,
     equip_hover: Query<(&Interaction, &EquipSlotButton)>,
+    destroy_hover: Query<&Interaction, With<DestroyDropZone>>,
     registry: Res<ItemRegistry>,
     theme: Res<UiTheme>,
     mut backgrounds: Query<&mut BackgroundColor>,
@@ -238,41 +246,77 @@ pub fn end_item_drag(
         return;
     };
 
-    commands.entity(pending.ghost).despawn();
+    if let Some(ghost) = pending.ghost {
+        commands.entity(ghost).despawn();
+    }
     if let Ok(mut bg) = backgrounds.get_mut(pending.origin_entity) {
         bg.0 = theme.button_bg;
     }
 
+    let end = windows
+        .iter()
+        .next()
+        .and_then(Window::cursor_position)
+        .map(|cursor| window_to_ui_px(cursor, &ui_scale))
+        .unwrap_or(pending.start);
+
     let target = slot_hover
         .iter()
-        .find(|(i, _)| **i == Interaction::Hovered)
+        .find(|(i, _)| matches!(**i, Interaction::Hovered | Interaction::Pressed))
         .map(|(_, b)| ItemSlotOrigin::Inventory(b.index))
         .or_else(|| {
             equip_hover
                 .iter()
-                .find(|(i, _)| **i == Interaction::Hovered)
+                .find(|(i, _)| matches!(**i, Interaction::Hovered | Interaction::Pressed))
                 .map(|(_, b)| ItemSlotOrigin::Equipment(b.slot))
         });
+    let over_destroy_zone = destroy_hover
+        .iter()
+        .any(|i| matches!(*i, Interaction::Hovered | Interaction::Pressed));
 
-    let Some(target) = target else {
-        // Dropping an inventory item outside every slot opens an explicit,
-        // destructive confirmation instead of silently discarding it.
-        if matches!(pending.origin, ItemSlotOrigin::Inventory(_)) {
-            let label = registry
-                .get(&pending.item_id)
-                .map(|item| item.display_name().to_string())
-                .unwrap_or_else(|| pending.item_id.as_str().to_string());
-            spawn_destroy_dialog(&mut commands, &theme, pending.instance_id.0, &label);
+    match drag_outcome(
+        pending.start,
+        end,
+        target.is_some(),
+        over_destroy_zone,
+        DRAG_THRESHOLD_PX,
+    ) {
+        DragOutcome::ClickInspect | DragOutcome::Cancel => {}
+        DragOutcome::RequestDestroy => {
+            if matches!(pending.origin, ItemSlotOrigin::Inventory(_)) {
+                spawn_destroy_dialog(&mut commands, &theme, pending.instance_id.0, &pending.label);
+            }
         }
-        return;
-    };
-    if target == pending.origin {
-        return;
+        DragOutcome::MoveItem => {
+            let Some(target) = target else {
+                return;
+            };
+            if target == pending.origin {
+                return;
+            }
+            apply_slot_drop(
+                &pending,
+                target,
+                &registry,
+                conn.as_deref(),
+                &all_cards,
+                &mut commands,
+            );
+        }
     }
+}
 
+fn apply_slot_drop(
+    pending: &PendingDrag,
+    target: ItemSlotOrigin,
+    registry: &ItemRegistry,
+    conn: Option<&StdbConnection>,
+    all_cards: &Query<(Entity, &CardWindow)>,
+    commands: &mut Commands,
+) {
     let sent = match (pending.origin, target) {
         (ItemSlotOrigin::Inventory(from), ItemSlotOrigin::Inventory(to)) => {
-            if let Some(conn) = conn.as_deref() {
+            if let Some(conn) = conn {
                 if let Err(err) = stdb_commands::move_item(conn, from, to) {
                     error!("could not move item: {err}");
                 }
@@ -285,7 +329,7 @@ pub fn end_item_drag(
                 .and_then(|item| item.config().equippable_into)
                 == Some(slot);
             if matches_slot {
-                if let Some(conn) = conn.as_deref() {
+                if let Some(conn) = conn {
                     if let Err(err) = stdb_commands::equip_item(conn, idx) {
                         error!("could not equip item: {err}");
                     }
@@ -294,7 +338,7 @@ pub fn end_item_drag(
             matches_slot
         }
         (ItemSlotOrigin::Equipment(slot), ItemSlotOrigin::Inventory(_)) => {
-            if let Some(conn) = conn.as_deref() {
+            if let Some(conn) = conn {
                 if let Err(err) = stdb_commands::unequip_item(conn, slot) {
                     error!("could not unequip item: {err}");
                 }
@@ -308,12 +352,50 @@ pub fn end_item_drag(
     if sent {
         // The open detail card (if any) still shows the pre-drag state;
         // close it rather than leave a stale Equip/Unequip button behind.
-        despawn_detail_cards(&mut commands, &all_cards);
+        despawn_detail_cards(commands, all_cards);
     }
 }
 
-/// Cancels an in-progress drag (e.g. the cursor left the window), despawning
-/// its ghost and restoring the origin slot's normal background.
+fn spawn_drag_ghost(commands: &mut Commands, theme: &UiTheme, cursor: Vec2, label: &str) -> Entity {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(cursor.x - DRAG_GHOST_SIZE * 0.5),
+                top: Val::Px(cursor.y - DRAG_GHOST_SIZE * 0.5),
+                width: Val::Px(DRAG_GHOST_SIZE),
+                height: Val::Px(DRAG_GHOST_SIZE),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                padding: UiRect::all(Val::Px(3.0)),
+                border: UiRect::all(Val::Px(2.0)),
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                ..default()
+            },
+            BackgroundColor(theme.button_pressed_bg.with_alpha(0.92)),
+            BorderColor::all(Color::srgba(0.6, 0.8, 1.0, 0.95)),
+            GlobalZIndex(1000),
+            // The ghost renders on top of everything and follows the cursor,
+            // so it would otherwise win every pointer hit-test and hide the
+            // real slot underneath from `end_item_drag`'s hover lookup.
+            Pickable::IGNORE,
+            ItemDragGhost,
+        ))
+        .with_children(|ghost| {
+            ghost.spawn((
+                Text::new(label.to_string()),
+                TextFont {
+                    font_size: FontSize::Px(theme.button_font_size * 0.55),
+                    ..default()
+                },
+                TextColor(theme.text_color),
+                TextLayout::justify(Justify::Center),
+                Pickable::IGNORE,
+            ));
+        })
+        .id()
+}
+
 fn spawn_destroy_dialog(
     commands: &mut Commands,
     theme: &UiTheme,
@@ -448,9 +530,99 @@ fn cancel_pending_drag(
     commands: &mut Commands,
 ) {
     if let Some(pending) = drag_state.pending.take() {
-        commands.entity(pending.ghost).despawn();
+        if let Some(ghost) = pending.ghost {
+            commands.entity(ghost).despawn();
+        }
         if let Ok(mut bg) = backgrounds.get_mut(pending.origin_entity) {
             bg.0 = theme.button_bg;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pt(x: f32, y: f32) -> Vec2 {
+        Vec2::new(x, y)
+    }
+
+    #[test]
+    fn click_on_slot_inspects_and_never_destroys() {
+        assert_eq!(
+            drag_outcome(
+                pt(10.0, 10.0),
+                pt(12.0, 11.0),
+                true,
+                false,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::ClickInspect
+        );
+        assert_eq!(
+            drag_outcome(
+                pt(10.0, 10.0),
+                pt(12.0, 11.0),
+                false,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::ClickInspect
+        );
+        assert_eq!(
+            drag_outcome(
+                pt(10.0, 10.0),
+                pt(10.0, 10.0),
+                false,
+                false,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::ClickInspect
+        );
+    }
+
+    #[test]
+    fn drag_onto_another_slot_moves() {
+        assert_eq!(
+            drag_outcome(pt(0.0, 0.0), pt(20.0, 0.0), true, false, DRAG_THRESHOLD_PX),
+            DragOutcome::MoveItem
+        );
+    }
+
+    #[test]
+    fn drag_onto_slot_wins_over_destroy_zone() {
+        assert_eq!(
+            drag_outcome(pt(0.0, 0.0), pt(20.0, 0.0), true, true, DRAG_THRESHOLD_PX),
+            DragOutcome::MoveItem
+        );
+    }
+
+    #[test]
+    fn drag_onto_destroy_zone_requests_destroy() {
+        assert_eq!(
+            drag_outcome(pt(0.0, 0.0), pt(20.0, 0.0), false, true, DRAG_THRESHOLD_PX),
+            DragOutcome::RequestDestroy
+        );
+    }
+
+    #[test]
+    fn drag_onto_empty_world_cancels() {
+        assert_eq!(
+            drag_outcome(pt(0.0, 0.0), pt(20.0, 0.0), false, false, DRAG_THRESHOLD_PX),
+            DragOutcome::Cancel
+        );
+    }
+
+    #[test]
+    fn threshold_must_be_positive_so_clicks_are_not_drags() {
+        // A zero threshold would classify a stationary click as a drag.
+        assert_eq!(
+            drag_outcome(pt(4.0, 4.0), pt(4.0, 4.0), false, false, DRAG_THRESHOLD_PX),
+            DragOutcome::ClickInspect
+        );
+        assert_ne!(
+            drag_outcome(pt(4.0, 4.0), pt(4.0, 4.0), false, false, 0.0),
+            DragOutcome::ClickInspect
+        );
     }
 }

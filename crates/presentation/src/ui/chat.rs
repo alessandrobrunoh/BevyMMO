@@ -61,6 +61,7 @@ fn setup_chat(mut commands: Commands, mut chat: ResMut<ChatUi>, theme: Res<UiThe
     let root = commands
         .spawn((
             ChatRoot,
+            Button,
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(16.0),

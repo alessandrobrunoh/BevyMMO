@@ -3,6 +3,7 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevymmo_client::pointer::{hud_wants_pointer, PointerOnHud};
 use bevymmo_client::stdb::{commands, StdbConnection};
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -55,6 +56,7 @@ pub fn closest_friendly_hit(hits: &[EntityHit]) -> Option<Entity> {
 pub fn npc_sidebar_on_click(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
+    pointer_on_hud: Res<PointerOnHud>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &Transform), With<Camera3d>>,
     theme: Res<UiTheme>,
@@ -67,6 +69,9 @@ pub fn npc_sidebar_on_click(
 ) {
     // Solo al frame del click sinistro
     if !mouse.just_pressed(MouseButton::Left) {
+        return;
+    }
+    if hud_wants_pointer(&pointer_on_hud) {
         return;
     }
 

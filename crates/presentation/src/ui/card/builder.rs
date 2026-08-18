@@ -227,6 +227,7 @@ impl<'a> CardBuilder<'a> {
                 left: Color::srgba(0.35, 0.38, 0.45, 0.6),
             },
             CardWindow { kind, exclusivity },
+            Button,
         ));
 
         if draggable {

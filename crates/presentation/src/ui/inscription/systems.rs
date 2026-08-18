@@ -172,6 +172,7 @@ fn spawn_window(
                 ..default()
             },
             BackgroundColor(theme.panel_bg),
+            Button,
             InscriptionWindow,
         ))
         .id();

@@ -248,6 +248,7 @@ fn sync_spell_hud(
         for entry in entries {
             parent
                 .spawn((
+                    Button,
                     Node {
                         width: Val::Percent(10.0),
                         min_width: Val::Px(0.0),

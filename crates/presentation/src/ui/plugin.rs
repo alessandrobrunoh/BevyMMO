@@ -9,6 +9,8 @@ use super::{
     target_frame, target_indicator,
 };
 
+use bevymmo_client::pointer::{world_pointer_blocked, PointerOnHud};
+
 use crate::game_state::not_typing;
 use crate::ui::theme::UiTheme;
 
@@ -22,7 +24,9 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<UiTheme>();
+        app.init_resource::<PointerOnHud>();
         app.add_systems(Startup, setup_ui_camera);
+        app.add_systems(PreUpdate, refresh_pointer_on_hud);
         app.add_plugins((
             card::CardPlugin,
             chat::ChatPlugin,
@@ -67,6 +71,22 @@ impl Plugin for UiPlugin {
             ),
         );
     }
+}
+
+/// Copies UI `Interaction` into [`PointerOnHud`] before world-click systems
+/// run, so a hovered inventory / chat / hotbar / inscription node blocks
+/// move, targeting and NPC pick on the same frame.
+fn refresh_pointer_on_hud(interactions: Query<&Interaction>, mut pointer: ResMut<PointerOnHud>) {
+    let mut pressed = false;
+    let mut hovered = false;
+    for interaction in &interactions {
+        match *interaction {
+            Interaction::Pressed => pressed = true,
+            Interaction::Hovered => hovered = true,
+            Interaction::None => {}
+        }
+    }
+    pointer.0 = world_pointer_blocked(pressed, hovered);
 }
 
 fn setup_ui_camera(mut commands: Commands) {

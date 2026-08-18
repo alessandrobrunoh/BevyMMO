@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use crate::movement::cursor_ray;
+use crate::pointer::{hud_wants_pointer, PointerOnHud};
 use crate::targeting::CurrentTarget;
 use bevymmo_gameplay::entity::components::GameEntity;
 use bevymmo_gameplay::stats::components::VitalStats;
@@ -69,6 +70,7 @@ fn ray_sphere_intersection(
 /// 6. Selects closest entity along ray
 pub fn select_target_with_left_click(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
+    pointer_on_hud: Res<PointerOnHud>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &Transform), With<Camera3d>>,
     mut current_target: ResMut<CurrentTarget>,
@@ -77,6 +79,9 @@ pub fn select_target_with_left_click(
     let Some(mouse_buttons) = mouse_buttons else {
         return;
     };
+    if hud_wants_pointer(&pointer_on_hud) {
+        return;
+    }
 
     // Left click only, do not affect right-click movement
     if !mouse_buttons.just_pressed(MouseButton::Left) {

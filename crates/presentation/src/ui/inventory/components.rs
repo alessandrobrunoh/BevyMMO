@@ -61,8 +61,13 @@ pub enum ItemSlotOrigin {
 #[derive(Component, Debug)]
 pub struct ItemDragGhost;
 
+/// Dedicated drop target that opens the destroy confirmation. Releasing a
+/// drag anywhere else cancels; a click on a slot never reaches this path.
+#[derive(Component, Debug)]
+pub struct DestroyDropZone;
+
 /// Root of the confirmation dialog shown when an inventory item is dropped
-/// outside the inventory window.
+/// on [`DestroyDropZone`].
 #[derive(Component, Debug)]
 pub struct DestroyItemDialog;
 

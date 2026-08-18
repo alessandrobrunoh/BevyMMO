@@ -14,6 +14,14 @@ pub struct BossDragonAssets {
 }
 
 #[derive(AssetCollection, Resource)]
+pub struct CreatureAssets {
+    #[asset(path = "models/creatures/goblin.glb#Scene0")]
+    pub goblin: Handle<WorldAsset>,
+    #[asset(path = "models/npcs/merchant.glb#Scene0")]
+    pub merchant: Handle<WorldAsset>,
+}
+
+#[derive(AssetCollection, Resource)]
 pub struct MapAssets {
     #[asset(path = "models/tree_oak.glb#Scene0")]
     pub tree_oak: Handle<WorldAsset>,

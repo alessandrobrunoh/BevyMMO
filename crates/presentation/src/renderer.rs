@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 
-use crate::assets::{BossDragonAssets, PlayerAssets};
+use crate::assets::{BossDragonAssets, CreatureAssets, PlayerAssets};
 use crate::game_state::{GameScreen, Screen};
+use bevymmo_gameplay::entity::boss::components::Boss;
 use bevymmo_gameplay::entity::components::EntityKind;
 use bevymmo_network::network::protocol::*;
 use std::collections::HashMap;
@@ -100,6 +101,26 @@ struct PlayerModelAnchored;
 // oversized animated asset), so it must not be scaled down by 0.035.
 const PLAYER_SCENE_SCALE: f32 = 1.0;
 const BOSS_DRAGON_SCENE_SCALE: f32 = 0.12;
+const CREATURE_SCENE_SCALE: f32 = 1.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VisualPrefab {
+    Player,
+    Dragon,
+    Goblin,
+    Merchant,
+    Cube,
+}
+
+pub(crate) fn visual_prefab(kind: Option<EntityKind>, is_boss: bool) -> VisualPrefab {
+    match kind {
+        Some(EntityKind::Player) => VisualPrefab::Player,
+        Some(EntityKind::Hostile) if is_boss => VisualPrefab::Dragon,
+        Some(EntityKind::Hostile) => VisualPrefab::Goblin,
+        Some(EntityKind::Friendly) => VisualPrefab::Merchant,
+        Some(EntityKind::Neutral) | None => VisualPrefab::Cube,
+    }
+}
 
 pub struct RendererPlugin;
 
@@ -159,6 +180,7 @@ fn spawn_entity_meshes(
     mut materials: ResMut<Assets<StandardMaterial>>,
     player_assets: Option<Res<PlayerAssets>>,
     dragon_assets: Option<Res<BossDragonAssets>>,
+    creature_assets: Option<Res<CreatureAssets>>,
     mut renderer_assets: Option<ResMut<RendererAssets>>,
     entities: Query<
         (
@@ -167,11 +189,12 @@ fn spawn_entity_meshes(
             &EntityColor,
             Option<&EntityKind>,
             Option<&ProjectileVisual>,
+            Option<&Boss>,
         ),
         Without<RenderedEntity>,
     >,
 ) {
-    for (entity, position, color, kind, projectile_visual) in entities.iter() {
+    for (entity, position, color, kind, projectile_visual, boss) in entities.iter() {
         let is_projectile = projectile_visual.is_some();
         if is_projectile {
             let (mesh, material) = if let Some(ra) = renderer_assets.as_ref() {
@@ -193,47 +216,70 @@ fn spawn_entity_meshes(
                 RenderedEntity,
             ));
         } else {
-            let is_player = kind.is_some_and(|k| *k == EntityKind::Player);
-            if is_player {
-                if let Some(assets) = player_assets.as_ref() {
+            match visual_prefab(kind.copied(), boss.is_some()) {
+                VisualPrefab::Player => {
+                    if let Some(assets) = player_assets.as_ref() {
+                        commands.entity(entity).insert((
+                            WorldAssetRoot(assets.scene.clone()),
+                            Transform::from_translation(position.0)
+                                .with_scale(Vec3::splat(PLAYER_SCENE_SCALE)),
+                            PlayerModelRoot,
+                            RenderedEntity,
+                        ));
+                    }
+                }
+                VisualPrefab::Dragon => {
+                    if let Some(assets) = dragon_assets.as_ref() {
+                        commands.entity(entity).insert((
+                            WorldAssetRoot(assets.scene.clone()),
+                            Transform::from_translation(position.0)
+                                .with_scale(Vec3::splat(BOSS_DRAGON_SCENE_SCALE)),
+                            RenderedEntity,
+                        ));
+                    }
+                }
+                VisualPrefab::Goblin => {
+                    if let Some(assets) = creature_assets.as_ref() {
+                        commands.entity(entity).insert((
+                            WorldAssetRoot(assets.goblin.clone()),
+                            Transform::from_translation(position.0)
+                                .with_scale(Vec3::splat(CREATURE_SCENE_SCALE)),
+                            RenderedEntity,
+                        ));
+                    }
+                }
+                VisualPrefab::Merchant => {
+                    if let Some(assets) = creature_assets.as_ref() {
+                        commands.entity(entity).insert((
+                            WorldAssetRoot(assets.merchant.clone()),
+                            Transform::from_translation(position.0)
+                                .with_scale(Vec3::splat(CREATURE_SCENE_SCALE)),
+                            RenderedEntity,
+                        ));
+                    }
+                }
+                VisualPrefab::Cube => {
+                    let (mesh, material) = if let Some(ra) = renderer_assets.as_mut() {
+                        (
+                            ra.fallback_mesh_small.clone(),
+                            ra.get_or_create_color_material(&mut materials, color.0),
+                        )
+                    } else {
+                        (
+                            meshes.add(Cuboid::new(2.0, 2.0, 2.0)),
+                            materials.add(StandardMaterial {
+                                base_color: color.0,
+                                ..default()
+                            }),
+                        )
+                    };
                     commands.entity(entity).insert((
-                        WorldAssetRoot(assets.scene.clone()),
-                        Transform::from_translation(position.0)
-                            .with_scale(Vec3::splat(PLAYER_SCENE_SCALE)),
-                        PlayerModelRoot,
+                        Mesh3d(mesh),
+                        MeshMaterial3d(material),
+                        Transform::from_translation(position.0),
                         RenderedEntity,
                     ));
                 }
-            } else if kind.is_some_and(|k| *k == EntityKind::Hostile) {
-                if let Some(assets) = dragon_assets.as_ref() {
-                    commands.entity(entity).insert((
-                        WorldAssetRoot(assets.scene.clone()),
-                        Transform::from_translation(position.0)
-                            .with_scale(Vec3::splat(BOSS_DRAGON_SCENE_SCALE)),
-                        RenderedEntity,
-                    ));
-                }
-            } else {
-                let (mesh, material) = if let Some(ra) = renderer_assets.as_mut() {
-                    (
-                        ra.fallback_mesh_small.clone(),
-                        ra.get_or_create_color_material(&mut materials, color.0),
-                    )
-                } else {
-                    (
-                        meshes.add(Cuboid::new(2.0, 2.0, 2.0)),
-                        materials.add(StandardMaterial {
-                            base_color: color.0,
-                            ..default()
-                        }),
-                    )
-                };
-                commands.entity(entity).insert((
-                    Mesh3d(mesh),
-                    MeshMaterial3d(material),
-                    Transform::from_translation(position.0),
-                    RenderedEntity,
-                ));
             }
         }
     }
@@ -741,5 +787,29 @@ mod tests {
             .translation
             .x;
         assert_eq!(rendered, TELEPORT_SNAP_DISTANCE * 4.0);
+    }
+
+    #[test]
+    fn hostile_without_boss_is_a_goblin_not_the_dragon() {
+        assert_eq!(
+            visual_prefab(Some(EntityKind::Hostile), false),
+            VisualPrefab::Goblin
+        );
+        assert_eq!(
+            visual_prefab(Some(EntityKind::Hostile), true),
+            VisualPrefab::Dragon
+        );
+        assert_eq!(
+            visual_prefab(Some(EntityKind::Friendly), false),
+            VisualPrefab::Merchant
+        );
+        assert_eq!(
+            visual_prefab(Some(EntityKind::Neutral), false),
+            VisualPrefab::Cube
+        );
+        assert_eq!(
+            visual_prefab(Some(EntityKind::Player), true),
+            VisualPrefab::Player
+        );
     }
 }

@@ -11,7 +11,7 @@ pub mod spells;
 pub mod ui;
 pub mod world;
 
-use assets::{BossDragonAssets, MapAssets, PlayerAssets};
+use assets::{BossDragonAssets, CreatureAssets, MapAssets, PlayerAssets};
 use bevy::prelude::*;
 use bevy_asset_loader::prelude::*;
 
@@ -34,6 +34,7 @@ impl Plugin for PresentationCorePlugin {
                     .continue_to_state(PresentationState::Ready)
                     .load_collection::<PlayerAssets>()
                     .load_collection::<BossDragonAssets>()
+                    .load_collection::<CreatureAssets>()
                     .load_collection::<MapAssets>(),
             )
             .add_systems(Startup, register_presentation_placeables);

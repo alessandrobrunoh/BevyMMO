@@ -140,6 +140,23 @@ pub fn step_on_terrain(
     let nx = dx / horizontal_distance;
     let nz = dz / horizontal_distance;
 
+    // Recover from a stale or externally authored position that is already
+    // inside a blocker. This keeps the character visibly outside the wall
+    // instead of merely preventing further movement while embedded.
+    if collision_grid.is_blocked([current.x, current.y, current.z], STEP_COLLISION_RADIUS) {
+        if let Some(position) = recover_from_blocker(
+            current,
+            nx,
+            nz,
+            surface_query,
+            collision_grid,
+            max_step_height,
+        ) {
+            return TerrainStep::Moved(position);
+        }
+        return TerrainStep::Blocked;
+    }
+
     if let Some(position) = try_terrain_step(
         current,
         nx,
@@ -172,6 +189,35 @@ pub fn step_on_terrain(
     }
 
     TerrainStep::Blocked
+}
+
+fn recover_from_blocker(
+    current: Vec3,
+    direction_x: f32,
+    direction_z: f32,
+    surface_query: &crate::world::SurfaceQuery,
+    collision_grid: &crate::world::CollisionGrid,
+    max_step_height: f32,
+) -> Option<Vec3> {
+    let length = (direction_x * direction_x + direction_z * direction_z).sqrt();
+    if length <= ARRIVAL_EPSILON {
+        return None;
+    }
+
+    // Walk opposite the requested direction in small increments until the
+    // circle footprint is clear. The bound is deliberately short: it repairs
+    // penetration caused by a stale position without teleporting a player
+    // across a room.
+    for distance in (1..=16).map(|step| step as f32 * 0.1) {
+        let x = current.x - direction_x / length * distance;
+        let z = current.z - direction_z / length * distance;
+        let contact = surface_query.ground_at_reachable(x, z, current.y, max_step_height)?;
+        let candidate = Vec3::new(x, contact.height, z);
+        if !collision_grid.is_blocked([candidate.x, candidate.y, candidate.z], STEP_COLLISION_RADIUS) {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn try_terrain_step(

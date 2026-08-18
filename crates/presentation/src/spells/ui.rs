@@ -106,7 +106,7 @@ fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
-            bottom: Val::Px(20.0),
+            bottom: Val::Px(86.0),
             left: Val::Percent(2.0),
             width: Val::Percent(96.0),
             padding: UiRect::all(Val::Px(8.0)),

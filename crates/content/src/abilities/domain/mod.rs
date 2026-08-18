@@ -1,7 +1,7 @@
 //! Domain — Focus ultimate ability (E).
 //!
 //! Claims a large area as your domain, exerting powerful control over
-//! enemies caught within its bounds.
+//! enemies caught within its bounds. The domain saps mobility and anchors foes.
 
 use bevymmo_props_macro::base_ability;
 
@@ -11,12 +11,14 @@ use crate::abilities::BaseAbilityRegistry;
     id = "domain",
     name = "Domain",
     tags = [Ranged, Area, Ground, PersistentCompatible],
-    range = 18.0,
-    geometry = circle(radius = 10.0),
-    potency = 240.0,
-    cast_time = 1.0,
-    cooldown = 24.0,
-    energy_cost = 42.0,
+    range = 20.0,
+    geometry = circle(radius = 12.0),
+    potency = 210.0,
+    cast_time = 1.1,
+    cooldown = 26.0,
+    energy_cost = 45.0,
+    statuses = [Slow, Root],
+    stun_seconds = 1.5,
     animation = "focus_ultimate",
     impact_vfx = "domain_impact",
 )]

@@ -1,8 +1,8 @@
-//! Client-only modular ability HUD for Eidolon weapons.
+//! Client-only modular ability hotbar.
 //!
-//! Data-driven UI showing weapon ability slots (Q/W/E), keybinds and cooldowns.
-//! Entries are derived exclusively from `WeaponAbilities`; the legacy
-//! `SpellHotbar` / `SpellRegistry` path is no longer used for player input.
+//! Data-driven UI showing all active ability slots across weapon, helmet,
+//! chestplate, and shoes in a compact 3-row grid (key / name / cooldown).
+//! Entries are derived from equipped items via `resolve_active_ability`.
 
 use bevy::prelude::*;
 use std::collections::HashMap;
@@ -22,9 +22,6 @@ use crate::game_state::{GameScreen, Screen};
 use crate::ui::theme::UiTheme;
 
 /// What a HUD cooldown countdown is keyed by.
-///
-/// Only `AbilityId` exists now — the legacy `SpellId` variant was removed when
-/// player input consolidated onto the Eidolon pipeline.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HudCooldownKey {
     Ability(AbilityId),
@@ -41,27 +38,30 @@ pub struct SpellHudState {
     remaining_seconds: HashMap<HudCooldownKey, f32>,
 }
 
+/// Describes one hotbar column read from equipment + settings.
+#[derive(Component, Clone)]
+struct SpellHudEntry {
+    /// What this entry's countdown is keyed by — `None` for empty slots.
+    cooldown_key: Option<HudCooldownKey>,
+    display_name: String,
+    key_label: String,
+}
+
 #[derive(Resource, Default)]
 struct SpellHudLayoutState {
     initialized: bool,
-    /// `(ability_slot, ability_id, key_label, display_name)` — rebuilds the HUD
-    /// when any of these change (e.g. weapon swap or Incisione rewrite).
+    /// `(ability_slot, ability_id, key_label, display_name)` — rebuilds when
+    /// any of these change (weapon swap, gear change, Incisione rewrite).
     signature: Vec<(AbilitySlot, Option<AbilityId>, String, String)>,
 }
 
 impl SpellHudState {
-    /// Returns true if whatever `key` names is still on cooldown on the client.
-    ///
-    /// This is used to gate local cast feedback (visuals, HUD) so the player
-    /// cannot spam the cast key while waiting for the server-validated
-    /// cooldown to expire.
     pub fn is_on_cooldown(&self, key: &HudCooldownKey) -> bool {
         self.remaining_seconds
             .get(key)
             .is_some_and(|remaining| *remaining > 0.0)
     }
 
-    /// Convenience for the Eidolon pipeline.
     pub fn ability_on_cooldown(&self, id: &AbilityId) -> bool {
         self.is_on_cooldown(&HudCooldownKey::Ability(id.clone()))
     }
@@ -69,14 +69,6 @@ impl SpellHudState {
 
 #[derive(Component)]
 struct SpellHudRoot;
-
-#[derive(Component, Clone)]
-struct SpellHudEntry {
-    /// What this entry's countdown is keyed by — `None` only for an empty slot.
-    cooldown_key: Option<HudCooldownKey>,
-    display_name: String,
-    key_label: String,
-}
 
 pub fn spell_hud_systems(app: &mut App) {
     app.init_resource::<SpellHudState>();
@@ -87,8 +79,6 @@ pub fn spell_hud_systems(app: &mut App) {
         Update,
         (
             sync_spell_hud,
-            // Before `update_spell_hud` counts down: the server's number wins
-            // for this frame rather than the frame after.
             adopt_server_cooldowns,
             update_spell_hud,
         )
@@ -118,9 +108,9 @@ fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
             position_type: PositionType::Absolute,
             bottom: Val::Px(20.0),
             left: Val::Percent(50.0),
-            padding: UiRect::all(Val::Px(10.0)),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(4.0),
+            padding: UiRect::all(Val::Px(8.0)),
+            flex_direction: FlexDirection::Row,
+            column_gap: Val::Px(6.0),
             ..default()
         },
         BackgroundColor(theme.panel_bg),
@@ -128,27 +118,45 @@ fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
     ));
 }
 
-/// Reads the equipped weapon's active Eidolon gesture for `slot` — its
-/// `AbilityId` and the label to show — if the weapon has Eidolon abilities at
-/// all. `None` means this weapon offers nothing for that slot.
-///
-/// The id is returned alongside the label because it is what the countdown is
-/// keyed by: the gesture, not the Essence inscribed over it (an Incisione can
-/// change what a slot manifests without changing its cooldown).
-fn eidolon_hud_entry(
+/// A single logical hotbar slot: which piece of equipment and which ability
+/// slot within it, plus the `KeyAction` used to read the current binding label.
+struct HotbarSlotDef {
+
+    action: KeyAction,
     slot: AbilitySlot,
-    equipment: &Equipment,
+    /// Extracts the relevant `ItemInstance` from `Equipment`.
+    equip_fn: fn(&Equipment) -> &Option<bevymmo_gameplay::items::instance::ItemInstance>,
+}
+
+/// All 9 hotbar columns in display order.
+const HOTBAR_SLOTS: [HotbarSlotDef; 9] = [
+    HotbarSlotDef { action: KeyAction::CastPrimary,          slot: AbilitySlot::Primary,   equip_fn: |e| &e.weapon },
+    HotbarSlotDef { action: KeyAction::CastSecondary,        slot: AbilitySlot::Secondary, equip_fn: |e| &e.weapon },
+    HotbarSlotDef { action: KeyAction::CastUltimate,         slot: AbilitySlot::Ultimate,  equip_fn: |e| &e.weapon },
+    HotbarSlotDef { action: KeyAction::CastHelmet,           slot: AbilitySlot::Primary,   equip_fn: |e| &e.helmet },
+    HotbarSlotDef { action: KeyAction::CastHelmetSecondary,  slot: AbilitySlot::Secondary, equip_fn: |e| &e.helmet },
+    HotbarSlotDef { action: KeyAction::CastChestplate,       slot: AbilitySlot::Primary,   equip_fn: |e| &e.armor },
+    HotbarSlotDef { action: KeyAction::CastChestplateSecondary,slot: AbilitySlot::Secondary, equip_fn: |e| &e.armor },
+    HotbarSlotDef { action: KeyAction::CastBoots,            slot: AbilitySlot::Primary,   equip_fn: |e| &e.shoes },
+    HotbarSlotDef { action: KeyAction::CastBootsSecondary,    slot: AbilitySlot::Secondary, equip_fn: |e| &e.shoes },
+];
+
+/// Resolves the active ability for one equipped item + ability-slot pair.
+///
+/// Returns `(AbilityId, display_name)` if the item exists, has an ability
+/// loadout, and a valid ability can be resolved through its selection.
+fn resolve_equipment_entry(
+    equipped: &Option<bevymmo_gameplay::items::instance::ItemInstance>,
+    slot: AbilitySlot,
     item_registry: &ItemRegistry,
     ability_registry: &BaseAbilityRegistry,
 ) -> Option<(AbilityId, String)> {
-    let weapon = equipment.weapon.as_ref()?;
-    let item = item_registry.get(&weapon.item_id)?;
-    let weapon_abilities = item.ability_loadout()?;
-    let ability_id = resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)?;
+    let instance = equipped.as_ref()?;
+    let item = item_registry.get(&instance.item_id)?;
+    let loadout = item.ability_loadout()?;
+    let ability_id = resolve_active_ability(slot, loadout, &instance.ability_selection)?;
     let ability = ability_registry.get(ability_id)?;
-
-    let label = ability.display_name().to_string();
-    Some((ability_id.clone(), label))
+    Some((ability_id.clone(), ability.display_name().to_string()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -172,32 +180,26 @@ fn sync_spell_hud(
     let mut signature = Vec::new();
     let mut entries = Vec::new();
 
-    // Map each ability slot to its rebindable action and read the current
-    // binding label from the settings resource so the HUD reflects rebinding.
-    for (ability_slot, action) in [
-        (AbilitySlot::Primary, KeyAction::CastSpellQ),
-        (AbilitySlot::Secondary, KeyAction::CastSpellW),
-        (AbilitySlot::Ultimate, KeyAction::CastSpellE),
-    ] {
-        let eidolon = eidolon_hud_entry(
-            ability_slot,
-            equipment,
+    for def in &HOTBAR_SLOTS {
+        let resolved = resolve_equipment_entry(
+            (def.equip_fn)(equipment),
+            def.slot,
             &item_registry,
             &ability_registry,
         );
 
-        let (cooldown_key, display_name) = match &eidolon {
-            Some((ability_id, label)) => (
-                Some(HudCooldownKey::Ability(ability_id.clone())),
-                label.clone(),
+        let (cooldown_key, display_name) = match &resolved {
+            Some((id, name)) => (
+                Some(HudCooldownKey::Ability(id.clone())),
+                name.clone(),
             ),
             None => (None, "Empty".to_string()),
         };
-        let key_label = settings.0.keybinds.get(action).label();
+        let key_label = settings.0.keybinds.get(def.action).label();
 
         signature.push((
-            ability_slot,
-            eidolon.as_ref().map(|(id, _)| id.clone()),
+            def.slot,
+            resolved.as_ref().map(|(id, _)| id.clone()),
             key_label.clone(),
             display_name.clone(),
         ));
@@ -221,44 +223,61 @@ fn sync_spell_hud(
             parent
                 .spawn((
                     Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
                         padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
                         ..default()
                     },
                     BackgroundColor(theme.button_bg),
                     entry.clone(),
                 ))
-                .with_children(|button| {
-                    button.spawn((
-                        Text(format_spell_label(&entry, 0.0)),
+                .with_children(|col| {
+                    // Row 1 — key label
+                    col.spawn((
+                        Text(entry.key_label.clone()),
                         TextFont {
                             font_size: FontSize::Px(theme.button_font_size),
                             ..default()
                         },
                         TextColor(theme.text_color),
-                        entry,
+                    ));
+                    // Row 2 — ability name
+                    col.spawn((
+                        Text(if entry.display_name == "Empty" {
+                            "Empty".into()
+                        } else {
+                            entry.display_name.clone()
+                        }),
+                        TextFont {
+                            font_size: FontSize::Px(theme.button_font_size - 2.0),
+                            ..default()
+                        },
+                        TextColor(theme.text_color),
+                        Name::new("hotbar-name"),
+                    ));
+                    // Row 3 — cooldown placeholder
+                    col.spawn((
+                        Text("—".into()),
+                        TextFont {
+                            font_size: FontSize::Px(theme.button_font_size - 2.0),
+                            ..default()
+                        },
+                        TextColor(theme.text_color),
+                        Name::new("hotbar-cooldown"),
+                        entry.clone(),
                     ));
                 });
         }
     });
 }
 
-/// Replaces the HUD's own countdown with the server `cooldown` table's.
-///
-/// The HUD starts a timer the moment a key is pressed, which is right up until
-/// the server disagrees — a cast that was refused still greyed the key out for
-/// its full duration, and a cooldown the server shortened stayed grey anyway.
-/// This overwrites the local guess whenever the authoritative row moves.
-///
-/// Only the local player's rows are read: the table carries every entity's
-/// cooldowns, and this HUD shows one character's.
+/// Overwrites local cooldown guesses with authoritative server values.
 fn adopt_server_cooldowns(
     mut state: ResMut<SpellHudState>,
     mut incoming: MessageReader<SpellCooldownState>,
     local_player: Query<&NetworkEntityId, With<LocalPlayer>>,
 ) {
     let Ok(local) = local_player.single() else {
-        // Nothing to attribute the cooldowns to yet. Dropping them is right:
-        // a fresh row for every live cooldown arrives with the subscription.
         incoming.clear();
         return;
     };
@@ -284,7 +303,7 @@ fn update_spell_hud(
     mut state: ResMut<SpellHudState>,
     mut cooldown_started: MessageReader<SpellHudCooldownStarted>,
     mut roots: Query<&mut Node, With<SpellHudRoot>>,
-    mut texts: Query<(&SpellHudEntry, &mut Text)>,
+    mut texts: Query<(&SpellHudEntry, &mut Text), With<Name>>,
 ) {
     let mut has_new_cooldown = false;
     for message in cooldown_started.read() {
@@ -311,17 +330,18 @@ fn update_spell_hud(
     }
     *elapsed_since_label_update = 0.0;
 
+    // Only update the cooldown row (Name = "hotbar-cooldown").
     for (entry, mut text) in texts.iter_mut() {
         let remaining = entry
             .cooldown_key
             .as_ref()
             .and_then(|key| state.remaining_seconds.get(key).copied())
             .unwrap_or_default();
-        let next_label = format_spell_label(entry, remaining);
-        if text.0 == next_label {
+        let next = format_cooldown_text(entry, remaining);
+        if text.0 == next {
             continue;
         }
-        text.0 = next_label;
+        text.0 = next;
     }
 }
 
@@ -331,25 +351,16 @@ fn hide_spell_hud(mut roots: Query<&mut Node, With<SpellHudRoot>>) {
     }
 }
 
-fn format_spell_label(entry: &SpellHudEntry, remaining_seconds: f32) -> String {
-    if entry.display_name == "Empty" {
-        return format!("[{}] Empty", entry.key_label);
+/// Formats the third row of a hotbar cell.
+fn format_cooldown_text(entry: &SpellHudEntry, remaining_seconds: f32) -> String {
+    if entry.cooldown_key.is_none() || entry.display_name == "Empty" {
+        return "—".to_string();
     }
-
-    let Some(_) = entry.cooldown_key.as_ref() else {
-        return format!("[{}] {}", entry.key_label, entry.display_name);
-    };
-
-    let cooldown = if remaining_seconds > 0.0 {
+    if remaining_seconds > 0.0 {
         format!("{remaining_seconds:.1}s")
     } else {
         "Ready".to_string()
-    };
-
-    format!(
-        "[{}] {} - {}",
-        entry.key_label, entry.display_name, cooldown
-    )
+    }
 }
 
 #[cfg(test)]
@@ -364,28 +375,38 @@ mod tests {
         }
     }
 
-    #[test]
-    fn spell_label_formats_ready_cooldown_and_empty_states() {
-        let entry = ability_entry("test", "Test Ability", "Q");
-        let empty_entry = SpellHudEntry {
+    fn empty_entry(key: &str) -> SpellHudEntry {
+        SpellHudEntry {
             cooldown_key: None,
             display_name: "Empty".to_string(),
-            key_label: "W".to_string(),
-        };
-
-        assert_eq!(format_spell_label(&entry, 0.0), "[Q] Test Ability - Ready");
-        assert_eq!(format_spell_label(&entry, 1.25), "[Q] Test Ability - 1.2s");
-        assert_eq!(format_spell_label(&empty_entry, 0.0), "[W] Empty");
+            key_label: key.to_string(),
+        }
     }
 
     #[test]
-    fn eidolon_gesture_counts_down_like_a_spell() {
-        let entry = SpellHudEntry {
-            cooldown_key: Some(HudCooldownKey::Ability(AbilityId::new("staff_bolt"))),
-            display_name: "Getto".to_string(),
-            key_label: "Q".to_string(),
-        };
-        assert_eq!(format_spell_label(&entry, 2.5), "[Q] Getto - 2.5s");
+    fn cooldown_text_formats_all_states() {
+        let entry = ability_entry("bolt", "Arcane Bolt", "1");
+        assert_eq!(format_cooldown_text(&entry, 0.0), "Ready");
+        assert_eq!(format_cooldown_text(&entry, 2.5), "2.5s");
+        assert_eq!(format_cooldown_text(&entry, 0.09), "0.1s");
+    }
+
+    #[test]
+    fn empty_slot_shashes() {
+        let entry = empty_entry("D");
+        assert_eq!(format_cooldown_text(&entry, 0.0), "—");
+        assert_eq!(format_cooldown_text(&entry, 99.0), "—");
+    }
+
+    #[test]
+    fn nine_hotbar_slots_defined() {
+        assert_eq!(HOTBAR_SLOTS.len(), 9);
+        // Weapon 3 + Helmet 2 + Chestplate 2 + Shoes 2.
+        assert_eq!(HOTBAR_SLOTS[0].action, KeyAction::CastPrimary);
+        assert_eq!(HOTBAR_SLOTS[2].action, KeyAction::CastUltimate);
+        assert_eq!(HOTBAR_SLOTS[3].action, KeyAction::CastHelmet);
+        assert_eq!(HOTBAR_SLOTS[5].action, KeyAction::CastChestplate);
+        assert_eq!(HOTBAR_SLOTS[7].action, KeyAction::CastBoots);
     }
 
     #[test]
@@ -398,5 +419,14 @@ mod tests {
             .remaining_seconds
             .insert(HudCooldownKey::Ability(id.clone()), 3.0);
         assert!(state.ability_on_cooldown(&id));
+    }
+
+    #[test]
+    fn hud_cooldown_key_equality() {
+        let a = HudCooldownKey::Ability(AbilityId::new("fireball"));
+        let b = HudCooldownKey::Ability(AbilityId::new("fireball"));
+        let c = HudCooldownKey::Ability(AbilityId::new("icebolt"));
+        assert_eq!(a, b);
+        assert_ne!(a, c);
     }
 }

@@ -1,6 +1,7 @@
 //! Orb — Focus primary ability (Q).
 //!
 //! Projects a concentrated orb of energy that homes toward a target.
+//! The orb moves slowly but burns with sustained arcane fire on impact.
 
 use bevymmo_props_macro::base_ability;
 
@@ -10,12 +11,13 @@ use crate::abilities::BaseAbilityRegistry;
     id = "orb",
     name = "Orb",
     tags = [Ranged, Projectile, SingleTarget, RepeatCompatible, EchoCompatible],
-    range = 20.0,
-    geometry = projectile(speed = 22.0),
-    potency = 150.0,
-    cast_time = 0.25,
-    cooldown = 2.5,
-    energy_cost = 9.0,
+    range = 18.0,
+    geometry = projectile(speed = 18.0),
+    potency = 135.0,
+    cast_time = 0.3,
+    cooldown = 2.8,
+    energy_cost = 10.0,
+    statuses = [Burn],
     animation = "focus_orb",
     impact_vfx = "orb_impact",
 )]

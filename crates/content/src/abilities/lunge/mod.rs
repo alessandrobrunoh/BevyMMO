@@ -1,6 +1,7 @@
 //! Lunge — Sword secondary ability (W).
 //!
-//! A quick forward thrust that strikes a single target with precision.
+//! A lightning-fast forward thrust that strikes a single target with precision.
+//! The precise stab can briefly stagger an opponent.
 
 use bevymmo_props_macro::base_ability;
 
@@ -10,12 +11,14 @@ use crate::abilities::BaseAbilityRegistry;
     id = "lunge",
     name = "Lunge",
     tags = [Melee, SingleTarget, RepeatCompatible],
-    range = 5.0,
-    geometry = cone(radius = 3.0, angle_deg = 30.0),
-    potency = 160.0,
-    cast_time = 0.15,
-    cooldown = 2.5,
-    energy_cost = 8.0,
+    range = 5.5,
+    geometry = cone(radius = 3.5, angle_deg = 25.0),
+    potency = 145.0,
+    cast_time = 0.1,
+    cooldown = 2.2,
+    energy_cost = 7.0,
+    statuses = [Stun],
+    stun_seconds = 0.4,
     animation = "sword_lunge",
     impact_vfx = "lunge_impact",
 )]

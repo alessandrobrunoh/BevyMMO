@@ -1,6 +1,7 @@
 //! Power Shot — Bow primary ability (Q).
 //!
 //! Fires a heavily charged arrow that deals massive single-target damage.
+//! Requires careful aim and a moment to fully draw the bowstring.
 
 use bevymmo_props_macro::base_ability;
 
@@ -10,12 +11,13 @@ use crate::abilities::BaseAbilityRegistry;
     id = "power_shot",
     name = "Power Shot",
     tags = [Ranged, Projectile, SingleTarget, RepeatCompatible],
-    range = 30.0,
-    geometry = projectile(speed = 32.0),
-    potency = 200.0,
-    cast_time = 0.4,
-    cooldown = 3.0,
-    energy_cost = 10.0,
+    range = 34.0,
+    geometry = projectile(speed = 36.0),
+    potency = 240.0,
+    cast_time = 0.6,
+    cooldown = 4.0,
+    energy_cost = 12.0,
+    impact_delay = 0.1,
     animation = "bow_draw",
     impact_vfx = "power_shot_impact",
 )]

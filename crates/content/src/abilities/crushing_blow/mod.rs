@@ -1,6 +1,7 @@
 //! Crushing Blow — Hammer primary ability (Q).
 //!
 //! A devastating overhead strike that crushes a single target with immense force.
+//! The tremendous impact pins the target in place momentarily.
 
 use bevymmo_props_macro::base_ability;
 
@@ -10,12 +11,14 @@ use crate::abilities::BaseAbilityRegistry;
     id = "crushing_blow",
     name = "Crushing Blow",
     tags = [Melee, SingleTarget],
-    range = 4.0,
-    geometry = cone(radius = 3.5, angle_deg = 40.0),
-    potency = 190.0,
-    cast_time = 0.4,
-    cooldown = 4.0,
-    energy_cost = 12.0,
+    range = 3.8,
+    geometry = cone(radius = 3.2, angle_deg = 35.0),
+    potency = 210.0,
+    cast_time = 0.5,
+    cooldown = 4.5,
+    energy_cost = 14.0,
+    statuses = [Root],
+    stun_seconds = 0.6,
     animation = "hammer_smash",
     impact_vfx = "crushing_blow_impact",
 )]

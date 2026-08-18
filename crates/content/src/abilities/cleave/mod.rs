@@ -1,6 +1,7 @@
 //! Cleave — Sword primary ability (Q).
 //!
 //! A sweeping melee strike that hits all enemies in a wide frontal arc.
+//! The fluid motion leaves the wielder momentarily hastened.
 
 use bevymmo_props_macro::base_ability;
 
@@ -10,12 +11,13 @@ use crate::abilities::BaseAbilityRegistry;
     id = "cleave",
     name = "Cleave",
     tags = [Melee, Area],
-    range = 4.5,
-    geometry = cone(radius = 4.5, angle_deg = 75.0),
-    potency = 130.0,
-    cast_time = 0.3,
-    cooldown = 3.5,
-    energy_cost = 10.0,
+    range = 5.0,
+    geometry = cone(radius = 5.0, angle_deg = 85.0),
+    potency = 115.0,
+    cast_time = 0.25,
+    cooldown = 3.0,
+    energy_cost = 9.0,
+    statuses = [Slow],
     animation = "sword_cleave",
     impact_vfx = "cleave_impact",
 )]

@@ -38,7 +38,7 @@ impl AncientWordEffect for Twin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abilities::{AbilityId, AbilityGeometry};
+    use crate::abilities::{AbilityGeometry, AbilityId};
 
     #[test]
     fn metadata_declares_projectile_requirement() {

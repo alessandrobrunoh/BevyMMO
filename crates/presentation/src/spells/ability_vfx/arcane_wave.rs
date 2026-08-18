@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{palette, spawn_sphere, spawn_torus};
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxSpinExpand};
+use crate::spells::ability_vfx::{palette, spawn_sphere, spawn_torus};
 
 pub fn spawn(
     commands: &mut Commands,
@@ -39,8 +39,8 @@ pub fn spawn(
         meshes,
         materials,
         center + Vec3::Y * 0.08,
-        1.2,   // ring radius
-        0.06,  // tube thickness
+        1.2,  // ring radius
+        0.06, // tube thickness
         color,
         0.55,
         2.5,

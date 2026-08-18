@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{palette, spawn_sphere};
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxLifetime};
+use crate::spells::ability_vfx::{palette, spawn_sphere};
 
 const CAST_HEIGHT: f32 = 1.1;
 const BOLT_LENGTH: f32 = 1.8;
@@ -41,9 +41,8 @@ pub fn spawn(
     let mesh = meshes.add(Capsule3d::new(BOLT_RADIUS, BOLT_LENGTH));
     let mat = super::vfx_material(materials, color, 0.85, 5.0);
 
-    let mut transform = Transform::from_translation(
-        effect.start + Vec3::Y * CAST_HEIGHT + dir * BOLT_LENGTH * 0.5,
-    );
+    let mut transform =
+        Transform::from_translation(effect.start + Vec3::Y * CAST_HEIGHT + dir * BOLT_LENGTH * 0.5);
     transform.look_at(effect.end, Vec3::Y);
 
     commands.spawn((

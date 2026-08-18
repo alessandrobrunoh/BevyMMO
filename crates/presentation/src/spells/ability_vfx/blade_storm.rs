@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::palette;
 use crate::spells::ability_vfx::lifecycle::VfxSpinExpand;
+use crate::spells::ability_vfx::palette;
 
 const BLADE_COUNT: usize = 6;
 const ORBIT_RADIUS: f32 = 1.6;

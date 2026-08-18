@@ -1,7 +1,6 @@
 //! Staff weapon family.
 
-pub mod conduit_staff_t4;
-pub mod echo_staff;
+pub mod mage_staff;
 
 use bevymmo_props_macro::weapon_family;
 
@@ -11,7 +10,7 @@ use crate::ability_definitions::great_manifestation::GreatManifestation;
 
 #[weapon_family(
     id = "staff",
-    name = "Staff",
+    name = "Staffa da Mago",
     primary = [ArcaneBolt],
     secondary = [ArcaneWave],
     ultimate = [GreatManifestation],

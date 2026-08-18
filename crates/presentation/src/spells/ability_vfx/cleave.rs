@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{palette, spawn_box, spawn_sphere};
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxLifetime};
+use crate::spells::ability_vfx::{palette, spawn_box, spawn_sphere};
 
 const ARC_ANGLE_DEG: f32 = 90.0;
 const ARC_RADIUS: f32 = 1.8;

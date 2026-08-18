@@ -38,7 +38,7 @@ impl AncientWordEffect for Hunger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abilities::{AbilityId, AbilityGeometry};
+    use crate::abilities::{AbilityGeometry, AbilityId};
 
     #[test]
     fn metadata_declares_melee_requirement() {
@@ -52,7 +52,10 @@ mod tests {
         let mut blueprint = AbilityBlueprint {
             ability_id: AbilityId::new("life_drain_strike"),
             tags: vec![AbilityTag::Melee],
-            geometry: AbilityGeometry::Cone { radius: 2.0, angle_deg: 45.0 },
+            geometry: AbilityGeometry::Cone {
+                radius: 2.0,
+                angle_deg: 45.0,
+            },
             cast_mode: crate::abilities::AbilityCastMode::Instant,
             execution: crate::abilities::blueprint::BlueprintExecution::Base,
             params: AbilityParams {

@@ -48,7 +48,10 @@ mod tests {
         let word = StoneRootWord;
         let meta = word.metadata();
         assert_eq!(meta.display_name, "Stone");
-        assert_eq!(meta.description, "Applies physical earth damage with armor effects");
+        assert_eq!(
+            meta.description,
+            "Applies physical earth damage with armor effects"
+        );
         assert_eq!(meta.rune_cost, 1);
     }
 
@@ -58,7 +61,10 @@ mod tests {
         let mut blueprint = AbilityBlueprint {
             ability_id: crate::abilities::AbilityId::new("test"),
             tags: vec![],
-            geometry: crate::abilities::AbilityGeometry::Cone { radius: 3.0, angle_deg: 90.0 },
+            geometry: crate::abilities::AbilityGeometry::Cone {
+                radius: 3.0,
+                angle_deg: 90.0,
+            },
             cast_mode: crate::abilities::AbilityCastMode::Instant,
             execution: crate::abilities::blueprint::BlueprintExecution::Base,
             params: crate::abilities::AbilityParams {

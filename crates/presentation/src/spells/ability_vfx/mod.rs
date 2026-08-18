@@ -1,6 +1,6 @@
 //! Geometric VFX registry and dispatcher for alpha abilities.
 //!
-//! Each of the 18 weapon-family abilities gets a dedicated spawn function
+//! Each of the 12 weapon-family abilities gets a dedicated spawn function
 //! that produces a **distinct geometric manifestation** using Bevy primitive
 //! meshes/materials. The registry maps `AbilityId` → spawn fn; the dispatcher
 //! in `mod.rs` consults it before falling back to the legacy geometry-based
@@ -20,34 +20,24 @@ pub mod lifecycle;
 
 pub mod arcane_bolt;
 pub mod arcane_wave;
+pub mod blade_storm;
+pub mod cataclysm;
+pub mod cleave;
+pub mod crushing_blow;
 pub mod great_manifestation;
+pub mod ground_slam;
+pub mod lunge;
+pub mod piercing_barrage;
 pub mod power_shot;
 pub mod volley;
-pub mod piercing_barrage;
-pub mod cleave;
-pub mod lunge;
-pub mod blade_storm;
-pub mod crushing_blow;
-pub mod ground_slam;
-pub mod cataclysm;
-pub mod orb;
-pub mod field;
-pub mod domain;
-pub mod strike;
-pub mod rush;
-pub mod impact;
 
 // ---------------------------------------------------------------------------
 // Registry types
 // ---------------------------------------------------------------------------
 
 /// Signature every ability-VFX spawn function must satisfy.
-pub type AbilityVfxFn = fn(
-    &mut Commands,
-    &mut Assets<Mesh>,
-    &mut Assets<StandardMaterial>,
-    &SpellVisualEffect,
-);
+pub type AbilityVfxFn =
+    fn(&mut Commands, &mut Assets<Mesh>, &mut Assets<StandardMaterial>, &SpellVisualEffect);
 
 /// Runtime registry mapping ability ID → VFX spawn function.
 #[derive(Resource, Default, Debug)]
@@ -80,7 +70,7 @@ impl AbilityVfxRegistry {
 // Population – called once during plugin setup
 // ---------------------------------------------------------------------------
 
-/// Fill the registry with all 18 alpha-ability entries.
+/// Fill the registry with all 12 weapon-ability entries.
 pub fn populate_registry(registry: &mut AbilityVfxRegistry) {
     // Staff family
     registry.register("arcane_bolt", arcane_bolt::spawn);
@@ -101,16 +91,6 @@ pub fn populate_registry(registry: &mut AbilityVfxRegistry) {
     registry.register("crushing_blow", crushing_blow::spawn);
     registry.register("ground_slam", ground_slam::spawn);
     registry.register("cataclysm", cataclysm::spawn);
-
-    // Focus family
-    registry.register("orb", orb::spawn);
-    registry.register("field", field::spawn);
-    registry.register("domain", domain::spawn);
-
-    // Gauntlets family
-    registry.register("strike", strike::spawn);
-    registry.register("rush", rush::spawn);
-    registry.register("impact", impact::spawn);
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +151,11 @@ pub fn animate_lifecycle(
 /// Emissive glow from a base colour.
 pub fn vfx_glow(color: Color, strength: f32) -> LinearRgba {
     let rgba = color.to_linear();
-    LinearRgba::rgb(rgba.red * strength, rgba.green * strength, rgba.blue * strength)
+    LinearRgba::rgb(
+        rgba.red * strength,
+        rgba.green * strength,
+        rgba.blue * strength,
+    )
 }
 
 /// Standard emissive-blend material used by most VFX meshes.
@@ -365,12 +349,10 @@ pub fn spawn_tetra<T: Component>(
 mod palette {
     use bevy::color::Color;
 
-    pub const STAFF: Color = Color::srgb(0.65, 0.45, 1.0);       // violet
-    pub const BOW: Color = Color::srgb(0.3, 0.9, 0.5);          // emerald
-    pub const SWORD: Color = Color::srgb(1.0, 0.85, 0.2);       // gold
-    pub const HAMMER: Color = Color::srgb(1.0, 0.4, 0.15);      // fire orange
-    pub const FOCUS: Color = Color::srgb(0.35, 0.6, 1.0);       // azure
-    pub const GAUNTLETS: Color = Color::srgb(1.0, 0.45, 0.6);   // rose
+    pub const STAFF: Color = Color::srgb(0.65, 0.45, 1.0); // violet
+    pub const BOW: Color = Color::srgb(0.3, 0.9, 0.5); // emerald
+    pub const SWORD: Color = Color::srgb(1.0, 0.85, 0.2); // gold
+    pub const HAMMER: Color = Color::srgb(1.0, 0.4, 0.15); // fire orange
 }
 
 #[cfg(test)]
@@ -378,10 +360,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_contains_all_18_abilities() {
+    fn registry_contains_all_12_abilities() {
         let mut reg = AbilityVfxRegistry::default();
         populate_registry(&mut reg);
-        assert_eq!(reg.len(), 18);
+        assert_eq!(reg.len(), 12);
     }
 
     #[test]
@@ -390,12 +372,18 @@ mod tests {
         populate_registry(&mut reg);
 
         let expected = [
-            "arcane_bolt", "arcane_wave", "great_manifestation",
-            "power_shot", "volley", "piercing_barrage",
-            "cleave", "lunge", "blade_storm",
-            "crushing_blow", "ground_slam", "cataclysm",
-            "orb", "field", "domain",
-            "strike", "rush", "impact",
+            "arcane_bolt",
+            "arcane_wave",
+            "great_manifestation",
+            "power_shot",
+            "volley",
+            "piercing_barrage",
+            "cleave",
+            "lunge",
+            "blade_storm",
+            "crushing_blow",
+            "ground_slam",
+            "cataclysm",
         ];
         for id in expected {
             assert!(reg.get(id).is_some(), "{id} should be registered");
@@ -416,6 +404,10 @@ mod tests {
         // Collect all fn pointers and verify no duplicates (each ability has its own)
         let fns: Vec<_> = reg.map.values().collect();
         let unique: std::collections::HashSet<_> = fns.iter().copied().collect();
-        assert_eq!(unique.len(), fns.len(), "each ability must have its own spawn fn");
+        assert_eq!(
+            unique.len(),
+            fns.len(),
+            "each ability must have its own spawn fn"
+        );
     }
 }

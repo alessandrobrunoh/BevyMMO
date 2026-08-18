@@ -1,15 +1,15 @@
-//! Longbow — a Bow item whose signature execution is Charge.
+//! Bow weapon.
 
 use bevymmo_props_macro::item;
 
+use crate::ability_definitions::piercing_barrage::PiercingBarrage;
 use crate::ability_definitions::power_shot::PowerShot;
 use crate::ability_definitions::volley::Volley;
-use crate::ability_definitions::piercing_barrage::PiercingBarrage;
 use crate::items::ItemRegistry;
 
 #[item(
-    id = "longbow",
-    name = "Longbow",
+    id = "bow",
+    name = "Arco",
     description = "A powerful bow that charges shots for devastating impact.",
     category = Weapon,
     rarity = Rare,
@@ -24,10 +24,10 @@ use crate::items::ItemRegistry;
     ),
     rune_profile(capacity = 10, stability = 0.88),
 )]
-pub struct Longbow;
+pub struct Bow;
 
 pub fn register(registry: &mut ItemRegistry) {
-    Longbow::register(registry);
+    Bow::register(registry);
 }
 
 #[cfg(test)]
@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn transforms_the_base_blueprint_into_charge_execution() {
-        let blueprint = Longbow.ability_blueprint(&PowerShot);
+        let blueprint = Bow.ability_blueprint(&PowerShot);
         assert_eq!(blueprint.execution, BlueprintExecution::Charge);
     }
 }

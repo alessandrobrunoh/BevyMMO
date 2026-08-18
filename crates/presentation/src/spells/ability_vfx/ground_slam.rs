@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
+use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxLifetime, VfxPulseRing};
 use crate::spells::ability_vfx::{palette, spawn_disc};
-use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxPulseRing, VfxLifetime};
 
 pub fn spawn(
     commands: &mut Commands,
@@ -21,7 +21,10 @@ pub fn spawn(
     let dir = (effect.end - effect.start).normalize_or_zero();
 
     // Shockwave cone – points forward from caster
-    let mesh = meshes.add(Cone { radius: 2.2, height: 1.0 });
+    let mesh = meshes.add(Cone {
+        radius: 2.2,
+        height: 1.0,
+    });
     let mat = super::vfx_material(materials, color, 0.45, 2.5);
     let mut tfm = Transform::from_translation(base + Vec3::Y * 0.5);
     tfm.look_at(base + dir + Vec3::Y * 0.5, Vec3::Y);

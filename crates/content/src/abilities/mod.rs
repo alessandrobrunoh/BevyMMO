@@ -2,7 +2,7 @@
 
 // Existing abilities
 pub mod arcane_orb;
-pub mod astral_nova;
+
 pub mod bulwark_strike;
 pub mod cleanse;
 pub mod ground_break;
@@ -19,29 +19,19 @@ pub mod arcane_wave;
 pub mod great_manifestation;
 
 // Bow family (Q/W/E)
+pub mod piercing_barrage;
 pub mod power_shot;
 pub mod volley;
-pub mod piercing_barrage;
 
 // Sword family (Q/W/E)
+pub mod blade_storm;
 pub mod cleave;
 pub mod lunge;
-pub mod blade_storm;
 
 // Hammer family (Q/W/E)
+pub mod cataclysm;
 pub mod crushing_blow;
 pub mod ground_slam;
-pub mod cataclysm;
-
-// Focus family (Q/W/E)
-pub mod orb;
-pub mod field;
-pub mod domain;
-
-// Gauntlets family (Q/W/E)
-pub mod strike;
-pub mod rush;
-pub mod impact;
 
 use crate::abilities::BaseAbilityRegistry;
 
@@ -51,7 +41,7 @@ pub fn default_base_abilities() -> BaseAbilityRegistry {
 
     // Original abilities
     arcane_orb::register(&mut registry);
-    astral_nova::register(&mut registry);
+
     bulwark_strike::register(&mut registry);
     ground_break::register(&mut registry);
     iron_wave::register(&mut registry);
@@ -82,16 +72,6 @@ pub fn default_base_abilities() -> BaseAbilityRegistry {
     ground_slam::register(&mut registry);
     cataclysm::register(&mut registry);
 
-    // Focus family
-    orb::register(&mut registry);
-    field::register(&mut registry);
-    domain::register(&mut registry);
-
-    // Gauntlets family
-    strike::register(&mut registry);
-    rush::register(&mut registry);
-    impact::register(&mut registry);
-
     registry
 }
 
@@ -102,11 +82,11 @@ mod tests {
     #[test]
     fn default_base_abilities_contains_core_abilities() {
         let registry = default_base_abilities();
-        assert_eq!(registry.len(), 29); // 11 original + 18 new weapon abilities
+        assert_eq!(registry.len(), 22); // 10 original + 12 weapon abilities
 
         // Original abilities
         assert!(registry.contains(&crate::abilities::AbilityId::new("arcane_orb")));
-        assert!(registry.contains(&crate::abilities::AbilityId::new("astral_nova")));
+
         assert!(registry.contains(&crate::abilities::AbilityId::new("cleanse")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("warding_bolt")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("mind_ward")));
@@ -136,15 +116,5 @@ mod tests {
         assert!(registry.contains(&crate::abilities::AbilityId::new("crushing_blow")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("ground_slam")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("cataclysm")));
-
-        // Focus family
-        assert!(registry.contains(&crate::abilities::AbilityId::new("orb")));
-        assert!(registry.contains(&crate::abilities::AbilityId::new("field")));
-        assert!(registry.contains(&crate::abilities::AbilityId::new("domain")));
-
-        // Gauntlets family
-        assert!(registry.contains(&crate::abilities::AbilityId::new("strike")));
-        assert!(registry.contains(&crate::abilities::AbilityId::new("rush")));
-        assert!(registry.contains(&crate::abilities::AbilityId::new("impact")));
     }
 }

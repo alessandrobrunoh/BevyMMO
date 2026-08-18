@@ -41,7 +41,7 @@ impl AncientWordEffect for Anchor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abilities::{AbilityId, AbilityGeometry};
+    use crate::abilities::{AbilityGeometry, AbilityId};
 
     #[test]
     fn metadata_declares_ground_requirement() {

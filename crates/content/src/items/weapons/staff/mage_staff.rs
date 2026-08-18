@@ -1,4 +1,4 @@
-//! Conduit Staff T4 — a Staff item whose signature execution is Charge.
+//! Mage staff weapon.
 
 use bevymmo_props_macro::item;
 
@@ -8,8 +8,8 @@ use crate::ability_definitions::great_manifestation::GreatManifestation;
 use crate::items::ItemRegistry;
 
 #[item(
-    id = "conduit_staff_t4",
-    name = "Conduit Staff T4",
+    id = "mage_staff",
+    name = "Staffa da Mago",
     description = "Un bastone che carica il gesto prima di manifestarlo.",
     category = Weapon,
     rarity = Epic,
@@ -24,10 +24,10 @@ use crate::items::ItemRegistry;
     ),
     rune_profile(capacity = 12, stability = 0.85),
 )]
-pub struct ConduitStaffT4;
+pub struct MageStaff;
 
 pub fn register(registry: &mut ItemRegistry) {
-    ConduitStaffT4::register(registry);
+    MageStaff::register(registry);
 }
 
 #[cfg(test)]
@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn transforms_the_base_blueprint_into_charge_execution() {
-        let blueprint = ConduitStaffT4.ability_blueprint(&ArcaneBolt);
+        let blueprint = MageStaff.ability_blueprint(&ArcaneBolt);
         assert_eq!(blueprint.execution, BlueprintExecution::Charge);
     }
 }

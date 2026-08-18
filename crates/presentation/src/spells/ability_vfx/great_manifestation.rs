@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{palette, spawn_disc, spawn_torus};
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxSpinExpand};
+use crate::spells::ability_vfx::{palette, spawn_disc, spawn_torus};
 
 const PILLAR_HEIGHTS: [f32; 3] = [0.05, 1.2, 2.4];
 const PILLAR_RADII: [f32; 3] = [1.6, 1.2, 0.7];

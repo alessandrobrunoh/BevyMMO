@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{palette, spawn_box, spawn_sphere};
 use crate::spells::ability_vfx::lifecycle::VfxLifetime;
+use crate::spells::ability_vfx::{palette, spawn_box, spawn_sphere};
 
 const BARRAGE_COUNT: usize = 7;
 const ARROW_LEN: f32 = 1.6;

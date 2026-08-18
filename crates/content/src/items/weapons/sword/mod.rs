@@ -1,17 +1,16 @@
 //! Sword weapon family.
 
-pub mod arming_sword;
-pub mod greatsword;
+pub mod sword;
 
 use bevymmo_props_macro::weapon_family;
 
+use crate::ability_definitions::blade_storm::BladeStorm;
 use crate::ability_definitions::cleave::Cleave;
 use crate::ability_definitions::lunge::Lunge;
-use crate::ability_definitions::blade_storm::BladeStorm;
 
 #[weapon_family(
     id = "sword",
-    name = "Sword",
+    name = "Spada",
     primary = [Cleave],
     secondary = [Lunge],
     ultimate = [BladeStorm],

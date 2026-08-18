@@ -39,7 +39,7 @@ impl AncientWordEffect for Reversal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abilities::{AbilityId, AbilityGeometry};
+    use crate::abilities::{AbilityGeometry, AbilityId};
 
     #[test]
     fn metadata_declares_ranged_requirement() {
@@ -53,7 +53,10 @@ mod tests {
         let mut blueprint = AbilityBlueprint {
             ability_id: AbilityId::new("repulse"),
             tags: vec![AbilityTag::Ranged],
-            geometry: AbilityGeometry::Cone { radius: 6.0, angle_deg: 90.0 },
+            geometry: AbilityGeometry::Cone {
+                radius: 6.0,
+                angle_deg: 90.0,
+            },
             cast_mode: crate::abilities::AbilityCastMode::Instant,
             execution: crate::abilities::blueprint::BlueprintExecution::Base,
             params: AbilityParams {

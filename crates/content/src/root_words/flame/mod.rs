@@ -27,7 +27,9 @@ impl RootWordEffect for FlameRootWord {
     fn apply_to_blueprint(&self, blueprint: &mut AbilityBlueprint, _params: &AbilityParams) {
         // Tag as ranged fire damage
         blueprint.tags.push(crate::abilities::AbilityTag::Ranged);
-        blueprint.tags.push(crate::abilities::AbilityTag::Projectile);
+        blueprint
+            .tags
+            .push(crate::abilities::AbilityTag::Projectile);
 
         // Increase potency for fire scaling
         blueprint.params.potency *= Self::FLAME_SCALING;

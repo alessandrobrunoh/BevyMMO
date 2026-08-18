@@ -1,17 +1,16 @@
 //! Bow weapon family.
 
-pub mod longbow;
-pub mod swiftbow;
+pub mod bow;
 
 use bevymmo_props_macro::weapon_family;
 
+use crate::ability_definitions::piercing_barrage::PiercingBarrage;
 use crate::ability_definitions::power_shot::PowerShot;
 use crate::ability_definitions::volley::Volley;
-use crate::ability_definitions::piercing_barrage::PiercingBarrage;
 
 #[weapon_family(
     id = "bow",
-    name = "Bow",
+    name = "Arco",
     primary = [PowerShot],
     secondary = [Volley],
     ultimate = [PiercingBarrage],

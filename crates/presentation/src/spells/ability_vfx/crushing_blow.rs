@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{palette, spawn_disc, spawn_sphere};
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxFall, VfxPulseRing};
+use crate::spells::ability_vfx::{palette, spawn_disc, spawn_sphere};
 
 const HAMMER_HEIGHT: f32 = 6.0;
 const HAMMER_RADIUS: f32 = 0.35;

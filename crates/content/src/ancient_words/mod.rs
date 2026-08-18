@@ -1,12 +1,12 @@
 //! Ancient-word content and its registry.
 //!
 
-pub mod echo;
-pub mod twin;
-pub mod return_dir;
-pub mod hunger;
 pub mod anchor;
+pub mod echo;
+pub mod hunger;
+pub mod return_dir;
 pub mod reversal;
+pub mod twin;
 
 use crate::abilities::AncientWordRegistry;
 

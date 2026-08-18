@@ -26,7 +26,9 @@ impl LifeRootWord {
 impl RootWordEffect for LifeRootWord {
     fn apply_to_blueprint(&self, blueprint: &mut AbilityBlueprint, _params: &AbilityParams) {
         // Tag as self-buff or friendly target healing
-        blueprint.tags.push(crate::abilities::AbilityTag::SelfTarget);
+        blueprint
+            .tags
+            .push(crate::abilities::AbilityTag::SelfTarget);
 
         // Healing is more potent than equivalent damage
         blueprint.params.potency *= Self::HEALING_EFFICIENCY;
@@ -58,7 +60,9 @@ mod tests {
         let mut blueprint = AbilityBlueprint {
             ability_id: crate::abilities::AbilityId::new("test"),
             tags: vec![],
-            geometry: crate::abilities::AbilityGeometry::SelfBuff { duration_seconds: 3.0 },
+            geometry: crate::abilities::AbilityGeometry::SelfBuff {
+                duration_seconds: 3.0,
+            },
             cast_mode: crate::abilities::AbilityCastMode::Instant,
             execution: crate::abilities::blueprint::BlueprintExecution::Base,
             params: crate::abilities::AbilityParams {

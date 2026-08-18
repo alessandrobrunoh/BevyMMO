@@ -1,15 +1,15 @@
-//! Arming Sword — a Sword item whose signature execution is Charge.
+//! Sword weapon.
 
 use bevymmo_props_macro::item;
 
+use crate::ability_definitions::blade_storm::BladeStorm;
 use crate::ability_definitions::cleave::Cleave;
 use crate::ability_definitions::lunge::Lunge;
-use crate::ability_definitions::blade_storm::BladeStorm;
 use crate::items::ItemRegistry;
 
 #[item(
-    id = "arming_sword",
-    name = "Arming Sword",
+    id = "sword",
+    name = "Spada",
     description = "A balanced sword that charges strikes for maximum effect.",
     category = Weapon,
     rarity = Rare,
@@ -24,10 +24,10 @@ use crate::items::ItemRegistry;
     ),
     rune_profile(capacity = 11, stability = 0.86),
 )]
-pub struct ArmingSword;
+pub struct Sword;
 
 pub fn register(registry: &mut ItemRegistry) {
-    ArmingSword::register(registry);
+    Sword::register(registry);
 }
 
 #[cfg(test)]
@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn transforms_the_base_blueprint_into_charge_execution() {
-        let blueprint = ArmingSword.ability_blueprint(&Cleave);
+        let blueprint = Sword.ability_blueprint(&Cleave);
         assert_eq!(blueprint.execution, BlueprintExecution::Charge);
     }
 }

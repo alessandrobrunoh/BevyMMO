@@ -48,7 +48,10 @@ mod tests {
         let word = VoidRootWord;
         let meta = word.metadata();
         assert_eq!(meta.display_name, "Void");
-        assert_eq!(meta.description, "Applies void damage that bypasses resistances");
+        assert_eq!(
+            meta.description,
+            "Applies void damage that bypasses resistances"
+        );
         // Void costs more due to resistance penetration
         assert_eq!(meta.rune_cost, 2);
     }

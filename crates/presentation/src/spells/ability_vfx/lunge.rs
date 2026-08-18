@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{palette, spawn_capsule, spawn_sphere};
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxLifetime};
+use crate::spells::ability_vfx::{palette, spawn_capsule, spawn_sphere};
 
 const LUNGE_LENGTH: f32 = 2.8;
 const LUNGE_RADIUS: f32 = 0.1;

@@ -27,7 +27,9 @@ impl RootWordEffect for StormRootWord {
     fn apply_to_blueprint(&self, blueprint: &mut AbilityBlueprint, _params: &AbilityParams) {
         // Tag as ranged projectile storm damage
         blueprint.tags.push(crate::abilities::AbilityTag::Ranged);
-        blueprint.tags.push(crate::abilities::AbilityTag::Projectile);
+        blueprint
+            .tags
+            .push(crate::abilities::AbilityTag::Projectile);
 
         // Storm has high burst but single-target focused
         blueprint.params.potency *= 1.25;
@@ -49,7 +51,10 @@ mod tests {
         let word = StormRootWord;
         let meta = word.metadata();
         assert_eq!(meta.display_name, "Storm");
-        assert_eq!(meta.description, "Applies lightning damage with chaining effects");
+        assert_eq!(
+            meta.description,
+            "Applies lightning damage with chaining effects"
+        );
         assert_eq!(meta.rune_cost, 1);
     }
 

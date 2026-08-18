@@ -11,9 +11,9 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use bevymmo_gameplay::abilities::{
-    resolve_active_ability, resolve_root_inscribed_slot, AbilitySlot,
-    AbilityTag, AncientWordRegistry, BaseAbilityRegistry, CastBlockedReason,
-    KnownAncientLanguage, RootWordRegistry, SlotPreview,
+    resolve_active_ability, resolve_root_inscribed_slot, AbilitySlot, AbilityTag,
+    AncientWordRegistry, BaseAbilityRegistry, CastBlockedReason, KnownAncientLanguage,
+    RootWordRegistry, SlotPreview,
 };
 use bevymmo_gameplay::items::{instance::ItemInstance, ItemCategory, ItemRarity, ItemRegistry};
 
@@ -128,7 +128,10 @@ pub fn summarize_weapon(
         capacity: profile.capacity,
         stability: profile.stability,
         root_word: inscription.root_word.as_ref().and_then(|id| {
-            glyphs.root_words.get(id).map(|rw| rw.metadata().display_name.to_string())
+            glyphs
+                .root_words
+                .get(id)
+                .map(|rw| rw.metadata().display_name.to_string())
         }),
     });
 
@@ -152,7 +155,9 @@ pub fn summarize_weapon(
 
 /// Placeholder: rune cost will be defined by the new Root Word model.
 /// Returns 0 until the gameplay layer exposes cost data.
-fn _total_rune_cost(_inscription: &bevymmo_gameplay::abilities::inscription::WeaponInscription) -> u32 {
+fn _total_rune_cost(
+    _inscription: &bevymmo_gameplay::abilities::inscription::WeaponInscription,
+) -> u32 {
     0
 }
 
@@ -181,9 +186,7 @@ fn summarize_slot(
         Some(item),
     );
     let blocked = match &preview {
-        Err(CastBlockedReason::UnknownRootWord) => {
-            Some("LOCKED - unknown Root Word".to_string())
-        }
+        Err(CastBlockedReason::UnknownRootWord) => Some("LOCKED - unknown Root Word".to_string()),
         Err(CastBlockedReason::UnknownAncientWord) => {
             Some("LOCKED - unknown Ancient Word".to_string())
         }
@@ -327,7 +330,9 @@ fn number(value: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevymmo_gameplay::abilities::{AbilityGeometry, AbilityParams, inscription::WeaponInscription, root_word::RootWordId};
+    use bevymmo_gameplay::abilities::{
+        inscription::WeaponInscription, root_word::RootWordId, AbilityGeometry, AbilityParams,
+    };
     use bevymmo_gameplay::items::components::EquipSlot;
 
     fn params() -> AbilityParams {
@@ -354,20 +359,23 @@ mod tests {
         app
     }
 
-    fn summarize(app: &App, instance: &ItemInstance, known: &KnownAncientLanguage) -> WeaponSummary {
+    fn summarize(
+        app: &App,
+        instance: &ItemInstance,
+        known: &KnownAncientLanguage,
+    ) -> WeaponSummary {
         let items = app.world().resource::<ItemRegistry>();
         let catalog = GlyphCatalog {
             abilities: app.world().resource::<BaseAbilityRegistry>(),
             root_words: app.world().resource::<RootWordRegistry>(),
             ancient_words: app.world().resource::<AncientWordRegistry>(),
         };
-        summarize_weapon(instance, items, catalog, known).expect("conduit_staff_t4 is an Eidolon weapon")
+        summarize_weapon(instance, items, catalog, known).expect("mage_staff is an Eidolon weapon")
     }
-
 
     /// A magic staff with a damage root word inscribed.
     fn magic_staff_with_root() -> ItemInstance {
-        let mut instance = ItemInstance::new(bevymmo_gameplay::items::ItemId::new("conduit_staff_t4"));
+        let mut instance = ItemInstance::new(bevymmo_gameplay::items::ItemId::new("mage_staff"));
         instance.root_inscription = Some(WeaponInscription {
             root_word: Some(RootWordId::from("damage")),
             ..Default::default()
@@ -389,13 +397,13 @@ mod tests {
         assert_eq!(summary.slots[2].slot, "Ultimate");
         assert!(summary.slots.iter().all(|slot| slot.blocked.is_none()));
 
-        let runes = summary.runes.expect("conduit_staff_t4 has a rune profile");
+        let runes = summary.runes.expect("mage_staff has a rune profile");
         assert_eq!(runes.capacity, 12);
         assert_eq!(runes.root_word.as_deref(), Some("Danno"));
     }
 
     #[test]
-    fn conduit_staff_has_one_ultimate_ability() {
+    fn mage_staff_has_one_ultimate_ability() {
         let app = catalog_app();
         let instance = magic_staff_with_root();
         let summary = summarize(&app, &instance, &KnownAncientLanguage::default());
@@ -433,7 +441,10 @@ mod tests {
         // Empty knowledge: the player knows nothing.
         let summary = summarize(&app, &instance, &KnownAncientLanguage::default());
 
-        assert!(summary.slots[0].blocked.is_some(), "unknown root word blocks the slot");
+        assert!(
+            summary.slots[0].blocked.is_some(),
+            "unknown root word blocks the slot"
+        );
         // Still described: a locked slot must not become a blank block.
         assert!(!summary.slots[0].stats.is_empty());
     }

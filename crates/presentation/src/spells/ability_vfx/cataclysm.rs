@@ -8,8 +8,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{palette, spawn_disc, spawn_sphere, spawn_torus};
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxSpinExpand};
+use crate::spells::ability_vfx::{palette, spawn_disc, spawn_sphere, spawn_torus};
 
 pub fn spawn(
     commands: &mut Commands,
@@ -63,9 +63,7 @@ pub fn spawn(
     );
 
     // Ground rings at 3 radii
-    for (i, &(radius, hue_offset)) in
-        [(3.0, 0.0), (2.2, 0.04), (1.4, 0.08)].iter().enumerate()
-    {
+    for (i, &(radius, hue_offset)) in [(3.0, 0.0), (2.2, 0.04), (1.4, 0.08)].iter().enumerate() {
         spawn_disc(
             commands,
             meshes,
@@ -77,7 +75,12 @@ pub fn spawn(
             0.35 - i as f32 * 0.08,
             2.5 - i as f32 * 0.5,
             Vec3::splat(0.05 + i as f32 * 0.05),
-            VfxSpinExpand::new(0.55 + i as f32 * 0.08, 0.05, 1.6 + i as f32 * 0.3, 4.0 - i as f32),
+            VfxSpinExpand::new(
+                0.55 + i as f32 * 0.08,
+                0.05,
+                1.6 + i as f32 * 0.3,
+                4.0 - i as f32,
+            ),
         );
     }
 

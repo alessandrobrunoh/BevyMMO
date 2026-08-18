@@ -3,10 +3,10 @@
 pub mod damage;
 pub mod flame;
 pub mod frost;
-pub mod storm;
 pub mod life;
-pub mod void;
 pub mod stone;
+pub mod storm;
+pub mod void;
 
 use crate::abilities::RootWordRegistry;
 
@@ -57,14 +57,19 @@ mod tests {
         let reg = default_root_words();
         let ids = ["damage", "flame", "frost", "storm", "life", "void", "stone"];
         for id in ids.iter() {
-            assert!(reg.contains(&crate::abilities::RootWordId::from(*id)), "Missing root word: {id}");
+            assert!(
+                reg.contains(&crate::abilities::RootWordId::from(*id)),
+                "Missing root word: {id}"
+            );
         }
     }
 
     #[test]
     fn void_has_higher_rune_cost() {
         let reg = default_root_words();
-        let word = reg.get(&crate::abilities::RootWordId::from("void")).unwrap();
+        let word = reg
+            .get(&crate::abilities::RootWordId::from("void"))
+            .unwrap();
         assert_eq!(word.metadata().rune_cost, 2);
     }
 }

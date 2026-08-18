@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{palette, spawn_disc, spawn_sphere};
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxPulseRing};
+use crate::spells::ability_vfx::{palette, spawn_disc, spawn_sphere};
 
 const ARROW_COUNT: usize = 5;
 const SPREAD_ANGLE_DEG: f32 = 36.0; // total fan width
@@ -27,8 +27,7 @@ pub fn spawn(
     // Fan of arrows (small spheres representing projectiles)
     for i in 0..ARROW_COUNT {
         let frac = i as f32 / (ARROW_COUNT.saturating_sub(1)) as f32; // 0..1
-        let angle_offset =
-            (frac - 0.5) * SPREAD_ANGLE_DEG.to_radians();
+        let angle_offset = (frac - 0.5) * SPREAD_ANGLE_DEG.to_radians();
         // Rotate base_dir around Y
         let rot = Quat::from_rotation_y(angle_offset);
         let dir = rot * base_dir;

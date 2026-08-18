@@ -1,8 +1,8 @@
 //! Marker component for spell visual entities.
 //!
-//! Centralized cleanup systems (in the binary) query this marker to despawn
-//! every visual effect when leaving gameplay. Concrete visual spawn/animate
-//! functions live in per-spell submodules of `crate::spells`.
+//! [`crate::spells::cleanup_spell_visuals`] despawns every marked entity when
+//! leaving gameplay. Concrete spawn/animate functions live in per-spell
+//! submodules of `crate::spells`.
 
 use bevy::prelude::*;
 

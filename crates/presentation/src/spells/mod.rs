@@ -1,7 +1,7 @@
 //! Client presentation for spells: cast bars, HUD and visual effects.
 
-pub mod aim_preview;
 pub mod ability_vfx;
+pub mod aim_preview;
 pub mod available_choices;
 pub mod cast_bar;
 pub mod cursor;
@@ -13,7 +13,7 @@ pub mod ui;
 use bevy::prelude::*;
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{AbilityVfxRegistry, populate_registry};
+use crate::spells::ability_vfx::{populate_registry, AbilityVfxRegistry};
 
 /// Registers spell HUD, cast-bar and client visual systems.
 pub struct SpellsHudPlugin;
@@ -60,6 +60,28 @@ impl Plugin for SpellsHudPlugin {
             )
                 .run_if(bevymmo_network::network::mode::has_client),
         );
+        app.add_systems(
+            Update,
+            cleanup_spell_visuals
+                .run_if(bevymmo_network::network::mode::has_client)
+                .run_if(not_in_game),
+        );
+    }
+}
+
+fn not_in_game(screen: Res<crate::game_state::GameScreen>) -> bool {
+    !matches!(
+        screen.0,
+        crate::game_state::Screen::InGame | crate::game_state::Screen::Paused
+    )
+}
+
+fn cleanup_spell_visuals(
+    mut commands: Commands,
+    visuals: Query<Entity, With<crate::spells::effects::SpellVisual>>,
+) {
+    for entity in &visuals {
+        commands.entity(entity).despawn();
     }
 }
 
@@ -92,5 +114,42 @@ fn dispatch_visual_effects(
             ),
             None => eidolon_effects::spawn(&mut commands, &mut meshes, &mut materials, effect),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game_state::{GameScreen, Screen};
+    use crate::spells::effects::SpellVisual;
+
+    #[test]
+    fn leaving_game_despawns_spell_visuals() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<GameScreen>();
+        app.add_systems(Update, cleanup_spell_visuals.run_if(not_in_game));
+
+        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        let visual = app.world_mut().spawn(SpellVisual).id();
+        app.update();
+        assert!(app.world().get_entity(visual).is_ok());
+
+        app.world_mut().resource_mut::<GameScreen>().0 = Screen::MainMenu;
+        app.update();
+        assert!(app.world().get_entity(visual).is_err());
+    }
+
+    #[test]
+    fn paused_does_not_despawn_spell_visuals() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<GameScreen>();
+        app.add_systems(Update, cleanup_spell_visuals.run_if(not_in_game));
+
+        app.world_mut().resource_mut::<GameScreen>().0 = Screen::Paused;
+        let visual = app.world_mut().spawn(SpellVisual).id();
+        app.update();
+        assert!(app.world().get_entity(visual).is_ok());
     }
 }

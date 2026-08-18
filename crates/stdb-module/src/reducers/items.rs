@@ -93,7 +93,6 @@ fn ability_registry() -> &'static BaseAbilityRegistry {
     REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
 }
 
-
 fn ancient_word_registry() -> &'static AncientWordRegistry {
     static REGISTRY: OnceLock<AncientWordRegistry> = OnceLock::new();
     REGISTRY.get_or_init(bevymmo_domain::content::ancient_words::default_ancient_words)
@@ -285,11 +284,10 @@ pub fn destroy_item(ctx: &ReducerContext, instance_id: u64) -> Result<(), String
     let character_id = caller_character(ctx)?.character_id;
     let mut inventory = load_inventory(ctx, character_id)?;
     let instance_id = ItemInstanceId(instance_id);
-    let Some(slot) = inventory
-        .slots
-        .iter()
-        .position(|item| item.as_ref().is_some_and(|item| item.instance_id == instance_id))
-    else {
+    let Some(slot) = inventory.slots.iter().position(|item| {
+        item.as_ref()
+            .is_some_and(|item| item.instance_id == instance_id)
+    }) else {
         return Err("item instance is not in your inventory".to_string());
     };
 
@@ -366,7 +364,6 @@ pub fn assign_hotbar_spell(
     Ok(())
 }
 
-
 /// Writes the new RootWord-based inscription for the equipped weapon.
 ///
 /// This reducer is additive to [`set_inscription`]. It persists only the new
@@ -400,8 +397,16 @@ pub fn set_root_inscription(
         .known_ancient_language()
         .character_id()
         .find(&character_id)
-        .map(|row| known_ancient_language_from_rows(&row.root_words, &row.ancient_words, &row.base_abilities))
-        .ok_or_else(|| "ancient language has not been initialized for this character".to_string())?;
+        .map(|row| {
+            known_ancient_language_from_rows(
+                &row.root_words,
+                &row.ancient_words,
+                &row.base_abilities,
+            )
+        })
+        .ok_or_else(|| {
+            "ancient language has not been initialized for this character".to_string()
+        })?;
 
     let root_id = root_word.map(RootWordId::new);
     let root_cost = match &root_id {
@@ -424,11 +429,17 @@ pub fn set_root_inscription(
         (AbilitySlot::Ultimate, ultimate_words, 1usize),
     ];
     let mut total_cost = root_cost;
-    let mut slots = [SlotInscription::default(), SlotInscription::default(), SlotInscription::default()];
+    let mut slots = [
+        SlotInscription::default(),
+        SlotInscription::default(),
+        SlotInscription::default(),
+    ];
 
     for (index, (slot, word_ids, max_words)) in slot_inputs.into_iter().enumerate() {
         if word_ids.len() > max_words {
-            return Err(format!("{slot:?} accepts at most {max_words} Ancient Words"));
+            return Err(format!(
+                "{slot:?} accepts at most {max_words} Ancient Words"
+            ));
         }
         let ability_id = resolve_active_ability(slot, abilities, &weapon.ability_selection)
             .ok_or_else(|| format!("no ability offered for {slot:?}"))?;
@@ -452,7 +463,10 @@ pub fn set_root_inscription(
                 .ok_or_else(|| format!("unknown Ancient Word {:?}", id.as_str()))?;
             let metadata = word.metadata();
             if !metadata.is_compatible_with(ability.tags()) {
-                return Err(format!("Ancient Word {:?} is incompatible with {slot:?}", id.as_str()));
+                return Err(format!(
+                    "Ancient Word {:?} is incompatible with {slot:?}",
+                    id.as_str()
+                ));
             }
             if let Some(group) = metadata.exclusive_group {
                 if !groups.insert(group) {
@@ -462,11 +476,16 @@ pub fn set_root_inscription(
             total_cost += metadata.rune_cost;
             words.push(SecondaryWord::new(id));
         }
-        slots[index] = SlotInscription { secondary_words: words };
+        slots[index] = SlotInscription {
+            secondary_words: words,
+        };
     }
 
     if total_cost > profile.capacity {
-        return Err(format!("rune capacity exceeded: {total_cost} / {}", profile.capacity));
+        return Err(format!(
+            "rune capacity exceeded: {total_cost} / {}",
+            profile.capacity
+        ));
     }
 
     let mut updated = weapon;
@@ -495,7 +514,10 @@ pub fn set_armor_inscription(
 ) -> Result<(), String> {
     let character_id = caller_character(ctx)?.character_id;
     let target = parse_equip_slot(&slot)?;
-    if !matches!(target, EquipSlot::Helmet | EquipSlot::Armor | EquipSlot::Shoes) {
+    if !matches!(
+        target,
+        EquipSlot::Helmet | EquipSlot::Armor | EquipSlot::Shoes
+    ) {
         return Err("armor inscriptions are only valid for helmet, armor or shoes".to_string());
     }
 
@@ -507,8 +529,13 @@ pub fn set_armor_inscription(
     let item = item_registry()
         .get(&item_instance.item_id)
         .ok_or_else(|| format!("unknown item {:?}", item_instance.item_id.as_str()))?;
-    let abilities = crate::sim::spells::ability_loadout_for_item(item.as_ref())
-        .ok_or_else(|| format!("{:?} has no armor abilities", item_instance.item_id.as_str()))?;
+    let abilities =
+        crate::sim::spells::ability_loadout_for_item(item.as_ref()).ok_or_else(|| {
+            format!(
+                "{:?} has no armor abilities",
+                item_instance.item_id.as_str()
+            )
+        })?;
     let profile = item
         .rune_profile()
         .ok_or_else(|| format!("{:?} has no rune profile", item_instance.item_id.as_str()))?;
@@ -565,14 +592,20 @@ pub fn set_armor_inscription(
             .ok_or_else(|| format!("unknown Ancient Word {:?}", id.as_str()))?;
         let metadata = word.metadata();
         if !metadata.is_compatible_with(ability.tags()) {
-            return Err(format!("Ancient Word {:?} is incompatible with armor", id.as_str()));
+            return Err(format!(
+                "Ancient Word {:?} is incompatible with armor",
+                id.as_str()
+            ));
         }
         total_cost += metadata.rune_cost;
         words.push(SecondaryWord::new(id));
     }
 
     if total_cost > profile.capacity {
-        return Err(format!("rune capacity exceeded: {total_cost} / {}", profile.capacity));
+        return Err(format!(
+            "rune capacity exceeded: {total_cost} / {}",
+            profile.capacity
+        ));
     }
 
     let mut updated = item_instance;
@@ -867,7 +900,6 @@ fn store_equipment(ctx: &ReducerContext, character_id: Uuid, equipment: &Equipme
         slots: equipment_to_rows(equipment),
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // Parsing the string parameters

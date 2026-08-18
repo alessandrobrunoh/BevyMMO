@@ -36,8 +36,8 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use bevymmo_domain::placeables::PlaceableRegistry;
 use bevymmo_domain::content::placeables::register_all;
+use bevymmo_domain::placeables::PlaceableRegistry;
 use bevymmo_domain::world::{CollisionGrid, GroundContact, MapManifest, Prop, SurfaceQuery};
 use spacetimedb::{reducer, ReducerContext, Table};
 

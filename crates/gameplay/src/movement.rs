@@ -240,7 +240,10 @@ fn recover_from_blocker(
         let z = current.z - direction_z / length * distance;
         let contact = surface_query.ground_at_reachable(x, z, current.y, max_step_height)?;
         let candidate = Vec3::new(x, contact.height, z);
-        if !collision_grid.is_blocked([candidate.x, candidate.y, candidate.z], STEP_COLLISION_RADIUS) {
+        if !collision_grid.is_blocked(
+            [candidate.x, candidate.y, candidate.z],
+            STEP_COLLISION_RADIUS,
+        ) {
             return Some(candidate);
         }
     }

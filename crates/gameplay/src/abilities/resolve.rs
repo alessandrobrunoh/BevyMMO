@@ -15,7 +15,6 @@ use crate::spells::context::SpellCastContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CastBlockedReason {
-
     /// L'`AbilityId`/`EssenceId`/... incisi non esistono più nei registry,
     /// o `WeaponAbilities` non offre nessun gesto per lo slot (dati
     /// incoerenti — non dovrebbe succedere con contenuti registrati
@@ -25,7 +24,6 @@ pub enum CastBlockedReason {
     UnknownAncientWord,
     IncompatibleAncientWord,
 }
-
 
 /// Il gesto attivo su uno slot e i suoi parametri già modificati — tutto ciò
 /// che serve per sapere COSA e DOVE colpirà, senza lanciarlo.

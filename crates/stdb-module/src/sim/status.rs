@@ -122,11 +122,25 @@ pub fn apply(
 }
 
 pub fn cleanse(ctx: &ReducerContext, target: u64, effect: CleanseEffect) {
-    remove_matching(ctx, target, effect.filter, effect.max_statuses, effect.selection, false);
+    remove_matching(
+        ctx,
+        target,
+        effect.filter,
+        effect.max_statuses,
+        effect.selection,
+        false,
+    );
 }
 
 pub fn purge(ctx: &ReducerContext, target: u64, effect: PurgeEffect) {
-    remove_matching(ctx, target, effect.filter, effect.max_statuses, effect.selection, true);
+    remove_matching(
+        ctx,
+        target,
+        effect.filter,
+        effect.max_statuses,
+        effect.selection,
+        true,
+    );
 }
 
 fn remove_matching(

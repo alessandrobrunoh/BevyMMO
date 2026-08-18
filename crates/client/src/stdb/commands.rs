@@ -45,9 +45,9 @@ use super::module_bindings::release_cast_reducer::release_cast as release_cast_r
 use super::module_bindings::respawn_reducer::respawn as respawn_reducer;
 use super::module_bindings::send_chat_message_reducer::send_chat_message as send_chat_message_reducer;
 use super::module_bindings::set_ability_selection_reducer::set_ability_selection as set_ability_selection_reducer;
+use super::module_bindings::set_armor_inscription_reducer::set_armor_inscription as set_armor_inscription_reducer;
 use super::module_bindings::set_hotbar_spell_reducer::set_hotbar_spell as set_hotbar_spell_reducer;
 use super::module_bindings::set_root_inscription_reducer::set_root_inscription as set_root_inscription_reducer;
-use super::module_bindings::set_armor_inscription_reducer::set_armor_inscription as set_armor_inscription_reducer;
 use super::module_bindings::unequip_item_reducer::unequip_item as unequip_item_reducer;
 use super::module_bindings::Vec3Row;
 use super::plugin::StdbConnection;

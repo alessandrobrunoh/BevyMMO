@@ -127,7 +127,10 @@ mod tests {
         let mut prev = 0u32;
         for xp in (0..=10_000).step_by(100) {
             let lvl = compute_level(xp);
-            assert!(lvl >= prev, "XP {xp} gave level {lvl}, below previous {prev}");
+            assert!(
+                lvl >= prev,
+                "XP {xp} gave level {lvl}, below previous {prev}"
+            );
             prev = lvl;
         }
     }

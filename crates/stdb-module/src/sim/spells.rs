@@ -119,7 +119,6 @@ pub fn base_abilities() -> &'static BaseAbilityRegistry {
     REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
 }
 
-
 pub fn ancient_words() -> &'static AncientWordRegistry {
     static REGISTRY: OnceLock<AncientWordRegistry> = OnceLock::new();
     REGISTRY.get_or_init(bevymmo_domain::content::ancient_words::default_ancient_words)
@@ -329,14 +328,11 @@ pub fn fire_eidolon_ability(
     target_entity: Option<u64>,
     source: CastSourceRow,
 ) -> Option<f32> {
-    use bevymmo_domain::abilities::{
-        cast_root_inscribed_slot, resolve_active_ability, resolve_root_inscribed_slot,
-        AbilitySlot,
-    };
-    use crate::rows::{
-        equipment_from_rows, known_ancient_language_from_rows,
-    };
+    use crate::rows::{equipment_from_rows, known_ancient_language_from_rows};
     use crate::tables::{equipment, known_ancient_language};
+    use bevymmo_domain::abilities::{
+        cast_root_inscribed_slot, resolve_active_ability, resolve_root_inscribed_slot, AbilitySlot,
+    };
 
     let combat = combat_stats(ctx, caster.entity_id)?;
     let caster_position = Vec3::from(caster.position);
@@ -361,13 +357,21 @@ pub fn fire_eidolon_ability(
             let weapon = equipment.weapon.as_ref()?;
             let item = items().get(&weapon.item_id)?;
             let weapon_abilities = ability_loadout_for_item(item.as_ref())?;
-            let slot = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate]
-                .into_iter()
-                .find(|&s| {
-                    resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
-                        .map_or(false, |id| id.as_str() == ability_id.as_str())
-                })?;
-            let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
+            let slot = [
+                AbilitySlot::Primary,
+                AbilitySlot::Secondary,
+                AbilitySlot::Ultimate,
+            ]
+            .into_iter()
+            .find(|&s| {
+                resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
+                    .map_or(false, |id| id.as_str() == ability_id.as_str())
+            })?;
+            let language_row = ctx
+                .db
+                .known_ancient_language()
+                .character_id()
+                .find(&character_id)?;
             let language = known_ancient_language_from_rows(
                 &language_row.root_words,
                 &language_row.ancient_words,
@@ -384,7 +388,8 @@ pub fn fire_eidolon_ability(
                 root_words(),
                 ancient_words(),
                 Some(item.as_ref()),
-            ).ok()?;
+            )
+            .ok()?;
             (item, preview, None)
         }
         armor_source @ (CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes) => {
@@ -397,8 +402,15 @@ pub fn fire_eidolon_ability(
             };
             let armor = equipment.get(slot).as_ref()?;
             let item = items().get(&armor.item_id)?;
-            ability_loadout_for_item(item.as_ref())?.primary.iter().find(|id| id.as_str() == ability_id.as_str())?;
-            let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
+            ability_loadout_for_item(item.as_ref())?
+                .primary
+                .iter()
+                .find(|id| id.as_str() == ability_id.as_str())?;
+            let language_row = ctx
+                .db
+                .known_ancient_language()
+                .character_id()
+                .find(&character_id)?;
             let language = known_ancient_language_from_rows(
                 &language_row.root_words,
                 &language_row.ancient_words,
@@ -412,12 +424,12 @@ pub fn fire_eidolon_ability(
                 root_words(),
                 ancient_words(),
                 Some(item.as_ref()),
-            ).ok()?;
+            )
+            .ok()?;
             (item, preview, armor.armor_inscription.clone())
         }
         CastSourceRow::Spell => return None,
     };
-
 
     let targets = potential_targets(
         ctx,
@@ -441,13 +453,21 @@ pub fn fire_eidolon_ability(
             let equipment = equipment_from_rows(&equip_row.slots);
             let weapon = equipment.weapon.as_ref()?;
             let weapon_abilities = ability_loadout_for_item(item.as_ref())?;
-            let slot = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate]
-                .into_iter()
-                .find(|&s| {
-                    resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
-                        .map_or(false, |id| id.as_str() == ability_id.as_str())
-                })?;
-            let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
+            let slot = [
+                AbilitySlot::Primary,
+                AbilitySlot::Secondary,
+                AbilitySlot::Ultimate,
+            ]
+            .into_iter()
+            .find(|&s| {
+                resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
+                    .map_or(false, |id| id.as_str() == ability_id.as_str())
+            })?;
+            let language_row = ctx
+                .db
+                .known_ancient_language()
+                .character_id()
+                .find(&character_id)?;
             let language = known_ancient_language_from_rows(
                 &language_row.root_words,
                 &language_row.ancient_words,
@@ -455,28 +475,53 @@ pub fn fire_eidolon_ability(
             );
             let root_inscription = weapon.root_inscription.as_ref()?;
             cast_root_inscribed_slot(
-                slot, weapon_abilities, &weapon.ability_selection, root_inscription,
-                &language, base_abilities(), root_words(), ancient_words(),
-                &mut cast_ctx, Some(item.as_ref()),
-            ).ok()?;
+                slot,
+                weapon_abilities,
+                &weapon.ability_selection,
+                root_inscription,
+                &language,
+                base_abilities(),
+                root_words(),
+                ancient_words(),
+                &mut cast_ctx,
+                Some(item.as_ref()),
+            )
+            .ok()?;
         }
         CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes => {
             let inscription = armor_inscription.as_ref();
-            let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
+            let language_row = ctx
+                .db
+                .known_ancient_language()
+                .character_id()
+                .find(&character_id)?;
             let language = known_ancient_language_from_rows(
                 &language_row.root_words,
                 &language_row.ancient_words,
                 &language_row.base_abilities,
             );
             bevymmo_domain::abilities::cast_armor_inscribed_ability(
-                &ability_id, inscription, &language, base_abilities(), root_words(),
-                ancient_words(), &mut cast_ctx, Some(item.as_ref()),
-            ).ok()?;
+                &ability_id,
+                inscription,
+                &language,
+                base_abilities(),
+                root_words(),
+                ancient_words(),
+                &mut cast_ctx,
+                Some(item.as_ref()),
+            )
+            .ok()?;
         }
         CastSourceRow::Spell => return None,
     }
 
-    apply_pending(ctx, caster.entity_id, caster_position, ability_id_str, &mut cast_ctx);
+    apply_pending(
+        ctx,
+        caster.entity_id,
+        caster_position,
+        ability_id_str,
+        &mut cast_ctx,
+    );
     Some(preview.ability.base_params().cooldown)
 }
 
@@ -606,7 +651,6 @@ fn apply_modifier_event(ctx: &ReducerContext, event: &ApplyStatModifierEvent) {
     }
 }
 
-
 /// Carries the caster's own buff/debuff label into the row.
 ///
 /// Inferring it from the sign would get `-0.3 Armor` right and a reduced
@@ -711,11 +755,7 @@ fn apply_aoe_now(ctx: &ReducerContext, caster: u64, request: &AoeSpawnRequest) {
         .collect();
 
     for target in inside {
-        let payloads: Vec<_> = request
-            .effects
-            .iter()
-            .map(EffectPayloadRow::from)
-            .collect();
+        let payloads: Vec<_> = request.effects.iter().map(EffectPayloadRow::from).collect();
         if !payloads.is_empty() {
             resolve_payloads(ctx, &payloads, target.get(), Some(caster));
         }
@@ -806,13 +846,26 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
             // --- Legacy Spell paths (unchanged behaviour) ---
             (CastSourceRow::Spell, CastKindRow::CastTime) => {
                 let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
-                    log::warn!("cast in progress for unknown spell {:?}; cancelling", cast.spell_id);
-                    ended.push(EndedCast { entity_id: cast.entity_id, spell_id: cast.spell_id, interrupted: true });
+                    log::warn!(
+                        "cast in progress for unknown spell {:?}; cancelling",
+                        cast.spell_id
+                    );
+                    ended.push(EndedCast {
+                        entity_id: cast.entity_id,
+                        spell_id: cast.spell_id,
+                        interrupted: true,
+                    });
                     continue;
                 };
                 let due = elapsed_seconds >= cast.required_seconds;
                 if due {
-                    if let Some(cd) = fire_spell(ctx, &caster, spell.as_ref(), target_position, cast.target_entity) {
+                    if let Some(cd) = fire_spell(
+                        ctx,
+                        &caster,
+                        spell.as_ref(),
+                        target_position,
+                        cast.target_entity,
+                    ) {
                         start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
                     }
                 }
@@ -821,32 +874,63 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
             (CastSourceRow::Spell, CastKindRow::Charge) => {
                 // Charge is an Eidolon-only execution. A legacy spell carrying
                 // this state is invalid, so close it without firing.
-                log::warn!("legacy spell {:?} entered charge state; cancelling", cast.spell_id);
+                log::warn!(
+                    "legacy spell {:?} entered charge state; cancelling",
+                    cast.spell_id
+                );
                 true
             }
             (CastSourceRow::Spell, CastKindRow::Channeling) => {
                 let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
-                    log::warn!("cast in progress for unknown spell {:?}; cancelling", cast.spell_id);
-                    ended.push(EndedCast { entity_id: cast.entity_id, spell_id: cast.spell_id, interrupted: true });
+                    log::warn!(
+                        "cast in progress for unknown spell {:?}; cancelling",
+                        cast.spell_id
+                    );
+                    ended.push(EndedCast {
+                        entity_id: cast.entity_id,
+                        spell_id: cast.spell_id,
+                        interrupted: true,
+                    });
                     continue;
                 };
                 channel_tick_accumulator += dt;
-                let interval = if cast.tick_interval_seconds > 0.0 { cast.tick_interval_seconds } else { dt.max(f32::EPSILON) };
+                let interval = if cast.tick_interval_seconds > 0.0 {
+                    cast.tick_interval_seconds
+                } else {
+                    dt.max(f32::EPSILON)
+                };
                 while channel_tick_accumulator >= interval {
                     channel_tick_accumulator -= interval;
-                    fire_spell(ctx, &caster, spell.as_ref(), target_position, cast.target_entity);
+                    fire_spell(
+                        ctx,
+                        &caster,
+                        spell.as_ref(),
+                        target_position,
+                        cast.target_entity,
+                    );
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
 
             // --- Eidolon ability paths ---
-            (source @ (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes), CastKindRow::CastTime) => {
+            (
+                source @ (CastSourceRow::Eidolon
+                | CastSourceRow::Helmet
+                | CastSourceRow::Armor
+                | CastSourceRow::Shoes),
+                CastKindRow::CastTime,
+            ) => {
                 let due = elapsed_seconds >= cast.required_seconds;
                 if due {
                     // Resolution may fail if equipment/selection changed during wind-up.
                     // Treat as interrupted: no effect, no cooldown (client shows cancelled bar).
                     match fire_eidolon_ability(
-                        ctx, &caster, &cast.spell_id, target_position, cast.target_entity, source,
+                        ctx,
+                        &caster,
+                        &cast.spell_id,
+                        target_position,
+                        cast.target_entity,
+                        source,
                     ) {
                         Some(cd) => {
                             start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
@@ -866,25 +950,51 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                     false
                 }
             }
-            (source @ (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes), CastKindRow::Channeling) => {
+            (
+                source @ (CastSourceRow::Eidolon
+                | CastSourceRow::Helmet
+                | CastSourceRow::Armor
+                | CastSourceRow::Shoes),
+                CastKindRow::Channeling,
+            ) => {
                 channel_tick_accumulator += dt;
-                let interval = if cast.tick_interval_seconds > 0.0 { cast.tick_interval_seconds } else { dt.max(f32::EPSILON) };
+                let interval = if cast.tick_interval_seconds > 0.0 {
+                    cast.tick_interval_seconds
+                } else {
+                    dt.max(f32::EPSILON)
+                };
                 while channel_tick_accumulator >= interval {
                     channel_tick_accumulator -= interval;
                     // Re-fire each tick (same as legacy channeling).
                     // Tick failures are logged but don't interrupt the channel:
                     // the player may have moved out of range or the target died,
                     // but the channel itself is still valid.
-                    if fire_eidolon_ability(ctx, &caster, &cast.spell_id, target_position, cast.target_entity, source).is_none() {
+                    if fire_eidolon_ability(
+                        ctx,
+                        &caster,
+                        &cast.spell_id,
+                        target_position,
+                        cast.target_entity,
+                        source,
+                    )
+                    .is_none()
+                    {
                         log::debug!(
                             "Eidolon channel tick {:?} for entity {} failed to resolve",
-                            cast.spell_id, cast.entity_id
+                            cast.spell_id,
+                            cast.entity_id
                         );
                     }
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
-            (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes, CastKindRow::Charge) => {
+            (
+                CastSourceRow::Eidolon
+                | CastSourceRow::Helmet
+                | CastSourceRow::Armor
+                | CastSourceRow::Shoes,
+                CastKindRow::Charge,
+            ) => {
                 // Charge accumulates while held but does NOT auto-fire.
                 // The ability fires when the player releases (release_cast reducer).
                 // If elapsed exceeds required_seconds, the charge is "full" but
@@ -900,8 +1010,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
             // Determine if this was a true completion or an interruption.
             // Instant casts are never interruptions. Eidolon CastTime that failed
             // resolution is interrupted. Everything else depends on kind.
-            let interrupted = matches!(cast.kind, CastKindRow::Instant)
-                || eidolon_cast_failed;
+            let interrupted = matches!(cast.kind, CastKindRow::Instant) || eidolon_cast_failed;
 
             ended.push(EndedCast {
                 entity_id: cast.entity_id,
@@ -931,12 +1040,12 @@ fn resolve_payloads(
     let effects = payloads
         .iter()
         .filter_map(|payload| match payload.kind {
-            EffectPayloadKindRow::Damage => {
-                Some(EffectSpec::Damage(DamageEffect { amount: payload.amount }))
-            }
-            EffectPayloadKindRow::Heal => {
-                Some(EffectSpec::Heal(HealEffect { amount: payload.amount }))
-            }
+            EffectPayloadKindRow::Damage => Some(EffectSpec::Damage(DamageEffect {
+                amount: payload.amount,
+            })),
+            EffectPayloadKindRow::Heal => Some(EffectSpec::Heal(HealEffect {
+                amount: payload.amount,
+            })),
             EffectPayloadKindRow::ApplyStatus => {
                 let status_id = payload.status_id.as_deref()?.to_string();
                 Some(EffectSpec::ApplyStatus(ApplyStatusEffect {
@@ -946,7 +1055,10 @@ fn resolve_payloads(
                 }))
             }
             EffectPayloadKindRow::Cleanse => Some(EffectSpec::Cleanse(CleanseEffect {
-                filter: payload.status_filter.map(status_filter).unwrap_or(StatusFilter::All),
+                filter: payload
+                    .status_filter
+                    .map(status_filter)
+                    .unwrap_or(StatusFilter::All),
                 max_statuses: payload.max_statuses,
                 selection: payload
                     .selection
@@ -954,7 +1066,10 @@ fn resolve_payloads(
                     .unwrap_or(StatusSelection::Oldest),
             })),
             EffectPayloadKindRow::Purge => Some(EffectSpec::Purge(PurgeEffect {
-                filter: payload.status_filter.map(status_filter).unwrap_or(StatusFilter::All),
+                filter: payload
+                    .status_filter
+                    .map(status_filter)
+                    .unwrap_or(StatusFilter::All),
                 max_statuses: payload.max_statuses,
                 selection: payload
                     .selection
@@ -1035,12 +1150,7 @@ fn update_projectiles(ctx: &ReducerContext, dt: f32) {
                 None => {
                     for (target, _) in potential_targets(ctx, destination, proj.hit_radius) {
                         if target.get() != proj.caster {
-                            resolve_payloads(
-                                ctx,
-                                &proj.effects,
-                                target.get(),
-                                Some(proj.caster),
-                            );
+                            resolve_payloads(ctx, &proj.effects, target.get(), Some(proj.caster));
                         }
                     }
                 }

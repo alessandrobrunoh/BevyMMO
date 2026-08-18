@@ -91,8 +91,9 @@ use super::module_bindings::{
     ActiveStatus, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState, ColorRow,
     Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow,
     EntityStats, EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable, ItemInstanceRow,
-    KnownAncientLanguageTable, ModifierKindRow, PeriodicEffect, Player, PlayerMessageEvent, Projectile,
-    ReducerEventContext, RemoteReducers, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
+    KnownAncientLanguageTable, ModifierKindRow, PeriodicEffect, Player, PlayerMessageEvent,
+    Projectile, ReducerEventContext, RemoteReducers, Session, SpellVisualEffectEvent, StatModifier,
+    Vec3Row,
 };
 
 /// How fast predicted position is pulled back towards the authoritative one, as
@@ -964,7 +965,10 @@ fn drain_events(
             }
             RowEvent::KnownAncientLanguage(row) => {
                 let character_id = row.character_id;
-                state.pending.known_ancient_language.insert(character_id, row);
+                state
+                    .pending
+                    .known_ancient_language
+                    .insert(character_id, row);
                 if state.local.character_id == Some(character_id) {
                     replay_character(
                         &mut commands,
@@ -1205,7 +1209,9 @@ fn replay_character(
     }
     if local_character_id == Some(character_id) {
         if let Some(row) = pending.known_ancient_language.get(&character_id) {
-            commands.entity(entity).insert(known_ancient_language_from(row));
+            commands
+                .entity(entity)
+                .insert(known_ancient_language_from(row));
         }
     }
 }
@@ -1659,7 +1665,6 @@ fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instanc
     use bevymmo_gameplay::abilities::{AbilityId, AncientWordId};
     use bevymmo_gameplay::items::instance::{ItemInstance, ItemInstanceId};
     use bevymmo_gameplay::items::registry::ItemId;
-
 
     let secondary_word = |s: &super::module_bindings::SecondaryWordRow| SecondaryWord {
         word_id: AncientWordId::new(s.word_id.clone()),
@@ -2259,9 +2264,13 @@ mod tests {
 
         let language = known_ancient_language_from(&row);
 
-        assert!(language.root_words.contains(&bevymmo_gameplay::abilities::RootWordId::new("damage")));
+        assert!(language
+            .root_words
+            .contains(&bevymmo_gameplay::abilities::RootWordId::new("damage")));
         assert!(language.ancient_words.contains(&AncientWordId::new("echo")));
-        assert!(language.base_abilities.contains(&bevymmo_gameplay::abilities::AbilityId::new("arcane_orb")));
+        assert!(language
+            .base_abilities
+            .contains(&bevymmo_gameplay::abilities::AbilityId::new("arcane_orb")));
     }
 
     #[test]

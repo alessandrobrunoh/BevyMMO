@@ -144,7 +144,6 @@ pub enum ItemInscription {
     Weapon(WeaponInscription),
     /// New independent armor inscription. Armor does not use fake Q/W/E slots.
     Armor(ArmorInscription),
-
 }
 
 impl ItemInscription {
@@ -152,7 +151,6 @@ impl ItemInscription {
         match self {
             ItemInscription::Weapon(w) => w.is_fresh(),
             ItemInscription::Armor(a) => a.is_empty(),
-
         }
     }
 
@@ -180,7 +178,6 @@ impl Default for ItemInscription {
         ItemInscription::new_weapon()
     }
 }
-
 
 /// Quanta "frase" può reggere un'arma — dato statico del catalogo.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

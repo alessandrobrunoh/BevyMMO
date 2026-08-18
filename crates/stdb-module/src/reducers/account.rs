@@ -42,7 +42,10 @@ pub fn normalize_email(email: &str) -> String {
 /// "user@nodomain"; a full parser would still accept addresses no mail server
 /// on earth would deliver to.
 fn validate_email(normalized: &str) -> Result<(), String> {
-    if normalized.chars().any(|c| c.is_whitespace() || c.is_control()) {
+    if normalized
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control())
+    {
         return Err("email must not contain whitespace".to_string());
     }
     let Some((local, domain)) = normalized.split_once('@') else {
@@ -80,8 +83,7 @@ fn validate_password(password: &str) -> Result<(), String> {
 /// minimum recommendation rather than the strongest possible setting — watch
 /// actual energy consumption on `spacetime publish` before tightening it.
 fn argon2() -> Argon2<'static> {
-    let params =
-        Params::new(12 * 1024, 2, 1, None).expect("static Argon2 params are always valid");
+    let params = Params::new(12 * 1024, 2, 1, None).expect("static Argon2 params are always valid");
     Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
 }
 
@@ -303,7 +305,10 @@ mod tests {
     fn hash_password_is_salted_differently_across_calls() {
         let a = hash_password_with_salt("same password", &salt(1)).unwrap();
         let b = hash_password_with_salt("same password", &salt(2)).unwrap();
-        assert_ne!(a, b, "same password with different salts must hash differently");
+        assert_ne!(
+            a, b,
+            "same password with different salts must hash differently"
+        );
     }
 
     #[test]

@@ -819,12 +819,12 @@ mod tests {
             0.0,
             0.0,
             "offensive_test",
-            vec![EffectSpec::Damage(crate::effects::DamageEffect { amount: 1.0 })],
+            vec![EffectSpec::Damage(crate::effects::DamageEffect {
+                amount: 1.0,
+            })],
         );
 
         assert_eq!(ctx.pending_aoes[0].targeting, AoeTargeting::ExcludeCaster);
-        assert!(!ctx.pending_aoes[0]
-            .targeting
-            .allows(caster, caster));
+        assert!(!ctx.pending_aoes[0].targeting.allows(caster, caster));
     }
 }

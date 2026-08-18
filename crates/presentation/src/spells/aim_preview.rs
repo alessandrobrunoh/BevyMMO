@@ -53,12 +53,10 @@ const CONE_ARC_SEGMENTS: usize = 32;
 pub fn draw_ability_aim_preview(
     mut gizmos: Gizmos,
     aim: Res<AbilityAim>,
-    players: Query<(
-        &Equipment,
-        &KnownAncientLanguage,
-        &Position,
-        &LookDirection,
-    ), With<LocalPlayer>>,
+    players: Query<
+        (&Equipment, &KnownAncientLanguage, &Position, &LookDirection),
+        With<LocalPlayer>,
+    >,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
     root_word_registry: Res<RootWordRegistry>,
@@ -101,8 +99,9 @@ pub fn draw_ability_aim_preview(
             )
         })
         .unwrap_or_else(|| {
-            let ability_id = resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)
-                .ok_or(bevymmo_gameplay::abilities::CastBlockedReason::MissingRegistryEntry)?;
+            let ability_id =
+                resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)
+                    .ok_or(bevymmo_gameplay::abilities::CastBlockedReason::MissingRegistryEntry)?;
             let ability = ability_registry
                 .get(ability_id)
                 .ok_or(bevymmo_gameplay::abilities::CastBlockedReason::MissingRegistryEntry)?;

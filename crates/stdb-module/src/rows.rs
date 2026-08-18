@@ -20,13 +20,13 @@ use bevymmo_domain::abilities::known_glyphs::KnownAncientLanguage;
 use bevymmo_domain::abilities::root_word::RootWordId;
 use bevymmo_domain::abilities::weapon_abilities::AbilitySelection;
 use bevymmo_domain::abilities::{AbilityId, AncientWordId};
+use bevymmo_domain::effects::{ApplyStatusEffect, EffectSpec};
 use bevymmo_domain::items::components::{Equipment, Inventory};
 use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId};
 use bevymmo_domain::items::registry::ItemId;
 use bevymmo_domain::items::EquipSlot;
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
-use bevymmo_domain::effects::{ApplyStatusEffect, EffectSpec};
 use bevymmo_domain::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 use glam::Vec3;
 use spacetimedb::SpacetimeType;
@@ -212,7 +212,6 @@ impl From<StatsRow> for StatsBundleData {
         }
     }
 }
-
 
 // ══════════════════════════════════════════════════════════════════
 // NEW ROOTWORD-BASED INSCRIPTION ROWS (additive to legacy)
@@ -498,14 +497,9 @@ pub fn known_ancient_language_from_rows(
             .cloned()
             .map(AncientWordId::new)
             .collect(),
-        base_abilities: base_abilities
-            .iter()
-            .cloned()
-            .map(AbilityId::new)
-            .collect(),
+        base_abilities: base_abilities.iter().cloned().map(AbilityId::new).collect(),
     }
 }
-
 
 /// A player's resonance with an Ancient Word.
 ///

@@ -181,7 +181,6 @@ pub struct EquipmentTable {
     pub slots: Vec<Option<ItemInstanceRow>>,
 }
 
-
 /// New vocabulary for Root Words and universal Ancient Words. This table is
 /// additive to `KnownGlyphsTable` so existing characters remain readable while
 /// the migration is in progress.

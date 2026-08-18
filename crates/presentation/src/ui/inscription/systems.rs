@@ -103,7 +103,10 @@ pub fn refresh_inscription_window_on_equipment_change(
     ability_registry: Res<BaseAbilityRegistry>,
     root_word_registry: Res<RootWordRegistry>,
     ancient_word_registry: Res<AncientWordRegistry>,
-    player_query: Query<(&Equipment, &KnownAncientLanguage), (With<LocalPlayer>, Changed<Equipment>)>,
+    player_query: Query<
+        (&Equipment, &KnownAncientLanguage),
+        (With<LocalPlayer>, Changed<Equipment>),
+    >,
 ) {
     if !state.is_open {
         return;
@@ -545,7 +548,7 @@ fn spawn_slot_column(
         .with_children(|column| {
             column.spawn((
                 Text(format!(
-                "{} \u{2014} {}",
+                    "{} \u{2014} {}",
                     slot_key_label(slot),
                     ability.display_name()
                 )),
@@ -583,7 +586,6 @@ fn spawn_slot_column(
                     );
                 }
             }
-
 
             column.spawn((
                 Text("Ancient Words".to_string()),
@@ -735,7 +737,8 @@ pub fn handle_inscription_interactions(
         if *interaction != Interaction::Pressed {
             continue;
         }
-        let toggled_off = current.root_word.as_ref().map(|id| id.as_str()) == Some(toggle.root_word_id.as_str());
+        let toggled_off =
+            current.root_word.as_ref().map(|id| id.as_str()) == Some(toggle.root_word_id.as_str());
         let new_root = if toggled_off {
             None
         } else {
@@ -764,7 +767,11 @@ pub fn handle_inscription_interactions(
     }
 }
 
-fn send_root_update(conn: Option<&StdbConnection>, root_word: Option<RootWordId>, current: &WeaponInscription) {
+fn send_root_update(
+    conn: Option<&StdbConnection>,
+    root_word: Option<RootWordId>,
+    current: &WeaponInscription,
+) {
     let Some(conn) = conn else {
         return;
     };

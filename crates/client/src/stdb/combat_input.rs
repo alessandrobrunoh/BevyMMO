@@ -43,39 +43,16 @@ pub fn send_combat_inputs(
         }
     }
 
-    for (action, slot, ability_slot) in [
-        (
-            KeyAction::CastHelmet,
-            EquipSlot::Helmet,
-            AbilitySlot::Primary,
-        ),
-        (
-            KeyAction::CastChestplate,
-            EquipSlot::Armor,
-            AbilitySlot::Primary,
-        ),
-        (KeyAction::CastBoots, EquipSlot::Shoes, AbilitySlot::Primary),
-        (
-            KeyAction::CastHelmetSecondary,
-            EquipSlot::Helmet,
-            AbilitySlot::Secondary,
-        ),
-        (
-            KeyAction::CastChestplateSecondary,
-            EquipSlot::Armor,
-            AbilitySlot::Secondary,
-        ),
-        (
-            KeyAction::CastBootsSecondary,
-            EquipSlot::Shoes,
-            AbilitySlot::Secondary,
-        ),
+    for (action, slot) in [
+        (KeyAction::CastHelmet, EquipSlot::Helmet),
+        (KeyAction::CastChestplate, EquipSlot::Armor),
+        (KeyAction::CastBoots, EquipSlot::Shoes),
     ] {
         if settings.just_pressed(action, &keyboard) {
             let _ = commands::armor_cast(
                 &connection,
                 slot,
-                ability_slot,
+                AbilitySlot::Primary,
                 target_entity,
                 target_position,
             );

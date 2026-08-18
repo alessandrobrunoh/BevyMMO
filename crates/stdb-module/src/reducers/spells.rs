@@ -22,7 +22,8 @@
 
 use bevymmo_domain::abilities::{
     cast_armor_inscribed_ability, cast_root_inscribed_slot,
-    resolve_active_ability, resolve_armor_inscribed_ability, resolve_root_inscribed_slot,
+    resolve_active_ability, resolve_armor_inscribed_ability, resolve_armor_ability,
+    resolve_root_inscribed_slot,
     AbilityCastMode,
     AbilitySlot, BlueprintExecution, CastBlockedReason, ChannelMovementPolicy as EidolonChannelMovementPolicy,
 };
@@ -504,12 +505,13 @@ pub fn armor_cast(
         .ok_or_else(|| format!("unknown item {:?}", armor.item_id.as_str()))?;
     let abilities = ability_loadout_for_item(item.as_ref())
         .ok_or_else(|| format!("{} has no armor abilities", item.display_name()))?;
-    let ability_slot = parse_slot(&ability_slot)?;
-    let ability_id = abilities
-        .options_for(ability_slot)
-        .first()
+    // Armor has one active ability chosen from the union of all abilities the
+    // item offers. The legacy ability_slot argument remains in the reducer
+    // shape for generated-client compatibility, but is intentionally ignored.
+    let _ = ability_slot;
+    let ability_id = resolve_armor_ability(abilities, &armor.ability_selection)
         .cloned()
-        .ok_or_else(|| format!("armor has no {ability_slot:?} ability"))?;
+        .ok_or_else(|| "armor has no ability".to_string())?;
     if spells::is_on_cooldown(ctx, caster.entity_id, ability_id.as_str()) {
         return Err(format!("{:?} is on cooldown", ability_id.as_str()));
     }

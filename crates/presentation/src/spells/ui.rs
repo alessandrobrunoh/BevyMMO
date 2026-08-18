@@ -131,17 +131,15 @@ struct HotbarSlotDef {
     equip_fn: fn(&Equipment) -> &Option<bevymmo_gameplay::items::instance::ItemInstance>,
 }
 
-/// All 9 hotbar columns in display order.
-const HOTBAR_SLOTS: [HotbarSlotDef; 9] = [
+/// All 6 hotbar columns in display order: three weapon slots and one active
+/// ability for each armor piece.
+const HOTBAR_SLOTS: [HotbarSlotDef; 6] = [
     HotbarSlotDef { action: KeyAction::CastPrimary,          slot: AbilitySlot::Primary,   equip_fn: |e| &e.weapon },
     HotbarSlotDef { action: KeyAction::CastSecondary,        slot: AbilitySlot::Secondary, equip_fn: |e| &e.weapon },
     HotbarSlotDef { action: KeyAction::CastUltimate,         slot: AbilitySlot::Ultimate,  equip_fn: |e| &e.weapon },
-    HotbarSlotDef { action: KeyAction::CastHelmet,           slot: AbilitySlot::Primary,   equip_fn: |e| &e.helmet },
-    HotbarSlotDef { action: KeyAction::CastHelmetSecondary,  slot: AbilitySlot::Secondary, equip_fn: |e| &e.helmet },
-    HotbarSlotDef { action: KeyAction::CastChestplate,       slot: AbilitySlot::Primary,   equip_fn: |e| &e.armor },
-    HotbarSlotDef { action: KeyAction::CastChestplateSecondary,slot: AbilitySlot::Secondary, equip_fn: |e| &e.armor },
-    HotbarSlotDef { action: KeyAction::CastBoots,            slot: AbilitySlot::Primary,   equip_fn: |e| &e.shoes },
-    HotbarSlotDef { action: KeyAction::CastBootsSecondary,    slot: AbilitySlot::Secondary, equip_fn: |e| &e.shoes },
+    HotbarSlotDef { action: KeyAction::CastHelmet,     slot: AbilitySlot::Primary, equip_fn: |e| &e.helmet },
+    HotbarSlotDef { action: KeyAction::CastChestplate, slot: AbilitySlot::Primary, equip_fn: |e| &e.armor },
+    HotbarSlotDef { action: KeyAction::CastBoots,      slot: AbilitySlot::Primary, equip_fn: |e| &e.shoes },
 ];
 
 /// Resolves the active ability for one equipped item + ability-slot pair.
@@ -157,7 +155,14 @@ fn resolve_equipment_entry(
     let instance = equipped.as_ref()?;
     let item = item_registry.get(&instance.item_id)?;
     let loadout = item.ability_loadout()?;
-    let ability_id = resolve_active_ability(slot, loadout, &instance.ability_selection)?;
+    let ability_id = if matches!(
+        item.config().category,
+        bevymmo_gameplay::items::definition::ItemCategory::Armor
+    ) {
+        bevymmo_gameplay::abilities::resolve_armor_ability(loadout, &instance.ability_selection)?
+    } else {
+        resolve_active_ability(slot, loadout, &instance.ability_selection)?
+    };
     let ability = ability_registry.get(ability_id)?;
     Some((ability_id.clone(), ability.display_name().to_string()))
 }
@@ -423,13 +428,13 @@ mod tests {
 
     #[test]
     fn nine_hotbar_slots_defined() {
-        assert_eq!(HOTBAR_SLOTS.len(), 9);
-        // Weapon 3 + Helmet 2 + Chestplate 2 + Shoes 2.
+        assert_eq!(HOTBAR_SLOTS.len(), 6);
+        // Weapon 3 + one active ability per armor piece.
         assert_eq!(HOTBAR_SLOTS[0].action, KeyAction::CastPrimary);
         assert_eq!(HOTBAR_SLOTS[2].action, KeyAction::CastUltimate);
         assert_eq!(HOTBAR_SLOTS[3].action, KeyAction::CastHelmet);
-        assert_eq!(HOTBAR_SLOTS[5].action, KeyAction::CastChestplate);
-        assert_eq!(HOTBAR_SLOTS[7].action, KeyAction::CastBoots);
+        assert_eq!(HOTBAR_SLOTS[4].action, KeyAction::CastChestplate);
+        assert_eq!(HOTBAR_SLOTS[5].action, KeyAction::CastBoots);
     }
 
     #[test]

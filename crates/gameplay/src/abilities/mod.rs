@@ -48,5 +48,5 @@ pub use resolve::{
 };
 pub use slot::AbilitySlot;
 pub use weapon_abilities::{
-    resolve_active_ability, AbilityLoadout, AbilitySelection, WeaponAbilities,
+    resolve_active_ability, resolve_armor_ability, AbilityLoadout, AbilitySelection, WeaponAbilities,
 };

@@ -10,7 +10,7 @@ use bevy::mesh::Indices;
 use bevy::prelude::*;
 use bevy::render::render_resource::PrimitiveTopology;
 use bevymmo_app_support::paths;
-use bevymmo_client::movement::ClientSurfaceQuery;
+use bevymmo_client::movement::{ClientCollision, ClientSurfaceQuery};
 use bevymmo_gameplay::placeables::{AssetHint, PlaceableRegistry};
 use bevymmo_world::{CollisionGrid, MapManifest, Prop, SurfaceQuery, Terrain};
 
@@ -82,6 +82,7 @@ impl Plugin for WorldMapPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ClientWorldMap>()
             .init_resource::<ClientSurfaceQuery>()
+            .init_resource::<ClientCollision>()
             .init_resource::<ClientPropMeshRegistry>()
             .init_resource::<SteepSlopeDebug>()
             .add_systems(
@@ -89,7 +90,7 @@ impl Plugin for WorldMapPlugin {
                 (
                     load_map_when_in_game,
                     cleanup_map_when_not_in_game,
-                    sync_surface_query,
+                    sync_world_queries,
                     draw_steep_slopes.run_if(|debug: Res<SteepSlopeDebug>| debug.0),
                 )
                     .chain(),
@@ -174,20 +175,29 @@ fn cleanup_map_when_not_in_game(
     }
 }
 
-/// Synchronizes the shared `ClientSurfaceQuery` resource with the local `ClientWorldMap`.
+/// Publishes the loaded map's terrain and blocker data to the resources
+/// `bevymmo_client` owns.
 ///
-/// This bridges the presentation layer (which owns `ClientWorldMap`) with the client
-/// layer (which needs surface data for click-to-move) by copying the surface query
-/// data to a shared resource that both crates can access without cross-dependencies.
-fn sync_surface_query(
+/// Both halves have to travel together: the SpacetimeDB prediction system
+/// needs the surfaces *and* the collision grid to run the same
+/// `step_on_terrain` the module runs, and a client holding one without the
+/// other would silently fall back to collisionless stepping.
+fn sync_world_queries(
     world_map: Res<ClientWorldMap>,
     mut shared_surface_query: ResMut<ClientSurfaceQuery>,
+    mut shared_collision: ResMut<ClientCollision>,
 ) {
     if !world_map.is_changed() {
         return;
     }
 
     shared_surface_query.0.clone_from(&world_map.surface_query);
+    shared_collision.grid.clone_from(&world_map.collision);
+    shared_collision.max_step_height = world_map
+        .manifest
+        .as_ref()
+        .map(|manifest| manifest.get_world_metrics().max_step_height)
+        .unwrap_or_default();
 }
 
 fn should_load_map_scene(manifest: &MapManifest) -> bool {
@@ -509,11 +519,12 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<ClientWorldMap>()
             .init_resource::<ClientSurfaceQuery>()
+            .init_resource::<ClientCollision>()
             .init_resource::<SurfaceQueryChangeCount>()
             .add_systems(
                 Update,
                 (
-                    sync_surface_query,
+                    sync_world_queries,
                     count_surface_query_changes.run_if(resource_changed::<ClientSurfaceQuery>),
                 )
                     .chain(),

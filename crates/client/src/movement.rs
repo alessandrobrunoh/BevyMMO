@@ -16,7 +16,7 @@ use bevymmo_gameplay::stats::events::StatField;
 use bevymmo_gameplay::stats::modifiers::ActiveStatModifiers;
 use bevymmo_gameplay::stats::modifiers::StatModifierInstance;
 use bevymmo_network::network::protocol::{Inputs, LookDirection, Position};
-use bevymmo_world::SurfaceQuery;
+use bevymmo_world::{CollisionGrid, SurfaceQuery};
 
 /// Distance (in world units) under which a move command is considered satisfied.
 pub const ARRIVAL_DISTANCE: f32 = 0.05;
@@ -37,6 +37,26 @@ pub struct MoveTarget(pub Option<Vec3>);
 /// cross-crate dependencies.
 #[derive(Resource, Default)]
 pub struct ClientSurfaceQuery(pub Option<SurfaceQuery>);
+
+/// Client-side blocker grid and step budget, the companion to
+/// [`ClientSurfaceQuery`].
+///
+/// Populated by the presentation layer from the same loaded manifest, and
+/// consumed by the SpacetimeDB prediction system so the locally simulated
+/// position obeys the *same* walls the authoritative module does. Without it
+/// the client walks its rendered character straight through a parapet and off
+/// a ledge, and only the reconcile pull drags it back — which is a drift of
+/// `speed / RECONCILE_RATE` metres of visible wall penetration, not a
+/// correction anybody wants to see.
+///
+/// Lives here rather than next to `ClientWorldMap` because `bevymmo_client`
+/// cannot depend on `bevymmo_presentation` (the dependency runs the other
+/// way), exactly like [`ClientSurfaceQuery`].
+#[derive(Resource, Default)]
+pub struct ClientCollision {
+    pub grid: Option<CollisionGrid>,
+    pub max_step_height: f32,
+}
 
 /// Calculates movement speed after active stat modifiers.
 ///

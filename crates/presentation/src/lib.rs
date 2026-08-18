@@ -4,7 +4,6 @@ pub mod assets;
 pub mod entity;
 pub mod game_state;
 pub mod map_loader;
-pub mod player_movement;
 pub mod renderer;
 pub mod scenes;
 pub mod spells;
@@ -51,7 +50,6 @@ impl Plugin for PresentationPlugin {
             crate::renderer::RendererPlugin,
             crate::entity::EntityVisualsPlugin,
             crate::spells::SpellsHudPlugin,
-            crate::player_movement::PlayerMovementPredictionPlugin,
             crate::world::WorldMapPlugin,
         ));
     }
@@ -69,7 +67,6 @@ pub mod prelude {
         validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen,
         GameStatePlugin, PlayerNameError, Screen,
     };
-    pub use crate::player_movement::PlayerMovementPredictionPlugin;
     pub use crate::renderer::RendererPlugin;
     pub use crate::scenes::ScenesPlugin;
     pub use crate::spells::SpellsHudPlugin;

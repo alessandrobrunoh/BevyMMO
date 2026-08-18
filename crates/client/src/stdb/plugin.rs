@@ -18,10 +18,13 @@
 //! neither. The server ticks at roughly 18-19 Hz, so rendering raw authoritative
 //! positions would visibly stutter. Instead every entity carries its destination
 //! ([`StdbAuthoritative::move_target`], replicated on purpose), and the client
-//! walks towards it every frame using [`bevymmo_domain::movement::step_towards`].
-//! The server additionally resolves terrain and collision from its embedded
-//! world data, so reconciliation remains responsible for correcting local
-//! prediction around slopes and blockers.
+//! walks towards it every frame using the same terrain stepping the module
+//! runs — `bevymmo_domain::movement::step_on_terrain` over the manifest the
+//! presentation layer publishes through [`crate::movement::ClientCollision`].
+//! Sharing the stepper is the point: prediction that ignored blockers would
+//! render the character through walls and off ledges, and reconciliation only
+//! eases the error away, so the wrong position is what the player sees for as
+//! long as they hold the button.
 
 use crate::app_state::{
     screen_after_connection_loss, AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus,
@@ -29,7 +32,9 @@ use crate::app_state::{
     Screen,
 };
 use crate::local_player::LocalPlayer;
-use crate::movement::MoveTarget;
+use crate::movement::{
+    snap_to_ground, step_on_terrain, ClientCollision, ClientSurfaceQuery, MoveTarget, TerrainStep,
+};
 use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
@@ -53,6 +58,7 @@ use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, Spel
 use bevymmo_network::world_components::{
     EntityColor, LookDirection, NetworkEntityId, Position, ProjectileVisual,
 };
+use bevymmo_world::{CollisionGrid, SurfaceQuery};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use spacetimedb_sdk::{
     credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey, Uuid,
@@ -462,6 +468,12 @@ impl Plugin for StdbPlugin {
 
         app.init_resource::<StdbEntityMap>();
         app.init_resource::<PendingRows>();
+        // Owned by the presentation layer's map loader, which fills them in
+        // once a map is loaded. Initialised here too so `predict_and_reconcile`
+        // can take them as plain `Res` no matter which plugins an app builds
+        // with — a missing resource is a panic, not a skipped system.
+        app.init_resource::<ClientSurfaceQuery>();
+        app.init_resource::<ClientCollision>();
         app.init_resource::<LocalCharacter>();
         app.init_resource::<CharacterRoster>();
         app.init_resource::<ShuttingDown>();
@@ -2028,16 +2040,51 @@ fn send_move_commands(
 ///
 /// Runs for remote entities as much as the local one: at ~18 Hz, interpolating
 /// other characters is what makes them walk instead of teleport between updates.
-fn predict_and_reconcile(time: Res<Time>, mut query: Query<(&mut Position, &StdbAuthoritative)>) {
+///
+/// The step uses the *same* [`step_on_terrain`] the module's tick uses, over
+/// the same manifest, so the predicted position obeys the same walls, ledges
+/// and step-height rules the authoritative simulation does. Reconciliation is
+/// a correction for timing skew, not a substitute for collision: while the
+/// server holds a character against a parapet it keeps the move target set
+/// (so the character can slide along the wall over the following ticks), and a
+/// collisionless local step would therefore push into that wall every frame
+/// forever, settling at `speed / RECONCILE_RATE` metres of penetration and
+/// walking the character visibly off the map's raised ground.
+///
+/// [`step_on_terrain`]: crate::movement::step_on_terrain
+fn predict_and_reconcile(
+    time: Res<Time>,
+    surfaces: Res<ClientSurfaceQuery>,
+    collision: Res<ClientCollision>,
+    mut query: Query<(&mut Position, &StdbAuthoritative)>,
+) {
     let dt = time.delta_secs();
     if dt <= 0.0 {
         return;
     }
 
+    // Both halves are published together by the presentation layer, and the
+    // map is not loaded at the menu — until it is, fall back to the plain
+    // straight-line step so characters still animate instead of freezing.
+    let terrain = match (surfaces.0.as_ref(), collision.grid.as_ref()) {
+        (Some(surfaces), Some(grid)) if !surfaces.is_empty() => Some((surfaces, grid)),
+        _ => None,
+    };
+
     for (mut position, authoritative) in &mut query {
         if let Some(target) = authoritative.move_target {
-            position.0 = match movement::step_towards(position.0, target, authoritative.speed, dt) {
-                Step::Moving(p) | Step::Arrived(p) => p,
+            position.0 = match terrain {
+                Some((surfaces, grid)) => step_predicted_on_terrain(
+                    position.0,
+                    target,
+                    authoritative.speed * dt,
+                    surfaces,
+                    grid,
+                    collision.max_step_height,
+                ),
+                None => match movement::step_towards(position.0, target, authoritative.speed, dt) {
+                    Step::Moving(p) | Step::Arrived(p) => p,
+                },
             };
         }
 
@@ -2050,6 +2097,36 @@ fn predict_and_reconcile(time: Res<Time>, mut query: Query<(&mut Position, &Stdb
             // per second is constant regardless of how the frames fall.
             position.0 += error * (1.0 - (-RECONCILE_RATE * dt).exp());
         }
+    }
+}
+
+/// One terrain-aware prediction step, mirroring `sim::movement::step`.
+///
+/// `Blocked` deliberately leaves the position untouched rather than sliding
+/// the character on: the module already tried both slide axes for this step,
+/// and its answer arrives through `authoritative.position` a tick later.
+fn step_predicted_on_terrain(
+    position: Vec3,
+    target: Vec3,
+    max_travel: f32,
+    surfaces: &SurfaceQuery,
+    grid: &CollisionGrid,
+    max_step_height: f32,
+) -> Vec3 {
+    let mut position = position;
+    snap_to_ground(&mut position, surfaces, max_step_height);
+
+    match step_on_terrain(
+        position,
+        target.x,
+        target.z,
+        max_travel,
+        surfaces,
+        grid,
+        max_step_height,
+    ) {
+        TerrainStep::Moved(next) | TerrainStep::Arrived(next) => next,
+        TerrainStep::Blocked | TerrainStep::NoSurface => position,
     }
 }
 

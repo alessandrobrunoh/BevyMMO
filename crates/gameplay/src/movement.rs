@@ -1,15 +1,17 @@
 //! Point-to-point movement, shared by both sides of the wire.
 //!
-//! The server advances characters by calling [`step_towards`] on its tick; the
-//! client calls the *same function* between server updates to predict where its
-//! own character is going. That sharing is the point: with lightyear gone the
-//! client no longer gets prediction for free, and two hand-written
+//! The server advances characters by calling [`step_on_terrain`] on its tick;
+//! the client calls the *same function* between server updates to predict where
+//! its own character is going. That sharing is the point: with lightyear gone
+//! the client no longer gets prediction for free, and two hand-written
 //! implementations of "walk towards a point" would disagree in exactly the way
-//! that makes a character rubber-band.
+//! that makes a character rubber-band — or, when only one of them consults the
+//! collision grid, walk visibly through walls until reconciliation catches up.
 //!
-//! Flat stepping remains useful for client reconciliation. Terrain stepping is
-//! also defined here, but callers supply the world query and collision grid so
-//! this crate remains independent of Bevy, filesystems, and storage.
+//! Flat stepping ([`step_towards`]) remains the fallback for a client that has
+//! no map loaded yet. Terrain stepping takes the world query and collision grid
+//! from its caller, so this crate stays independent of Bevy, filesystems, and
+//! storage.
 
 use glam::Vec3;
 

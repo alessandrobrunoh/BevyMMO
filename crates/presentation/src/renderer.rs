@@ -526,13 +526,26 @@ fn is_descendant_of(entity: Entity, root: Entity, parents: &Query<&ChildOf>) -> 
     false
 }
 
+/// Whether a new `EntityColor` should change the assigned material handle.
+pub(crate) fn color_material_needs_swap(current: Color, next: Color) -> bool {
+    current != next
+}
+
 fn update_colors(
-    entities: Query<(&EntityColor, &MeshMaterial3d<StandardMaterial>), Changed<EntityColor>>,
+    mut renderer_assets: Option<ResMut<RendererAssets>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut entities: Query<
+        (&EntityColor, &mut MeshMaterial3d<StandardMaterial>),
+        (Changed<EntityColor>, Without<ProjectileVisual>),
+    >,
 ) {
-    for (color, handle) in entities.iter() {
-        if let Some(mut mat) = materials.get_mut(&handle.0) {
-            mat.base_color = color.0;
+    let Some(assets) = renderer_assets.as_mut() else {
+        return;
+    };
+    for (color, mut handle) in &mut entities {
+        let next = assets.get_or_create_color_material(&mut materials, color.0);
+        if handle.0 != next {
+            *handle = MeshMaterial3d(next);
         }
     }
 }
@@ -787,6 +800,14 @@ mod tests {
             .translation
             .x;
         assert_eq!(rendered, TELEPORT_SNAP_DISTANCE * 4.0);
+    }
+
+    #[test]
+    #[test]
+    fn identical_colors_do_not_need_a_material_swap() {
+        let green = Color::srgb(0.2, 0.8, 0.2);
+        assert!(!color_material_needs_swap(green, green));
+        assert!(color_material_needs_swap(green, Color::srgb(0.8, 0.2, 0.2)));
     }
 
     #[test]

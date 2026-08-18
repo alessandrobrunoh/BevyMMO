@@ -107,10 +107,13 @@ fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
         Node {
             position_type: PositionType::Absolute,
             bottom: Val::Px(20.0),
-            left: Val::Percent(50.0),
+            left: Val::Percent(2.0),
+            width: Val::Percent(96.0),
             padding: UiRect::all(Val::Px(8.0)),
             flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::Center,
             column_gap: Val::Px(6.0),
+            overflow: Overflow::clip_x(),
             ..default()
         },
         BackgroundColor(theme.panel_bg),
@@ -195,7 +198,7 @@ fn sync_spell_hud(
             ),
             None => (None, "Empty".to_string()),
         };
-        let key_label = settings.0.keybinds.get(def.action).label();
+        let key_label = display_key_label(&settings.0.keybinds.get(def.action).label());
 
         signature.push((
             def.slot,
@@ -223,9 +226,14 @@ fn sync_spell_hud(
             parent
                 .spawn((
                     Node {
+                        width: Val::Percent(10.0),
+                        min_width: Val::Px(0.0),
+                        flex_grow: 1.0,
+                        flex_shrink: 1.0,
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::Center,
-                        padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                        padding: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
+                        overflow: Overflow::clip_x(),
                         ..default()
                     },
                     BackgroundColor(theme.button_bg),
@@ -352,6 +360,14 @@ fn hide_spell_hud(mut roots: Query<&mut Node, With<SpellHudRoot>>) {
 }
 
 /// Formats the third row of a hotbar cell.
+fn display_key_label(label: &str) -> String {
+    label
+        .strip_prefix("Digit")
+        .or_else(|| label.strip_prefix("Key"))
+        .unwrap_or(label)
+        .to_string()
+}
+
 fn format_cooldown_text(entry: &SpellHudEntry, remaining_seconds: f32) -> String {
     if entry.cooldown_key.is_none() || entry.display_name == "Empty" {
         return "—".to_string();
@@ -381,6 +397,13 @@ mod tests {
             display_name: "Empty".to_string(),
             key_label: key.to_string(),
         }
+    }
+
+    #[test]
+    fn technical_key_names_become_player_facing_labels() {
+        assert_eq!(display_key_label("Digit1"), "1");
+        assert_eq!(display_key_label("KeyD"), "D");
+        assert_eq!(display_key_label("PageUp"), "PageUp");
     }
 
     #[test]

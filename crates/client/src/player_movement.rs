@@ -44,7 +44,7 @@ impl Plugin for PlayerMovementPlugin {
 pub(crate) fn select_move_target(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: Query<(&Camera, &Transform), With<Camera3d>>,
     mut move_target: ResMut<MoveTarget>,
     surface_query: Res<ClientSurfaceQuery>,
     mut commands: Commands,

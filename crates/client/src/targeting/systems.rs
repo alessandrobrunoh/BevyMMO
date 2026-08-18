@@ -70,7 +70,7 @@ fn ray_sphere_intersection(
 pub fn select_target_with_left_click(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: Query<(&Camera, &Transform), With<Camera3d>>,
     mut current_target: ResMut<CurrentTarget>,
     targetable_entities: Query<(Entity, &Position, &VitalStats), With<GameEntity>>,
 ) {

@@ -56,7 +56,7 @@ pub fn npc_sidebar_on_click(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: Query<(&Camera, &Transform), With<Camera3d>>,
     theme: Res<UiTheme>,
     item_registry: Res<ItemRegistry>,
     // Query per le entità game (NPC = GameEntity + Position + EntityKind::Friendly)
@@ -131,12 +131,13 @@ fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> 
 /// Ottiene il raggio dalla Camera3d attraverso il cursore nella PrimaryWindow.
 fn cursor_ray(
     windows: &Query<&Window, With<PrimaryWindow>>,
-    cameras: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: &Query<(&Camera, &Transform), With<Camera3d>>,
 ) -> Option<Ray3d> {
     let window = windows.single().ok()?;
     let cursor_pos = window.cursor_position()?;
     let (camera, transform) = cameras.iter().next()?;
-    camera.viewport_to_world(transform, cursor_pos).ok()
+    let view = crate::renderer::camera_view(transform);
+    camera.viewport_to_world(&view, cursor_pos).ok()
 }
 
 /// Spawna una Card UI per la sidebar NPC.

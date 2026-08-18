@@ -64,7 +64,7 @@ pub fn weapon_slot_bindings() -> impl Iterator<Item = (KeyAction, AbilitySlot)> 
 #[derive(SystemParam)]
 pub struct AimRaycastParams<'w, 's> {
     pub windows: Query<'w, 's, &'static Window, With<bevy::window::PrimaryWindow>>,
-    pub cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<Camera3d>>,
+    pub cameras: Query<'w, 's, (&'static Camera, &'static Transform), With<Camera3d>>,
     pub surface_query: Option<Res<'w, ClientSurfaceQuery>>,
 }
 

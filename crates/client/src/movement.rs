@@ -5,7 +5,7 @@
 //! authoritative server system and the client-side prediction system.
 
 use bevy::prelude::{
-    Camera, Camera3d, GlobalTransform, Mut, Query, Ray3d, Resource, Vec3, Window, With,
+    Camera, Camera3d, GlobalTransform, Mut, Query, Ray3d, Resource, Transform, Vec3, Window, With,
 };
 use bevy::window::PrimaryWindow;
 
@@ -258,14 +258,26 @@ pub fn resolve_ray_to_ground(
 /// this crate needs before it can do anything else with the click.
 pub fn cursor_ray(
     windows: &Query<&Window, With<PrimaryWindow>>,
-    cameras: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: &Query<(&Camera, &Transform), With<Camera3d>>,
 ) -> Option<Ray3d> {
     let window = windows.single().ok()?;
     let cursor_position = window.cursor_position()?;
     let (camera, camera_transform) = cameras.iter().next()?;
-    camera
-        .viewport_to_world(camera_transform, cursor_position)
-        .ok()
+    let view = GlobalTransform::from(*camera_transform);
+    camera.viewport_to_world(&view, cursor_position).ok()
+}
+
+/// Intersection with the Y=0 plane, or `None` when the ray is parallel
+/// or the hit is behind the camera / past `max_distance`.
+pub fn intersect_y0_plane(origin: Vec3, direction: Vec3, max_distance: f32) -> Option<Vec3> {
+    if direction.y.abs() < 1e-6 {
+        return None;
+    }
+    let t = -origin.y / direction.y;
+    if !t.is_finite() || t < 0.0 || t > max_distance {
+        return None;
+    }
+    Some(origin + direction * t)
 }
 
 /// Resolves the cursor's camera ray to a world-space ground point for
@@ -284,21 +296,16 @@ pub fn cursor_ray(
 /// of just the camera-ray step in the targeting system.
 pub fn resolve_click_to_ground(
     windows: &Query<&Window, With<PrimaryWindow>>,
-    cameras: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: &Query<(&Camera, &Transform), With<Camera3d>>,
     surface_query: &ClientSurfaceQuery,
     max_distance: f32,
 ) -> Option<Vec3> {
     let ray = cursor_ray(windows, cameras)?;
-    Some(
-        surface_query
-            .0
-            .as_ref()
-            .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, max_distance, 0.5))
-            .unwrap_or_else(|| {
-                let t = -ray.origin.y / ray.direction.y;
-                ray.origin + *ray.direction * t
-            }),
-    )
+    surface_query
+        .0
+        .as_ref()
+        .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, max_distance, 0.5))
+        .or_else(|| intersect_y0_plane(ray.origin, *ray.direction, max_distance))
 }
 
 #[cfg(test)]
@@ -621,6 +628,20 @@ mod tests {
             result.is_none(),
             "Horizontal ray should not intersect plane"
         );
+    }
+
+    #[test]
+    fn y0_plane_rejects_a_horizontal_ray() {
+        assert_eq!(
+            intersect_y0_plane(Vec3::new(0.0, 10.0, 0.0), Vec3::X, 100.0),
+            None
+        );
+    }
+
+    #[test]
+    fn y0_plane_hits_looking_down() {
+        let hit = intersect_y0_plane(Vec3::new(0.0, 10.0, 0.0), Vec3::NEG_Y, 100.0);
+        assert_eq!(hit, Some(Vec3::ZERO));
     }
 
     #[test]

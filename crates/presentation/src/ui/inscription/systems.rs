@@ -181,6 +181,7 @@ fn spawn_window(
         // columns scroll below them.
         spawn_header(parent, theme, item.display_name());
         spawn_armor_summary(parent, theme, equipment, item_registry);
+        spawn_root_word_section(parent, theme, known, &inscription, root_word_registry);
     });
 
     let scroll_body = commands
@@ -212,7 +213,6 @@ fn spawn_window(
                         &inscription,
                         known,
                         ability_registry,
-                        root_word_registry,
                         ancient_word_registry,
                     );
                 }
@@ -317,6 +317,159 @@ fn spawn_armor_summary(
         });
 }
 
+fn spawn_root_word_section(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiTheme,
+    known: &KnownAncientLanguage,
+    inscription: &WeaponInscription,
+    registry: &RootWordRegistry,
+) {
+    parent
+        .spawn((Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(5.0),
+            padding: UiRect::bottom(Val::Px(8.0)),
+            ..default()
+        },))
+        .with_children(|section| {
+            section.spawn((
+                Text::new("Root Word condivisa"),
+                TextFont {
+                    font_size: FontSize::Px(theme.button_font_size * 0.9),
+                    ..default()
+                },
+                TextColor(theme.muted_text_color),
+            ));
+            section.spawn((
+                Text::new("Una sola parola definisce cosa manifesta l'arma."),
+                TextFont {
+                    font_size: FontSize::Px(theme.button_font_size * 0.7),
+                    ..default()
+                },
+                TextColor(theme.muted_text_color),
+            ));
+
+            if known.root_words.is_empty() {
+                spawn_muted_line(section, theme, "Nessuna Root Word conosciuta");
+                return;
+            }
+
+            section
+                .spawn((Node {
+                    width: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Row,
+                    flex_wrap: FlexWrap::Wrap,
+                    column_gap: Val::Px(6.0),
+                    row_gap: Val::Px(6.0),
+                    ..default()
+                },))
+                .with_children(|row| {
+                    for root_id in sorted_root_words(known, registry) {
+                        let Some(root) = registry.get(root_id) else {
+                            continue;
+                        };
+                        let is_active = inscription.root_word.as_ref() == Some(root_id);
+                        spawn_compact_toggle_button(
+                            row,
+                            theme,
+                            root.metadata().display_name,
+                            is_active,
+                            RootWordToggleButton {
+                                root_word_id: root_id.as_str().to_string(),
+                            },
+                        );
+                    }
+                });
+        });
+}
+
+fn sorted_root_words<'a>(
+    known: &'a KnownAncientLanguage,
+    registry: &RootWordRegistry,
+) -> Vec<&'a RootWordId> {
+    let mut ids: Vec<_> = known.root_words.iter().collect();
+    ids.sort_by(|left, right| {
+        let left_name = registry
+            .get(left)
+            .map(|word| word.metadata().display_name)
+            .unwrap_or("");
+        let right_name = registry
+            .get(right)
+            .map(|word| word.metadata().display_name)
+            .unwrap_or("");
+        left_name
+            .cmp(right_name)
+            .then_with(|| left.as_str().cmp(right.as_str()))
+    });
+    ids
+}
+
+fn sorted_ancient_words<'a>(
+    known: &'a KnownAncientLanguage,
+    registry: &AncientWordRegistry,
+) -> Vec<&'a AncientWordId> {
+    let mut ids: Vec<_> = known.ancient_words.iter().collect();
+    ids.sort_by(|left, right| {
+        let left_word = registry.get(left);
+        let right_word = registry.get(right);
+        let left_phase = left_word
+            .as_ref()
+            .map(|word| word.metadata().phase)
+            .unwrap_or(u8::MAX);
+        let right_phase = right_word
+            .as_ref()
+            .map(|word| word.metadata().phase)
+            .unwrap_or(u8::MAX);
+        left_phase
+            .cmp(&right_phase)
+            .then_with(|| left.as_str().cmp(right.as_str()))
+    });
+    ids
+}
+
+fn spawn_compact_toggle_button(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiTheme,
+    label: &str,
+    is_active: bool,
+    marker: impl Component,
+) {
+    let text = if is_active {
+        format!("✓ {label}")
+    } else {
+        label.to_string()
+    };
+    parent
+        .spawn((
+            Button,
+            Node {
+                min_width: Val::Px(112.0),
+                min_height: Val::Px(30.0),
+                padding: UiRect::horizontal(Val::Px(8.0)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(if is_active {
+                theme.button_pressed_bg
+            } else {
+                theme.button_bg
+            }),
+            marker,
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(text),
+                TextFont {
+                    font_size: FontSize::Px(theme.button_font_size * 0.82),
+                    ..default()
+                },
+                TextColor(theme.text_color),
+            ));
+        });
+}
+
 fn spawn_header(parent: &mut ChildSpawnerCommands, theme: &UiTheme, weapon_name: &str) {
     parent
         .spawn((Node {
@@ -371,7 +524,6 @@ fn spawn_slot_column(
     inscription: &WeaponInscription,
     known: &KnownAncientLanguage,
     ability_registry: &BaseAbilityRegistry,
-    root_word_registry: &RootWordRegistry,
     ancient_word_registry: &AncientWordRegistry,
 ) {
     let Some(ability_id) = resolve_active_ability(slot, weapon_abilities, selection) else {
@@ -431,33 +583,6 @@ fn spawn_slot_column(
                 }
             }
 
-            // Root Word (shared across all slots, shown once)
-            column.spawn((
-                Text("Root Word".to_string()),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.85),
-                    ..default()
-                },
-                TextColor(theme.muted_text_color),
-            ));
-            if known.root_words.is_empty() {
-                spawn_muted_line(column, theme, "No Root Word known yet");
-            }
-            for root_id in &known.root_words {
-                let Some(root) = root_word_registry.get(root_id) else {
-                    continue;
-                };
-                let is_active = inscription.root_word.as_ref() == Some(root_id);
-                spawn_toggle_button(
-                    column,
-                    theme,
-                    root.metadata().display_name,
-                    is_active,
-                    RootWordToggleButton {
-                        root_word_id: root_id.as_str().to_string(),
-                    },
-                );
-            }
 
             column.spawn((
                 Text("Ancient Words".to_string()),
@@ -470,7 +595,7 @@ fn spawn_slot_column(
             if known.ancient_words.is_empty() {
                 spawn_muted_line(column, theme, "No Ancient Word known yet");
             }
-            for word_id in &known.ancient_words {
+            for word_id in sorted_ancient_words(known, ancient_word_registry) {
                 let Some(word) = ancient_word_registry.get(word_id) else {
                     continue;
                 };
@@ -676,5 +801,42 @@ fn send_full_update(conn: Option<&StdbConnection>, inscription: &WeaponInscripti
 fn despawn_windows(commands: &mut Commands, window_query: &Query<Entity, With<InscriptionWindow>>) {
     for entity in window_query.iter() {
         commands.entity(entity).despawn();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_word_order_is_stable_for_hash_set_storage() {
+        let known = KnownAncientLanguage {
+            root_words: ["stone", "damage", "flame"]
+                .into_iter()
+                .map(RootWordId::from)
+                .collect(),
+            ..default()
+        };
+        let ordered: Vec<_> = sorted_root_words(&known, &RootWordRegistry::default())
+            .into_iter()
+            .map(|id| id.as_str())
+            .collect();
+        assert_eq!(ordered, ["damage", "flame", "stone"]);
+    }
+
+    #[test]
+    fn ancient_word_order_is_stable_for_hash_set_storage() {
+        let known = KnownAncientLanguage {
+            ancient_words: ["twin", "echo", "anchor"]
+                .into_iter()
+                .map(AncientWordId::new)
+                .collect(),
+            ..default()
+        };
+        let ordered: Vec<_> = sorted_ancient_words(&known, &AncientWordRegistry::default())
+            .into_iter()
+            .map(|id| id.as_str())
+            .collect();
+        assert_eq!(ordered, ["anchor", "echo", "twin"]);
     }
 }

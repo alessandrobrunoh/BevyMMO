@@ -527,6 +527,7 @@ fn is_descendant_of(entity: Entity, root: Entity, parents: &Query<&ChildOf>) -> 
 }
 
 /// Whether a new `EntityColor` should change the assigned material handle.
+#[cfg(test)]
 pub(crate) fn color_material_needs_swap(current: Color, next: Color) -> bool {
     current != next
 }
@@ -802,7 +803,6 @@ mod tests {
         assert_eq!(rendered, TELEPORT_SNAP_DISTANCE * 4.0);
     }
 
-    #[test]
     #[test]
     fn identical_colors_do_not_need_a_material_swap() {
         let green = Color::srgb(0.2, 0.8, 0.2);

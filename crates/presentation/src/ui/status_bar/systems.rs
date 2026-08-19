@@ -121,7 +121,7 @@ fn tick_status_card_timers(
         timer.remaining = (timer.remaining - dt).max(0.0);
         let remaining = format_remaining(timer.remaining);
         let ratio = duration_ratio(timer.remaining, timer.total);
-        visit_descendants(children, &children_query, |entity| {
+        visit_descendants(children, &children_query, &mut |entity| {
             if let Ok(mut label) = remaining_text.get_mut(entity) {
                 label.0 = remaining.clone();
             }
@@ -132,11 +132,14 @@ fn tick_status_card_timers(
     }
 }
 
-fn visit_descendants(children: &Children, tree: &Query<&Children>, mut visit: impl FnMut(Entity)) {
-    for child in children {
-        visit(*child);
-        if let Ok(nested) = tree.get(*child) {
-            visit_descendants(nested, tree, &mut visit);
+/// Iterative walk: a recursive `impl FnMut` re-monomorphizes on every call
+/// (`&mut visit`) and blows the rustc recursion limit.
+fn visit_descendants(children: &Children, tree: &Query<&Children>, visit: &mut dyn FnMut(Entity)) {
+    let mut stack: Vec<Entity> = children.iter().collect();
+    while let Some(entity) = stack.pop() {
+        visit(entity);
+        if let Ok(nested) = tree.get(entity) {
+            stack.extend(nested.iter());
         }
     }
 }

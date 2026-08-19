@@ -71,6 +71,7 @@ mod tests {
             impact_vfx: "push_wave",
             impact_delay: 0.15,
             stun_seconds: 0.0,
+            payload: crate::abilities::ManifestationPayload::default(),
         };
 
         Reversal.transform_blueprint(&mut blueprint);

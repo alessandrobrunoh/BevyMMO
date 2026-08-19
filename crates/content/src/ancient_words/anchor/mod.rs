@@ -70,6 +70,7 @@ mod tests {
             impact_vfx: "root_effect",
             impact_delay: 0.4,
             stun_seconds: 0.0,
+            payload: crate::abilities::ManifestationPayload::default(),
         };
 
         Anchor.transform_blueprint(&mut blueprint);

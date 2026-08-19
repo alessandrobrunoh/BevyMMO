@@ -17,7 +17,6 @@ use crate::abilities::BaseAbilityRegistry;
     cast_time = 1.4,
     cooldown = 26.0,
     energy_cost = 48.0,
-    statuses = [Burn],
     stun_seconds = 0.8,
     impact_delay = 0.4,
     animation = "staff_ultimate",

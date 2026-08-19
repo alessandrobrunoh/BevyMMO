@@ -65,6 +65,7 @@ mod tests {
             impact_vfx: "impact",
             impact_delay: 0.3,
             stun_seconds: 0.0,
+            payload: crate::abilities::ManifestationPayload::default(),
         };
 
         Echo.transform_blueprint(&mut blueprint);

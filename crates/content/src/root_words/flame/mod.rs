@@ -3,7 +3,9 @@
 
 use bevymmo_props_macro::root_word;
 
-use crate::abilities::{AbilityBlueprint, AbilityParams, RootWordEffect, RootWordRegistry};
+use crate::abilities::{
+    AbilityBlueprint, AbilityParams, ManifestationPayload, RootWordEffect, RootWordRegistry,
+};
 
 #[root_word(
     id = "flame",
@@ -33,6 +35,7 @@ impl RootWordEffect for FlameRootWord {
 
         // Increase potency for fire scaling
         blueprint.params.potency *= Self::FLAME_SCALING;
+        blueprint.payload = ManifestationPayload::damage(["burn"]);
     }
 }
 
@@ -76,6 +79,7 @@ mod tests {
             impact_vfx: "fire_impact",
             impact_delay: 0.5,
             stun_seconds: 0.0,
+            payload: ManifestationPayload::default(),
         };
         let params = crate::abilities::AbilityParams {
             potency: 100.0,
@@ -91,5 +95,6 @@ mod tests {
         assert!((blueprint.params.potency - 115.0).abs() < f32::EPSILON);
         assert!(blueprint.has_tag(crate::abilities::AbilityTag::Ranged));
         assert!(blueprint.has_tag(crate::abilities::AbilityTag::Projectile));
+        assert_eq!(blueprint.payload, ManifestationPayload::damage(["burn"]));
     }
 }

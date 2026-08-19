@@ -68,6 +68,7 @@ mod tests {
             impact_vfx: "catch",
             impact_delay: 0.5,
             stun_seconds: 0.0,
+            payload: crate::abilities::ManifestationPayload::default(),
         };
 
         ReturnWord.transform_blueprint(&mut blueprint);

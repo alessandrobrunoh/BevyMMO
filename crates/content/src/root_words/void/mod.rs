@@ -3,7 +3,9 @@
 
 use bevymmo_props_macro::root_word;
 
-use crate::abilities::{AbilityBlueprint, AbilityParams, RootWordEffect, RootWordRegistry};
+use crate::abilities::{
+    AbilityBlueprint, AbilityParams, ManifestationPayload, RootWordEffect, RootWordRegistry,
+};
 
 #[root_word(
     id = "void",
@@ -30,6 +32,7 @@ impl RootWordEffect for VoidRootWord {
 
         // Void damage is premium but pierces defenses
         blueprint.params.potency *= 1.1;
+        blueprint.payload = ManifestationPayload::damage([]);
     }
 }
 
@@ -77,6 +80,7 @@ mod tests {
             impact_vfx: "void_impact",
             impact_delay: 0.7,
             stun_seconds: 0.0,
+            payload: ManifestationPayload::default(),
         };
         let params = crate::abilities::AbilityParams {
             potency: 90.0,

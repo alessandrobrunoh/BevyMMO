@@ -3,7 +3,9 @@
 
 use bevymmo_props_macro::root_word;
 
-use crate::abilities::{AbilityBlueprint, AbilityParams, RootWordEffect, RootWordRegistry};
+use crate::abilities::{
+    AbilityBlueprint, AbilityParams, ManifestationPayload, RootWordEffect, RootWordRegistry,
+};
 
 #[root_word(
     id = "frost",
@@ -31,6 +33,7 @@ impl RootWordEffect for FrostRootWord {
 
         // Frost abilities have slightly reduced base potency but control value
         blueprint.params.potency *= 0.9;
+        blueprint.payload = ManifestationPayload::damage(["slow"]);
     }
 }
 
@@ -74,6 +77,7 @@ mod tests {
             impact_vfx: "frost_impact",
             impact_delay: 0.3,
             stun_seconds: 0.0,
+            payload: ManifestationPayload::default(),
         };
         let params = crate::abilities::AbilityParams {
             potency: 100.0,
@@ -89,5 +93,6 @@ mod tests {
         assert!((blueprint.params.potency - 90.0).abs() < f32::EPSILON);
         assert!(blueprint.has_tag(crate::abilities::AbilityTag::Area));
         assert!(blueprint.has_tag(crate::abilities::AbilityTag::Ground));
+        assert_eq!(blueprint.payload, ManifestationPayload::damage(["slow"]));
     }
 }

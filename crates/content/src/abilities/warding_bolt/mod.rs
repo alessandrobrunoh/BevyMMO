@@ -13,7 +13,6 @@ use bevymmo_props_macro::base_ability;
     cast_time = 0.15,
     cooldown = 4.0,
     energy_cost = 8.0,
-    statuses = [Burn],
     animation = "helmet_warding_bolt",
     impact_vfx = "warding_bolt_impact",
 )]

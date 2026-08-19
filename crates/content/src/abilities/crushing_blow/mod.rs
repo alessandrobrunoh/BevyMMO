@@ -17,7 +17,6 @@ use crate::abilities::BaseAbilityRegistry;
     cast_time = 0.5,
     cooldown = 4.5,
     energy_cost = 14.0,
-    statuses = [Root],
     stun_seconds = 0.6,
     animation = "hammer_smash",
     impact_vfx = "crushing_blow_impact",

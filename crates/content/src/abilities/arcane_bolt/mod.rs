@@ -17,7 +17,6 @@ use crate::abilities::BaseAbilityRegistry;
     cast_time = 0.15,
     cooldown = 1.6,
     energy_cost = 7.0,
-    statuses = [Burn],
     animation = "staff_thrust",
     impact_vfx = "arcane_bolt_impact",
 )]

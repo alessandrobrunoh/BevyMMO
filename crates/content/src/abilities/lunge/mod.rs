@@ -17,7 +17,6 @@ use crate::abilities::BaseAbilityRegistry;
     cast_time = 0.1,
     cooldown = 2.2,
     energy_cost = 7.0,
-    statuses = [Stun],
     stun_seconds = 0.4,
     animation = "sword_lunge",
     impact_vfx = "lunge_impact",

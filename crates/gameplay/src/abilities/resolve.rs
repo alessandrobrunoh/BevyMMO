@@ -35,7 +35,7 @@ pub struct SlotPreview {
 }
 
 fn manifest_blueprint(preview: &SlotPreview, ctx: &mut SpellCastContext) {
-    preview.ability.default_manifestation(&preview.params, ctx);
+    preview.ability.manifest_blueprint(&preview.blueprint, ctx);
     if matches!(
         preview.blueprint.execution,
         super::blueprint::BlueprintExecution::Echo
@@ -44,7 +44,7 @@ fn manifest_blueprint(preview: &SlotPreview, ctx: &mut SpellCastContext) {
         // Echo is a second manifestation of the already-resolved blueprint;
         // it never re-enters item/root/word resolution, so recursive echoes
         // are impossible.
-        preview.ability.default_manifestation(&preview.params, ctx);
+        preview.ability.manifest_blueprint(&preview.blueprint, ctx);
     }
 }
 

@@ -17,7 +17,6 @@ use crate::abilities::BaseAbilityRegistry;
     cast_time = 0.9,
     cooldown = 24.0,
     energy_cost = 42.0,
-    statuses = [Stun],
     stun_seconds = 1.2,
     impact_delay = 0.25,
     animation = "bow_ultimate",

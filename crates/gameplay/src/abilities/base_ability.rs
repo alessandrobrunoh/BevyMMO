@@ -16,7 +16,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::effects::{DamageEffect, EffectSpec, StatusId};
+use crate::abilities::blueprint::AbilityBlueprint;
+use crate::effects::EffectSpec;
 use crate::registry::Registry;
 use crate::spells::context::{AoeShape, SpellCastContext};
 
@@ -362,76 +363,56 @@ pub trait BaseAbility: Send + Sync + 'static {
         );
     }
 
-    /// Piazza l'impatto ad area del gesto: danno, più lo Stun se il gesto ne
-    /// ha uno, più il visual. Entrambe le regioni condividono `impact_delay`,
-    /// così il preavviso a terra e ciò che accade quando scade coincidono.
-    fn emit_area_impact(&self, params: &AbilityParams, potency: f32, ctx: &mut SpellCastContext) {
-        let mut effects = vec![EffectSpec::Damage(DamageEffect { amount: potency })];
-
-        let stun = self.stun_seconds();
-        if stun > 0.0 {
-            effects.push(EffectSpec::ApplyStatus(crate::effects::ApplyStatusEffect {
-                status_id: StatusId::new("stun"),
-                duration_override_seconds: Some(stun),
-                potency: 1.0,
-            }));
-        }
-        effects.extend(self.additional_effects());
-
+    /// Piazza l'impatto ad area del gesto con gli effetti già risolti
+    /// (payload della Root Word). Centro, raggio e delay restano del gesto.
+    fn emit_area_impact(
+        &self,
+        params: &AbilityParams,
+        ctx: &mut SpellCastContext,
+        effects: Vec<EffectSpec>,
+    ) {
         self.emit_area_effect(params, ctx, effects);
 
         let center = self.impact_center(params, ctx);
         ctx.emit_visual(self.id().as_str().to_string(), center, center);
     }
 
-    /// Emette danno a `potency` nella forma dettata dalla geometria di questa
-    /// abilità. Helper condiviso: qualunque Essenza offensiva lo riusa per
-    /// non duplicare il dispatch-per-geometria, cambiando solo `potency` (es.
-    /// Fuoco lo amplifica) — vedi `content/essences/fuoco/`.
-    fn emit_damage_for_geometry(
+    /// Emette il payload nella forma dettata dalla geometria di questa abilità.
+    fn emit_payload_for_geometry(
         &self,
-        potency: f32,
         params: &AbilityParams,
         ctx: &mut SpellCastContext,
+        effects: Vec<EffectSpec>,
     ) {
         match self.geometry() {
             AbilityGeometry::Cone { .. } | AbilityGeometry::Circle { .. } => {
-                self.emit_area_impact(params, potency, ctx);
+                self.emit_area_impact(params, ctx, effects);
             }
-            AbilityGeometry::Projectile { speed } => {
-                // La palla è un'entità replicata che vola davvero: il danno
-                // arriva quando arriva lei, non all'istante del lancio.
-                match self.projectile_target(params, ctx) {
-                    Some(target) => {
-                        let mut effects =
-                            vec![EffectSpec::Damage(DamageEffect { amount: potency })];
-                        effects.extend(self.additional_effects());
-                        ctx.emit_projectile(target, speed, effects, PROJECTILE_HIT_RADIUS);
-                        let target_position = ctx
-                            .potential_targets
-                            .iter()
-                            .find(|(entity, _)| *entity == target)
-                            .map(|(_, position)| *position)
-                            .unwrap_or(ctx.caster_position);
-                        ctx.emit_visual(
-                            self.id().as_str().to_string(),
-                            ctx.caster_position,
-                            target_position,
-                        );
-                    }
-                    None => {
-                        // Colpo a vuoto: nessuno davanti. Il gesto si vede
-                        // comunque, altrimenti il tasto sembra rotto.
-                        let end = ctx.caster_position
-                            + flat_direction(ctx.caster_look_direction) * params.range;
-                        ctx.emit_visual(self.id().as_str().to_string(), ctx.caster_position, end);
-                    }
+            AbilityGeometry::Projectile { speed } => match self.projectile_target(params, ctx) {
+                Some(target) => {
+                    ctx.emit_projectile(target, speed, effects, PROJECTILE_HIT_RADIUS);
+                    let target_position = ctx
+                        .potential_targets
+                        .iter()
+                        .find(|(entity, _)| *entity == target)
+                        .map(|(_, position)| *position)
+                        .unwrap_or(ctx.caster_position);
+                    ctx.emit_visual(
+                        self.id().as_str().to_string(),
+                        ctx.caster_position,
+                        target_position,
+                    );
                 }
-            }
+                None => {
+                    let end = ctx.caster_position
+                        + flat_direction(ctx.caster_look_direction) * params.range;
+                    ctx.emit_visual(self.id().as_str().to_string(), ctx.caster_position, end);
+                }
+            },
             AbilityGeometry::SelfBuff { .. } => {
-                // Nessun effetto fisico di default: un self-buff senza
-                // Essenza non fa nulla, coerente col principio che l'Essenza
-                // è ciò che "manifesta" davvero qualcosa.
+                for spec in effects {
+                    ctx.emit_effect(ctx.caster, spec);
+                }
             }
         }
     }
@@ -445,19 +426,26 @@ pub trait BaseAbility: Send + Sync + 'static {
         None
     }
 
-    /// Additional status/buff/debuff effects declared by content. They are
-    /// appended to the geometry's direct damage and resolved by the same
-    /// authoritative EffectSpec pipeline.
+    /// Extra effects declared on the gesture itself. Inscribed casts ignore
+    /// this and emit [`AbilityBlueprint::payload`] instead.
     fn additional_effects(&self) -> Vec<EffectSpec> {
         Vec::new()
     }
 
-    fn default_manifestation(&self, params: &AbilityParams, ctx: &mut SpellCastContext) {
+    /// Authoritative cast of an already-resolved blueprint: geometry from the
+    /// gesture, payload from the Root Word.
+    fn manifest_blueprint(&self, blueprint: &AbilityBlueprint, ctx: &mut SpellCastContext) {
         if let Some(cleanse) = self.cleanse_effect() {
             ctx.emit_cleanse(ctx.caster, cleanse);
             return;
         }
-        self.emit_damage_for_geometry(params.potency, params, ctx);
+        self.emit_payload_for_geometry(&blueprint.params, ctx, blueprint.payload_effects());
+    }
+
+    fn default_manifestation(&self, params: &AbilityParams, ctx: &mut SpellCastContext) {
+        let mut blueprint = self.blueprint();
+        blueprint.params = *params;
+        self.manifest_blueprint(&blueprint, ctx);
     }
 }
 

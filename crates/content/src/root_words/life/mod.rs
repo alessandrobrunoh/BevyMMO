@@ -3,7 +3,9 @@
 
 use bevymmo_props_macro::root_word;
 
-use crate::abilities::{AbilityBlueprint, AbilityParams, RootWordEffect, RootWordRegistry};
+use crate::abilities::{
+    AbilityBlueprint, AbilityParams, ManifestationPayload, RootWordEffect, RootWordRegistry,
+};
 
 #[root_word(
     id = "life",
@@ -32,6 +34,7 @@ impl RootWordEffect for LifeRootWord {
 
         // Healing is more potent than equivalent damage
         blueprint.params.potency *= Self::HEALING_EFFICIENCY;
+        blueprint.payload = ManifestationPayload::heal([]);
     }
 }
 
@@ -77,6 +80,7 @@ mod tests {
             impact_vfx: "heal_effect",
             impact_delay: 0.0,
             stun_seconds: 0.0,
+            payload: ManifestationPayload::default(),
         };
         let params = crate::abilities::AbilityParams {
             potency: 50.0,
@@ -92,5 +96,6 @@ mod tests {
         // Life increases potency by 20% (healing efficiency): 50 * 1.2 = 60
         assert!((blueprint.params.potency - 60.0).abs() < 0.001);
         assert!(blueprint.has_tag(crate::abilities::AbilityTag::SelfTarget));
+        assert_eq!(blueprint.payload, ManifestationPayload::heal([]));
     }
 }

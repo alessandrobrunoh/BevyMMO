@@ -70,6 +70,7 @@ mod tests {
             impact_vfx: "drain",
             impact_delay: 0.1,
             stun_seconds: 0.0,
+            payload: crate::abilities::ManifestationPayload::default(),
         };
 
         Hunger.transform_blueprint(&mut blueprint);

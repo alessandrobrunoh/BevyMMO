@@ -357,7 +357,7 @@ impl<'a> SpellCastContext<'a> {
         self.emit_effect(target, EffectSpec::Purge(effect));
     }
 
-    fn emit_effect(&mut self, target: EntityId, effect: EffectSpec) {
+    pub fn emit_effect(&mut self, target: EntityId, effect: EffectSpec) {
         let mut context = EffectContext::new(target);
         context.source = Some(self.caster);
         self.pending_effects

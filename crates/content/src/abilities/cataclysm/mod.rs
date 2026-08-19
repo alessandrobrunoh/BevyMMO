@@ -18,7 +18,6 @@ use crate::abilities::BaseAbilityRegistry;
     cast_time = 1.3,
     cooldown = 30.0,
     energy_cost = 55.0,
-    statuses = [Stun],
     stun_seconds = 2.0,
     impact_delay = 0.5,
     animation = "hammer_ultimate",

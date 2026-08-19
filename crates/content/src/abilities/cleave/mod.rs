@@ -17,7 +17,6 @@ use crate::abilities::BaseAbilityRegistry;
     cast_time = 0.25,
     cooldown = 3.0,
     energy_cost = 9.0,
-    statuses = [Slow],
     animation = "sword_cleave",
     impact_vfx = "cleave_impact",
 )]

@@ -28,7 +28,9 @@ pub use base_ability::{
     AbilityCastMode, AbilityGeometry, AbilityId, AbilityParams, AbilityTag, ArcBaseAbility,
     BaseAbility, BaseAbilityRegistry, ChannelMovementPolicy,
 };
-pub use blueprint::{AbilityBlueprint, BlueprintExecution};
+pub use blueprint::{
+    AbilityBlueprint, BlueprintExecution, ManifestationKind, ManifestationPayload,
+};
 pub use cast_intent::{weapon_cast_intent, WeaponCastIntent};
 pub use cooldowns::AbilityCooldowns;
 

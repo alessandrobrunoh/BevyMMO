@@ -17,7 +17,6 @@ use crate::abilities::BaseAbilityRegistry;
     cast_time = 0.4,
     cooldown = 5.5,
     energy_cost = 15.0,
-    statuses = [Slow],
     impact_delay = 0.15,
     animation = "staff_wave",
     impact_vfx = "arcane_wave_impact",

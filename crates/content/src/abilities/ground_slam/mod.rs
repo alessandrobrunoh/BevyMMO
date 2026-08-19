@@ -17,7 +17,6 @@ use crate::abilities::BaseAbilityRegistry;
     cast_time = 0.5,
     cooldown = 8.5,
     energy_cost = 22.0,
-    statuses = [Slow],
     stun_seconds = 1.0,
     impact_delay = 0.2,
     animation = "hammer_slam",

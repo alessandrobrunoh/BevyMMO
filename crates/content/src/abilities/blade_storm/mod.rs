@@ -17,7 +17,6 @@ use crate::abilities::BaseAbilityRegistry;
     cast_time = 0.7,
     cooldown = 22.0,
     energy_cost = 40.0,
-    statuses = [Burn],
     animation = "sword_ultimate",
     impact_vfx = "blade_storm_impact",
 )]

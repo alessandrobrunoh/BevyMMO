@@ -63,3 +63,30 @@ impl Default for UiTheme {
         }
     }
 }
+
+/// Title-screen splash used by the login and character-select roots.
+const MAIN_MENU_BACKGROUND_PATH: &str = "ui/menu/title_screen.png";
+
+/// Full-bleed background, taken out of flex flow so it does not shift the
+/// menu column. `Stretch` fills the node; Bevy 0.19 has no cover-fit mode.
+pub fn spawn_menu_screen_background(
+    commands: &mut Commands,
+    parent: Entity,
+    asset_server: &AssetServer,
+) {
+    let background = commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(0.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                ..default()
+            },
+            ImageNode::new(asset_server.load(MAIN_MENU_BACKGROUND_PATH))
+                .with_mode(NodeImageMode::Stretch),
+        ))
+        .id();
+    commands.entity(parent).add_child(background);
+}

@@ -14,7 +14,7 @@ pub mod builder;
 pub mod components;
 pub mod systems;
 
-pub use builder::{CardBuilder, CardLayout};
+pub use builder::{CardBuilder, CardFrameAssets, CardLayout};
 pub use components::{
     CardBody, CardExclusivityPolicy, CardFooter, CardHeader, CardKind, CardWindow, CloseCardButton,
 };

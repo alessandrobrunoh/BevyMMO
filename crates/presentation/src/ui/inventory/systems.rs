@@ -14,7 +14,7 @@ use super::weapon_detail::GlyphRegistries;
 use super::{components::*, detail::*, InventoryUiState};
 use crate::ui::{
     card::{
-        builder::CardBuilder,
+        builder::{CardBuilder, CardFrameAssets},
         components::{CardKind, CardPositioning, CardWindow},
     },
     settings::state::{GameSettingsResource, KeyAction},
@@ -52,6 +52,7 @@ pub fn toggle_inventory(
     theme: Res<UiTheme>,
     registry: Res<ItemRegistry>,
     player_query: Query<(&Inventory, &Equipment), With<LocalPlayer>>,
+    asset_server: Res<AssetServer>,
 ) {
     if !settings.just_pressed(KeyAction::ToggleInventory, &keys) {
         return;
@@ -71,7 +72,14 @@ pub fn toggle_inventory(
         .map(|(i, e)| (i.clone(), e.clone()))
         .unwrap_or_default();
 
-    spawn_inventory_window(&mut commands, &theme, &registry, &inventory, &equipment);
+    spawn_inventory_window(
+        &mut commands,
+        &theme,
+        &registry,
+        &inventory,
+        &equipment,
+        &asset_server,
+    );
 }
 
 /// Resolves the display label for an equip slot's box: the equipped item's
@@ -153,6 +161,7 @@ fn spawn_inventory_window(
     registry: &ItemRegistry,
     inventory: &Inventory,
     equipment: &Equipment,
+    asset_server: &AssetServer,
 ) {
     let equipment = equipment.clone();
     let inventory = inventory.clone();
@@ -184,6 +193,7 @@ fn spawn_inventory_window(
     let destroy_font = theme.button_font_size;
 
     CardBuilder::new(CardKind::Inventory, "Inventory")
+        .frame(CardFrameAssets::load(asset_server))
         .width(Val::Px(INVENTORY_CARD_WIDTH))
         .height(Val::Px(INVENTORY_CARD_HEIGHT))
         .positioning(CardPositioning::Right)

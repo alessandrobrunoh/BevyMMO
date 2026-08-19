@@ -16,7 +16,7 @@ use crate::game_state::{AuthState, AuthStatus, GameScreen, Screen};
 use crate::ui::button::{spawn_button, UiButtonAction};
 use crate::ui::text::spawn_text;
 use crate::ui::text_input::{spawn_password_input, spawn_text_input};
-use crate::ui::theme::UiTheme;
+use crate::ui::theme::{spawn_menu_screen_background, UiTheme};
 
 /// Marker: login form root.
 #[derive(Component)]
@@ -61,6 +61,8 @@ fn setup_login(mut commands: Commands, theme: Res<UiTheme>, asset_server: Res<As
             LoginUi,
         ))
         .id();
+
+    spawn_menu_screen_background(&mut commands, root, &asset_server);
 
     spawn_text(
         &mut commands,

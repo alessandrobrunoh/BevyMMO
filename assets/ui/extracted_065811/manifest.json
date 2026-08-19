@@ -1,0 +1,976 @@
+{
+  "source": "ChatGPT Image Aug 19, 2026, 06_58_11 PM.png",
+  "source_size": {
+    "width": 1536,
+    "height": 1024
+  },
+  "alpha_preserved": true,
+  "components": [
+    {
+      "name": "panel_large_left",
+      "file": "assets/ui/extracted_065811/panel_large_left.png",
+      "source_rect": {
+        "left": 10,
+        "top": 4,
+        "right": 473,
+        "bottom": 678
+      },
+      "size": {
+        "width": 463,
+        "height": 674
+      }
+    },
+    {
+      "name": "panel_header",
+      "file": "assets/ui/extracted_065811/panel_header.png",
+      "source_rect": {
+        "left": 484,
+        "top": 17,
+        "right": 982,
+        "bottom": 132
+      },
+      "size": {
+        "width": 498,
+        "height": 115
+      }
+    },
+    {
+      "name": "ornate_line_header",
+      "file": "assets/ui/extracted_065811/ornate_line_header.png",
+      "source_rect": {
+        "left": 485,
+        "top": 125,
+        "right": 983,
+        "bottom": 187
+      },
+      "size": {
+        "width": 498,
+        "height": 62
+      }
+    },
+    {
+      "name": "panel_row_01",
+      "file": "assets/ui/extracted_065811/panel_row_01.png",
+      "source_rect": {
+        "left": 486,
+        "top": 188,
+        "right": 982,
+        "bottom": 317
+      },
+      "size": {
+        "width": 496,
+        "height": 129
+      }
+    },
+    {
+      "name": "panel_row_02",
+      "file": "assets/ui/extracted_065811/panel_row_02.png",
+      "source_rect": {
+        "left": 486,
+        "top": 311,
+        "right": 982,
+        "bottom": 433
+      },
+      "size": {
+        "width": 496,
+        "height": 122
+      }
+    },
+    {
+      "name": "panel_row_active",
+      "file": "assets/ui/extracted_065811/panel_row_active.png",
+      "source_rect": {
+        "left": 486,
+        "top": 428,
+        "right": 982,
+        "bottom": 555
+      },
+      "size": {
+        "width": 496,
+        "height": 127
+      }
+    },
+    {
+      "name": "panel_row_04",
+      "file": "assets/ui/extracted_065811/panel_row_04.png",
+      "source_rect": {
+        "left": 486,
+        "top": 551,
+        "right": 982,
+        "bottom": 689
+      },
+      "size": {
+        "width": 496,
+        "height": 138
+      }
+    },
+    {
+      "name": "panel_bottom_left",
+      "file": "assets/ui/extracted_065811/panel_bottom_left.png",
+      "source_rect": {
+        "left": 18,
+        "top": 697,
+        "right": 466,
+        "bottom": 791
+      },
+      "size": {
+        "width": 448,
+        "height": 94
+      }
+    },
+    {
+      "name": "panel_bottom_center",
+      "file": "assets/ui/extracted_065811/panel_bottom_center.png",
+      "source_rect": {
+        "left": 482,
+        "top": 697,
+        "right": 944,
+        "bottom": 793
+      },
+      "size": {
+        "width": 462,
+        "height": 96
+      }
+    },
+    {
+      "name": "bar_neutral_left_01",
+      "file": "assets/ui/extracted_065811/bar_neutral_left_01.png",
+      "source_rect": {
+        "left": 23,
+        "top": 801,
+        "right": 241,
+        "bottom": 860
+      },
+      "size": {
+        "width": 218,
+        "height": 59
+      }
+    },
+    {
+      "name": "bar_neutral_right_01",
+      "file": "assets/ui/extracted_065811/bar_neutral_right_01.png",
+      "source_rect": {
+        "left": 249,
+        "top": 801,
+        "right": 455,
+        "bottom": 860
+      },
+      "size": {
+        "width": 206,
+        "height": 59
+      }
+    },
+    {
+      "name": "bar_blue_left_01",
+      "file": "assets/ui/extracted_065811/bar_blue_left_01.png",
+      "source_rect": {
+        "left": 23,
+        "top": 857,
+        "right": 241,
+        "bottom": 922
+      },
+      "size": {
+        "width": 218,
+        "height": 65
+      }
+    },
+    {
+      "name": "bar_neutral_right_02",
+      "file": "assets/ui/extracted_065811/bar_neutral_right_02.png",
+      "source_rect": {
+        "left": 249,
+        "top": 857,
+        "right": 455,
+        "bottom": 922
+      },
+      "size": {
+        "width": 206,
+        "height": 65
+      }
+    },
+    {
+      "name": "bar_blue_left_02",
+      "file": "assets/ui/extracted_065811/bar_blue_left_02.png",
+      "source_rect": {
+        "left": 23,
+        "top": 921,
+        "right": 242,
+        "bottom": 989
+      },
+      "size": {
+        "width": 219,
+        "height": 68
+      }
+    },
+    {
+      "name": "bar_blue_right_active",
+      "file": "assets/ui/extracted_065811/bar_blue_right_active.png",
+      "source_rect": {
+        "left": 249,
+        "top": 921,
+        "right": 459,
+        "bottom": 989
+      },
+      "size": {
+        "width": 210,
+        "height": 68
+      }
+    },
+    {
+      "name": "bar_bottom_center",
+      "file": "assets/ui/extracted_065811/bar_bottom_center.png",
+      "source_rect": {
+        "left": 484,
+        "top": 798,
+        "right": 943,
+        "bottom": 888
+      },
+      "size": {
+        "width": 459,
+        "height": 90
+      }
+    },
+    {
+      "name": "slot_empty_01",
+      "file": "assets/ui/extracted_065811/slot_empty_01.png",
+      "source_rect": {
+        "left": 485,
+        "top": 897,
+        "right": 559,
+        "bottom": 986
+      },
+      "size": {
+        "width": 74,
+        "height": 89
+      }
+    },
+    {
+      "name": "slot_empty_02",
+      "file": "assets/ui/extracted_065811/slot_empty_02.png",
+      "source_rect": {
+        "left": 572,
+        "top": 897,
+        "right": 645,
+        "bottom": 986
+      },
+      "size": {
+        "width": 73,
+        "height": 89
+      }
+    },
+    {
+      "name": "slot_active",
+      "file": "assets/ui/extracted_065811/slot_active.png",
+      "source_rect": {
+        "left": 655,
+        "top": 897,
+        "right": 728,
+        "bottom": 986
+      },
+      "size": {
+        "width": 73,
+        "height": 89
+      }
+    },
+    {
+      "name": "slot_check_01",
+      "file": "assets/ui/extracted_065811/slot_check_01.png",
+      "source_rect": {
+        "left": 741,
+        "top": 897,
+        "right": 814,
+        "bottom": 986
+      },
+      "size": {
+        "width": 73,
+        "height": 89
+      }
+    },
+    {
+      "name": "slot_check_active",
+      "file": "assets/ui/extracted_065811/slot_check_active.png",
+      "source_rect": {
+        "left": 823,
+        "top": 897,
+        "right": 897,
+        "bottom": 986
+      },
+      "size": {
+        "width": 74,
+        "height": 89
+      }
+    },
+    {
+      "name": "ring_gold",
+      "file": "assets/ui/extracted_065811/ring_gold.png",
+      "source_rect": {
+        "left": 991,
+        "top": 14,
+        "right": 1123,
+        "bottom": 148
+      },
+      "size": {
+        "width": 132,
+        "height": 134
+      }
+    },
+    {
+      "name": "ring_silver",
+      "file": "assets/ui/extracted_065811/ring_silver.png",
+      "source_rect": {
+        "left": 991,
+        "top": 141,
+        "right": 1123,
+        "bottom": 271
+      },
+      "size": {
+        "width": 132,
+        "height": 130
+      }
+    },
+    {
+      "name": "ring_blue",
+      "file": "assets/ui/extracted_065811/ring_blue.png",
+      "source_rect": {
+        "left": 989,
+        "top": 261,
+        "right": 1124,
+        "bottom": 393
+      },
+      "size": {
+        "width": 135,
+        "height": 132
+      }
+    },
+    {
+      "name": "plus_ring_gold",
+      "file": "assets/ui/extracted_065811/plus_ring_gold.png",
+      "source_rect": {
+        "left": 989,
+        "top": 401,
+        "right": 1061,
+        "bottom": 480
+      },
+      "size": {
+        "width": 72,
+        "height": 79
+      }
+    },
+    {
+      "name": "plus_ring_silver",
+      "file": "assets/ui/extracted_065811/plus_ring_silver.png",
+      "source_rect": {
+        "left": 1057,
+        "top": 401,
+        "right": 1129,
+        "bottom": 480
+      },
+      "size": {
+        "width": 72,
+        "height": 79
+      }
+    },
+    {
+      "name": "plus_ring_blue_01",
+      "file": "assets/ui/extracted_065811/plus_ring_blue_01.png",
+      "source_rect": {
+        "left": 989,
+        "top": 479,
+        "right": 1061,
+        "bottom": 560
+      },
+      "size": {
+        "width": 72,
+        "height": 81
+      }
+    },
+    {
+      "name": "plus_ring_blue_02",
+      "file": "assets/ui/extracted_065811/plus_ring_blue_02.png",
+      "source_rect": {
+        "left": 1056,
+        "top": 479,
+        "right": 1129,
+        "bottom": 560
+      },
+      "size": {
+        "width": 73,
+        "height": 81
+      }
+    },
+    {
+      "name": "plus_slot_01",
+      "file": "assets/ui/extracted_065811/plus_slot_01.png",
+      "source_rect": {
+        "left": 986,
+        "top": 558,
+        "right": 1061,
+        "bottom": 631
+      },
+      "size": {
+        "width": 75,
+        "height": 73
+      }
+    },
+    {
+      "name": "plus_slot_02",
+      "file": "assets/ui/extracted_065811/plus_slot_02.png",
+      "source_rect": {
+        "left": 1061,
+        "top": 558,
+        "right": 1129,
+        "bottom": 631
+      },
+      "size": {
+        "width": 68,
+        "height": 73
+      }
+    },
+    {
+      "name": "plus_slot_active",
+      "file": "assets/ui/extracted_065811/plus_slot_active.png",
+      "source_rect": {
+        "left": 1061,
+        "top": 632,
+        "right": 1129,
+        "bottom": 708
+      },
+      "size": {
+        "width": 68,
+        "height": 76
+      }
+    },
+    {
+      "name": "plus_slot_03",
+      "file": "assets/ui/extracted_065811/plus_slot_03.png",
+      "source_rect": {
+        "left": 986,
+        "top": 632,
+        "right": 1061,
+        "bottom": 708
+      },
+      "size": {
+        "width": 75,
+        "height": 76
+      }
+    },
+    {
+      "name": "button_close_neutral_01",
+      "file": "assets/ui/extracted_065811/button_close_neutral_01.png",
+      "source_rect": {
+        "left": 949,
+        "top": 738,
+        "right": 1034,
+        "bottom": 822
+      },
+      "size": {
+        "width": 85,
+        "height": 84
+      }
+    },
+    {
+      "name": "button_close_neutral_02",
+      "file": "assets/ui/extracted_065811/button_close_neutral_02.png",
+      "source_rect": {
+        "left": 1046,
+        "top": 738,
+        "right": 1132,
+        "bottom": 822
+      },
+      "size": {
+        "width": 86,
+        "height": 84
+      }
+    },
+    {
+      "name": "button_close_red",
+      "file": "assets/ui/extracted_065811/button_close_red.png",
+      "source_rect": {
+        "left": 1149,
+        "top": 738,
+        "right": 1235,
+        "bottom": 822
+      },
+      "size": {
+        "width": 86,
+        "height": 84
+      }
+    },
+    {
+      "name": "button_close_blue",
+      "file": "assets/ui/extracted_065811/button_close_blue.png",
+      "source_rect": {
+        "left": 1251,
+        "top": 738,
+        "right": 1337,
+        "bottom": 822
+      },
+      "size": {
+        "width": 86,
+        "height": 84
+      }
+    },
+    {
+      "name": "banner_blue_large",
+      "file": "assets/ui/extracted_065811/banner_blue_large.png",
+      "source_rect": {
+        "left": 1150,
+        "top": 305,
+        "right": 1244,
+        "bottom": 439
+      },
+      "size": {
+        "width": 94,
+        "height": 134
+      }
+    },
+    {
+      "name": "banner_green_large",
+      "file": "assets/ui/extracted_065811/banner_green_large.png",
+      "source_rect": {
+        "left": 1244,
+        "top": 305,
+        "right": 1348,
+        "bottom": 439
+      },
+      "size": {
+        "width": 104,
+        "height": 134
+      }
+    },
+    {
+      "name": "banner_purple_large",
+      "file": "assets/ui/extracted_065811/banner_purple_large.png",
+      "source_rect": {
+        "left": 1351,
+        "top": 305,
+        "right": 1458,
+        "bottom": 439
+      },
+      "size": {
+        "width": 107,
+        "height": 134
+      }
+    },
+    {
+      "name": "banner_blue_small",
+      "file": "assets/ui/extracted_065811/banner_blue_small.png",
+      "source_rect": {
+        "left": 1150,
+        "top": 433,
+        "right": 1244,
+        "bottom": 552
+      },
+      "size": {
+        "width": 94,
+        "height": 119
+      }
+    },
+    {
+      "name": "banner_purple_small",
+      "file": "assets/ui/extracted_065811/banner_purple_small.png",
+      "source_rect": {
+        "left": 1244,
+        "top": 433,
+        "right": 1343,
+        "bottom": 552
+      },
+      "size": {
+        "width": 99,
+        "height": 119
+      }
+    },
+    {
+      "name": "shield_triangle_01",
+      "file": "assets/ui/extracted_065811/shield_triangle_01.png",
+      "source_rect": {
+        "left": 1163,
+        "top": 554,
+        "right": 1246,
+        "bottom": 665
+      },
+      "size": {
+        "width": 83,
+        "height": 111
+      }
+    },
+    {
+      "name": "shield_triangle_02",
+      "file": "assets/ui/extracted_065811/shield_triangle_02.png",
+      "source_rect": {
+        "left": 1256,
+        "top": 554,
+        "right": 1337,
+        "bottom": 665
+      },
+      "size": {
+        "width": 81,
+        "height": 111
+      }
+    },
+    {
+      "name": "corner_frame_top_left",
+      "file": "assets/ui/extracted_065811/corner_frame_top_left.png",
+      "source_rect": {
+        "left": 1134,
+        "top": 9,
+        "right": 1249,
+        "bottom": 120
+      },
+      "size": {
+        "width": 115,
+        "height": 111
+      }
+    },
+    {
+      "name": "corner_frame_top_right",
+      "file": "assets/ui/extracted_065811/corner_frame_top_right.png",
+      "source_rect": {
+        "left": 1274,
+        "top": 8,
+        "right": 1422,
+        "bottom": 122
+      },
+      "size": {
+        "width": 148,
+        "height": 114
+      }
+    },
+    {
+      "name": "corner_frame_right_top",
+      "file": "assets/ui/extracted_065811/corner_frame_right_top.png",
+      "source_rect": {
+        "left": 1421,
+        "top": 9,
+        "right": 1536,
+        "bottom": 124
+      },
+      "size": {
+        "width": 115,
+        "height": 115
+      }
+    },
+    {
+      "name": "horizontal_line_right_01",
+      "file": "assets/ui/extracted_065811/horizontal_line_right_01.png",
+      "source_rect": {
+        "left": 1233,
+        "top": 143,
+        "right": 1421,
+        "bottom": 206
+      },
+      "size": {
+        "width": 188,
+        "height": 63
+      }
+    },
+    {
+      "name": "horizontal_line_right_02",
+      "file": "assets/ui/extracted_065811/horizontal_line_right_02.png",
+      "source_rect": {
+        "left": 1236,
+        "top": 216,
+        "right": 1421,
+        "bottom": 278
+      },
+      "size": {
+        "width": 185,
+        "height": 62
+      }
+    },
+    {
+      "name": "horizontal_line_right_03",
+      "file": "assets/ui/extracted_065811/horizontal_line_right_03.png",
+      "source_rect": {
+        "left": 1141,
+        "top": 256,
+        "right": 1499,
+        "bottom": 301
+      },
+      "size": {
+        "width": 358,
+        "height": 45
+      }
+    },
+    {
+      "name": "vertical_gem_sword",
+      "file": "assets/ui/extracted_065811/vertical_gem_sword.png",
+      "source_rect": {
+        "left": 1454,
+        "top": 303,
+        "right": 1522,
+        "bottom": 505
+      },
+      "size": {
+        "width": 68,
+        "height": 202
+      }
+    },
+    {
+      "name": "vertical_meter_blue",
+      "file": "assets/ui/extracted_065811/vertical_meter_blue.png",
+      "source_rect": {
+        "left": 1334,
+        "top": 459,
+        "right": 1426,
+        "bottom": 947
+      },
+      "size": {
+        "width": 92,
+        "height": 488
+      }
+    },
+    {
+      "name": "vertical_meter_dark",
+      "file": "assets/ui/extracted_065811/vertical_meter_dark.png",
+      "source_rect": {
+        "left": 1427,
+        "top": 463,
+        "right": 1501,
+        "bottom": 948
+      },
+      "size": {
+        "width": 74,
+        "height": 485
+      }
+    },
+    {
+      "name": "vertical_gem_bottom_01",
+      "file": "assets/ui/extracted_065811/vertical_gem_bottom_01.png",
+      "source_rect": {
+        "left": 1360,
+        "top": 837,
+        "right": 1421,
+        "bottom": 942
+      },
+      "size": {
+        "width": 61,
+        "height": 105
+      }
+    },
+    {
+      "name": "vertical_gem_bottom_02",
+      "file": "assets/ui/extracted_065811/vertical_gem_bottom_02.png",
+      "source_rect": {
+        "left": 1462,
+        "top": 837,
+        "right": 1519,
+        "bottom": 906
+      },
+      "size": {
+        "width": 57,
+        "height": 69
+      }
+    },
+    {
+      "name": "triangle_control_01",
+      "file": "assets/ui/extracted_065811/triangle_control_01.png",
+      "source_rect": {
+        "left": 946,
+        "top": 834,
+        "right": 1024,
+        "bottom": 921
+      },
+      "size": {
+        "width": 78,
+        "height": 87
+      }
+    },
+    {
+      "name": "triangle_control_02",
+      "file": "assets/ui/extracted_065811/triangle_control_02.png",
+      "source_rect": {
+        "left": 1042,
+        "top": 834,
+        "right": 1118,
+        "bottom": 921
+      },
+      "size": {
+        "width": 76,
+        "height": 87
+      }
+    },
+    {
+      "name": "triangle_control_03",
+      "file": "assets/ui/extracted_065811/triangle_control_03.png",
+      "source_rect": {
+        "left": 1137,
+        "top": 834,
+        "right": 1216,
+        "bottom": 921
+      },
+      "size": {
+        "width": 79,
+        "height": 87
+      }
+    },
+    {
+      "name": "triangle_control_04",
+      "file": "assets/ui/extracted_065811/triangle_control_04.png",
+      "source_rect": {
+        "left": 1234,
+        "top": 834,
+        "right": 1313,
+        "bottom": 921
+      },
+      "size": {
+        "width": 79,
+        "height": 87
+      }
+    },
+    {
+      "name": "diamond_header_01",
+      "file": "assets/ui/extracted_065811/diamond_header_01.png",
+      "source_rect": {
+        "left": 207,
+        "top": 22,
+        "right": 276,
+        "bottom": 87
+      },
+      "size": {
+        "width": 69,
+        "height": 65
+      }
+    },
+    {
+      "name": "diamond_header_02",
+      "file": "assets/ui/extracted_065811/diamond_header_02.png",
+      "source_rect": {
+        "left": 398,
+        "top": 23,
+        "right": 468,
+        "bottom": 89
+      },
+      "size": {
+        "width": 70,
+        "height": 66
+      }
+    },
+    {
+      "name": "diamond_header_03",
+      "file": "assets/ui/extracted_065811/diamond_header_03.png",
+      "source_rect": {
+        "left": 701,
+        "top": 18,
+        "right": 769,
+        "bottom": 90
+      },
+      "size": {
+        "width": 68,
+        "height": 72
+      }
+    },
+    {
+      "name": "diamond_header_04",
+      "file": "assets/ui/extracted_065811/diamond_header_04.png",
+      "source_rect": {
+        "left": 921,
+        "top": 24,
+        "right": 985,
+        "bottom": 87
+      },
+      "size": {
+        "width": 64,
+        "height": 63
+      }
+    },
+    {
+      "name": "diamond_line_01",
+      "file": "assets/ui/extracted_065811/diamond_line_01.png",
+      "source_rect": {
+        "left": 696,
+        "top": 122,
+        "right": 777,
+        "bottom": 189
+      },
+      "size": {
+        "width": 81,
+        "height": 67
+      }
+    },
+    {
+      "name": "diamond_line_02",
+      "file": "assets/ui/extracted_065811/diamond_line_02.png",
+      "source_rect": {
+        "left": 921,
+        "top": 122,
+        "right": 981,
+        "bottom": 188
+      },
+      "size": {
+        "width": 60,
+        "height": 66
+      }
+    },
+    {
+      "name": "diamond_right_01",
+      "file": "assets/ui/extracted_065811/diamond_right_01.png",
+      "source_rect": {
+        "left": 1280,
+        "top": 139,
+        "right": 1354,
+        "bottom": 203
+      },
+      "size": {
+        "width": 74,
+        "height": 64
+      }
+    },
+    {
+      "name": "diamond_right_02",
+      "file": "assets/ui/extracted_065811/diamond_right_02.png",
+      "source_rect": {
+        "left": 1279,
+        "top": 210,
+        "right": 1354,
+        "bottom": 276
+      },
+      "size": {
+        "width": 75,
+        "height": 66
+      }
+    },
+    {
+      "name": "diamond_right_03",
+      "file": "assets/ui/extracted_065811/diamond_right_03.png",
+      "source_rect": {
+        "left": 1147,
+        "top": 252,
+        "right": 1209,
+        "bottom": 306
+      },
+      "size": {
+        "width": 62,
+        "height": 54
+      }
+    },
+    {
+      "name": "diamond_right_04",
+      "file": "assets/ui/extracted_065811/diamond_right_04.png",
+      "source_rect": {
+        "left": 1453,
+        "top": 531,
+        "right": 1519,
+        "bottom": 598
+      },
+      "size": {
+        "width": 66,
+        "height": 67
+      }
+    },
+    {
+      "name": "diamond_right_05",
+      "file": "assets/ui/extracted_065811/diamond_right_05.png",
+      "source_rect": {
+        "left": 1454,
+        "top": 705,
+        "right": 1520,
+        "bottom": 774
+      },
+      "size": {
+        "width": 66,
+        "height": 69
+      }
+    }
+  ]
+}

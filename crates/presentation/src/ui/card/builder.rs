@@ -16,6 +16,45 @@ use super::components::{
 use crate::ui::scrollbar::spawn_scroll_view;
 use crate::ui::theme::UiTheme;
 
+const CARD_FRAME_TOP_PATH: &str = "ui/extracted_065811/panel_header.png";
+const CARD_FRAME_BOTTOM_PATH: &str = "ui/extracted_065811/panel_bottom_center.png";
+const CARD_FRAME_SIDE_PATH: &str = "ui/extracted_065811/corner_frame_right_top.png";
+const CARD_FRAME_TOP_LEFT_PATH: &str = "ui/extracted_065811/corner_frame_top_left.png";
+const CARD_FRAME_TOP_RIGHT_PATH: &str = "ui/extracted_065811/corner_frame_top_right.png";
+
+/// Textures used by the resizable decorative Card frame.
+///
+/// The four corners keep their original size. The top and bottom pieces stretch
+/// horizontally, while the side pieces stretch vertically. The center is the
+/// card's solid `#111A22` background.
+#[derive(Clone)]
+pub struct CardFrameAssets {
+    pub top_left: Handle<Image>,
+    pub top: Handle<Image>,
+    pub top_right: Handle<Image>,
+    pub left: Handle<Image>,
+    pub right: Handle<Image>,
+    pub bottom_left: Handle<Image>,
+    pub bottom: Handle<Image>,
+    pub bottom_right: Handle<Image>,
+}
+
+impl CardFrameAssets {
+    /// Loads the first frame assembled from the extracted UI components.
+    pub fn load(asset_server: &AssetServer) -> Self {
+        Self {
+            top_left: asset_server.load(CARD_FRAME_TOP_LEFT_PATH),
+            top: asset_server.load(CARD_FRAME_TOP_PATH),
+            top_right: asset_server.load(CARD_FRAME_TOP_RIGHT_PATH),
+            left: asset_server.load(CARD_FRAME_SIDE_PATH),
+            right: asset_server.load(CARD_FRAME_SIDE_PATH),
+            bottom_left: asset_server.load(CARD_FRAME_TOP_RIGHT_PATH),
+            bottom: asset_server.load(CARD_FRAME_BOTTOM_PATH),
+            bottom_right: asset_server.load(CARD_FRAME_TOP_LEFT_PATH),
+        }
+    }
+}
+
 /// Default card geometry. Callers override via [`CardBuilder::width`] /
 /// [`CardBuilder::height`].
 pub const DEFAULT_CARD_WIDTH: f32 = 520.0;
@@ -64,6 +103,7 @@ pub struct CardBuilder<'a> {
     positioning: CardPositioning,
     draggable: bool,
     scrollable: bool,
+    frame: Option<CardFrameAssets>,
     body: CardContentSpawner<'a>,
     footer: Option<CardContentSpawner<'a>>,
 }
@@ -81,6 +121,7 @@ impl<'a> CardBuilder<'a> {
             positioning: CardPositioning::Center,
             draggable: false,
             scrollable: false,
+            frame: None,
             body: Box::new(|_| {}),
             footer: None,
         }
@@ -107,6 +148,12 @@ impl<'a> CardBuilder<'a> {
     /// Enables dragging the card window around by holding its header.
     pub fn draggable(mut self) -> Self {
         self.draggable = true;
+        self
+    }
+
+    /// Applies a resizable decorative frame to the card.
+    pub fn frame(mut self, frame: CardFrameAssets) -> Self {
+        self.frame = Some(frame);
         self
     }
 
@@ -168,6 +215,7 @@ impl<'a> CardBuilder<'a> {
             positioning,
             draggable,
             scrollable,
+            frame,
             body,
             footer,
         } = self;
@@ -219,7 +267,11 @@ impl<'a> CardBuilder<'a> {
                 border_radius: BorderRadius::all(Val::Px(10.0)),
                 ..default()
             },
-            BackgroundColor(theme.panel_bg),
+            BackgroundColor(if frame.is_some() {
+                Color::srgb(17.0 / 255.0, 26.0 / 255.0, 34.0 / 255.0)
+            } else {
+                theme.panel_bg
+            }),
             BorderColor {
                 top: Color::srgba(0.35, 0.38, 0.45, 0.6),
                 right: Color::srgba(0.35, 0.38, 0.45, 0.6),
@@ -232,6 +284,10 @@ impl<'a> CardBuilder<'a> {
 
         if draggable {
             card_root_cmd.insert(DraggableCard);
+        }
+
+        if let Some(frame) = frame {
+            card_root_cmd.with_children(|card| spawn_card_frame(card, frame));
         }
 
         // The body content is filled in *after* this block: a scrollable body
@@ -291,6 +347,139 @@ impl<'a> CardBuilder<'a> {
         }
 
         card_id
+    }
+}
+
+const FRAME_CORNER_SIZE: f32 = 58.0;
+const FRAME_EDGE_SIZE: f32 = 54.0;
+
+fn spawn_card_frame(parent: &mut ChildSpawnerCommands, frame: CardFrameAssets) {
+    let center = Color::srgb(17.0 / 255.0, 26.0 / 255.0, 34.0 / 255.0);
+
+    parent
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                right: Val::Px(0.0),
+                top: Val::Px(0.0),
+                bottom: Val::Px(0.0),
+                ..default()
+            },
+            BackgroundColor(center),
+        ))
+        .with_children(|frame_root| {
+            spawn_frame_piece(
+                frame_root,
+                frame.top_left,
+                Node {
+                    left: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    width: Val::Px(FRAME_CORNER_SIZE),
+                    height: Val::Px(FRAME_CORNER_SIZE),
+                    ..default()
+                },
+                None,
+            );
+            spawn_frame_piece(
+                frame_root,
+                frame.top,
+                Node {
+                    left: Val::Px(FRAME_CORNER_SIZE),
+                    right: Val::Px(FRAME_CORNER_SIZE),
+                    top: Val::Px(0.0),
+                    height: Val::Px(FRAME_EDGE_SIZE),
+                    ..default()
+                },
+                None,
+            );
+            spawn_frame_piece(
+                frame_root,
+                frame.top_right,
+                Node {
+                    right: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    width: Val::Px(FRAME_CORNER_SIZE),
+                    height: Val::Px(FRAME_CORNER_SIZE),
+                    ..default()
+                },
+                None,
+            );
+            spawn_frame_piece(
+                frame_root,
+                frame.left,
+                Node {
+                    left: Val::Px(0.0),
+                    top: Val::Px(FRAME_CORNER_SIZE),
+                    bottom: Val::Px(FRAME_CORNER_SIZE),
+                    width: Val::Px(FRAME_EDGE_SIZE),
+                    ..default()
+                },
+                None,
+            );
+            spawn_frame_piece(
+                frame_root,
+                frame.right,
+                Node {
+                    right: Val::Px(0.0),
+                    top: Val::Px(FRAME_CORNER_SIZE),
+                    bottom: Val::Px(FRAME_CORNER_SIZE),
+                    width: Val::Px(FRAME_EDGE_SIZE),
+                    ..default()
+                },
+                None,
+            );
+            spawn_frame_piece(
+                frame_root,
+                frame.bottom_left,
+                Node {
+                    left: Val::Px(0.0),
+                    bottom: Val::Px(0.0),
+                    width: Val::Px(FRAME_CORNER_SIZE),
+                    height: Val::Px(FRAME_CORNER_SIZE),
+                    ..default()
+                },
+                Some(Quat::from_rotation_z(std::f32::consts::PI)),
+            );
+            spawn_frame_piece(
+                frame_root,
+                frame.bottom,
+                Node {
+                    left: Val::Px(FRAME_CORNER_SIZE),
+                    right: Val::Px(FRAME_CORNER_SIZE),
+                    bottom: Val::Px(0.0),
+                    height: Val::Px(FRAME_EDGE_SIZE),
+                    ..default()
+                },
+                None,
+            );
+            spawn_frame_piece(
+                frame_root,
+                frame.bottom_right,
+                Node {
+                    right: Val::Px(0.0),
+                    bottom: Val::Px(0.0),
+                    width: Val::Px(FRAME_CORNER_SIZE),
+                    height: Val::Px(FRAME_CORNER_SIZE),
+                    ..default()
+                },
+                Some(Quat::from_rotation_z(std::f32::consts::PI)),
+            );
+        });
+}
+
+fn spawn_frame_piece(
+    parent: &mut ChildSpawnerCommands,
+    image: Handle<Image>,
+    node: Node,
+    rotation: Option<Quat>,
+) {
+    let mut entity = parent.spawn((
+        node,
+        ImageNode::new(image).with_mode(NodeImageMode::Stretch),
+    ));
+    if let Some(rotation) = rotation {
+        entity.insert(Transform::from_rotation(rotation));
     }
 }
 

@@ -65,6 +65,7 @@ impl Plugin for UiPlugin {
                 systems::update_text_input_focus,
                 systems::update_text_input_keyboard,
                 systems::update_text_input_display,
+                systems::scroll_text_input_to_caret,
                 systems::update_connection_failure,
                 systems::sync_typing_focus.after(systems::unfocus_inputs_on_gameplay_screen),
                 systems::toggle_pause.run_if(not_typing),

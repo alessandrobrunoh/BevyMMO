@@ -393,6 +393,34 @@ pub fn update_text_input_display(
     }
 }
 
+/// Keeps the visible slice of a single-line field on the caret (the end,
+/// since this widget only appends/pops). Long values scroll instead of
+/// growing out of the bar.
+pub fn scroll_text_input_to_caret(
+    inputs: Query<&TextInput>,
+    computed: Query<&ComputedNode>,
+    mut scrolls: Query<&mut ScrollPosition>,
+) {
+    for input in inputs.iter() {
+        if input.viewport == Entity::PLACEHOLDER {
+            continue;
+        }
+        let Ok(view) = computed.get(input.viewport) else {
+            continue;
+        };
+        let Ok(text) = computed.get(input.value_text) else {
+            continue;
+        };
+        let Ok(mut scroll) = scrolls.get_mut(input.viewport) else {
+            continue;
+        };
+        let view_w = view.size().x * view.inverse_scale_factor();
+        let text_w = text.size().x * text.inverse_scale_factor();
+        let max_scroll = (text_w - view_w).max(0.0);
+        scroll.0.x = if input.focused { max_scroll } else { 0.0 };
+    }
+}
+
 /// Aggiorna il testo che mostra l'eventuale errore di connessione nel menu
 /// principale, leggendolo da [`ConnectionFailure`]. Non tocca
 /// [`TextInput::error`] (validazione nome): i due canali sono indipendenti.
@@ -538,6 +566,7 @@ mod tests {
                 obscured: false,
                 value_text,
                 error_text,
+                viewport: Entity::PLACEHOLDER,
             })
             .id()
     }

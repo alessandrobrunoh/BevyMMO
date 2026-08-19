@@ -60,7 +60,13 @@ pub struct TextInput {
     pub(crate) value_text: Entity,
     /// Entity del nodo di testo che mostra l'errore di validazione.
     pub(crate) error_text: Entity,
+    /// Clip/scroll viewport that holds [`value_text`].
+    pub(crate) viewport: Entity,
 }
+
+/// Marker on the clip viewport inside a [`TextInput`].
+#[derive(Component)]
+pub struct TextInputViewport;
 
 /// Idle / focused bar textures for a [`TextInput`].
 ///
@@ -178,6 +184,10 @@ fn spawn_text_input_with_options(
                 linebreak: LineBreak::NoWrap,
                 ..default()
             },
+            Node {
+                flex_shrink: 0.0,
+                ..default()
+            },
             TextInputValueText,
             Pickable::IGNORE,
         ))
@@ -196,6 +206,8 @@ fn spawn_text_input_with_options(
         .id();
 
     // Inset the value so glyphs start past the 9-sliced icon cap, not on it.
+    // `scroll_x` + ScrollPosition keep a long value inside the field the way
+    // a normal single-line input does (caret stays at the visible end).
     let content = commands
         .spawn((
             Node {
@@ -208,9 +220,11 @@ fn spawn_text_input_with_options(
                     Val::Px(0.0),
                 ),
                 align_items: AlignItems::Center,
-                overflow: Overflow::clip(),
+                overflow: Overflow::scroll_x(),
                 ..default()
             },
+            ScrollPosition::default(),
+            TextInputViewport,
             Pickable::IGNORE,
         ))
         .id();
@@ -237,6 +251,7 @@ fn spawn_text_input_with_options(
                 obscured,
                 value_text,
                 error_text,
+                viewport: content,
             },
         ))
         .id();
@@ -353,7 +368,8 @@ mod tests {
         assert_eq!(inner.padding.left, Val::Px(INPUT_PAD_LEFT));
         assert_eq!(inner.padding.right, Val::Px(INPUT_PAD_RIGHT));
         assert_eq!(inner.align_items, AlignItems::Center);
-        assert_eq!(inner.overflow, Overflow::clip());
+        assert_eq!(inner.overflow, Overflow::scroll_x());
+        assert!(app.world().get::<ScrollPosition>(content).is_some());
 
         let value_text = app.world().get::<TextInput>(input).unwrap().value_text;
         let content_children = app.world().get::<Children>(content).expect("text child");
@@ -374,5 +390,13 @@ mod tests {
         assert_eq!(inner.padding.left, Val::Px(INPUT_PAD_LEFT));
         assert_eq!(inner.padding.right, Val::Px(PASSWORD_PAD_RIGHT));
         assert!(app.world().get::<TextInput>(input).unwrap().obscured);
+    }
+
+    #[test]
+    fn value_text_does_not_shrink_so_it_can_scroll() {
+        let (app, input) = spawn_field(false);
+        let value_text = app.world().get::<TextInput>(input).unwrap().value_text;
+        let node = app.world().get::<Node>(value_text).expect("value node");
+        assert_eq!(node.flex_shrink, 0.0);
     }
 }

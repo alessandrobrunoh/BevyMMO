@@ -37,8 +37,6 @@ const SECTION_LABEL_SIZE: f32 = 14.0;
 const SLOT_HEADING_SIZE: f32 = 13.0;
 const ARMOR_SLOT_MIN_HEIGHT: f32 = 48.0;
 const SLOT_PANEL_FILL: Color = Color::srgba(0.08, 0.09, 0.12, 0.85);
-/// Header title budget: inner field minus the Close chip and gap.
-const TITLE_BUDGET: f32 = WINDOW_WIDTH - 2.0 * WINDOW_PAD - CLOSE_WIDTH - HEADER_GAP;
 
 const _: () = assert!(WINDOW_PAD >= 88.0);
 const _: () = assert!(HEADER_TITLE_SIZE < HEADER_HEIGHT);
@@ -95,27 +93,13 @@ fn next_root_word(current: Option<&RootWordId>, clicked: &str) -> Option<RootWor
     }
 }
 
-fn composed_title(weapon_name: &str) -> String {
-    format!("Inscriptions - {weapon_name}")
-}
-
-fn title_fits(text: &str) -> bool {
-    // Default Bevy font is roughly 0.6em wide per ASCII glyph.
-    text.len() as f32 * (HEADER_TITLE_SIZE * 0.6) <= TITLE_BUDGET
-}
-
-/// Header title plus an optional muted subtitle when the weapon name does not
-/// fit next to Close.
+/// Title stays the short word "Inscriptions"; the weapon name is a subtitle
+/// so it cannot sit on the top gems next to Close.
 fn header_copy(weapon_name: Option<&str>) -> (String, Option<String>) {
-    let Some(name) = weapon_name.filter(|value| !value.is_empty()) else {
-        return ("Inscriptions".to_string(), None);
-    };
-    let composed = composed_title(name);
-    if title_fits(&composed) {
-        (composed, None)
-    } else {
-        ("Inscriptions".to_string(), Some(name.to_string()))
-    }
+    let subtitle = weapon_name
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    ("Inscriptions".to_string(), subtitle)
 }
 
 fn armor_slot_title(slot: EquipSlot) -> &'static str {
@@ -297,11 +281,25 @@ fn spawn_window(
                 overflow: Overflow::clip(),
                 ..default()
             },
-            ornate_panel_image(asset_server.load(PANEL_PATH)),
+            BackgroundColor(Color::NONE),
             Button,
             InscriptionWindow,
         ))
         .id();
+    commands.entity(window).with_children(|window| {
+        window.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                right: Val::Px(0.0),
+                top: Val::Px(0.0),
+                bottom: Val::Px(0.0),
+                ..default()
+            },
+            ornate_panel_image(asset_server.load(PANEL_PATH)),
+            Pickable::IGNORE,
+        ));
+    });
 
     commands.entity(window).with_children(|parent| {
         spawn_header(parent, theme, weapon_name);
@@ -430,12 +428,16 @@ fn spawn_armor_slot_card(
     let filled = item.is_some();
 
     let mut card = parent.spawn(Node {
-        flex_grow: 1.0,
+        flex_grow: if filled { 1.0 } else { 0.0 },
         flex_shrink: 1.0,
-        flex_basis: Val::Px(0.0),
+        flex_basis: if filled { Val::Px(0.0) } else { Val::Auto },
         min_width: Val::Px(0.0),
-        min_height: Val::Px(ARMOR_SLOT_MIN_HEIGHT),
-        padding: UiRect::all(Val::Px(4.0)),
+        min_height: Val::Px(if filled {
+            ARMOR_SLOT_MIN_HEIGHT
+        } else {
+            20.0
+        }),
+        padding: UiRect::all(Val::Px(if filled { 6.0 } else { 2.0 })),
         flex_direction: FlexDirection::Column,
         row_gap: Val::Px(3.0),
         overflow: Overflow::clip(),
@@ -1114,8 +1116,8 @@ mod tests {
     #[test]
     fn short_weapon_names_stay_in_the_title() {
         let (title, subtitle) = header_copy(Some("Bow"));
-        assert_eq!(title, "Inscriptions - Bow");
-        assert!(subtitle.is_none());
+        assert_eq!(title, "Inscriptions");
+        assert_eq!(subtitle.as_deref(), Some("Bow"));
     }
 
     fn test_app() -> App {
@@ -1184,16 +1186,21 @@ mod tests {
         spawn_test_window(&mut app, &equipment, &known);
 
         let world = app.world_mut();
-        let mut windows = world.query::<(&InscriptionWindow, &Node)>();
-        let node = windows
+        let window = world
+            .query_filtered::<(Entity, &Node), With<InscriptionWindow>>()
             .iter(world)
             .next()
-            .map(|(_, node)| node)
-            .expect("window")
-            .clone();
-        assert_eq!(node.padding.left, Val::Px(WINDOW_PAD));
-        assert_eq!(node.padding.top, Val::Px(WINDOW_PAD));
-        assert_eq!(node.overflow, Overflow::clip());
+            .map(|(entity, node)| (entity, node.clone()))
+            .expect("window");
+        assert_eq!(window.1.padding.left, Val::Px(WINDOW_PAD));
+        assert_eq!(window.1.padding.top, Val::Px(WINDOW_PAD));
+        assert_eq!(window.1.overflow, Overflow::clip());
+
+        let children = world.get::<Children>(window.0).expect("frame child");
+        let frame = children[0];
+        let frame_node = world.get::<Node>(frame).expect("frame node");
+        assert_eq!(frame_node.position_type, PositionType::Absolute);
+        assert!(world.get::<Pickable>(frame).is_some());
     }
 
     #[test]

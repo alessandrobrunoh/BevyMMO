@@ -1,6 +1,7 @@
 //! Sistemi per il target frame (UI panel con info sul target selezionato).
 
 use crate::ui::bar::{get_hp_fill_color, spawn_bar};
+use crate::ui::status_bar::spawn_target_status_row;
 use crate::ui::target_frame::components::{TargetFrame, TargetFrameParts, TargetFrameTarget};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
@@ -69,6 +70,8 @@ pub fn spawn_target_frame(
 
     // HP text
     let hp_text = spawn_text(commands, bar, "?/?", 12.0, theme.text_color);
+
+    spawn_target_status_row(commands, container);
 
     commands
         .entity(container)

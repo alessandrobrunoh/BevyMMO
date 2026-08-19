@@ -6,6 +6,8 @@ use bevymmo_gameplay::effects::{
     ActiveStatusSnapshot, ActiveStatuses, StatusCategory, StatusId, StatusRegistry,
 };
 
+use crate::ui::target_frame::components::{TargetFrame, TargetFrameTarget};
+
 const STATUS_BAR_TOP: f32 = 18.0;
 const STATUS_BAR_WIDTH_PERCENT: f32 = 90.0;
 const STATUS_CARD_WIDTH: f32 = 92.0;
@@ -38,8 +40,15 @@ pub struct StatusBarPlugin;
 
 impl Plugin for StatusBarPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_status_bar)
-            .add_systems(Update, (sync_status_bar, tick_status_card_timers).chain());
+        app.add_systems(Startup, setup_status_bar).add_systems(
+            Update,
+            (
+                sync_status_bar,
+                sync_target_status_bar,
+                tick_status_card_timers,
+            )
+                .chain(),
+        );
     }
 }
 
@@ -91,7 +100,68 @@ fn sync_status_bar(
 
     commands.entity(root_entity).with_children(|parent| {
         for status in &ordered {
-            spawn_status_card(parent, status, &status_registry);
+            spawn_status_card(parent, status, &status_registry, StatusCardSize::Full);
+        }
+    });
+}
+
+/// Marker for the status row parented under the selected-target frame.
+#[derive(Component)]
+pub(crate) struct TargetStatusRow;
+
+/// Compact row under the target frame. Hidden until the target has statuses.
+pub(crate) fn spawn_target_status_row(commands: &mut Commands, parent: Entity) {
+    let row = commands
+        .spawn((
+            TargetStatusRow,
+            StatusBarIdentity::default(),
+            Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                column_gap: Val::Px(4.0),
+                row_gap: Val::Px(4.0),
+                ..default()
+            },
+            Visibility::Hidden,
+        ))
+        .id();
+    commands.entity(parent).add_child(row);
+}
+
+fn sync_target_status_bar(
+    mut commands: Commands,
+    frames: Query<&TargetFrameTarget, With<TargetFrame>>,
+    mut rows: Query<(Entity, &mut Visibility, &mut StatusBarIdentity), With<TargetStatusRow>>,
+    targets: Query<&ActiveStatuses>,
+    status_registry: Res<StatusRegistry>,
+) {
+    let Ok((row_entity, mut visibility, mut identity)) = rows.single_mut() else {
+        return;
+    };
+    let Ok(frame) = frames.single() else {
+        return;
+    };
+    let empty = ActiveStatuses::default();
+    let statuses = targets.get(frame.entity).unwrap_or(&empty);
+    let next_identity = status_set_identity(statuses);
+    if identity.0 == next_identity {
+        return;
+    }
+    identity.0 = next_identity;
+
+    commands.entity(row_entity).despawn_related::<Children>();
+    if statuses.statuses.is_empty() {
+        *visibility = Visibility::Hidden;
+        return;
+    }
+
+    *visibility = Visibility::Visible;
+    let mut ordered = statuses.statuses.clone();
+    ordered.sort_by_key(status_priority);
+    commands.entity(row_entity).with_children(|parent| {
+        for status in &ordered {
+            spawn_status_card(parent, status, &status_registry, StatusCardSize::Compact);
         }
     });
 }
@@ -150,10 +220,44 @@ fn status_priority(status: &ActiveStatusSnapshot) -> (u8, u64) {
     (0, status.instance_id)
 }
 
+#[derive(Clone, Copy)]
+enum StatusCardSize {
+    Full,
+    Compact,
+}
+
+impl StatusCardSize {
+    fn width(self) -> f32 {
+        match self {
+            Self::Full => STATUS_CARD_WIDTH,
+            Self::Compact => 62.0,
+        }
+    }
+
+    fn height(self) -> f32 {
+        match self {
+            Self::Full => STATUS_CARD_HEIGHT,
+            Self::Compact => 48.0,
+        }
+    }
+
+    fn name_font(self) -> f32 {
+        match self {
+            Self::Full => 12.0,
+            Self::Compact => 10.0,
+        }
+    }
+
+    fn show_category_label(self) -> bool {
+        matches!(self, Self::Full)
+    }
+}
+
 fn spawn_status_card(
     parent: &mut ChildSpawnerCommands,
     status: &ActiveStatusSnapshot,
     registry: &StatusRegistry,
+    size: StatusCardSize,
 ) {
     let definition = registry.get(&StatusId::new(status.status_id.clone()));
     let category_kind = definition
@@ -189,9 +293,9 @@ fn spawn_status_card(
                 total: status.total_seconds,
             },
             Node {
-                width: Val::Px(STATUS_CARD_WIDTH),
-                height: Val::Px(STATUS_CARD_HEIGHT),
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
+                width: Val::Px(size.width()),
+                height: Val::Px(size.height()),
+                padding: UiRect::axes(Val::Px(4.0), Val::Px(3.0)),
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
@@ -205,31 +309,37 @@ fn spawn_status_card(
             card.spawn((
                 Text::new(format!("{} {}{}", icon, display_name, stack_suffix)),
                 TextFont {
-                    font_size: FontSize::Px(12.0),
+                    font_size: FontSize::Px(size.name_font()),
                     ..default()
                 },
                 TextColor(Color::WHITE),
             ));
-            card.spawn((
-                Text::new(category_name),
-                TextFont {
-                    font_size: FontSize::Px(8.0),
-                    ..default()
-                },
-                TextColor(category),
-            ));
+            if size.show_category_label() {
+                card.spawn((
+                    Text::new(category_name),
+                    TextFont {
+                        font_size: FontSize::Px(8.0),
+                        ..default()
+                    },
+                    TextColor(category),
+                ));
+            }
             card.spawn((
                 StatusRemainingText,
                 Text::new(remaining),
                 TextFont {
-                    font_size: FontSize::Px(11.0),
+                    font_size: FontSize::Px(10.0),
                     ..default()
                 },
                 TextColor(Color::srgba(0.85, 0.88, 0.95, 1.0)),
             ));
             card.spawn((
                 Node {
-                    width: Val::Px(STATUS_DURATION_BAR_WIDTH),
+                    width: Val::Px(if matches!(size, StatusCardSize::Compact) {
+                        50.0
+                    } else {
+                        STATUS_DURATION_BAR_WIDTH
+                    }),
                     height: Val::Px(STATUS_DURATION_BAR_HEIGHT),
                     ..default()
                 },
@@ -284,6 +394,12 @@ fn format_remaining(seconds: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::target_frame::systems::manage_target_frame;
+    use crate::ui::theme::UiTheme;
+    use bevymmo_client::targeting::CurrentTarget;
+    use bevymmo_gameplay::entity::components::{EntityKind, PlayerName};
+    use bevymmo_gameplay::stats::components::VitalStats;
+    use bevymmo_network::network::protocol::Position;
 
     #[test]
     fn remaining_time_uses_compact_display_precision() {
@@ -349,5 +465,78 @@ mod tests {
         assert_eq!(duration_ratio(20.0, 10.0), 1.0);
         assert_eq!(duration_ratio(-1.0, 10.0), 0.0);
         assert_eq!(duration_ratio(1.0, 0.0), 0.0);
+    }
+
+    fn snapshot(status_id: &str, instance_id: u64) -> ActiveStatusSnapshot {
+        ActiveStatusSnapshot {
+            instance_id,
+            status_id: status_id.to_string(),
+            source: None,
+            stacks: 1,
+            potency: 1.0,
+            remaining_seconds: 4.0,
+            total_seconds: 5.0,
+        }
+    }
+
+    fn target_status_app(statuses: Vec<ActiveStatusSnapshot>) -> (App, Entity) {
+        let mut app = App::new();
+        app.insert_resource(bevymmo_content::status_definitions::default_statuses());
+        app.init_resource::<UiTheme>();
+        app.add_systems(
+            Update,
+            (manage_target_frame, sync_target_status_bar).chain(),
+        );
+
+        let target = app
+            .world_mut()
+            .spawn((
+                Position(Vec3::ZERO),
+                VitalStats {
+                    current_health: 80.0,
+                    max_health: 100.0,
+                    max_mana: 0.0,
+                    mana_regeneration: 0.0,
+                },
+                PlayerName("Dummy".to_string()),
+                EntityKind::Neutral,
+                ActiveStatuses { statuses },
+            ))
+            .id();
+        app.world_mut().insert_resource(CurrentTarget::new(target));
+        (app, target)
+    }
+
+    #[test]
+    fn target_status_row_stays_hidden_when_the_target_has_no_statuses() {
+        let (mut app, _) = target_status_app(Vec::new());
+        app.update();
+
+        let mut vis = app
+            .world_mut()
+            .query_filtered::<&Visibility, With<TargetStatusRow>>();
+        let visibility = vis.single(app.world()).expect("status row");
+        assert!(matches!(*visibility, Visibility::Hidden));
+    }
+
+    #[test]
+    fn target_status_row_shows_a_card_for_each_status() {
+        let (mut app, _) = target_status_app(vec![snapshot("slow", 1), snapshot("burn", 2)]);
+        app.update();
+
+        let mut vis = app
+            .world_mut()
+            .query_filtered::<&Visibility, With<TargetStatusRow>>();
+        assert!(matches!(
+            *vis.single(app.world()).expect("status row"),
+            Visibility::Visible
+        ));
+
+        let cards = app
+            .world_mut()
+            .query::<&StatusCard>()
+            .iter(app.world())
+            .count();
+        assert_eq!(cards, 2);
     }
 }

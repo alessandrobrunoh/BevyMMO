@@ -17,10 +17,13 @@ use crate::game_state::{
     PlayerNameError, Screen, TypingFocus,
 };
 use crate::ui::button::{apply_button_image, UiButton, UiButtonAction, UiButtonImages};
+use crate::ui::character_roster::SelectedRosterEntry;
 use crate::ui::chat::ChatInput;
 use crate::ui::login::{AuthPage, EmailInput, PasswordInput};
 use crate::ui::main_menu::PlayerNameInput;
-use crate::ui::text_input::{unfocus_all, TextInput, TextInputErrorText, TextInputValueText};
+use crate::ui::text_input::{
+    unfocus_all, TextInput, TextInputErrorText, TextInputImages, TextInputValueText,
+};
 use crate::ui::theme::UiTheme;
 
 /// Keeps [`TypingFocus`] in sync with whichever text field actually has
@@ -122,6 +125,7 @@ pub fn update_button_actions(
     mut screen: ResMut<GameScreen>,
     mut connection_request: ResMut<ConnectionRequest>,
     mut auth_page: ResMut<AuthPage>,
+    selected: Option<Res<SelectedRosterEntry>>,
     buttons: Query<(&Interaction, &UiButton), Changed<Interaction>>,
     mut name_input: Query<&mut TextInput, With<PlayerNameInput>>,
 ) {
@@ -132,6 +136,17 @@ pub fn update_button_actions(
 
         match button.action {
             UiButtonAction::Play => {
+                if let Some(SelectedRosterEntry::Existing(player_name)) = selected.as_deref() {
+                    if let Ok(mut input) = name_input.single_mut() {
+                        input.error = None;
+                        input.focused = false;
+                    }
+                    screen.0 = Screen::Connecting;
+                    connection_request.0 = Some(ConnectionIntent::Connect {
+                        player_name: player_name.clone(),
+                    });
+                    continue;
+                }
                 let Ok(mut input) = name_input.single_mut() else {
                     continue;
                 };
@@ -336,7 +351,7 @@ pub fn update_text_input_keyboard(
 }
 
 /// Riflette lo stato di ogni [`TextInput`] cambiato sui propri nodi testo
-/// figli (valore/placeholder ed errore) e sul proprio bordo.
+/// figli (valore/placeholder ed errore) e sulla texture idle/focused.
 ///
 /// Scrive tramite gli entity id salvati su `TextInput` (`value_text`,
 /// `error_text`), non tramite una ricerca globale: con più campi presenti
@@ -347,7 +362,7 @@ pub fn update_text_input_display(
     query: Query<(Entity, &TextInput), Changed<TextInput>>,
     mut value_text: Query<(&mut Text, &mut TextColor), With<TextInputValueText>>,
     mut error_text: Query<&mut Text, (With<TextInputErrorText>, Without<TextInputValueText>)>,
-    mut border: Query<&mut BorderColor>,
+    mut images: Query<(&mut ImageNode, &TextInputImages)>,
 ) {
     for (entity, input) in query.iter() {
         if let Ok((mut text, mut color)) = value_text.get_mut(input.value_text) {
@@ -368,15 +383,12 @@ pub fn update_text_input_display(
             text.0 = input.error.clone().unwrap_or_default();
         }
 
-        if let Ok(mut border_color) = border.get_mut(entity) {
-            let color = if input.error.is_some() {
-                theme.error_color
-            } else if input.focused {
-                theme.input_border_focused
+        if let Ok((mut image, input_images)) = images.get_mut(entity) {
+            image.image = if input.focused {
+                input_images.focused.clone()
             } else {
-                theme.input_border
+                input_images.idle.clone()
             };
-            border_color.set_all(color);
         }
     }
 }
@@ -535,6 +547,85 @@ mod tests {
 
     fn gameplay_if_not_typing(mut ran: ResMut<GameplayRan>) {
         ran.0 = true;
+    }
+
+    fn play_test_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<GameScreen>();
+        app.init_resource::<ConnectionRequest>();
+        app.init_resource::<AuthPage>();
+        app.init_resource::<SelectedRosterEntry>();
+        app.add_systems(Update, update_button_actions);
+        app
+    }
+
+    fn press_play(app: &mut App) {
+        app.world_mut().spawn((
+            UiButton {
+                action: UiButtonAction::Play,
+            },
+            Interaction::Pressed,
+        ));
+    }
+
+    fn spawn_player_name(app: &mut App, value: &str) -> Entity {
+        let entity = spawn_test_text_input(app.world_mut(), value, false);
+        app.world_mut().entity_mut(entity).insert(PlayerNameInput);
+        entity
+    }
+
+    #[test]
+    fn play_with_selected_roster_character_skips_name_validation() {
+        let mut app = play_test_app();
+        *app.world_mut().resource_mut::<SelectedRosterEntry>() =
+            SelectedRosterEntry::Existing("Al".into());
+        let name = spawn_player_name(&mut app, "x");
+        press_play(&mut app);
+        app.update();
+
+        assert_eq!(app.world().resource::<GameScreen>().0, Screen::Connecting);
+        assert!(matches!(
+            app.world().resource::<ConnectionRequest>().0,
+            Some(ConnectionIntent::Connect { ref player_name }) if player_name == "Al"
+        ));
+        assert!(
+            app.world()
+                .entity(name)
+                .get::<TextInput>()
+                .is_some_and(|input| input.error.is_none()),
+            "existing roster names must not run the 3-char create-name check"
+        );
+    }
+
+    #[test]
+    fn play_with_create_selected_validates_the_name_field() {
+        let mut app = play_test_app();
+        *app.world_mut().resource_mut::<SelectedRosterEntry>() = SelectedRosterEntry::Create;
+        let name = spawn_player_name(&mut app, "ab");
+        press_play(&mut app);
+        app.update();
+
+        assert_eq!(app.world().resource::<GameScreen>().0, Screen::MainMenu);
+        assert!(app.world().resource::<ConnectionRequest>().0.is_none());
+        assert!(app
+            .world()
+            .entity(name)
+            .get::<TextInput>()
+            .is_some_and(|input| input.error.is_some()));
+    }
+
+    #[test]
+    fn play_with_nothing_selected_uses_the_name_field() {
+        let mut app = play_test_app();
+        spawn_player_name(&mut app, "Ada");
+        press_play(&mut app);
+        app.update();
+
+        assert_eq!(app.world().resource::<GameScreen>().0, Screen::Connecting);
+        assert!(matches!(
+            app.world().resource::<ConnectionRequest>().0,
+            Some(ConnectionIntent::Connect { ref player_name }) if player_name == "Ada"
+        ));
     }
 
     #[test]

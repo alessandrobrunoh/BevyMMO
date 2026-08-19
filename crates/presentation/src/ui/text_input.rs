@@ -13,6 +13,28 @@ use bevy::prelude::*;
 
 use crate::ui::theme::UiTheme;
 
+/// Idle user/email field (baked user icon on the left cap).
+pub const INPUT_GOLD_PATH: &str = "ui/extracted_kit/input_gold.png";
+/// Focused / filled user field.
+pub const INPUT_BLUE_PATH: &str = "ui/extracted_kit/input_blue.png";
+/// Idle password field (baked lock + eye).
+pub const INPUT_PASSWORD_GOLD_PATH: &str = "ui/extracted_kit/input_password_gold.png";
+/// Focused / filled password field.
+pub const INPUT_PASSWORD_BLUE_PATH: &str = "ui/extracted_kit/input_password_blue.png";
+
+const INPUT_HEIGHT: f32 = 58.0;
+const INPUT_MAX_WIDTH: f32 = 380.0;
+/// Source-pixel 9-slice. The baked user/lock icon lives in the left ~160 px
+/// of a 687 px bar — a 48 px slice stretched that icon across the field.
+const INPUT_SLICE_LEFT: f32 = 168.0;
+const INPUT_SLICE_RIGHT: f32 = 96.0;
+const INPUT_SLICE_Y: f32 = 30.0;
+/// Matches the rendered left cap at this height (`168 * 58/146`).
+const INPUT_PAD_LEFT: f32 = 72.0;
+const INPUT_PAD_RIGHT: f32 = 18.0;
+/// Clears the baked eye on password bars.
+const PASSWORD_PAD_RIGHT: f32 = 44.0;
+
 /// Campo di testo focalizzabile e modificabile da tastiera.
 #[derive(Component)]
 pub struct TextInput {
@@ -27,6 +49,16 @@ pub struct TextInput {
     pub(crate) value_text: Entity,
     /// Entity del nodo di testo che mostra l'errore di validazione.
     pub(crate) error_text: Entity,
+}
+
+/// Idle / focused bar textures for a [`TextInput`].
+///
+/// [`crate::ui::systems::update_text_input_display`] swaps [`ImageNode`] when
+/// `focused` changes. Tests that spawn a bare [`TextInput`] omit this.
+#[derive(Component, Clone)]
+pub struct TextInputImages {
+    pub idle: Handle<Image>,
+    pub focused: Handle<Image>,
 }
 
 /// Marker: testo che mostra il valore corrente (o il placeholder).
@@ -47,8 +79,17 @@ pub fn spawn_text_input(
     placeholder: impl Into<String>,
     max_chars: usize,
     theme: &UiTheme,
+    asset_server: &AssetServer,
 ) -> Entity {
-    spawn_text_input_with_options(commands, parent, placeholder, max_chars, false, theme)
+    spawn_text_input_with_options(
+        commands,
+        parent,
+        placeholder,
+        max_chars,
+        false,
+        theme,
+        asset_server,
+    )
 }
 
 /// Come [`spawn_text_input`], ma il valore digitato è mostrato mascherato.
@@ -58,8 +99,17 @@ pub fn spawn_password_input(
     placeholder: impl Into<String>,
     max_chars: usize,
     theme: &UiTheme,
+    asset_server: &AssetServer,
 ) -> Entity {
-    spawn_text_input_with_options(commands, parent, placeholder, max_chars, true, theme)
+    spawn_text_input_with_options(
+        commands,
+        parent,
+        placeholder,
+        max_chars,
+        true,
+        theme,
+        asset_server,
+    )
 }
 
 fn spawn_text_input_with_options(
@@ -69,12 +119,30 @@ fn spawn_text_input_with_options(
     max_chars: usize,
     obscured: bool,
     theme: &UiTheme,
+    asset_server: &AssetServer,
 ) -> Entity {
     let placeholder_str = placeholder.into();
+    let images = if obscured {
+        TextInputImages {
+            idle: asset_server.load(INPUT_PASSWORD_GOLD_PATH),
+            focused: asset_server.load(INPUT_PASSWORD_BLUE_PATH),
+        }
+    } else {
+        TextInputImages {
+            idle: asset_server.load(INPUT_GOLD_PATH),
+            focused: asset_server.load(INPUT_BLUE_PATH),
+        }
+    };
+    let pad_right = if obscured {
+        PASSWORD_PAD_RIGHT
+    } else {
+        INPUT_PAD_RIGHT
+    };
+
     let wrapper = commands
         .spawn(Node {
             width: Val::Percent(100.0),
-            max_width: Val::Px(280.0),
+            max_width: Val::Px(INPUT_MAX_WIDTH),
             min_width: Val::Px(0.0),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
@@ -91,10 +159,14 @@ fn spawn_text_input_with_options(
         .spawn((
             Text::new(placeholder_str.clone()),
             TextFont {
-                font_size: FontSize::Px(theme.input_font_size),
+                font_size: FontSize::Px(theme.input_font_size - 2.0),
                 ..default()
             },
             TextColor(theme.muted_text_color),
+            TextLayout {
+                linebreak: LineBreak::NoWrap,
+                ..default()
+            },
             TextInputValueText,
         ))
         .id();
@@ -116,16 +188,22 @@ fn spawn_text_input_with_options(
             Button,
             Node {
                 width: Val::Percent(100.0),
-                max_width: Val::Px(280.0),
+                max_width: Val::Px(INPUT_MAX_WIDTH),
                 min_width: Val::Px(0.0),
-                height: Val::Px(40.0),
-                padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                height: Val::Px(INPUT_HEIGHT),
+                padding: UiRect::new(
+                    Val::Px(INPUT_PAD_LEFT),
+                    Val::Px(pad_right),
+                    Val::Px(0.0),
+                    Val::Px(0.0),
+                ),
                 align_items: AlignItems::Center,
-                border: UiRect::all(Val::Px(2.0)),
+                overflow: Overflow::clip(),
+                flex_shrink: 0.0,
                 ..default()
             },
-            BackgroundColor(theme.input_bg),
-            BorderColor::all(theme.input_border),
+            sliced_input_image(images.idle.clone()),
+            images,
             TextInput {
                 value: String::new(),
                 focused: false,
@@ -144,6 +222,21 @@ fn spawn_text_input_with_options(
     commands.entity(wrapper).add_child(error_text);
 
     input_entity
+}
+
+/// 9-sliced input bar. Icon/lock caps stay intact; only the empty field stretches.
+pub fn sliced_input_image(image: Handle<Image>) -> ImageNode {
+    ImageNode::new(image).with_mode(NodeImageMode::Sliced(TextureSlicer {
+        border: BorderRect::from([
+            INPUT_SLICE_LEFT,
+            INPUT_SLICE_RIGHT,
+            INPUT_SLICE_Y,
+            INPUT_SLICE_Y,
+        ]),
+        center_scale_mode: SliceScaleMode::Stretch,
+        sides_scale_mode: SliceScaleMode::Stretch,
+        max_corner_scale: 1.0,
+    }))
 }
 
 /// Clears keyboard focus on every [`TextInput`].

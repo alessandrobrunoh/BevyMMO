@@ -395,6 +395,8 @@ fn spawn_card_frame(parent: &mut ChildSpawnerCommands, frame: CardFrameAssets) {
             ..default()
         },
         ornate_panel_image(frame.panel),
+        // Absolute overlay would otherwise win hit-testing over the header.
+        Pickable::IGNORE,
     ));
 }
 
@@ -454,6 +456,11 @@ fn spawn_header(
                 overflow: Overflow::clip_x(),
                 ..default()
             },
+            // Bevy reports Interaction on the picked leaf. Ignore the title
+            // so the header Button keeps the hit, and still carry Interaction
+            // so a title press can walk up to [`CardHeaderDragHandle`].
+            Pickable::IGNORE,
+            Interaction::default(),
         ));
 
         if layout == CardLayout::WithClose {
@@ -778,6 +785,52 @@ mod tests {
         let world = app.world();
         let window = world.get::<CardWindow>(entity).expect("card window");
         assert_eq!(window.exclusivity, CardExclusivityPolicy::Coexist);
+    }
+
+    #[test]
+    fn draggable_framed_card_keeps_a_header_drag_handle() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        let entity = CardBuilder::new(CardKind::ItemDetail, "Staffa da Mago")
+            .frame(CardFrameAssets::default())
+            .draggable()
+            .closeable()
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        assert!(
+            app.world().get::<DraggableCard>(entity).is_some(),
+            "item detail must stay .draggable()"
+        );
+
+        let world = app.world_mut();
+        let mut handles = world.query::<(&CardHeaderDragHandle, &Node)>();
+        let (_, header) = handles.iter(world).next().expect("header drag handle");
+        assert_eq!(header.width, Val::Percent(100.0));
+        assert_eq!(header.height, Val::Px(HEADER_HEIGHT));
+
+        let world = app.world_mut();
+        let mut frames = world.query::<(&ImageNode, &Node, &Pickable)>();
+        assert!(
+            frames.iter(world).any(|(_, node, pickable)| {
+                node.position_type == PositionType::Absolute
+                    && node.left == Val::Px(0.0)
+                    && node.right == Val::Px(0.0)
+                    && *pickable == Pickable::IGNORE
+            }),
+            "ornate frame must not steal header hits"
+        );
+
+        let world = app.world_mut();
+        let mut titles = world.query::<(&Text, &Pickable)>();
+        let (_, pickable) = titles
+            .iter(world)
+            .find(|(text, _)| text.0 == "Staffa da Mago")
+            .expect("header title");
+        assert_eq!(*pickable, Pickable::IGNORE);
     }
 
     #[test]

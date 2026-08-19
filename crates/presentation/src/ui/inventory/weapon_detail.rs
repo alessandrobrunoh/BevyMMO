@@ -15,7 +15,9 @@ use bevymmo_gameplay::abilities::{
     AncientWordRegistry, BaseAbilityRegistry, CastBlockedReason, KnownAncientLanguage,
     RootWordRegistry, SlotPreview,
 };
-use bevymmo_gameplay::items::{instance::ItemInstance, ItemCategory, ItemRarity, ItemRegistry};
+use bevymmo_gameplay::items::{
+    components::EquipSlot, instance::ItemInstance, ItemCategory, ItemRarity, ItemRegistry,
+};
 
 /// I registri necessari a descrivere un'arma incisa, raggruppati per non far
 /// crescere la firma della scheda item di un argomento per tipo.
@@ -54,15 +56,19 @@ pub struct RuneSummary {
 }
 
 impl RuneSummary {
-    pub fn line(&self) -> String {
-        let mut parts = vec![
+    pub fn lines(&self) -> Vec<String> {
+        let mut lines = vec![
             format!("{}/{} capacity", self.used, self.capacity),
             format!("{:.0}% stability", self.stability * 100.0),
         ];
         if let Some(root_word) = &self.root_word {
-            parts.push(format!("Root Word: {root_word}"));
+            lines.push(format!("Root Word: {root_word}"));
         }
-        parts.join("   |   ")
+        lines
+    }
+
+    pub fn line(&self) -> String {
+        self.lines().join("   |   ")
     }
 }
 
@@ -96,17 +102,42 @@ pub struct WeaponSummary {
 pub fn meta_line(
     category: ItemCategory,
     rarity: ItemRarity,
-    equip_slot: Option<impl std::fmt::Debug>,
+    equip_slot: Option<EquipSlot>,
     weight: f32,
 ) -> String {
-    let mut parts = vec![format!("{category:?}"), format!("{rarity:?}")];
+    let category_name = category_label(category);
+    let mut parts = vec![category_name.to_string(), rarity_label(rarity).to_string()];
     if let Some(slot) = equip_slot {
-        parts.push(format!("{slot:?}"));
+        let slot_name = format!("{slot:?}");
+        if slot_name != category_name {
+            parts.push(slot_name);
+        }
     }
     if weight > 0.0 {
         parts.push(format!("{} wt", number(weight)));
     }
     parts.join("   |   ")
+}
+
+const fn category_label(category: ItemCategory) -> &'static str {
+    match category {
+        ItemCategory::Weapon => "Weapon",
+        ItemCategory::Armor => "Armor",
+        ItemCategory::Consumable => "Consumable",
+        ItemCategory::Material => "Material",
+        ItemCategory::Quest => "Quest",
+        ItemCategory::Accessory => "Accessory",
+    }
+}
+
+const fn rarity_label(rarity: ItemRarity) -> &'static str {
+    match rarity {
+        ItemRarity::Common => "Common",
+        ItemRarity::Uncommon => "Uncommon",
+        ItemRarity::Rare => "Rare",
+        ItemRarity::Epic => "Epic",
+        ItemRarity::Legendary => "Legendary",
+    }
 }
 
 /// Costruisce il riepilogo Eidolon di `instance`, o `None` se l'item non è
@@ -333,7 +364,6 @@ mod tests {
     use bevymmo_gameplay::abilities::{
         inscription::WeaponInscription, root_word::RootWordId, AbilityGeometry, AbilityParams,
     };
-    use bevymmo_gameplay::items::components::EquipSlot;
 
     fn params() -> AbilityParams {
         AbilityParams {
@@ -522,6 +552,24 @@ mod tests {
     }
 
     #[test]
+    fn rune_lines_are_short_and_unpiped() {
+        let runes = RuneSummary {
+            used: 6,
+            capacity: 8,
+            stability: 0.96,
+            root_word: Some("Danno".to_string()),
+        };
+        assert_eq!(
+            runes.lines(),
+            vec![
+                "6/8 capacity".to_string(),
+                "96% stability".to_string(),
+                "Root Word: Danno".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn rune_line_omits_root_word_when_the_weapon_has_none() {
         let runes = RuneSummary {
             used: 0,
@@ -530,29 +578,36 @@ mod tests {
             root_word: None,
         };
         assert!(!runes.line().contains("Root Word"));
+        assert_eq!(runes.lines().len(), 2);
     }
 
     #[test]
     fn meta_line_skips_a_weightless_inventory_only_item() {
-        let line = meta_line(
-            ItemCategory::Material,
-            ItemRarity::Common,
-            None::<EquipSlot>,
-            0.0,
-        );
+        let line = meta_line(ItemCategory::Material, ItemRarity::Common, None, 0.0);
         assert_eq!(line, "Material   |   Common");
     }
 
     #[test]
-    fn meta_line_includes_the_equip_slot_when_there_is_one() {
+    fn meta_line_omits_the_equip_slot_when_it_matches_the_category() {
         let line = meta_line(
             ItemCategory::Weapon,
             ItemRarity::Rare,
             Some(EquipSlot::Weapon),
             1.5,
         );
+        assert_eq!(line, "Weapon   |   Rare   |   1.5 wt");
         assert!(line.contains("Weapon"));
         assert!(line.contains("Rare"));
-        assert!(line.contains("1.5 wt"));
+    }
+
+    #[test]
+    fn meta_line_includes_the_equip_slot_when_it_differs_from_the_category() {
+        let line = meta_line(
+            ItemCategory::Accessory,
+            ItemRarity::Epic,
+            Some(EquipSlot::Helmet),
+            0.0,
+        );
+        assert_eq!(line, "Accessory   |   Epic   |   Helmet");
     }
 }

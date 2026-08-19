@@ -1,7 +1,7 @@
 //! Client-only modular ability hotbar.
 //!
 //! Data-driven UI showing all active ability slots across weapon, helmet,
-//! chestplate, and shoes in a compact 3-row grid (key / name / cooldown).
+//! chestplate, and shoes as a bottom-centered row of circular rings.
 //! Entries are derived from equipped items via `resolve_active_ability`.
 
 use bevy::prelude::*;
@@ -21,6 +21,12 @@ use bevymmo_network::network::protocol::NetworkEntityId;
 use crate::game_state::{GameScreen, Screen};
 use crate::spells::input::WEAPON_HUD_BINDINGS;
 use crate::ui::theme::UiTheme;
+
+const SPELL_RING_SILVER_PATH: &str = "ui/extracted_kit/spell_ring_silver.png";
+const SPELL_SLOT_SIZE: f32 = 68.0;
+const SPELL_SLOT_GAP: f32 = 10.0;
+const SPELL_CENTER_FONT_SIZE: f32 = 16.0;
+const SPELL_KEY_FONT_SIZE: f32 = 12.0;
 
 /// What a HUD cooldown countdown is keyed by.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -99,21 +105,21 @@ fn not_in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
     !in_gameplay_or_paused(screen)
 }
 
-fn setup_spell_hud(mut commands: Commands, theme: Res<UiTheme>) {
+fn setup_spell_hud(mut commands: Commands, _theme: Res<UiTheme>, asset_server: Res<AssetServer>) {
+    let _ring: Handle<Image> = asset_server.load(SPELL_RING_SILVER_PATH);
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
             bottom: Val::Px(86.0),
-            left: Val::Percent(2.0),
-            width: Val::Percent(96.0),
+            width: Val::Percent(100.0),
             padding: UiRect::all(Val::Px(8.0)),
             flex_direction: FlexDirection::Row,
             justify_content: JustifyContent::Center,
-            column_gap: Val::Px(6.0),
-            overflow: Overflow::clip_x(),
+            align_items: AlignItems::FlexEnd,
+            column_gap: Val::Px(SPELL_SLOT_GAP),
             ..default()
         },
-        BackgroundColor(theme.panel_bg),
+        BackgroundColor(Color::NONE),
         SpellHudRoot,
     ));
 }
@@ -192,6 +198,7 @@ fn resolve_equipment_entry(
 fn sync_spell_hud(
     mut commands: Commands,
     theme: Res<UiTheme>,
+    asset_server: Res<AssetServer>,
     settings: Res<GameSettingsResource>,
     mut layout_state: ResMut<SpellHudLayoutState>,
     player_query: Query<&Equipment, With<LocalPlayer>>,
@@ -244,59 +251,53 @@ fn sync_spell_hud(
 
     commands.entity(root_entity).despawn_related::<Children>();
 
+    let ring = asset_server.load(SPELL_RING_SILVER_PATH);
     commands.entity(root_entity).with_children(|parent| {
         for entry in entries {
             parent
                 .spawn((
-                    Button,
                     Node {
-                        width: Val::Percent(10.0),
-                        min_width: Val::Px(0.0),
-                        flex_grow: 1.0,
-                        flex_shrink: 1.0,
+                        width: Val::Px(SPELL_SLOT_SIZE),
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::Center,
-                        padding: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
-                        overflow: Overflow::clip_x(),
+                        row_gap: Val::Px(2.0),
                         ..default()
                     },
-                    BackgroundColor(theme.button_bg),
+                    BackgroundColor(Color::NONE),
                     entry.clone(),
                 ))
-                .with_children(|col| {
-                    // Row 1 — key label
-                    col.spawn((
+                .with_children(|slot| {
+                    slot.spawn((
+                        Node {
+                            width: Val::Px(SPELL_SLOT_SIZE),
+                            height: Val::Px(SPELL_SLOT_SIZE),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        ImageNode::new(ring.clone()).with_mode(NodeImageMode::Stretch),
+                    ))
+                    .with_children(|ring_slot| {
+                        ring_slot.spawn((
+                            Text(format_cooldown_text(&entry, 0.0)),
+                            TextFont {
+                                font_size: FontSize::Px(SPELL_CENTER_FONT_SIZE),
+                                ..default()
+                            },
+                            TextColor(theme.text_color),
+                            TextLayout::justify(Justify::Center),
+                            Name::new("hotbar-cooldown"),
+                            entry.clone(),
+                        ));
+                    });
+                    slot.spawn((
                         Text(entry.key_label.clone()),
                         TextFont {
-                            font_size: FontSize::Px(theme.button_font_size),
+                            font_size: FontSize::Px(SPELL_KEY_FONT_SIZE),
                             ..default()
                         },
-                        TextColor(theme.text_color),
-                    ));
-                    // Row 2 — ability name
-                    col.spawn((
-                        Text(if entry.display_name == "Empty" {
-                            "Empty".into()
-                        } else {
-                            entry.display_name.clone()
-                        }),
-                        TextFont {
-                            font_size: FontSize::Px(theme.button_font_size - 2.0),
-                            ..default()
-                        },
-                        TextColor(theme.text_color),
-                        Name::new("hotbar-name"),
-                    ));
-                    // Row 3 — cooldown placeholder
-                    col.spawn((
-                        Text("—".into()),
-                        TextFont {
-                            font_size: FontSize::Px(theme.button_font_size - 2.0),
-                            ..default()
-                        },
-                        TextColor(theme.text_color),
-                        Name::new("hotbar-cooldown"),
-                        entry.clone(),
+                        TextColor(theme.muted_text_color),
+                        TextLayout::justify(Justify::Center),
                     ));
                 });
         }
@@ -383,7 +384,7 @@ fn hide_spell_hud(mut roots: Query<&mut Node, With<SpellHudRoot>>) {
     }
 }
 
-/// Formats the third row of a hotbar cell.
+/// Formats the caption printed on a keybind chip (`Digit1` → `1`).
 fn display_key_label(label: &str) -> String {
     label
         .strip_prefix("Digit")
@@ -397,9 +398,9 @@ fn format_cooldown_text(entry: &SpellHudEntry, remaining_seconds: f32) -> String
         return "—".to_string();
     }
     if remaining_seconds > 0.0 {
-        format!("{remaining_seconds:.1}s")
+        format!("{remaining_seconds:.1}")
     } else {
-        "Ready".to_string()
+        "(R)".to_string()
     }
 }
 
@@ -433,9 +434,10 @@ mod tests {
     #[test]
     fn cooldown_text_formats_all_states() {
         let entry = ability_entry("bolt", "Arcane Bolt", "1");
-        assert_eq!(format_cooldown_text(&entry, 0.0), "Ready");
-        assert_eq!(format_cooldown_text(&entry, 2.5), "2.5s");
-        assert_eq!(format_cooldown_text(&entry, 0.09), "0.1s");
+        assert_eq!(format_cooldown_text(&entry, 0.0), "(R)");
+        assert_eq!(format_cooldown_text(&entry, 2.5), "2.5");
+        assert_eq!(format_cooldown_text(&entry, 0.09), "0.1");
+        assert_eq!(format_cooldown_text(&empty_entry("1"), 0.0), "—");
     }
 
     #[test]

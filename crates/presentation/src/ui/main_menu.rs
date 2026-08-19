@@ -6,7 +6,7 @@ use bevymmo_client::stdb::CharacterRoster;
 
 use crate::game_state::{AuthState, AuthStatus, GameScreen, Screen, MAX_CHARACTERS_PER_ACCOUNT};
 use crate::ui::button::{spawn_button, UiButtonAction};
-use crate::ui::character_roster::spawn_roster_list;
+use crate::ui::character_roster::{spawn_roster_list, SelectedRosterEntry};
 
 use crate::ui::text_input::spawn_text_input;
 use crate::ui::theme::{
@@ -65,14 +65,6 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Re
 
     spawn_roster_list(&mut commands, content);
 
-    let spacer = commands
-        .spawn(Node {
-            flex_grow: 1.0,
-            ..default()
-        })
-        .id();
-    commands.entity(content).add_child(spacer);
-
     let create_character = commands
         .spawn((
             Node {
@@ -80,6 +72,7 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Re
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 row_gap: Val::Px(6.0),
+                flex_shrink: 0.0,
                 ..default()
             },
             CreateCharacterUi,
@@ -93,6 +86,7 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Re
         "New character name",
         16,
         &theme,
+        &asset_server,
     );
     commands.entity(name_field).insert(PlayerNameInput);
 
@@ -107,31 +101,30 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Re
             MainMenuConnectionFailure,
         ))
         .id();
-    commands.entity(create_character).add_child(failure_text);
+    commands.entity(content).add_child(failure_text);
 
-    spawn_button(
-        &mut commands,
-        create_character,
-        "ENTER WORLD",
-        UiButtonAction::Play,
-        &theme,
-        &asset_server,
-    );
-
-    let utility_row = commands
+    let actions = commands
         .spawn(Node {
             width: Val::Percent(100.0),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
             row_gap: Val::Px(6.0),
-            margin: UiRect::top(Val::Px(0.0)),
+            flex_shrink: 0.0,
             ..default()
         })
         .id();
-    commands.entity(content).add_child(utility_row);
+    commands.entity(content).add_child(actions);
     spawn_button(
         &mut commands,
-        utility_row,
+        actions,
+        "ENTER WORLD",
+        UiButtonAction::Play,
+        &theme,
+        &asset_server,
+    );
+    spawn_button(
+        &mut commands,
+        actions,
         "Settings",
         UiButtonAction::OpenSettings,
         &theme,
@@ -139,7 +132,7 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Re
     );
     spawn_button(
         &mut commands,
-        utility_row,
+        actions,
         "Logout",
         UiButtonAction::LogoutAccount,
         &theme,
@@ -162,16 +155,52 @@ fn update_main_menu_visibility(
     }
 }
 
-fn update_create_character_visibility(
-    roster: Res<CharacterRoster>,
-    mut query: Query<&mut Node, With<CreateCharacterUi>>,
-) {
-    let display = if roster.len() < MAX_CHARACTERS_PER_ACCOUNT {
+fn create_name_field_display(roster_len: usize, selected: &SelectedRosterEntry) -> Display {
+    if roster_len < MAX_CHARACTERS_PER_ACCOUNT
+        && !matches!(selected, SelectedRosterEntry::Existing(_))
+    {
         Display::Flex
     } else {
         Display::None
-    };
+    }
+}
+
+fn update_create_character_visibility(
+    roster: Res<CharacterRoster>,
+    selected: Res<SelectedRosterEntry>,
+    mut query: Query<&mut Node, With<CreateCharacterUi>>,
+) {
+    let display = create_name_field_display(roster.len(), &selected);
     for mut node in &mut query {
         node.display = display;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn name_field_shows_for_create_or_nothing_when_there_is_room() {
+        assert_eq!(
+            create_name_field_display(0, &SelectedRosterEntry::None),
+            Display::Flex
+        );
+        assert_eq!(
+            create_name_field_display(1, &SelectedRosterEntry::Create),
+            Display::Flex
+        );
+        assert_eq!(
+            create_name_field_display(1, &SelectedRosterEntry::Existing("Galvdon".into())),
+            Display::None
+        );
+        assert_eq!(
+            create_name_field_display(MAX_CHARACTERS_PER_ACCOUNT, &SelectedRosterEntry::None),
+            Display::None
+        );
+        assert_eq!(
+            create_name_field_display(MAX_CHARACTERS_PER_ACCOUNT, &SelectedRosterEntry::Create),
+            Display::None
+        );
     }
 }

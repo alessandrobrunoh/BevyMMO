@@ -12,15 +12,18 @@ use bevymmo_gameplay::items::components::{EquipSlot, Equipment};
 use bevymmo_gameplay::items::definition::Item;
 use bevymmo_gameplay::items::registry::ItemRegistry;
 
-use crate::ui::card::{ornate_bar_image, FRAME_INNER_PADDING, ORNATE_BAR_NEUTRAL_PATH};
+use crate::ui::card::{ornate_bar_image, ORNATE_BAR_NEUTRAL_PATH};
 use crate::ui::scrollbar::spawn_scroll_view;
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::{ornate_panel_image, UiTheme};
 
 const PANEL_PATH: &str = "ui/extracted_065811/panel_large_left.png";
 
-const WINDOW_WIDTH: f32 = 900.0;
-const WINDOW_HEIGHT: f32 = 560.0;
+const WINDOW_WIDTH: f32 = 760.0;
+const WINDOW_HEIGHT: f32 = 520.0;
+/// Keeps children in the dark field; the 9-slice gems are ~88 px.
+const WINDOW_PAD: f32 = 72.0;
+const HEADER_TITLE_SIZE: f32 = 22.0;
 const SLOTS: [AbilitySlot; 3] = [
     AbilitySlot::Primary,
     AbilitySlot::Secondary,
@@ -203,8 +206,8 @@ fn spawn_window(
                     ..default()
                 },
                 flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(FRAME_INNER_PADDING)),
-                row_gap: Val::Px(12.0),
+                padding: UiRect::all(Val::Px(WINDOW_PAD)),
+                row_gap: Val::Px(10.0),
                 overflow: Overflow::clip(),
                 ..default()
             },
@@ -216,17 +219,6 @@ fn spawn_window(
 
     commands.entity(window).with_children(|parent| {
         spawn_header(parent, theme, title, asset_server);
-        spawn_armor_inscription_section(
-            parent,
-            theme,
-            equipment,
-            known,
-            item_registry,
-            root_word_registry,
-        );
-        if weapon_abilities.is_some() {
-            spawn_root_word_section(parent, theme, known, &inscription, root_word_registry);
-        }
     });
 
     let scroll_body = commands
@@ -243,30 +235,56 @@ fn spawn_window(
         commands
             .spawn((Node {
                 width: Val::Percent(100.0),
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(18.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(12.0),
                 ..default()
             },))
             .with_children(|body| {
+                spawn_armor_inscription_section(
+                    body,
+                    theme,
+                    equipment,
+                    known,
+                    item_registry,
+                    root_word_registry,
+                );
+                if weapon_abilities.is_some() {
+                    spawn_root_word_section(
+                        body,
+                        theme,
+                        known,
+                        &inscription,
+                        root_word_registry,
+                    );
+                }
                 let Some(weapon_abilities) = weapon_abilities else {
                     return;
                 };
                 let Some(weapon) = weapon else {
                     return;
                 };
-                for slot in SLOTS {
-                    spawn_slot_column(
-                        body,
-                        theme,
-                        slot,
-                        weapon_abilities,
-                        &weapon.ability_selection,
-                        &inscription,
-                        known,
-                        ability_registry,
-                        ancient_word_registry,
-                    );
-                }
+                body.spawn((Node {
+                    width: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(12.0),
+                    min_width: Val::Px(0.0),
+                    ..default()
+                },))
+                    .with_children(|row| {
+                        for slot in SLOTS {
+                            spawn_slot_column(
+                                row,
+                                theme,
+                                slot,
+                                weapon_abilities,
+                                &weapon.ability_selection,
+                                &inscription,
+                                known,
+                                ability_registry,
+                                ancient_word_registry,
+                            );
+                        }
+                    });
             })
             .id()
     });
@@ -319,6 +337,7 @@ fn spawn_armor_inscription_section(
                     width: Val::Percent(100.0),
                     flex_direction: FlexDirection::Row,
                     column_gap: Val::Px(8.0),
+                    min_width: Val::Px(0.0),
                     ..default()
                 },))
                 .with_children(|row| {
@@ -349,11 +368,16 @@ fn spawn_armor_slot_card(
     parent
         .spawn((
             Node {
-                width: Val::Percent(33.0),
-                min_height: Val::Px(88.0),
-                padding: UiRect::all(Val::Px(6.0)),
+                flex_grow: 1.0,
+                flex_shrink: 1.0,
+                flex_basis: Val::Px(0.0),
+                min_width: Val::Px(0.0),
+                min_height: Val::Px(72.0),
+                padding: UiRect::all(Val::Px(8.0)),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(5.0),
+                overflow: Overflow::clip(),
+                border_radius: BorderRadius::all(Val::Px(6.0)),
                 ..default()
             },
             BackgroundColor(theme.button_bg),
@@ -549,11 +573,12 @@ fn spawn_compact_toggle_button(
         .spawn((
             Button,
             Node {
-                min_width: Val::Px(112.0),
-                min_height: Val::Px(30.0),
+                min_width: Val::Px(64.0),
+                height: Val::Px(28.0),
                 padding: UiRect::horizontal(Val::Px(8.0)),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
+                flex_shrink: 0.0,
                 ..default()
             },
             BackgroundColor(if is_active {
@@ -567,7 +592,7 @@ fn spawn_compact_toggle_button(
             button.spawn((
                 Text::new(text),
                 TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.82),
+                    font_size: FontSize::Px(theme.button_font_size * 0.7),
                     ..default()
                 },
                 TextColor(theme.text_color),
@@ -584,28 +609,39 @@ fn spawn_header(
     parent
         .spawn((Node {
             width: Val::Percent(100.0),
-            height: Val::Px(40.0),
+            height: Val::Px(36.0),
+            flex_shrink: 0.0,
+            flex_direction: FlexDirection::Row,
             justify_content: JustifyContent::SpaceBetween,
             align_items: AlignItems::Center,
+            column_gap: Val::Px(12.0),
             ..default()
         },))
         .with_children(|header| {
             header.spawn((
-                Text(format!("Inscriptions \u{2014} {weapon_name}")),
+                Text(format!("Inscriptions — {weapon_name}")),
                 TextFont {
-                    font_size: FontSize::Px(theme.title_font_size),
+                    font_size: FontSize::Px(HEADER_TITLE_SIZE),
                     ..default()
                 },
                 TextColor(theme.text_color),
+                TextLayout {
+                    linebreak: LineBreak::NoWrap,
+                    ..default()
+                },
+                Node {
+                    flex_shrink: 1.0,
+                    overflow: Overflow::clip_x(),
+                    ..default()
+                },
             ));
 
             header
                 .spawn((
                     Button,
                     Node {
-                        min_width: Val::Px(88.0),
+                        width: Val::Px(88.0),
                         height: Val::Px(30.0),
-                        padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
                         flex_shrink: 0.0,
@@ -618,7 +654,7 @@ fn spawn_header(
                     button.spawn((
                         Text("Close".to_string()),
                         TextFont {
-                            font_size: FontSize::Px(theme.button_font_size),
+                            font_size: FontSize::Px(theme.button_font_size * 0.7),
                             ..default()
                         },
                         TextColor(theme.text_color),
@@ -650,7 +686,10 @@ fn spawn_slot_column(
     parent
         .spawn((Node {
             flex_direction: FlexDirection::Column,
-            width: Val::Percent(33.0),
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            flex_basis: Val::Px(0.0),
+            min_width: Val::Px(0.0),
             row_gap: Val::Px(6.0),
             ..default()
         },))

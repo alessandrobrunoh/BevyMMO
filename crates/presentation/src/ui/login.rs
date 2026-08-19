@@ -83,9 +83,16 @@ fn setup_login(mut commands: Commands, theme: Res<UiTheme>, asset_server: Res<As
         .id();
     commands.entity(panel).add_child(content);
 
-    let email_field = spawn_text_input(&mut commands, content, "Email", 254, &theme);
+    let email_field = spawn_text_input(&mut commands, content, "Email", 254, &theme, &asset_server);
     commands.entity(email_field).insert(EmailInput);
-    let password_field = spawn_password_input(&mut commands, content, "Password", 256, &theme);
+    let password_field = spawn_password_input(
+        &mut commands,
+        content,
+        "Password",
+        256,
+        &theme,
+        &asset_server,
+    );
     commands.entity(password_field).insert(PasswordInput);
 
     let failure_text = commands

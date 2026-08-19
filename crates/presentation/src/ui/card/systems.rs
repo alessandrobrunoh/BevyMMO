@@ -21,15 +21,38 @@ use super::components::{
 };
 use crate::ui::scale::{physical_to_ui_px, window_to_ui_px};
 
+/// The header handle itself, or a descendant of it, excluding the close button.
+fn header_handle_for_press(
+    pressed: Entity,
+    parent_of: impl Fn(Entity) -> Option<Entity>,
+    is_handle: impl Fn(Entity) -> bool,
+    is_close: impl Fn(Entity) -> bool,
+) -> Option<Entity> {
+    let mut current = Some(pressed);
+    while let Some(entity) = current {
+        if is_close(entity) {
+            return None;
+        }
+        current = parent_of(entity);
+    }
+    let mut current = Some(pressed);
+    while let Some(entity) = current {
+        if is_handle(entity) {
+            return Some(entity);
+        }
+        current = parent_of(entity);
+    }
+    None
+}
+
 /// System to handle dragging draggable Card windows when clicking and dragging their header.
 pub fn handle_card_drag(
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     ui_scale: Res<UiScale>,
-    header_query: Query<
-        (&Interaction, &ChildOf),
-        (With<CardHeaderDragHandle>, Changed<Interaction>),
-    >,
+    pressed_query: Query<(Entity, &Interaction), Changed<Interaction>>,
+    handles: Query<(), With<CardHeaderDragHandle>>,
+    close_buttons: Query<(), With<CloseCardButton>>,
     card_parents: Query<&ChildOf>,
     mut draggable_cards: Query<
         (Entity, &mut Node, &ComputedNode, &UiGlobalTransform),
@@ -65,34 +88,41 @@ pub fn handle_card_drag(
     // multiply the card's position by the layout scale factor on every
     // drag start, throwing it down and to the right.
     if mouse_button.just_pressed(MouseButton::Left) {
-        for (interaction, child) in header_query.iter() {
-            if *interaction == Interaction::Pressed {
-                // Find root DraggableCard entity by walking up parent tree
-                let mut current = Some(child.0);
-                while let Some(entity) = current {
-                    if let Ok((card_entity, mut node, computed, transform)) =
-                        draggable_cards.get_mut(entity)
-                    {
-                        let top_left = physical_to_ui_px(
-                            transform.translation - computed.size() * 0.5,
-                            computed,
-                        );
+        for (pressed, interaction) in pressed_query.iter() {
+            if *interaction != Interaction::Pressed {
+                continue;
+            }
+            let Some(handle) = header_handle_for_press(
+                pressed,
+                |entity| card_parents.get(entity).ok().map(|parent| parent.0),
+                |entity| handles.contains(entity),
+                |entity| close_buttons.contains(entity),
+            ) else {
+                continue;
+            };
+            // Find root DraggableCard entity by walking up parent tree.
+            let mut current = Some(handle);
+            while let Some(entity) = current {
+                if let Ok((card_entity, mut node, computed, transform)) =
+                    draggable_cards.get_mut(entity)
+                {
+                    let top_left =
+                        physical_to_ui_px(transform.translation - computed.size() * 0.5, computed);
 
-                        node.left = Val::Px(top_left.x);
-                        node.top = Val::Px(top_left.y);
-                        node.right = Val::Auto;
-                        node.bottom = Val::Auto;
-                        node.margin = UiRect::all(Val::Px(0.0));
+                    node.left = Val::Px(top_left.x);
+                    node.top = Val::Px(top_left.y);
+                    node.right = Val::Auto;
+                    node.bottom = Val::Auto;
+                    node.margin = UiRect::all(Val::Px(0.0));
 
-                        commands.entity(card_entity).insert(CardDraggingState {
-                            drag_start_cursor: cursor_pos,
-                            drag_start_left: top_left.x,
-                            drag_start_top: top_left.y,
-                        });
-                        break;
-                    }
-                    current = card_parents.get(entity).ok().map(|p| p.0);
+                    commands.entity(card_entity).insert(CardDraggingState {
+                        drag_start_cursor: cursor_pos,
+                        drag_start_left: top_left.x,
+                        drag_start_top: top_left.y,
+                    });
+                    break;
                 }
+                current = card_parents.get(entity).ok().map(|parent| parent.0);
             }
         }
     }
@@ -341,6 +371,53 @@ mod tests {
         app.update();
 
         assert!(app.world().entities().contains(card));
+    }
+
+    #[test]
+    fn a_pressed_header_child_resolves_to_the_drag_handle() {
+        let mut world = World::new();
+        let card = world.spawn(DraggableCard).id();
+        let handle = world.spawn((CardHeaderDragHandle, ChildOf(card))).id();
+        let title = world.spawn(ChildOf(handle)).id();
+
+        let resolved = header_handle_for_press(
+            title,
+            |entity| world.get::<ChildOf>(entity).map(|parent| parent.0),
+            |entity| world.get::<CardHeaderDragHandle>(entity).is_some(),
+            |entity| world.get::<CloseCardButton>(entity).is_some(),
+        );
+        assert_eq!(resolved, Some(handle));
+    }
+
+    #[test]
+    fn a_pressed_close_button_does_not_start_a_header_drag() {
+        let mut world = World::new();
+        let card = world.spawn(DraggableCard).id();
+        let handle = world.spawn((CardHeaderDragHandle, ChildOf(card))).id();
+        let close = world
+            .spawn((
+                CloseCardButton {
+                    kind: super::super::components::CardKind::Generic,
+                },
+                ChildOf(handle),
+            ))
+            .id();
+        let close_label = world.spawn(ChildOf(close)).id();
+
+        let from_button = header_handle_for_press(
+            close,
+            |entity| world.get::<ChildOf>(entity).map(|parent| parent.0),
+            |entity| world.get::<CardHeaderDragHandle>(entity).is_some(),
+            |entity| world.get::<CloseCardButton>(entity).is_some(),
+        );
+        let from_label = header_handle_for_press(
+            close_label,
+            |entity| world.get::<ChildOf>(entity).map(|parent| parent.0),
+            |entity| world.get::<CardHeaderDragHandle>(entity).is_some(),
+            |entity| world.get::<CloseCardButton>(entity).is_some(),
+        );
+        assert_eq!(from_button, None);
+        assert_eq!(from_label, None);
     }
 
     #[test]

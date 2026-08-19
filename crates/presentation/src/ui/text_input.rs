@@ -24,16 +24,27 @@ pub const INPUT_PASSWORD_BLUE_PATH: &str = "ui/extracted_kit/input_password_blue
 
 const INPUT_HEIGHT: f32 = 58.0;
 const INPUT_MAX_WIDTH: f32 = 380.0;
-/// Source-pixel 9-slice. The baked user/lock icon lives in the left ~160 px
-/// of a 687 px bar — a 48 px slice stretched that icon across the field.
-const INPUT_SLICE_LEFT: f32 = 168.0;
-const INPUT_SLICE_RIGHT: f32 = 96.0;
+/// `input_gold.png` / `input_password_gold.png` (divider measured on these).
+const INPUT_NATIVE_HEIGHT: f32 = 146.0;
+/// Divider ends at x=160 (user) / x=162 (password). +8 so the icon stays in
+/// the cap; leftover pixels in the center strip stretch under the text.
+const INPUT_SLICE_LEFT: f32 = 170.0;
+/// Right diamonds; password eye begins at x≈559 of 689.
+const INPUT_SLICE_RIGHT: f32 = 142.0;
 const INPUT_SLICE_Y: f32 = 30.0;
-/// Matches the rendered left cap at this height (`168 * 58/146`).
-const INPUT_PAD_LEFT: f32 = 72.0;
-const INPUT_PAD_RIGHT: f32 = 18.0;
-/// Clears the baked eye on password bars.
-const PASSWORD_PAD_RIGHT: f32 = 44.0;
+/// Larger than the rendered left cap (`SLICE_LEFT * HEIGHT / NATIVE` ≈ 67).
+/// 72 sat on the icon; 116 starts glyphs in the empty field.
+const INPUT_PAD_LEFT: f32 = 116.0;
+const INPUT_PAD_RIGHT: f32 = 28.0;
+/// Clears the baked eye (`SLICE_RIGHT * HEIGHT / NATIVE + 12` ≈ 68).
+const PASSWORD_PAD_RIGHT: f32 = 68.0;
+
+const _: () = {
+    assert!(INPUT_PAD_LEFT > 90.0);
+    assert!(PASSWORD_PAD_RIGHT > INPUT_PAD_RIGHT);
+    const RENDERED_CAP: f32 = INPUT_SLICE_LEFT * (INPUT_HEIGHT / INPUT_NATIVE_HEIGHT);
+    assert!(INPUT_PAD_LEFT > RENDERED_CAP + 12.0);
+};
 
 /// Campo di testo focalizzabile e modificabile da tastiera.
 #[derive(Component)]
@@ -168,6 +179,7 @@ fn spawn_text_input_with_options(
                 ..default()
             },
             TextInputValueText,
+            Pickable::IGNORE,
         ))
         .id();
 
@@ -183,14 +195,12 @@ fn spawn_text_input_with_options(
         ))
         .id();
 
-    let input_entity = commands
+    // Inset the value so glyphs start past the 9-sliced icon cap, not on it.
+    let content = commands
         .spawn((
-            Button,
             Node {
                 width: Val::Percent(100.0),
-                max_width: Val::Px(INPUT_MAX_WIDTH),
-                min_width: Val::Px(0.0),
-                height: Val::Px(INPUT_HEIGHT),
+                height: Val::Percent(100.0),
                 padding: UiRect::new(
                     Val::Px(INPUT_PAD_LEFT),
                     Val::Px(pad_right),
@@ -199,6 +209,20 @@ fn spawn_text_input_with_options(
                 ),
                 align_items: AlignItems::Center,
                 overflow: Overflow::clip(),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .id();
+
+    let input_entity = commands
+        .spawn((
+            Button,
+            Node {
+                width: Val::Percent(100.0),
+                max_width: Val::Px(INPUT_MAX_WIDTH),
+                min_width: Val::Px(0.0),
+                height: Val::Px(INPUT_HEIGHT),
                 flex_shrink: 0.0,
                 ..default()
             },
@@ -218,7 +242,8 @@ fn spawn_text_input_with_options(
         .id();
 
     commands.entity(wrapper).add_child(input_entity);
-    commands.entity(input_entity).add_child(value_text);
+    commands.entity(input_entity).add_child(content);
+    commands.entity(content).add_child(value_text);
     commands.entity(wrapper).add_child(error_text);
 
     input_entity
@@ -250,5 +275,104 @@ pub fn unfocus_all(inputs: &mut Query<&mut TextInput>) {
         if input.focused {
             input.focused = false;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()));
+        app.init_asset::<Image>();
+        app.init_resource::<UiTheme>();
+        app
+    }
+
+    fn spawn_field(obscured: bool) -> (App, Entity) {
+        let mut app = test_app();
+        let theme = UiTheme::default();
+        let parent = app.world_mut().spawn(Node::default()).id();
+        let asset_server = app.world().resource::<AssetServer>().clone();
+        let entity = {
+            let mut commands = app.world_mut().commands();
+            if obscured {
+                spawn_password_input(&mut commands, parent, "Password", 32, &theme, &asset_server)
+            } else {
+                spawn_text_input(&mut commands, parent, "Email", 32, &theme, &asset_server)
+            }
+        };
+        app.world_mut().flush();
+        (app, entity)
+    }
+
+    fn content_node(app: &App, input: Entity) -> Entity {
+        let children = app
+            .world()
+            .get::<Children>(input)
+            .expect("sliced bar has an inner content node");
+        children[0]
+    }
+
+    #[test]
+    fn input_pad_left_clears_baked_icon() {
+        let (app, input) = spawn_field(false);
+        let content = app.world().get::<Node>(content_node(&app, input)).unwrap();
+        let Val::Px(left) = content.padding.left else {
+            panic!("left pad must be Px, got {:?}", content.padding.left);
+        };
+        assert!(
+            left > 90.0,
+            "left pad must clear the baked user/lock icon; 72px sits on it after 9-slice scale"
+        );
+    }
+
+    #[test]
+    fn spawn_text_input_nests_value_in_padded_content() {
+        let (app, input) = spawn_field(false);
+
+        let node = app.world().get::<Node>(input).expect("Node");
+        assert_eq!(node.height, Val::Px(INPUT_HEIGHT));
+        assert_eq!(node.width, Val::Percent(100.0));
+        assert_eq!(node.max_width, Val::Px(INPUT_MAX_WIDTH));
+        assert_eq!(node.padding.left, Val::Px(0.0));
+
+        let image = app.world().get::<ImageNode>(input).expect("ImageNode");
+        assert!(
+            matches!(image.image_mode, NodeImageMode::Sliced(_)),
+            "input bars must 9-slice so the icon cap does not stretch under the text"
+        );
+        assert!(app.world().get::<TextInputImages>(input).is_some());
+        assert!(app.world().get::<Button>(input).is_some());
+
+        let content = content_node(&app, input);
+        let inner = app.world().get::<Node>(content).expect("content Node");
+        assert_eq!(inner.width, Val::Percent(100.0));
+        assert_eq!(inner.height, Val::Percent(100.0));
+        assert_eq!(inner.padding.left, Val::Px(INPUT_PAD_LEFT));
+        assert_eq!(inner.padding.right, Val::Px(INPUT_PAD_RIGHT));
+        assert_eq!(inner.align_items, AlignItems::Center);
+        assert_eq!(inner.overflow, Overflow::clip());
+
+        let value_text = app.world().get::<TextInput>(input).unwrap().value_text;
+        let content_children = app.world().get::<Children>(content).expect("text child");
+        assert_eq!(content_children[0], value_text);
+
+        let layout = app
+            .world()
+            .get::<TextLayout>(value_text)
+            .expect("TextLayout");
+        assert_eq!(layout.linebreak, LineBreak::NoWrap);
+    }
+
+    #[test]
+    fn spawn_password_input_pads_past_the_eye() {
+        let (app, input) = spawn_field(true);
+        let content = content_node(&app, input);
+        let inner = app.world().get::<Node>(content).expect("content Node");
+        assert_eq!(inner.padding.left, Val::Px(INPUT_PAD_LEFT));
+        assert_eq!(inner.padding.right, Val::Px(PASSWORD_PAD_RIGHT));
+        assert!(app.world().get::<TextInput>(input).unwrap().obscured);
     }
 }

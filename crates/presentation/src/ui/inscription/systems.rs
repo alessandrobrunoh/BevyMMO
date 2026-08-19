@@ -12,7 +12,7 @@ use bevymmo_gameplay::items::components::{EquipSlot, Equipment};
 use bevymmo_gameplay::items::definition::Item;
 use bevymmo_gameplay::items::registry::ItemRegistry;
 
-use crate::ui::card::{ornate_bar_image, ORNATE_BAR_NEUTRAL_PATH};
+use crate::ui::button::{spawn_bar_child, BarButtonKind};
 use crate::ui::scrollbar::spawn_scroll_view;
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::{ornate_panel_image, UiTheme};
@@ -21,9 +21,27 @@ const PANEL_PATH: &str = "ui/extracted_065811/panel_large_left.png";
 
 const WINDOW_WIDTH: f32 = 760.0;
 const WINDOW_HEIGHT: f32 = 520.0;
-/// Keeps children in the dark field; the 9-slice gems are ~88 px.
-const WINDOW_PAD: f32 = 72.0;
-const HEADER_TITLE_SIZE: f32 = 22.0;
+/// Matches the 9-slice gem inset on `panel_large_left`.
+const WINDOW_PAD: f32 = 88.0;
+const HEADER_HEIGHT: f32 = 34.0;
+const HEADER_TITLE_SIZE: f32 = 20.0;
+const HEADER_SUBTITLE_SIZE: f32 = 14.0;
+const HEADER_GAP: f32 = 12.0;
+const CLOSE_WIDTH: f32 = 92.0;
+const CLOSE_HEIGHT: f32 = 30.0;
+const CLOSE_FONT_SIZE: f32 = 12.0;
+const TOGGLE_WIDTH: f32 = 88.0;
+const TOGGLE_HEIGHT: f32 = 28.0;
+const TOGGLE_FONT_SIZE: f32 = 11.0;
+const SECTION_LABEL_SIZE: f32 = 14.0;
+const SLOT_HEADING_SIZE: f32 = 13.0;
+const ARMOR_SLOT_MIN_HEIGHT: f32 = 48.0;
+const SLOT_PANEL_FILL: Color = Color::srgba(0.08, 0.09, 0.12, 0.85);
+/// Header title budget: inner field minus the Close chip and gap.
+const TITLE_BUDGET: f32 = WINDOW_WIDTH - 2.0 * WINDOW_PAD - CLOSE_WIDTH - HEADER_GAP;
+
+const _: () = assert!(WINDOW_PAD >= 88.0);
+const _: () = assert!(HEADER_TITLE_SIZE < HEADER_HEIGHT);
 const SLOTS: [AbilitySlot; 3] = [
     AbilitySlot::Primary,
     AbilitySlot::Secondary,
@@ -75,6 +93,77 @@ fn next_root_word(current: Option<&RootWordId>, clicked: &str) -> Option<RootWor
     } else {
         Some(RootWordId::new(clicked.to_string()))
     }
+}
+
+fn composed_title(weapon_name: &str) -> String {
+    format!("Inscriptions - {weapon_name}")
+}
+
+fn title_fits(text: &str) -> bool {
+    // Default Bevy font is roughly 0.6em wide per ASCII glyph.
+    text.len() as f32 * (HEADER_TITLE_SIZE * 0.6) <= TITLE_BUDGET
+}
+
+/// Header title plus an optional muted subtitle when the weapon name does not
+/// fit next to Close.
+fn header_copy(weapon_name: Option<&str>) -> (String, Option<String>) {
+    let Some(name) = weapon_name.filter(|value| !value.is_empty()) else {
+        return ("Inscriptions".to_string(), None);
+    };
+    let composed = composed_title(name);
+    if title_fits(&composed) {
+        (composed, None)
+    } else {
+        ("Inscriptions".to_string(), Some(name.to_string()))
+    }
+}
+
+fn armor_slot_title(slot: EquipSlot) -> &'static str {
+    match slot {
+        EquipSlot::Helmet => "Helmet",
+        EquipSlot::Armor => "Armor",
+        EquipSlot::Shoes => "Shoes",
+        _ => slot.label(),
+    }
+}
+
+fn spawn_section_label(parent: &mut ChildSpawnerCommands, theme: &UiTheme, label: &str) {
+    parent.spawn((
+        Text::new(label),
+        TextFont {
+            font_size: FontSize::Px(SECTION_LABEL_SIZE),
+            ..default()
+        },
+        TextColor(theme.muted_text_color),
+        TextLayout {
+            linebreak: LineBreak::NoWrap,
+            ..default()
+        },
+    ));
+}
+
+fn spawn_ornate_toggle(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiTheme,
+    label: &str,
+    is_active: bool,
+    marker: impl Component,
+) {
+    let kind = if is_active {
+        BarButtonKind::Primary
+    } else {
+        BarButtonKind::Neutral
+    };
+    spawn_bar_child(
+        parent,
+        label,
+        TOGGLE_FONT_SIZE,
+        theme.button_text_color,
+        Val::Px(TOGGLE_WIDTH),
+        Val::Px(TOGGLE_HEIGHT),
+        kind,
+        marker,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -187,10 +276,7 @@ fn spawn_window(
     let inscription = weapon
         .and_then(|instance| instance.root_inscription.clone())
         .unwrap_or_default();
-    let title = weapon_item
-        .as_ref()
-        .map(|item| item.display_name())
-        .unwrap_or("Armor");
+    let weapon_name = weapon_item.as_ref().map(|item| item.display_name());
 
     let window = commands
         .spawn((
@@ -218,7 +304,7 @@ fn spawn_window(
         .id();
 
     commands.entity(window).with_children(|parent| {
-        spawn_header(parent, theme, title, asset_server);
+        spawn_header(parent, theme, weapon_name);
     });
 
     let scroll_body = commands
@@ -249,13 +335,7 @@ fn spawn_window(
                     root_word_registry,
                 );
                 if weapon_abilities.is_some() {
-                    spawn_root_word_section(
-                        body,
-                        theme,
-                        known,
-                        &inscription,
-                        root_word_registry,
-                    );
+                    spawn_root_word_section(body, theme, known, &inscription, root_word_registry);
                 }
                 let Some(weapon_abilities) = weapon_abilities else {
                     return;
@@ -266,8 +346,11 @@ fn spawn_window(
                 body.spawn((Node {
                     width: Val::Percent(100.0),
                     flex_direction: FlexDirection::Row,
+                    flex_wrap: FlexWrap::Wrap,
                     column_gap: Val::Px(12.0),
+                    row_gap: Val::Px(8.0),
                     min_width: Val::Px(0.0),
+                    overflow: Overflow::clip(),
                     ..default()
                 },))
                     .with_children(|row| {
@@ -290,15 +373,6 @@ fn spawn_window(
     });
 }
 
-fn armor_key_label(slot: EquipSlot) -> &'static str {
-    match slot {
-        EquipSlot::Helmet => "D",
-        EquipSlot::Armor => "R",
-        EquipSlot::Shoes => "F",
-        _ => "?",
-    }
-}
-
 fn spawn_armor_inscription_section(
     parent: &mut ChildSpawnerCommands,
     theme: &UiTheme,
@@ -316,28 +390,14 @@ fn spawn_armor_inscription_section(
             ..default()
         },))
         .with_children(|section| {
-            section.spawn((
-                Text::new("Armor Root Words"),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.9),
-                    ..default()
-                },
-                TextColor(theme.muted_text_color),
-            ));
-            section.spawn((
-                Text::new("Helmet, chest and boots each have their own Root Word."),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.7),
-                    ..default()
-                },
-                TextColor(theme.muted_text_color),
-            ));
+            spawn_section_label(section, theme, "Armor");
             section
                 .spawn((Node {
                     width: Val::Percent(100.0),
                     flex_direction: FlexDirection::Row,
                     column_gap: Val::Px(8.0),
                     min_width: Val::Px(0.0),
+                    align_items: AlignItems::FlexStart,
                     ..default()
                 },))
                 .with_children(|row| {
@@ -365,85 +425,125 @@ fn spawn_armor_slot_card(
     item_registry: &ItemRegistry,
     root_word_registry: &RootWordRegistry,
 ) {
-    parent
-        .spawn((
-            Node {
-                flex_grow: 1.0,
-                flex_shrink: 1.0,
-                flex_basis: Val::Px(0.0),
-                min_width: Val::Px(0.0),
-                min_height: Val::Px(72.0),
-                padding: UiRect::all(Val::Px(8.0)),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(5.0),
-                overflow: Overflow::clip(),
-                border_radius: BorderRadius::all(Val::Px(6.0)),
-                ..default()
-            },
-            BackgroundColor(theme.button_bg),
-        ))
-        .with_children(|card| {
-            let instance = equipment.get(slot).as_ref();
-            let item = instance.and_then(|value| item_registry.get(&value.item_id));
-            let title = item
-                .as_ref()
-                .map(|value| value.display_name().to_string())
-                .unwrap_or_else(|| "empty".to_string());
-            card.spawn((
-                Text::new(format!(
-                    "[{}] {}\n{title}",
-                    armor_key_label(slot),
-                    slot.label()
-                )),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.62),
-                    ..default()
-                },
-                TextColor(theme.text_color),
-            ));
+    let instance = equipment.get(slot).as_ref();
+    let item = instance.and_then(|value| item_registry.get(&value.item_id));
+    let filled = item.is_some();
 
-            let Some(item) = item else {
-                return;
-            };
-            if !item_is_inscribable(item.as_ref()) {
-                spawn_muted_line(card, theme, "not inscribable");
-                return;
-            }
-
-            let current = instance.and_then(|value| value.armor_inscription.as_ref());
-            if known.root_words.is_empty() {
-                spawn_muted_line(card, theme, "no known Root Words");
-                return;
-            }
-
+    let mut card = parent.spawn(Node {
+        flex_grow: 1.0,
+        flex_shrink: 1.0,
+        flex_basis: Val::Px(0.0),
+        min_width: Val::Px(0.0),
+        min_height: Val::Px(ARMOR_SLOT_MIN_HEIGHT),
+        padding: UiRect::all(Val::Px(4.0)),
+        flex_direction: FlexDirection::Column,
+        row_gap: Val::Px(3.0),
+        overflow: Overflow::clip(),
+        border_radius: BorderRadius::all(Val::Px(6.0)),
+        ..default()
+    });
+    if filled {
+        card.insert(BackgroundColor(SLOT_PANEL_FILL));
+    }
+    card.with_children(|card| {
+        let Some(item) = item else {
             card.spawn((Node {
                 width: Val::Percent(100.0),
                 flex_direction: FlexDirection::Row,
-                flex_wrap: FlexWrap::Wrap,
-                column_gap: Val::Px(4.0),
-                row_gap: Val::Px(4.0),
+                column_gap: Val::Px(6.0),
+                align_items: AlignItems::Baseline,
+                min_width: Val::Px(0.0),
+                overflow: Overflow::clip_x(),
                 ..default()
             },))
-                .with_children(|row| {
-                    for root_id in sorted_root_words(known, root_word_registry) {
-                        let Some(root) = root_word_registry.get(root_id) else {
-                            continue;
-                        };
-                        let is_active =
-                            current.and_then(|value| value.root_word.as_ref()) == Some(root_id);
-                        spawn_compact_toggle_button(
-                            row,
-                            theme,
-                            root.metadata().display_name,
-                            is_active,
-                            ArmorRootWordToggleButton {
-                                slot,
-                                root_word_id: root_id.as_str().to_string(),
-                            },
-                        );
-                    }
+                .with_children(|line| {
+                    line.spawn((
+                        Text::new(armor_slot_title(slot)),
+                        TextFont {
+                            font_size: FontSize::Px(12.0),
+                            ..default()
+                        },
+                        TextColor(theme.text_color),
+                        TextLayout {
+                            linebreak: LineBreak::NoWrap,
+                            ..default()
+                        },
+                    ));
+                    spawn_muted_line(line, theme, "empty");
                 });
-        });
+            return;
+        };
+
+        card.spawn((
+            Text::new(armor_slot_title(slot)),
+            TextFont {
+                font_size: FontSize::Px(12.0),
+                ..default()
+            },
+            TextColor(theme.muted_text_color),
+            TextLayout {
+                linebreak: LineBreak::NoWrap,
+                ..default()
+            },
+        ));
+        card.spawn((
+            Text::new(item.display_name().to_string()),
+            TextFont {
+                font_size: FontSize::Px(12.0),
+                ..default()
+            },
+            TextColor(theme.text_color),
+            TextLayout {
+                linebreak: LineBreak::NoWrap,
+                ..default()
+            },
+            Node {
+                min_width: Val::Px(0.0),
+                overflow: Overflow::clip_x(),
+                ..default()
+            },
+        ));
+
+        if !item_is_inscribable(item.as_ref()) {
+            spawn_muted_line(card, theme, "not inscribable");
+            return;
+        }
+
+        let current = instance.and_then(|value| value.armor_inscription.as_ref());
+        if known.root_words.is_empty() {
+            spawn_muted_line(card, theme, "none");
+            return;
+        }
+
+        card.spawn((Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Row,
+            flex_wrap: FlexWrap::Wrap,
+            column_gap: Val::Px(4.0),
+            row_gap: Val::Px(4.0),
+            min_width: Val::Px(0.0),
+            ..default()
+        },))
+            .with_children(|row| {
+                for root_id in sorted_root_words(known, root_word_registry) {
+                    let Some(root) = root_word_registry.get(root_id) else {
+                        continue;
+                    };
+                    let is_active =
+                        current.and_then(|value| value.root_word.as_ref()) == Some(root_id);
+                    spawn_ornate_toggle(
+                        row,
+                        theme,
+                        root.metadata().display_name,
+                        is_active,
+                        ArmorRootWordToggleButton {
+                            slot,
+                            root_word_id: root_id.as_str().to_string(),
+                        },
+                    );
+                }
+            });
+    });
 }
 
 fn spawn_root_word_section(
@@ -462,25 +562,10 @@ fn spawn_root_word_section(
             ..default()
         },))
         .with_children(|section| {
-            section.spawn((
-                Text::new("Root Word condivisa"),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.9),
-                    ..default()
-                },
-                TextColor(theme.muted_text_color),
-            ));
-            section.spawn((
-                Text::new("Una sola parola definisce cosa manifesta l'arma."),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.7),
-                    ..default()
-                },
-                TextColor(theme.muted_text_color),
-            ));
+            spawn_section_label(section, theme, "Weapon");
 
             if known.root_words.is_empty() {
-                spawn_muted_line(section, theme, "Nessuna Root Word conosciuta");
+                spawn_muted_line(section, theme, "none");
                 return;
             }
 
@@ -491,6 +576,7 @@ fn spawn_root_word_section(
                     flex_wrap: FlexWrap::Wrap,
                     column_gap: Val::Px(6.0),
                     row_gap: Val::Px(6.0),
+                    min_width: Val::Px(0.0),
                     ..default()
                 },))
                 .with_children(|row| {
@@ -499,7 +585,7 @@ fn spawn_root_word_section(
                             continue;
                         };
                         let is_active = inscription.root_word.as_ref() == Some(root_id);
-                        spawn_compact_toggle_button(
+                        spawn_ornate_toggle(
                             row,
                             theme,
                             root.metadata().display_name,
@@ -557,109 +643,82 @@ fn sorted_ancient_words<'a>(
     ids
 }
 
-fn spawn_compact_toggle_button(
-    parent: &mut ChildSpawnerCommands,
-    theme: &UiTheme,
-    label: &str,
-    is_active: bool,
-    marker: impl Component,
-) {
-    let text = if is_active {
-        format!("✓ {label}")
-    } else {
-        label.to_string()
-    };
-    parent
-        .spawn((
-            Button,
-            Node {
-                min_width: Val::Px(64.0),
-                height: Val::Px(28.0),
-                padding: UiRect::horizontal(Val::Px(8.0)),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                flex_shrink: 0.0,
-                ..default()
-            },
-            BackgroundColor(if is_active {
-                theme.button_pressed_bg
-            } else {
-                theme.button_bg
-            }),
-            marker,
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(text),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.7),
-                    ..default()
-                },
-                TextColor(theme.text_color),
-            ));
-        });
-}
-
-fn spawn_header(
-    parent: &mut ChildSpawnerCommands,
-    theme: &UiTheme,
-    weapon_name: &str,
-    asset_server: &AssetServer,
-) {
+fn spawn_header(parent: &mut ChildSpawnerCommands, theme: &UiTheme, weapon_name: Option<&str>) {
+    let (title, subtitle) = header_copy(weapon_name);
     parent
         .spawn((Node {
             width: Val::Percent(100.0),
-            height: Val::Px(36.0),
             flex_shrink: 0.0,
-            flex_direction: FlexDirection::Row,
-            justify_content: JustifyContent::SpaceBetween,
-            align_items: AlignItems::Center,
-            column_gap: Val::Px(12.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(2.0),
+            min_width: Val::Px(0.0),
             ..default()
         },))
-        .with_children(|header| {
-            header.spawn((
-                Text(format!("Inscriptions — {weapon_name}")),
-                TextFont {
-                    font_size: FontSize::Px(HEADER_TITLE_SIZE),
+        .with_children(|chrome| {
+            chrome
+                .spawn((Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(HEADER_HEIGHT),
+                    flex_shrink: 0.0,
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(HEADER_GAP),
+                    min_width: Val::Px(0.0),
+                    overflow: Overflow::clip(),
                     ..default()
-                },
-                TextColor(theme.text_color),
-                TextLayout {
-                    linebreak: LineBreak::NoWrap,
-                    ..default()
-                },
-                Node {
-                    flex_shrink: 1.0,
-                    overflow: Overflow::clip_x(),
-                    ..default()
-                },
-            ));
-
-            header
-                .spawn((
-                    Button,
-                    Node {
-                        width: Val::Px(88.0),
-                        height: Val::Px(30.0),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        flex_shrink: 0.0,
-                        ..default()
-                    },
-                    ornate_bar_image(asset_server.load(ORNATE_BAR_NEUTRAL_PATH)),
-                    CloseInscriptionButton,
-                ))
-                .with_children(|button| {
-                    button.spawn((
-                        Text("Close".to_string()),
+                },))
+                .with_children(|header| {
+                    header.spawn((
+                        Text::new(title),
                         TextFont {
-                            font_size: FontSize::Px(theme.button_font_size * 0.7),
+                            font_size: FontSize::Px(HEADER_TITLE_SIZE),
                             ..default()
                         },
                         TextColor(theme.text_color),
+                        TextLayout {
+                            linebreak: LineBreak::NoWrap,
+                            ..default()
+                        },
+                        Node {
+                            flex_shrink: 1.0,
+                            min_width: Val::Px(0.0),
+                            overflow: Overflow::clip_x(),
+                            ..default()
+                        },
                     ));
+
+                    spawn_bar_child(
+                        header,
+                        "Close",
+                        CLOSE_FONT_SIZE,
+                        theme.button_text_color,
+                        Val::Px(CLOSE_WIDTH),
+                        Val::Px(CLOSE_HEIGHT),
+                        BarButtonKind::Neutral,
+                        CloseInscriptionButton,
+                    );
                 });
+
+            if let Some(subtitle) = subtitle {
+                chrome.spawn((
+                    Text::new(subtitle),
+                    TextFont {
+                        font_size: FontSize::Px(HEADER_SUBTITLE_SIZE),
+                        ..default()
+                    },
+                    TextColor(theme.muted_text_color),
+                    TextLayout {
+                        linebreak: LineBreak::NoWrap,
+                        ..default()
+                    },
+                    Node {
+                        min_width: Val::Px(0.0),
+                        overflow: Overflow::clip_x(),
+                        ..default()
+                    },
+                ));
+            }
         });
 }
 
@@ -690,135 +749,119 @@ fn spawn_slot_column(
             flex_shrink: 1.0,
             flex_basis: Val::Px(0.0),
             min_width: Val::Px(0.0),
-            row_gap: Val::Px(6.0),
+            row_gap: Val::Px(4.0),
+            overflow: Overflow::clip(),
             ..default()
         },))
         .with_children(|column| {
             column.spawn((
-                Text(format!(
-                    "{} \u{2014} {}",
+                Text::new(format!(
+                    "{} - {}",
                     slot_key_label(slot),
                     ability.display_name()
                 )),
                 TextFont {
-                    font_size: FontSize::Px(theme.button_font_size),
+                    font_size: FontSize::Px(SLOT_HEADING_SIZE),
                     ..default()
                 },
                 TextColor(theme.text_color),
+                TextLayout {
+                    linebreak: LineBreak::WordOrCharacter,
+                    ..default()
+                },
+                Node {
+                    min_width: Val::Px(0.0),
+                    flex_shrink: 1.0,
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
             ));
 
             // Only worth a picker when the weapon actually offers a choice.
             let options = weapon_abilities.options_for(slot);
             if options.len() > 1 {
-                column.spawn((
-                    Text("Gesto".to_string()),
-                    TextFont {
-                        font_size: FontSize::Px(theme.button_font_size * 0.85),
+                spawn_section_label(column, theme, "Gesture");
+                column
+                    .spawn((Node {
+                        width: Val::Percent(100.0),
+                        flex_direction: FlexDirection::Row,
+                        flex_wrap: FlexWrap::Wrap,
+                        column_gap: Val::Px(4.0),
+                        row_gap: Val::Px(4.0),
+                        min_width: Val::Px(0.0),
                         ..default()
-                    },
-                    TextColor(theme.muted_text_color),
-                ));
-                for option_id in options {
-                    let Some(option) = ability_registry.get(option_id) else {
-                        continue;
-                    };
-                    spawn_toggle_button(
-                        column,
-                        theme,
-                        option.display_name(),
-                        option_id == ability_id,
-                        AbilitySelectButton {
-                            slot,
-                            ability_id: option_id.as_str().to_string(),
-                        },
-                    );
-                }
+                    },))
+                    .with_children(|row| {
+                        for option_id in options {
+                            let Some(option) = ability_registry.get(option_id) else {
+                                continue;
+                            };
+                            spawn_ornate_toggle(
+                                row,
+                                theme,
+                                option.display_name(),
+                                option_id == ability_id,
+                                AbilitySelectButton {
+                                    slot,
+                                    ability_id: option_id.as_str().to_string(),
+                                },
+                            );
+                        }
+                    });
             }
 
-            column.spawn((
-                Text("Ancient Words".to_string()),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.85),
-                    ..default()
-                },
-                TextColor(theme.muted_text_color),
-            ));
+            spawn_section_label(column, theme, "Ancient Words");
             if known.ancient_words.is_empty() {
-                spawn_muted_line(column, theme, "No Ancient Word known yet");
-            }
-            for word_id in sorted_ancient_words(known, ancient_word_registry) {
-                let Some(word) = ancient_word_registry.get(word_id) else {
-                    continue;
-                };
-                let is_active = slot_ins
-                    .secondary_words
-                    .iter()
-                    .any(|w| w.word_id == *word_id);
-                spawn_toggle_button(
-                    column,
-                    theme,
-                    word.display_name(),
-                    is_active,
-                    AncientWordToggleButton {
-                        slot,
-                        word_id: word_id.as_str().to_string(),
-                    },
-                );
+                spawn_muted_line(column, theme, "none");
+            } else {
+                column
+                    .spawn((Node {
+                        width: Val::Percent(100.0),
+                        flex_direction: FlexDirection::Row,
+                        flex_wrap: FlexWrap::Wrap,
+                        column_gap: Val::Px(4.0),
+                        row_gap: Val::Px(4.0),
+                        min_width: Val::Px(0.0),
+                        ..default()
+                    },))
+                    .with_children(|row| {
+                        for word_id in sorted_ancient_words(known, ancient_word_registry) {
+                            let Some(word) = ancient_word_registry.get(word_id) else {
+                                continue;
+                            };
+                            let is_active = slot_ins
+                                .secondary_words
+                                .iter()
+                                .any(|w| w.word_id == *word_id);
+                            spawn_ornate_toggle(
+                                row,
+                                theme,
+                                word.display_name(),
+                                is_active,
+                                AncientWordToggleButton {
+                                    slot,
+                                    word_id: word_id.as_str().to_string(),
+                                },
+                            );
+                        }
+                    });
             }
         });
 }
 
 fn spawn_muted_line(parent: &mut ChildSpawnerCommands, theme: &UiTheme, text: &str) {
     parent.spawn((
-        Text(text.to_string()),
+        Text::new(text),
         TextFont {
-            font_size: FontSize::Px(theme.button_font_size * 0.8),
+            font_size: FontSize::Px(12.0),
             ..default()
         },
         TextColor(theme.muted_text_color),
+        TextLayout {
+            linebreak: LineBreak::NoWrap,
+            ..default()
+        },
     ));
-}
-
-fn spawn_toggle_button(
-    parent: &mut ChildSpawnerCommands,
-    theme: &UiTheme,
-    label: &str,
-    is_active: bool,
-    marker: impl Component,
-) {
-    let text = if is_active {
-        format!("\u{2713} {label}")
-    } else {
-        label.to_string()
-    };
-    parent
-        .spawn((
-            Button,
-            Node {
-                width: Val::Percent(100.0),
-                min_height: Val::Px(30.0),
-                justify_content: JustifyContent::FlexStart,
-                align_items: AlignItems::Center,
-                padding: UiRect::horizontal(Val::Px(8.0)),
-                ..default()
-            },
-            BackgroundColor(if is_active {
-                theme.button_pressed_bg
-            } else {
-                theme.button_bg
-            }),
-            marker,
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text(text),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size),
-                    ..default()
-                },
-                TextColor(theme.text_color),
-            ));
-        });
 }
 
 #[allow(clippy::type_complexity)]
@@ -1058,5 +1101,193 @@ mod tests {
             .map(|id| id.as_str())
             .collect();
         assert_eq!(ordered, ["anchor", "echo", "twin"]);
+    }
+
+    #[test]
+    fn long_weapon_names_become_a_subtitle() {
+        let long = "X".repeat(80);
+        let (title, subtitle) = header_copy(Some(&long));
+        assert_eq!(title, "Inscriptions");
+        assert_eq!(subtitle.as_deref(), Some(long.as_str()));
+    }
+
+    #[test]
+    fn short_weapon_names_stay_in_the_title() {
+        let (title, subtitle) = header_copy(Some("Bow"));
+        assert_eq!(title, "Inscriptions - Bow");
+        assert!(subtitle.is_none());
+    }
+
+    fn test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()));
+        app.init_asset::<Image>();
+        app.init_resource::<UiTheme>();
+        app
+    }
+
+    fn spawn_test_window(app: &mut App, equipment: &Equipment, known: &KnownAncientLanguage) {
+        let theme = UiTheme::default();
+        let item_registry = bevymmo_content::item_definitions::default_items();
+        let ability_registry = bevymmo_content::ability_definitions::default_base_abilities();
+        let root_word_registry = bevymmo_content::root_word_definitions::default_root_words();
+        let ancient_word_registry =
+            bevymmo_content::ancient_word_definitions::default_ancient_words();
+        let asset_server = app.world().resource::<AssetServer>().clone();
+        {
+            let mut commands = app.world_mut().commands();
+            spawn_window(
+                &mut commands,
+                &theme,
+                equipment,
+                known,
+                &item_registry,
+                &ability_registry,
+                &root_word_registry,
+                &ancient_word_registry,
+                &asset_server,
+            );
+        }
+        app.world_mut().flush();
+    }
+
+    fn collected_text(app: &mut App) -> Vec<String> {
+        let world = app.world_mut();
+        let mut query = world.query::<&Text>();
+        query.iter(world).map(|text| text.0.clone()).collect()
+    }
+
+    fn staff_and_boots() -> (Equipment, KnownAncientLanguage) {
+        let equipment = Equipment {
+            weapon: Some(bevymmo_gameplay::items::instance::ItemInstance::new(
+                bevymmo_gameplay::items::registry::ItemId::new("mage_staff"),
+            )),
+            shoes: Some(bevymmo_gameplay::items::instance::ItemInstance::new(
+                bevymmo_gameplay::items::registry::ItemId::new("simple_boots"),
+            )),
+            ..Default::default()
+        };
+        let known = KnownAncientLanguage {
+            root_words: ["flame", "stone"]
+                .into_iter()
+                .map(RootWordId::from)
+                .collect(),
+            ..default()
+        };
+        (equipment, known)
+    }
+
+    #[test]
+    fn window_pad_clears_the_nine_slice_gems() {
+        let mut app = test_app();
+        let (equipment, known) = staff_and_boots();
+        spawn_test_window(&mut app, &equipment, &known);
+
+        let world = app.world_mut();
+        let mut windows = world.query::<(&InscriptionWindow, &Node)>();
+        let node = windows
+            .iter(world)
+            .next()
+            .map(|(_, node)| node)
+            .expect("window")
+            .clone();
+        assert_eq!(node.padding.left, Val::Px(WINDOW_PAD));
+        assert_eq!(node.padding.top, Val::Px(WINDOW_PAD));
+        assert_eq!(node.overflow, Overflow::clip());
+    }
+
+    #[test]
+    fn header_uses_compact_title_and_ornate_close() {
+        let mut app = test_app();
+        let (equipment, known) = staff_and_boots();
+        spawn_test_window(&mut app, &equipment, &known);
+
+        let texts = collected_text(&mut app);
+        assert!(
+            texts.iter().any(|text| text.starts_with("Inscriptions")),
+            "expected Inscriptions title, got {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|text| text.contains("Staffa da Mago")),
+            "weapon name should appear in the header chrome, got {texts:?}"
+        );
+        assert!(
+            !texts.iter().any(|text| {
+                text.contains("Armor Root Words")
+                    || text.contains("Helmet, chest and boots")
+                    || text.contains("Root Word condivisa")
+                    || text.contains("Una sola parola")
+            }),
+            "instructional copy must be gone, got {texts:?}"
+        );
+
+        let world = app.world_mut();
+        let mut titles = world.query::<(&Text, &TextFont, &TextLayout, &Node)>();
+        let (_, font, layout, node) = titles
+            .iter(world)
+            .find(|(text, _, _, _)| text.0.starts_with("Inscriptions"))
+            .expect("title");
+        assert_eq!(font.font_size, FontSize::Px(HEADER_TITLE_SIZE));
+        assert_eq!(layout.linebreak, LineBreak::NoWrap);
+        assert_eq!(node.flex_shrink, 1.0);
+
+        let mut close = world.query::<(
+            &CloseInscriptionButton,
+            &Node,
+            &ImageNode,
+            &crate::ui::button::UiButtonImages,
+        )>();
+        let (_, node, image, _) = close.iter(world).next().expect("close button");
+        assert_eq!(node.width, Val::Px(CLOSE_WIDTH));
+        assert_eq!(node.height, Val::Px(CLOSE_HEIGHT));
+        assert_eq!(node.flex_shrink, 0.0);
+        assert!(matches!(image.image_mode, NodeImageMode::Sliced(_)));
+    }
+
+    #[test]
+    fn root_word_toggles_use_ornate_bars() {
+        let mut app = test_app();
+        let (equipment, known) = staff_and_boots();
+        spawn_test_window(&mut app, &equipment, &known);
+
+        let world = app.world_mut();
+        let mut toggles = world.query::<(
+            &RootWordToggleButton,
+            &Node,
+            &ImageNode,
+            &crate::ui::button::UiButtonImages,
+        )>();
+        let count = toggles.iter(world).count();
+        assert!(count >= 2, "expected weapon root-word bars, found {count}");
+        for (_, node, image, _) in toggles.iter(world) {
+            assert_eq!(node.width, Val::Px(TOGGLE_WIDTH));
+            assert_eq!(node.height, Val::Px(TOGGLE_HEIGHT));
+            assert!(matches!(image.image_mode, NodeImageMode::Sliced(_)));
+        }
+
+        let mut armor = world.query::<(
+            &ArmorRootWordToggleButton,
+            &ImageNode,
+            &crate::ui::button::UiButtonImages,
+        )>();
+        assert!(
+            armor.iter(world).next().is_some(),
+            "boots should expose ornate root-word bars"
+        );
+    }
+
+    #[test]
+    fn empty_armor_slots_are_compact_labels() {
+        let mut app = test_app();
+        let (equipment, known) = staff_and_boots();
+        spawn_test_window(&mut app, &equipment, &known);
+
+        let texts = collected_text(&mut app);
+        assert!(texts.iter().any(|text| text == "Helmet"));
+        assert!(texts.iter().any(|text| text == "empty"));
+        assert!(texts.iter().any(|text| text == "Shoes"));
+        assert!(texts.iter().any(|text| text == "Simple Boots"));
+        assert!(texts.iter().any(|text| text == "Armor"));
+        assert!(texts.iter().any(|text| text == "Weapon"));
     }
 }

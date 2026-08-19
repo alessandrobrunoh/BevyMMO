@@ -45,15 +45,19 @@ pub fn resolve_effect(ctx: &ReducerContext, effect: QueuedEffect) -> EffectOutco
             }
         }
         EffectSpec::ApplyStatus(status) => {
-            crate::sim::status::apply(
-                ctx,
-                target,
-                source,
-                &status.status_id,
-                status.duration_override_seconds,
-                status.potency,
-            );
-            EffectOutcome::Applied
+            if crate::sim::combat::hostile_effect_blocked(ctx, target, source) {
+                EffectOutcome::Ignored
+            } else {
+                crate::sim::status::apply(
+                    ctx,
+                    target,
+                    source,
+                    &status.status_id,
+                    status.duration_override_seconds,
+                    status.potency,
+                );
+                EffectOutcome::Applied
+            }
         }
         EffectSpec::Cleanse(cleanse) => {
             crate::sim::status::cleanse(ctx, target, cleanse);

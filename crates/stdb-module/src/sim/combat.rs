@@ -358,12 +358,22 @@ pub fn apply_damage(ctx: &ReducerContext, target: u64, source: Option<u64>, amou
         return;
     }
 
-    if let Some(source_character_id) = party_friendly_fire_attacker(ctx, &entity, source) {
-        crate::reducers::parties::notify_character(
-            ctx,
-            source_character_id,
-            "You cannot attack a party member.".to_string(),
-        );
+    if hostile_effect_blocked(ctx, target, source) {
+        if let Some(source_character_id) = source
+            .and_then(|id| ctx.db.game_entity().entity_id().find(&id))
+            .and_then(|attacker| attacker.owner_character_id)
+        {
+            let message = if entity.kind == EntityKindRow::AllyDummy {
+                "You cannot attack an ally."
+            } else {
+                "You cannot attack a party member."
+            };
+            crate::reducers::parties::notify_character(
+                ctx,
+                source_character_id,
+                message.to_string(),
+            );
+        }
         return;
     }
 
@@ -397,64 +407,42 @@ pub fn apply_damage(ctx: &ReducerContext, target: u64, source: Option<u64>, amou
     });
 }
 
-/// Whether `source` is a *different* player currently in the same party as
-/// `target`, and if so, the attacker's `character_id` — so [`apply_damage`]
-/// can tell them why nothing happened.
+/// Whether a hostile payload from `source` must be dropped for `target`.
 ///
-/// Checks `target.kind` first and bails out for anything that is not
-/// [`EntityKindRow::Player`] without touching `party_member` at all: enemies,
-/// bosses, dummies and NPCs vastly outnumber players in a fight, none of them
-/// can ever be in a party, and this keeps the overwhelmingly common case —
-/// hurting a mob — free of any party lookup rather than merely fast at one.
-///
-/// Fails closed by construction: every early return is "not friendly fire,
-/// let the hit through as normal" (`None`), never "block this hit". A
-/// missing target owner, a missing source, a source that is not a player, or
-/// two players who simply are not in the same party all fall through to
-/// `None` the same way — ambiguous data can only ever mean *more* damage
-/// goes through unmodified, never less, per this plan's security
-/// requirement that this guard must not make a target invulnerable by
-/// accident.
-fn party_friendly_fire_attacker(
-    ctx: &ReducerContext,
-    target: &GameEntity,
-    source: Option<u64>,
-) -> Option<Uuid> {
-    if target.kind != EntityKindRow::Player {
-        return None;
-    }
+/// Same rule as [`is_friendly_fire`]: party members and the ally dummy are
+/// immune to a player's damage and debuffs. The hostile dummy is not.
+pub fn hostile_effect_blocked(ctx: &ReducerContext, target: u64, source: Option<u64>) -> bool {
+    let Some(entity) = ctx.db.game_entity().entity_id().find(&target) else {
+        return false;
+    };
     let source_entity = source.and_then(|id| ctx.db.game_entity().entity_id().find(&id));
-    let source_character_id = source_entity.as_ref().and_then(|e| e.owner_character_id);
-
-    if !is_friendly_fire(
-        target.kind,
-        target.owner_character_id,
-        source_entity.as_ref().map(|e| e.kind),
+    let source_character_id = source_entity
+        .as_ref()
+        .and_then(|attacker| attacker.owner_character_id);
+    is_friendly_fire(
+        entity.kind,
+        entity.owner_character_id,
+        source_entity.as_ref().map(|attacker| attacker.kind),
         source_character_id,
-        target
+        entity
             .owner_character_id
             .and_then(|id| ctx.db.party_member().character_id().find(&id))
             .map(|row| row.party_id),
         source_character_id
             .and_then(|id| ctx.db.party_member().character_id().find(&id))
             .map(|row| row.party_id),
-    ) {
-        return None;
-    }
-    source_character_id
+    )
 }
 
-/// The pure decision behind [`party_friendly_fire_attacker`], once every row
-/// it might need has already been looked up (or found missing). Split out so
-/// the actual boundary — same character is never friendly fire, different
-/// party is not friendly fire, only the *same* party on *two different*
-/// players is — is unit-testable without a `ReducerContext`.
+/// The pure decision behind [`hostile_effect_blocked`]. Split out so the
+/// boundary is unit-testable without a `ReducerContext`.
 ///
-/// Every "I don't know" input (a `None` anywhere in `target_character_id`,
-/// `source_kind`, `source_character_id`, or either party id) resolves to
-/// `false` — not friendly fire, let the hit through. That is the fail-closed
-/// direction this plan's security requirement demands: ambiguous data must
-/// never make a target invulnerable by accident.
+/// A player hitting the allied training dummy is always friendly fire.
+/// Two different players in the same party are friendly fire.
+///
+/// Ambiguous *party* data (`None` character or party ids) still fails open:
+/// a missing row never makes a real player invulnerable. The ally dummy does
+/// not use party ids, so that rule does not apply to it.
 fn is_friendly_fire(
     target_kind: EntityKindRow,
     target_character_id: Option<Uuid>,
@@ -463,15 +451,18 @@ fn is_friendly_fire(
     target_party_id: Option<u64>,
     source_party_id: Option<u64>,
 ) -> bool {
+    if source_kind != Some(EntityKindRow::Player) {
+        return false;
+    }
+    if target_kind == EntityKindRow::AllyDummy {
+        return true;
+    }
     if target_kind != EntityKindRow::Player {
         return false;
     }
     let Some(target_character_id) = target_character_id else {
         return false;
     };
-    if source_kind != Some(EntityKindRow::Player) {
-        return false;
-    }
     let Some(source_character_id) = source_character_id else {
         return false;
     };
@@ -1225,5 +1216,41 @@ mod tests {
         assert!(can_receive_heal(ALLY_DUMMY, None, Some(cid(1)), None, None));
         assert!(!can_receive_heal(DUMMY, None, Some(cid(1)), None, None));
         assert!(!can_receive_heal(ENEMY, None, Some(cid(1)), None, None));
+    }
+
+    #[test]
+    fn a_player_cannot_damage_the_ally_dummy() {
+        assert!(is_friendly_fire(
+            ALLY_DUMMY,
+            None,
+            Some(PLAYER),
+            Some(cid(1)),
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn a_player_can_still_damage_the_hostile_dummy() {
+        assert!(!is_friendly_fire(
+            DUMMY,
+            None,
+            Some(PLAYER),
+            Some(cid(1)),
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn an_enemy_can_still_damage_the_ally_dummy() {
+        assert!(!is_friendly_fire(
+            ALLY_DUMMY,
+            None,
+            Some(ENEMY),
+            None,
+            None,
+            None,
+        ));
     }
 }

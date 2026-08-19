@@ -1,5 +1,5 @@
-//! Top-center status bar for the local player's active Buffs and Debuffs,
-//! plus the compact row under the selected-target frame.
+//! Local-player buff/debuff bar above the hotbar, plus the compact row under
+//! the selected-target frame.
 
 mod systems;
 

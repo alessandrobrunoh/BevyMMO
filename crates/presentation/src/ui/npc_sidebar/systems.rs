@@ -321,6 +321,6 @@ mod tests {
                 "greeter lists {id} but the catalogue does not"
             );
         }
-        assert_eq!(greeter_stock().len(), 4);
+        assert_eq!(greeter_stock().len(), 9);
     }
 }

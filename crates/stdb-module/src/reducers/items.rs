@@ -966,6 +966,9 @@ mod greeter_stock_tests {
         assert!(is_greeter_stock("sword"));
         assert!(is_greeter_stock("hammer"));
         assert!(is_greeter_stock("mage_staff"));
+        assert!(is_greeter_stock("simple_helm"));
+        assert!(is_greeter_stock("simple_cuirass"));
+        assert!(is_greeter_stock("simple_buckler"));
     }
 
     #[test]

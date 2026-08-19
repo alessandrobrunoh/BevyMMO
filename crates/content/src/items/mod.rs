@@ -15,6 +15,11 @@ pub fn greeter_stock() -> &'static [&'static str] {
         weapons::sword::sword::Sword::ID,
         weapons::hammer::hammer::Hammer::ID,
         weapons::staff::mage_staff::MageStaff::ID,
+        armor::simple::SimpleHelm::ID,
+        armor::simple::SimpleCape::ID,
+        armor::simple::SimpleCuirass::ID,
+        armor::simple::SimpleBuckler::ID,
+        armor::simple::SimpleBoots::ID,
     ]
 }
 
@@ -71,7 +76,13 @@ mod tests {
         assert!(registry.contains(&ItemId::new(weapons::hammer::hammer::Hammer::ID)));
         assert!(registry.contains(&ItemId::new(weapons::staff::mage_staff::MageStaff::ID)));
 
-        assert_eq!(registry.len(), 8); // 4 non-weapons + 4 weapons
+        assert!(registry.contains(&ItemId::new(armor::simple::SimpleHelm::ID)));
+        assert!(registry.contains(&ItemId::new(armor::simple::SimpleCape::ID)));
+        assert!(registry.contains(&ItemId::new(armor::simple::SimpleCuirass::ID)));
+        assert!(registry.contains(&ItemId::new(armor::simple::SimpleBuckler::ID)));
+        assert!(registry.contains(&ItemId::new(armor::simple::SimpleBoots::ID)));
+
+        assert_eq!(registry.len(), 13); // 4 weapons + 3 fancy armor + 5 simple + charm
     }
 
     #[test]

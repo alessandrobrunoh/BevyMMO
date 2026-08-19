@@ -4,11 +4,12 @@ use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_gameplay::abilities::{
-    inscription::{SecondaryWord, WeaponInscription},
+    inscription::{ArmorInscription, SecondaryWord, WeaponInscription},
     resolve_active_ability, AbilitySelection, AbilitySlot, AncientWordId, AncientWordRegistry,
     BaseAbilityRegistry, KnownAncientLanguage, RootWordId, RootWordRegistry, WeaponAbilities,
 };
 use bevymmo_gameplay::items::components::{EquipSlot, Equipment};
+use bevymmo_gameplay::items::definition::Item;
 use bevymmo_gameplay::items::registry::ItemRegistry;
 
 use crate::ui::scrollbar::spawn_scroll_view;
@@ -36,12 +37,42 @@ fn slot_key_label(slot: AbilitySlot) -> &'static str {
 /// `true` when the currently equipped weapon has Eidolon gestures — the
 /// condition both this window and `spell_selector` use to decide which of
 /// the two owns the shared toggle key.
+const ARMOR_INSCRIPTION_SLOTS: [EquipSlot; 3] =
+    [EquipSlot::Helmet, EquipSlot::Armor, EquipSlot::Shoes];
+
 fn equipped_weapon_is_eidolon(equipment: &Equipment, registry: &ItemRegistry) -> bool {
     equipment
         .weapon
         .as_ref()
         .and_then(|weapon| registry.get(&weapon.item_id))
         .is_some_and(|item| item.ability_loadout().is_some())
+}
+
+fn item_is_inscribable(item: &dyn Item) -> bool {
+    item.ability_loadout().is_some() && item.rune_profile().is_some()
+}
+
+/// Whether this key should open the inscription window rather than the
+/// legacy spellbook. True for an Eidolon weapon or any inscribed armor piece.
+pub(crate) fn owns_inscription_hotkey(equipment: &Equipment, registry: &ItemRegistry) -> bool {
+    if equipped_weapon_is_eidolon(equipment, registry) {
+        return true;
+    }
+    ARMOR_INSCRIPTION_SLOTS.iter().any(|slot| {
+        equipment
+            .get(*slot)
+            .as_ref()
+            .and_then(|instance| registry.get(&instance.item_id))
+            .is_some_and(|item| item_is_inscribable(item.as_ref()))
+    })
+}
+
+fn next_root_word(current: Option<&RootWordId>, clicked: &str) -> Option<RootWordId> {
+    if current.map(|id| id.as_str()) == Some(clicked) {
+        None
+    } else {
+        Some(RootWordId::new(clicked.to_string()))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -65,8 +96,8 @@ pub fn toggle_inscription_window(
     let Ok((equipment, known)) = player_query.single() else {
         return;
     };
-    if !equipped_weapon_is_eidolon(equipment, &item_registry) {
-        // Not our weapon type this press — `spell_selector` handles it.
+    if !owns_inscription_hotkey(equipment, &item_registry) {
+        // Not our item type this press — `spell_selector` handles it.
         return;
     }
 
@@ -117,8 +148,7 @@ pub fn refresh_inscription_window_on_equipment_change(
 
     despawn_windows(&mut commands, &window_query);
 
-    if !equipped_weapon_is_eidolon(equipment, &item_registry) {
-        // Swapped to a non-Eidolon weapon while the window was open.
+    if !owns_inscription_hotkey(equipment, &item_registry) {
         return;
     }
 
@@ -145,16 +175,16 @@ fn spawn_window(
     root_word_registry: &RootWordRegistry,
     ancient_word_registry: &AncientWordRegistry,
 ) {
-    let Some(weapon) = &equipment.weapon else {
-        return;
-    };
-    let Some(item) = item_registry.get(&weapon.item_id) else {
-        return;
-    };
-    let Some(weapon_abilities) = item.ability_loadout() else {
-        return;
-    };
-    let inscription = weapon.root_inscription.clone().unwrap_or_default();
+    let weapon = equipment.weapon.as_ref();
+    let weapon_item = weapon.and_then(|instance| item_registry.get(&instance.item_id));
+    let weapon_abilities = weapon_item.as_ref().and_then(|item| item.ability_loadout());
+    let inscription = weapon
+        .and_then(|instance| instance.root_inscription.clone())
+        .unwrap_or_default();
+    let title = weapon_item
+        .as_ref()
+        .map(|item| item.display_name())
+        .unwrap_or("Armor");
 
     let window = commands
         .spawn((
@@ -181,11 +211,18 @@ fn spawn_window(
         .id();
 
     commands.entity(window).with_children(|parent| {
-        // The title and armor summary stay visible while the three inscription
-        // columns scroll below them.
-        spawn_header(parent, theme, item.display_name());
-        spawn_armor_summary(parent, theme, equipment, item_registry);
-        spawn_root_word_section(parent, theme, known, &inscription, root_word_registry);
+        spawn_header(parent, theme, title);
+        spawn_armor_inscription_section(
+            parent,
+            theme,
+            equipment,
+            known,
+            item_registry,
+            root_word_registry,
+        );
+        if weapon_abilities.is_some() {
+            spawn_root_word_section(parent, theme, known, &inscription, root_word_registry);
+        }
     });
 
     let scroll_body = commands
@@ -207,6 +244,12 @@ fn spawn_window(
                 ..default()
             },))
             .with_children(|body| {
+                let Some(weapon_abilities) = weapon_abilities else {
+                    return;
+                };
+                let Some(weapon) = weapon else {
+                    return;
+                };
                 for slot in SLOTS {
                     spawn_slot_column(
                         body,
@@ -234,25 +277,35 @@ fn armor_key_label(slot: EquipSlot) -> &'static str {
     }
 }
 
-fn spawn_armor_summary(
+fn spawn_armor_inscription_section(
     parent: &mut ChildSpawnerCommands,
     theme: &UiTheme,
     equipment: &Equipment,
+    known: &KnownAncientLanguage,
     item_registry: &ItemRegistry,
+    root_word_registry: &RootWordRegistry,
 ) {
     parent
         .spawn((Node {
             width: Val::Percent(100.0),
             flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(4.0),
+            row_gap: Val::Px(6.0),
             padding: UiRect::bottom(Val::Px(6.0)),
             ..default()
         },))
         .with_children(|section| {
             section.spawn((
-                Text::new("Armor inscriptions"),
+                Text::new("Armor Root Words"),
                 TextFont {
                     font_size: FontSize::Px(theme.button_font_size * 0.9),
+                    ..default()
+                },
+                TextColor(theme.muted_text_color),
+            ));
+            section.spawn((
+                Text::new("Helmet, chest and boots each have their own Root Word."),
+                TextFont {
+                    font_size: FontSize::Px(theme.button_font_size * 0.7),
                     ..default()
                 },
                 TextColor(theme.muted_text_color),
@@ -265,57 +318,101 @@ fn spawn_armor_summary(
                     ..default()
                 },))
                 .with_children(|row| {
-                    for slot in [EquipSlot::Helmet, EquipSlot::Armor, EquipSlot::Shoes] {
-                        let label = equipment
-                            .get(slot)
-                            .as_ref()
-                            .and_then(|instance| {
-                                let item_name = item_registry
-                                    .get(&instance.item_id)
-                                    .map(|item| item.display_name().to_string())?;
-                                let inscription = instance.armor_inscription.as_ref();
-                                let root = inscription
-                                    .and_then(|value| value.root_word.as_ref())
-                                    .map(|value| value.as_str().to_string())
-                                    .unwrap_or_else(|| "no root".to_string());
-                                let words = inscription
-                                    .map(|value| {
-                                        value
-                                            .secondary_words
-                                            .iter()
-                                            .map(|word| word.word_id.as_str())
-                                            .collect::<Vec<_>>()
-                                            .join(", ")
-                                    })
-                                    .filter(|value| !value.is_empty())
-                                    .unwrap_or_else(|| "no ancient words".to_string());
-                                Some(format!("{item_name}\n{root} · {words}"))
-                            })
-                            .unwrap_or_else(|| "empty".to_string());
-                        row.spawn((
-                            Node {
-                                width: Val::Percent(33.0),
-                                min_height: Val::Px(54.0),
-                                padding: UiRect::all(Val::Px(5.0)),
-                                ..default()
+                    for slot in ARMOR_INSCRIPTION_SLOTS {
+                        spawn_armor_slot_card(
+                            row,
+                            theme,
+                            slot,
+                            equipment,
+                            known,
+                            item_registry,
+                            root_word_registry,
+                        );
+                    }
+                });
+        });
+}
+
+fn spawn_armor_slot_card(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiTheme,
+    slot: EquipSlot,
+    equipment: &Equipment,
+    known: &KnownAncientLanguage,
+    item_registry: &ItemRegistry,
+    root_word_registry: &RootWordRegistry,
+) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(33.0),
+                min_height: Val::Px(88.0),
+                padding: UiRect::all(Val::Px(6.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(5.0),
+                ..default()
+            },
+            BackgroundColor(theme.button_bg),
+        ))
+        .with_children(|card| {
+            let instance = equipment.get(slot).as_ref();
+            let item = instance.and_then(|value| item_registry.get(&value.item_id));
+            let title = item
+                .as_ref()
+                .map(|value| value.display_name().to_string())
+                .unwrap_or_else(|| "empty".to_string());
+            card.spawn((
+                Text::new(format!(
+                    "[{}] {}\n{title}",
+                    armor_key_label(slot),
+                    slot.label()
+                )),
+                TextFont {
+                    font_size: FontSize::Px(theme.button_font_size * 0.62),
+                    ..default()
+                },
+                TextColor(theme.text_color),
+            ));
+
+            let Some(item) = item else {
+                return;
+            };
+            if !item_is_inscribable(item.as_ref()) {
+                spawn_muted_line(card, theme, "not inscribable");
+                return;
+            }
+
+            let current = instance.and_then(|value| value.armor_inscription.as_ref());
+            if known.root_words.is_empty() {
+                spawn_muted_line(card, theme, "no known Root Words");
+                return;
+            }
+
+            card.spawn((Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                column_gap: Val::Px(4.0),
+                row_gap: Val::Px(4.0),
+                ..default()
+            },))
+                .with_children(|row| {
+                    for root_id in sorted_root_words(known, root_word_registry) {
+                        let Some(root) = root_word_registry.get(root_id) else {
+                            continue;
+                        };
+                        let is_active =
+                            current.and_then(|value| value.root_word.as_ref()) == Some(root_id);
+                        spawn_compact_toggle_button(
+                            row,
+                            theme,
+                            root.metadata().display_name,
+                            is_active,
+                            ArmorRootWordToggleButton {
+                                slot,
+                                root_word_id: root_id.as_str().to_string(),
                             },
-                            BackgroundColor(theme.button_bg),
-                        ))
-                        .with_children(|card| {
-                            card.spawn((
-                                Text::new(format!(
-                                    "[{}] {}\n{}",
-                                    armor_key_label(slot),
-                                    slot.label(),
-                                    label
-                                )),
-                                TextFont {
-                                    font_size: FontSize::Px(theme.button_font_size * 0.62),
-                                    ..default()
-                                },
-                                TextColor(theme.text_color),
-                            ));
-                        });
+                        );
                     }
                 });
         });
@@ -684,6 +781,10 @@ pub fn handle_inscription_interactions(
         (&Interaction, &RootWordToggleButton),
         (Changed<Interaction>, With<Button>),
     >,
+    armor_root_interactions: Query<
+        (&Interaction, &ArmorRootWordToggleButton),
+        (Changed<Interaction>, With<Button>),
+    >,
     ability_interactions: Query<
         (&Interaction, &AbilitySelectButton),
         (Changed<Interaction>, With<Button>),
@@ -706,10 +807,26 @@ pub fn handle_inscription_interactions(
     let Ok(equipment) = player_query.single() else {
         return;
     };
-    let Some(weapon) = &equipment.weapon else {
+    let weapon = equipment.weapon.as_ref();
+    let current = weapon
+        .and_then(|instance| instance.root_inscription.clone())
+        .unwrap_or_default();
+
+    for (interaction, toggle) in armor_root_interactions.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let Some(instance) = equipment.get(toggle.slot).as_ref() else {
+            continue;
+        };
+        let current_armor = instance.armor_inscription.clone().unwrap_or_default();
+        let new_root = next_root_word(current_armor.root_word.as_ref(), &toggle.root_word_id);
+        send_armor_root_update(conn.as_deref(), toggle.slot, new_root, &current_armor);
+    }
+
+    let Some(weapon) = weapon else {
         return;
     };
-    let current = weapon.root_inscription.clone().unwrap_or_default();
 
     for (interaction, pick) in ability_interactions.iter() {
         if *interaction != Interaction::Pressed {
@@ -737,13 +854,7 @@ pub fn handle_inscription_interactions(
         if *interaction != Interaction::Pressed {
             continue;
         }
-        let toggled_off =
-            current.root_word.as_ref().map(|id| id.as_str()) == Some(toggle.root_word_id.as_str());
-        let new_root = if toggled_off {
-            None
-        } else {
-            Some(RootWordId::new(toggle.root_word_id.clone()))
-        };
+        let new_root = next_root_word(current.root_word.as_ref(), &toggle.root_word_id);
         send_root_update(conn.as_deref(), new_root, &current);
     }
 
@@ -764,6 +875,30 @@ pub fn handle_inscription_interactions(
             slot_ins.secondary_words.push(SecondaryWord::new(word_id));
         }
         send_full_update(conn.as_deref(), &updated);
+    }
+}
+
+fn send_armor_root_update(
+    conn: Option<&StdbConnection>,
+    slot: EquipSlot,
+    root_word: Option<RootWordId>,
+    current: &ArmorInscription,
+) {
+    let Some(conn) = conn else {
+        return;
+    };
+    let secondary_words = current
+        .secondary_words
+        .iter()
+        .map(|word| word.word_id.as_str().to_string())
+        .collect();
+    if let Err(error) = stdb_commands::set_armor_inscription(
+        conn,
+        slot,
+        root_word.map(|word| word.as_str().to_string()),
+        secondary_words,
+    ) {
+        error!("could not update armor Root Word: {error}");
     }
 }
 
@@ -830,6 +965,32 @@ mod tests {
             .map(|id| id.as_str())
             .collect();
         assert_eq!(ordered, ["damage", "flame", "stone"]);
+    }
+
+    #[test]
+    fn next_root_word_toggles_off_the_same_pick() {
+        let current = RootWordId::new("flame");
+        assert_eq!(next_root_word(Some(&current), "flame"), None);
+        assert_eq!(
+            next_root_word(Some(&current), "stone").map(|id| id.as_str().to_string()),
+            Some("stone".to_string())
+        );
+        assert_eq!(
+            next_root_word(None, "flame").map(|id| id.as_str().to_string()),
+            Some("flame".to_string())
+        );
+    }
+
+    #[test]
+    fn inscription_hotkey_opens_for_inscribable_armor_without_a_weapon() {
+        let registry = bevymmo_content::item_definitions::default_items();
+        let mut equipment = Equipment::default();
+        assert!(!owns_inscription_hotkey(&equipment, &registry));
+
+        equipment.helmet = Some(bevymmo_gameplay::items::instance::ItemInstance::new(
+            bevymmo_gameplay::items::registry::ItemId::new("simple_helm"),
+        ));
+        assert!(owns_inscription_hotkey(&equipment, &registry));
     }
 
     #[test]

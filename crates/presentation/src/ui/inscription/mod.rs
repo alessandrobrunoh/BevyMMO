@@ -7,7 +7,9 @@
 //! same way).
 
 mod components;
-mod systems;
+pub(crate) mod systems;
+
+pub(crate) use systems::owns_inscription_hotkey;
 
 use bevy::prelude::*;
 use bevymmo_network::network::mode::has_client;

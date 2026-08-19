@@ -31,16 +31,11 @@ pub fn toggle_spell_selector(
         return;
     }
 
-    // An Eidolon weapon owns this key instead — see
-    // `crate::ui::inscription::systems::toggle_inscription_window`.
-    let equipped_is_eidolon = player_query.single().is_ok_and(|(_, _, equipment)| {
-        equipment
-            .weapon
-            .as_ref()
-            .and_then(|weapon| item_registry.get(&weapon.item_id))
-            .is_some_and(|item| item.ability_loadout().is_some())
+    // Inscription (weapon or armor Root Words) owns this key instead.
+    let inscription_owns_key = player_query.single().is_ok_and(|(_, _, equipment)| {
+        crate::ui::inscription::owns_inscription_hotkey(equipment, &item_registry)
     });
-    if equipped_is_eidolon {
+    if inscription_owns_key {
         return;
     }
 

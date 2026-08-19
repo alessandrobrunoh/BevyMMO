@@ -10,6 +10,13 @@ pub struct RootWordToggleButton {
     pub root_word_id: String,
 }
 
+/// Toggles the independent Root Word on helmet, chest or shoes.
+#[derive(Component)]
+pub struct ArmorRootWordToggleButton {
+    pub slot: bevymmo_gameplay::items::components::EquipSlot,
+    pub root_word_id: String,
+}
+
 /// Toggles whether `word_id` is present among `slot`'s secondary Ancient Words.
 #[derive(Component)]
 pub struct AncientWordToggleButton {

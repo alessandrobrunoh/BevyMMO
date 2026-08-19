@@ -1,10 +1,17 @@
 //! A matching common armor set: helm, cape, cuirass, buckler, boots.
 //!
-//! No abilities and no rune profile — just small Armor bonuses so a new
-//! character can fill every worn slot.
+//! Helm, chest and boots carry a small rune profile so they can take a Root
+//! Word. Cape and buckler stay stat-only.
 
 use bevymmo_props_macro::item;
 
+use crate::ability_definitions::arcane_orb::ArcaneOrb;
+use crate::ability_definitions::bulwark_strike::BulwarkStrike;
+use crate::ability_definitions::ground_break::GroundBreak;
+use crate::ability_definitions::iron_wave::IronWave;
+use crate::ability_definitions::mind_burst::MindWard;
+use crate::ability_definitions::swift_kick::SwiftKick;
+use crate::ability_definitions::warding_bolt::WardingBolt;
 use crate::items::ItemRegistry;
 
 #[item(
@@ -15,6 +22,12 @@ use crate::items::ItemRegistry;
     rarity = Common,
     slot = Helmet,
     effects = [stat_bonus(field = Armor, op = Add, value = 8.0)],
+    abilities(
+        primary = [WardingBolt],
+        secondary = [MindWard],
+        ultimate = [ArcaneOrb],
+    ),
+    rune_profile(capacity = 6, stability = 0.90),
 )]
 pub struct SimpleHelm;
 
@@ -37,6 +50,12 @@ pub struct SimpleCape;
     rarity = Common,
     slot = Armor,
     effects = [stat_bonus(field = Armor, op = Add, value = 12.0)],
+    abilities(
+        primary = [BulwarkStrike],
+        secondary = [IronWave],
+        ultimate = [ArcaneOrb],
+    ),
+    rune_profile(capacity = 6, stability = 0.92),
 )]
 pub struct SimpleCuirass;
 
@@ -59,6 +78,12 @@ pub struct SimpleBuckler;
     rarity = Common,
     slot = Shoes,
     effects = [stat_bonus(field = Armor, op = Add, value = 4.0)],
+    abilities(
+        primary = [SwiftKick],
+        secondary = [GroundBreak],
+        ultimate = [ArcaneOrb],
+    ),
+    rune_profile(capacity = 5, stability = 0.94),
 )]
 pub struct SimpleBoots;
 
@@ -92,11 +117,16 @@ mod tests {
     }
 
     #[test]
-    fn simple_armor_has_no_eidolon_loadout() {
-        assert!(SimpleHelm.ability_loadout().is_none());
+    fn helm_chest_and_boots_are_inscribable() {
+        assert!(SimpleHelm.ability_loadout().is_some());
+        assert!(SimpleHelm.rune_profile().is_some());
+        assert!(SimpleCuirass.ability_loadout().is_some());
+        assert!(SimpleBoots.ability_loadout().is_some());
+    }
+
+    #[test]
+    fn cape_and_buckler_stay_stat_only() {
         assert!(SimpleCape.ability_loadout().is_none());
-        assert!(SimpleCuirass.ability_loadout().is_none());
         assert!(SimpleBuckler.ability_loadout().is_none());
-        assert!(SimpleBoots.ability_loadout().is_none());
     }
 }

@@ -449,6 +449,51 @@ pub fn party_leave(ctx: &ReducerContext) -> Result<(), String> {
     Ok(())
 }
 
+/// Drops party membership, leadership and pending requests for a character
+/// that is being deleted. Shared with `delete_character` so a removed leader
+/// cannot leave a `PartyRow.leader` unique key pointing at a ghost.
+pub(crate) fn forget_deleted_character(ctx: &ReducerContext, actor: &Player) {
+    let character_id = actor.character_id;
+    let request_ids: Vec<u64> = ctx
+        .db
+        .party_request()
+        .iter()
+        .filter(|row| row.initiator == character_id || row.recipient == character_id)
+        .map(|row| row.request_id)
+        .collect();
+    for request_id in request_ids {
+        ctx.db.party_request().request_id().delete(&request_id);
+    }
+
+    let Some(membership) = member_of(ctx, character_id) else {
+        return;
+    };
+    let party_id = membership.party_id;
+    ctx.db.party_member().character_id().delete(&character_id);
+
+    let Some(party_row) = ctx.db.party().party_id().find(&party_id) else {
+        return;
+    };
+    let remaining: Vec<PartyMemberRow> =
+        ctx.db.party_member().by_party().filter(&party_id).collect();
+    if remaining.is_empty() {
+        ctx.db.party().party_id().delete(&party_id);
+        return;
+    }
+    if party_row.leader == character_id {
+        let candidates: Vec<(Uuid, i64)> = remaining
+            .iter()
+            .map(|row| (row.character_id, row.joined_at.to_micros_since_unix_epoch()))
+            .collect();
+        if let Some(new_leader) = promote_leader(&candidates) {
+            ctx.db.party().party_id().update(PartyRow {
+                leader: new_leader,
+                ..party_row
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

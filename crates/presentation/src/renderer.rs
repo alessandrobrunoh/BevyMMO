@@ -5,6 +5,7 @@ use crate::game_state::{GameScreen, Screen};
 use bevymmo_gameplay::entity::boss::components::Boss;
 use bevymmo_gameplay::entity::components::EntityKind;
 use bevymmo_network::network::protocol::*;
+use bevymmo_network::world_components::AoeZone;
 use std::collections::HashMap;
 
 #[derive(Resource)]
@@ -375,13 +376,16 @@ impl RenderSmoothing {
 fn sync_transforms(
     time: Res<Time>,
     mut commands: Commands,
-    mut entities: Query<(
-        Entity,
-        &Position,
-        Option<&LookDirection>,
-        &mut Transform,
-        Option<&mut RenderSmoothing>,
-    )>,
+    mut entities: Query<
+        (
+            Entity,
+            &Position,
+            Option<&LookDirection>,
+            &mut Transform,
+            Option<&mut RenderSmoothing>,
+        ),
+        Without<AoeZone>,
+    >,
 ) {
     let delta = time.delta_secs();
     if delta <= 0.0 {
@@ -551,8 +555,16 @@ fn update_colors(
     }
 }
 
-fn cleanup_entity_render(mut commands: Commands, entities: Query<Entity, With<RenderedEntity>>) {
-    for entity in entities.iter() {
+fn cleanup_entity_render(
+    mut commands: Commands,
+    entities: Query<(Entity, Option<&Children>), With<RenderedEntity>>,
+) {
+    for (entity, children) in entities.iter() {
+        if let Some(children) = children {
+            for child in children.iter() {
+                commands.entity(child).despawn();
+            }
+        }
         commands
             .entity(entity)
             .remove::<RenderedEntity>()
@@ -560,6 +572,8 @@ fn cleanup_entity_render(mut commands: Commands, entities: Query<Entity, With<Re
             .remove::<MeshMaterial3d<StandardMaterial>>()
             .remove::<WorldAssetRoot>()
             .remove::<RenderSmoothing>()
+            .remove::<PlayerModelRoot>()
+            .remove::<PlayerModelAnchored>()
             .remove::<Transform>();
     }
 }

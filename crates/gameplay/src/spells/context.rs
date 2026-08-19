@@ -321,6 +321,15 @@ pub struct SpellCastContext<'a> {
     pub pending_visuals: Vec<SpellVisualEffect>,
 }
 
+fn scale_effect_spec(effect: &mut EffectSpec, fraction: f32) {
+    match effect {
+        EffectSpec::Damage(damage) => damage.amount *= fraction,
+        EffectSpec::Heal(heal) => heal.amount *= fraction,
+        EffectSpec::ApplyStatus(status) => status.potency *= fraction,
+        EffectSpec::Cleanse(_) | EffectSpec::Purge(_) => {}
+    }
+}
+
 impl<'a> SpellCastContext<'a> {
     /// Create a new spell cast context.
     pub fn new(
@@ -362,6 +371,31 @@ impl<'a> SpellCastContext<'a> {
         context.source = Some(self.caster);
         self.pending_effects
             .push(EffectBundle::single(context, effect));
+    }
+
+    /// Scales damage, healing and status potency already queued for this cast.
+    ///
+    /// Used by hold-to-charge abilities so a tap is weaker than a full charge.
+    pub fn scale_outgoing_potency(&mut self, fraction: f32) {
+        let fraction = fraction.clamp(0.0, 1.0);
+        if (fraction - 1.0).abs() <= f32::EPSILON {
+            return;
+        }
+        for bundle in &mut self.pending_effects {
+            for effect in &mut bundle.effects {
+                scale_effect_spec(effect, fraction);
+            }
+        }
+        for projectile in &mut self.pending_projectiles {
+            for effect in &mut projectile.effects {
+                scale_effect_spec(effect, fraction);
+            }
+        }
+        for region in &mut self.pending_aoes {
+            for effect in &mut region.effects {
+                scale_effect_spec(effect, fraction);
+            }
+        }
     }
 
     /// Emit a unified status application request.
@@ -711,8 +745,14 @@ mod tests {
         let mut ctx = SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
 
         ctx.emit_status(target, StatusId::new("stun"));
+        ctx.emit_effect(target, EffectSpec::Damage(crate::effects::DamageEffect { amount: 100.0 }));
+        ctx.scale_outgoing_potency(0.5);
+        match ctx.pending_effects[1].effects[0] {
+            EffectSpec::Damage(damage) => assert!((damage.amount - 50.0).abs() < f32::EPSILON),
+            _ => panic!("expected damage"),
+        }
 
-        assert_eq!(ctx.pending_effects.len(), 1);
+        assert_eq!(ctx.pending_effects.len(), 2);
         assert!(matches!(
             ctx.pending_effects[0].effects[0],
             EffectSpec::ApplyStatus(_)

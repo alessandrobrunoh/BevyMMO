@@ -1,15 +1,10 @@
-//! Inscription UI — the Eidolon counterpart of `crate::ui::spell_selector`.
+//! Inscription UI for Eidolon Root Words and Ancient Words.
 //!
-//! Shown instead of the spell selector when the equipped weapon has Eidolon
-//! gestures (`Item::ability_loadout()`); the two share the same toggle key,
-//! each independently checking the equipped weapon before opening (mirrors
-//! `crate::spells::input`/`crate::spells::eidolon_input` splitting Q/W/E the
-//! same way).
+//! Opens on the spellbook key when the equipped weapon or inscribed armor
+//! exposes an ability loadout.
 
 mod components;
 pub(crate) mod systems;
-
-pub(crate) use systems::owns_inscription_hotkey;
 
 use bevy::prelude::*;
 use bevymmo_network::network::mode::has_client;

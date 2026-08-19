@@ -210,6 +210,68 @@ pub fn flat_distance(from: Vec3, to: Vec3) -> f32 {
     Vec3::new(to.x - from.x, 0.0, to.z - from.z).length()
 }
 
+/// Whether `point` is inside `range`, plus the aim slack the client needs.
+pub fn point_in_cast_range(caster: Vec3, point: Vec3, range: f32) -> bool {
+    range <= 0.0 || flat_distance(caster, point) <= range + CAST_RANGE_TOLERANCE
+}
+
+/// Rejects a missing, dead, offline, or out-of-range target.
+///
+/// The entity is range-checked on its live position even when the client also
+/// sent a nearby `target_position` — otherwise a homing spell can be aimed at
+/// feet and lock onto anyone on the map.
+pub fn validate_cast_target(
+    ctx: &ReducerContext,
+    caster: &GameEntity,
+    range: f32,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3>,
+) -> Result<(), String> {
+    let origin = Vec3::from(caster.position);
+    let online = targets::online_character_ids(ctx);
+
+    if let Some(id) = target_entity {
+        let Some(target) = ctx.db.game_entity().entity_id().find(&id) else {
+            return Err("that target is gone".to_string());
+        };
+        let online_flag = target.owner_character_id.map(|cid| online.contains(&cid));
+        if !targets::is_valid_spell_target(target.kind, target.state, online_flag)
+            || !is_alive(ctx, &target)
+        {
+            return Err("that target cannot be hit".to_string());
+        }
+        if !point_in_cast_range(origin, Vec3::from(target.position), range) {
+            return Err("target is out of range".to_string());
+        }
+    }
+
+    if let Some(point) = target_position {
+        if !point_in_cast_range(origin, point, range) {
+            return Err("target is out of range".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+/// Spends `cost` current mana, or refuses the cast.
+pub fn spend_energy(ctx: &ReducerContext, entity_id: u64, cost: f32) -> Result<(), String> {
+    if cost <= 0.0 {
+        return Ok(());
+    }
+    let Some(row) = ctx.db.entity_stats().entity_id().find(&entity_id) else {
+        return Err("caster has no stats".to_string());
+    };
+    if row.current_mana < cost {
+        return Err("not enough mana".to_string());
+    }
+    ctx.db.entity_stats().entity_id().update(crate::tables::EntityStats {
+        current_mana: row.current_mana - cost,
+        ..row
+    });
+    Ok(())
+}
+
 /// Whether a crowd control effect currently prevents this entity from casting.
 ///
 /// The domain's `CrowdControlKind` only knows `Stun`, so it cannot classify the
@@ -327,6 +389,7 @@ pub fn fire_eidolon_ability(
     target_position: Option<Vec3>,
     target_entity: Option<u64>,
     source: CastSourceRow,
+    charge_fraction: f32,
 ) -> Option<f32> {
     use crate::rows::{equipment_from_rows, known_ancient_language_from_rows};
     use crate::tables::{equipment, known_ancient_language};
@@ -514,6 +577,8 @@ pub fn fire_eidolon_ability(
         }
         CastSourceRow::Spell => return None,
     }
+
+    cast_ctx.scale_outgoing_potency(charge_fraction);
 
     apply_pending(
         ctx,
@@ -931,6 +996,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                         target_position,
                         cast.target_entity,
                         source,
+                        1.0,
                     ) {
                         Some(cd) => {
                             start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
@@ -976,6 +1042,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                         target_position,
                         cast.target_entity,
                         source,
+                        1.0,
                     )
                     .is_none()
                     {

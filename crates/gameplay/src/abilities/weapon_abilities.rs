@@ -102,7 +102,7 @@ pub fn resolve_armor_ability<'a>(
     let picked = selection
         .primary
         .as_ref()
-        .filter(|id| options.iter().any(|option| *option == *id));
+        .filter(|id| options.contains(id));
     picked.or_else(|| options.first().copied())
 }
 

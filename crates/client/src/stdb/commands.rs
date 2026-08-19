@@ -28,7 +28,6 @@
 use bevy::prelude::Vec3;
 use bevymmo_domain::abilities::AbilitySlot;
 use bevymmo_domain::items::EquipSlot;
-use bevymmo_domain::spells::components::HotbarSlot;
 
 use super::module_bindings::armor_cast_reducer::armor_cast as armor_cast_reducer;
 use super::module_bindings::claim_npc_item_reducer::claim_npc_item as claim_npc_item_reducer;
@@ -46,7 +45,7 @@ use super::module_bindings::respawn_reducer::respawn as respawn_reducer;
 use super::module_bindings::send_chat_message_reducer::send_chat_message as send_chat_message_reducer;
 use super::module_bindings::set_ability_selection_reducer::set_ability_selection as set_ability_selection_reducer;
 use super::module_bindings::set_armor_inscription_reducer::set_armor_inscription as set_armor_inscription_reducer;
-use super::module_bindings::set_hotbar_spell_reducer::set_hotbar_spell as set_hotbar_spell_reducer;
+
 use super::module_bindings::set_root_inscription_reducer::set_root_inscription as set_root_inscription_reducer;
 use super::module_bindings::unequip_item_reducer::unequip_item as unequip_item_reducer;
 use super::module_bindings::Vec3Row;
@@ -99,15 +98,6 @@ pub fn unequip_item(conn: &StdbConnection, slot: EquipSlot) -> Sent {
 pub fn move_item(conn: &StdbConnection, from: u8, to: u8) -> Sent {
     conn.reducers()
         .move_item_then(from, to, conn.report_rejection("could not move that item"))
-}
-
-/// Binds a spell to a hotbar key, or clears it with `None`.
-pub fn set_hotbar_spell(conn: &StdbConnection, slot: HotbarSlot, spell_id: Option<String>) -> Sent {
-    conn.reducers().set_hotbar_spell_then(
-        hotbar_label(slot).to_string(),
-        spell_id,
-        conn.report_rejection("could not bind that spell"),
-    )
 }
 
 /// Writes the equipped weapon's shared Root Word and per-slot Ancient Words.
@@ -236,14 +226,6 @@ pub fn party_leave(conn: &StdbConnection) -> Sent {
 pub fn respawn(conn: &StdbConnection) -> Sent {
     conn.reducers()
         .respawn_then(conn.report_rejection("could not respawn"))
-}
-
-fn hotbar_label(slot: HotbarSlot) -> &'static str {
-    match slot {
-        HotbarSlot::Q => "q",
-        HotbarSlot::W => "w",
-        HotbarSlot::E => "e",
-    }
 }
 
 fn ability_label(slot: AbilitySlot) -> &'static str {

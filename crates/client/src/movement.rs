@@ -56,6 +56,7 @@ pub struct ClientSurfaceQuery(pub Option<SurfaceQuery>);
 pub struct ClientCollision {
     pub grid: Option<CollisionGrid>,
     pub max_step_height: f32,
+    pub collision_radius: f32,
 }
 
 /// Calculates movement speed after active stat modifiers.
@@ -483,7 +484,7 @@ mod tests {
         // the height delta per step exceeds the default 0.45 budget.
         let start = Vec3::new(8.0, 0.0, 0.0);
         // Step toward a point on the ramp at x=9 (height ≈ 4.5).
-        let step = step_on_terrain(start, 9.0, 0.0, 1.0, &query, &grid, 0.45);
+        let step = step_on_terrain(start, 9.0, 0.0, 1.0, &query, &grid, 0.45, 0.45);
         assert_eq!(step, TerrainStep::Blocked);
     }
 
@@ -510,6 +511,7 @@ mod tests {
                 &query,
                 &grid,
                 max_step_height,
+                0.45,
             ) {
                 TerrainStep::Arrived(p) => {
                     pos = p;

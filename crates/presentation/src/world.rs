@@ -5,10 +5,7 @@
 //! scenes without changing the map manifest contract.
 
 use crate::game_state::{GameScreen, Screen};
-use bevy::asset::RenderAssetUsages;
-use bevy::mesh::Indices;
 use bevy::prelude::*;
-use bevy::render::render_resource::PrimitiveTopology;
 use bevymmo_app_support::paths;
 use bevymmo_client::movement::{ClientCollision, ClientSurfaceQuery};
 use bevymmo_gameplay::placeables::{AssetHint, PlaceableRegistry};
@@ -129,7 +126,6 @@ fn load_map_when_in_game(
     );
 
     if should_load_map_scene(&manifest) {
-        spawn_heightfield_visual(&mut commands, &mut meshes, &mut materials, &manifest);
         spawn_map_scene_visual(&mut commands, &asset_server, &manifest);
     } else {
         spawn_terrain_visual(
@@ -193,11 +189,16 @@ fn sync_world_queries(
 
     shared_surface_query.0.clone_from(&world_map.surface_query);
     shared_collision.grid.clone_from(&world_map.collision);
-    shared_collision.max_step_height = world_map
+    let metrics = world_map
         .manifest
         .as_ref()
-        .map(|manifest| manifest.get_world_metrics().max_step_height)
+        .map(|manifest| manifest.get_world_metrics());
+    shared_collision.max_step_height = metrics
+        .map(|m| m.max_step_height)
         .unwrap_or_default();
+    shared_collision.collision_radius = metrics
+        .map(|m| m.player_radius)
+        .unwrap_or(bevymmo_gameplay::movement::DEFAULT_STEP_RADIUS);
 }
 
 fn should_load_map_scene(manifest: &MapManifest) -> bool {
@@ -229,87 +230,6 @@ fn spawn_map_scene_visual(
         Transform::default(),
         WorldAssetRoot(handle),
         MapSceneVisual,
-    ));
-}
-
-/// Renders the authored ground cube (unit mesh, so `scale` is the full size).
-/// Mirrors the editor's terrain visual so maps look the same in-game.
-fn spawn_heightfield_visual(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    manifest: &MapManifest,
-) {
-    let Some(heightfield) = manifest
-        .surfaces
-        .iter()
-        .find_map(|surface| surface.heightfield.as_ref())
-    else {
-        return;
-    };
-
-    let resolution = heightfield.resolution as usize;
-    let side = resolution + 1;
-    if resolution == 0 || heightfield.heights.len() != side * side {
-        warn!("Skipping invalid heightfield for map {:?}", manifest.map_id);
-        return;
-    }
-
-    let bounds = heightfield.bounds;
-    let mut positions = Vec::with_capacity(side * side);
-    let mut normals = Vec::with_capacity(side * side);
-    for row in 0..side {
-        let z = bounds.min_z + (bounds.max_z - bounds.min_z) * row as f32 / resolution as f32;
-        for column in 0..side {
-            let x =
-                bounds.min_x + (bounds.max_x - bounds.min_x) * column as f32 / resolution as f32;
-            // Heightfields are stored X-major with Z varying fastest:
-            // `index = x * stride + z` (see `HeightfieldData::sample_height`).
-            // `row` walks Z and `column` walks X, so the index is
-            // `column * side + row`. The transposed `row * side + column`
-            // form built a mirrored copy of the terrain that punched through
-            // the GLB surface across 41% of the map, by up to 22 m.
-            positions.push([x, heightfield.heights[column * side + row] - 0.02, z]);
-            normals.push([0.0, 1.0, 0.0]);
-        }
-    }
-
-    let mut indices = Vec::with_capacity(resolution * resolution * 6);
-    for row in 0..resolution {
-        for column in 0..resolution {
-            let top_left = (row * side + column) as u32;
-            let top_right = top_left + 1;
-            let bottom_left = top_left + side as u32;
-            let bottom_right = bottom_left + 1;
-            indices.extend_from_slice(&[
-                top_left,
-                bottom_left,
-                top_right,
-                top_right,
-                bottom_left,
-                bottom_right,
-            ]);
-        }
-    }
-
-    let mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-    .with_inserted_indices(Indices::U32(indices));
-    let material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.16, 0.30, 0.10),
-        perceptual_roughness: 1.0,
-        ..default()
-    });
-
-    commands.spawn((
-        Name::new(format!("Map Heightfield {}", manifest.map_id)),
-        Mesh3d(meshes.add(mesh)),
-        MeshMaterial3d(material),
-        MapTerrainVisual,
     ));
 }
 

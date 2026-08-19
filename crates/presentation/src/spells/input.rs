@@ -1,9 +1,8 @@
-//! Unified player ability input for the Eidolon cast pipeline.
+//! Player ability input for the Eidolon cast pipeline.
 //!
-//! Routes the weapon HUD keys (default 1/2/3) and their Q/W/E aliases to the
-//! same press/aim/release path for every equipped weapon that exposes
-//! `Item::ability_loadout()`. The legacy `SpellHotbar` path is no longer used
-//! for player input — it remains only for NPC/boss entities.
+//! Routes the weapon HUD keys (default 1/2/3) to the press/aim/release path
+//! for every equipped weapon that exposes `Item::ability_loadout()`. There is
+//! no second, legacy `SpellHotbar` input path.
 //!
 //! # Cast behavior by [`AbilityCastMode`]
 //!
@@ -47,17 +46,9 @@ pub const WEAPON_HUD_BINDINGS: [(KeyAction, AbilitySlot); 3] = [
     (KeyAction::CastUltimate, AbilitySlot::Ultimate),
 ];
 
-/// Q/W/E aliases for the same slots. They keep the historical spell keys
-/// working without a second, press-only send path.
-pub const WEAPON_KEY_ALIASES: [(KeyAction, AbilitySlot); 3] = [
-    (KeyAction::CastSpellQ, AbilitySlot::Primary),
-    (KeyAction::CastSpellW, AbilitySlot::Secondary),
-    (KeyAction::CastSpellE, AbilitySlot::Ultimate),
-];
-
 /// Every key that drives a weapon slot through the aim / charge / release path.
 pub fn weapon_slot_bindings() -> impl Iterator<Item = (KeyAction, AbilitySlot)> {
-    WEAPON_HUD_BINDINGS.into_iter().chain(WEAPON_KEY_ALIASES)
+    WEAPON_HUD_BINDINGS.into_iter()
 }
 
 /// Raycast and surface query parameters bundled for aiming.
@@ -121,11 +112,20 @@ pub fn cast_abilities_on_key(
         return;
     };
 
-    let target_position = cursor_ground_point(
-        &aim_ray.windows,
-        &aim_ray.cameras,
-        aim_ray.surface_query.as_deref(),
-    );
+    let aiming = aim.slot.is_some();
+    let needs_ground = aiming
+        || weapon_slot_bindings().any(|(action, _)| {
+            settings.just_pressed(action, &keys) || settings.just_released(action, &keys)
+        });
+    let target_position = if needs_ground {
+        cursor_ground_point(
+            &aim_ray.windows,
+            &aim_ray.cameras,
+            aim_ray.surface_query.as_deref(),
+        )
+    } else {
+        None
+    };
 
     let target_id = current_target
         .entity
@@ -301,22 +301,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hud_and_alias_keys_drive_the_same_slots() {
+    fn hud_keys_drive_each_slot_once() {
         assert_eq!(WEAPON_HUD_BINDINGS[0].1, AbilitySlot::Primary);
         assert_eq!(WEAPON_HUD_BINDINGS[1].1, AbilitySlot::Secondary);
         assert_eq!(WEAPON_HUD_BINDINGS[2].1, AbilitySlot::Ultimate);
-        assert_eq!(
-            WEAPON_KEY_ALIASES[0],
-            (KeyAction::CastSpellQ, AbilitySlot::Primary)
-        );
-        assert_eq!(
-            WEAPON_KEY_ALIASES[1],
-            (KeyAction::CastSpellW, AbilitySlot::Secondary)
-        );
-        assert_eq!(
-            WEAPON_KEY_ALIASES[2],
-            (KeyAction::CastSpellE, AbilitySlot::Ultimate)
-        );
+        assert_eq!(WEAPON_HUD_BINDINGS[0].0, KeyAction::CastPrimary);
 
         let slots: Vec<AbilitySlot> = weapon_slot_bindings().map(|(_, slot)| slot).collect();
         assert_eq!(
@@ -325,18 +314,7 @@ mod tests {
                 AbilitySlot::Primary,
                 AbilitySlot::Secondary,
                 AbilitySlot::Ultimate,
-                AbilitySlot::Primary,
-                AbilitySlot::Secondary,
-                AbilitySlot::Ultimate,
             ]
         );
-    }
-
-    #[test]
-    fn hud_bindings_are_not_the_qwe_aliases() {
-        // Digit1 advertised while only KeyQ is read was the Charge-never-fires
-        // bug. The HUD table must be the primary bindings, aliases extra.
-        assert_ne!(WEAPON_HUD_BINDINGS[0].0, KeyAction::CastSpellQ);
-        assert_eq!(WEAPON_HUD_BINDINGS[0].0, KeyAction::CastPrimary);
     }
 }

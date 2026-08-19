@@ -25,7 +25,6 @@ pub mod scale;
 pub mod scoreboard;
 pub mod scrollbar;
 pub mod settings;
-pub mod spell_selector;
 pub mod status_bar;
 pub mod systems;
 pub mod target_frame;

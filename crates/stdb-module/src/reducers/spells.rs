@@ -91,21 +91,13 @@ pub fn cast_spell(
 
     let config = spell.config();
     let target_position = target_position.map(Vec3::from);
-    // `cast_range == 0.0` means self-centred: the aimed point is only used for
-    // facing, so there is nothing to be out of range of.
-    if let Some(target) = target_position {
-        let distance = spells::flat_distance(Vec3::from(caster.position), target);
-        if config.cast_range > 0.0 && distance > config.cast_range + spells::CAST_RANGE_TOLERANCE {
-            return Err(format!(
-                "{spell_id:?} reaches {:.1} units, target is {distance:.1} away",
-                config.cast_range
-            ));
-        }
-    }
-
-    // Mana is not checked: no spell in `bevymmo_domain` declares a cost, so
-    // there is nothing to spend `entity_stats.current_mana` on yet. See the
-    // note in the port report.
+    spells::validate_cast_target(
+        ctx,
+        &caster,
+        config.cast_range,
+        target_entity,
+        target_position,
+    )?;
 
     let caster = face_target(ctx, caster, target_position);
     cancel_active_cast(ctx, caster.entity_id);
@@ -194,6 +186,11 @@ pub fn release_cast(ctx: &ReducerContext, spell_id: String) -> Result<(), String
             // Charge fires on release. Resolve and fire the ability now.
             if let Some(caster_entity) = ctx.db.game_entity().entity_id().find(&caster.entity_id) {
                 let target_position = cast.target_position.map(Vec3::from);
+                let charged = if cast.required_seconds > 0.0 {
+                    (cast.elapsed_seconds / cast.required_seconds).clamp(0.25, 1.0)
+                } else {
+                    1.0
+                };
                 match fire_eidolon_ability(
                     ctx,
                     &caster_entity,
@@ -201,6 +198,7 @@ pub fn release_cast(ctx: &ReducerContext, spell_id: String) -> Result<(), String
                     target_position,
                     cast.target_entity,
                     cast.source,
+                    charged,
                 ) {
                     Some(cd) => {
                         spells::start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
@@ -305,6 +303,14 @@ pub fn eidolon_cast(
         Some(item.as_ref()),
     )
     .map_err(describe_block)?;
+    spells::validate_cast_target(
+        ctx,
+        &caster,
+        preview.params.range,
+        target_entity,
+        target_position.map(Vec3::from),
+    )?;
+    spells::spend_energy(ctx, caster.entity_id, preview.params.energy_cost)?;
     let caster = face_target(ctx, caster, target_position.map(Vec3::from));
     cancel_active_cast(ctx, caster.entity_id);
 
@@ -546,6 +552,14 @@ pub fn armor_cast(
         Some(item.as_ref()),
     )
     .map_err(describe_block)?;
+    spells::validate_cast_target(
+        ctx,
+        &caster,
+        preview.params.range,
+        target_entity,
+        target_position.map(Vec3::from),
+    )?;
+    spells::spend_energy(ctx, caster.entity_id, preview.params.energy_cost)?;
     let cast_mode = preview.ability.cast_mode();
     let is_charge = preview.blueprint.execution == BlueprintExecution::Charge;
     let source = match target_slot {

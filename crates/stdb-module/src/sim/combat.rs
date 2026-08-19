@@ -27,6 +27,9 @@
 // How long a slain non-player entity stays a corpse. Taken from the domain
 // rather than restated, because it *was* restated — as 30 seconds, under a
 // comment claiming it matched the domain's 10.
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use bevymmo_domain::content::items::default_items;
 use bevymmo_domain::entity::dummy::components::DUMMY_RESPAWN_SECONDS;
 use bevymmo_domain::entity::enemy::components::ENEMY_RESPAWN_SECONDS;
@@ -44,6 +47,22 @@ use crate::tables::{
     EntityKindRow, EntityStateRow, EntityStats, GameEntity, ModifierKindRow, PeriodicEffect,
     StatModifier,
 };
+
+static NON_PLAYER_BASE_STATS: Mutex<Option<HashMap<u64, StatsRow>>> = Mutex::new(None);
+
+fn base_stats_map() -> std::sync::MutexGuard<'static, Option<HashMap<u64, StatsRow>>> {
+    NON_PLAYER_BASE_STATS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Remembers the spawn profile of a non-player so later stat recomputes do
+/// not silently rewrite it to the kind-wide default.
+pub fn record_base_stats(entity_id: u64, stats: StatsRow) {
+    base_stats_map()
+        .get_or_insert_with(HashMap::new)
+        .insert(entity_id, stats);
+}
 
 // ---------------------------------------------------------------------------
 // The per-tick step
@@ -856,16 +875,21 @@ fn base_stats(ctx: &ReducerContext, entity: &GameEntity) -> Option<StatsRow> {
         return Some(stats);
     }
 
+    if let Some(spawned) = base_stats_map()
+        .as_ref()
+        .and_then(|map| map.get(&entity.entity_id))
+        .copied()
+    {
+        return Some(spawned);
+    }
+
     // Non-players have no persisted base row, so the kind's default profile is
-    // the only reconstructible one. This is exact as long as spawns use the
-    // profiles in `bevymmo_domain::stats::defaults`; a map that wants a
-    // custom-statted elite needs a base column to be added to `entity_stats`.
+    // the fallback when spawn stats were never recorded (legacy rows).
     let defaults = match entity.kind {
         EntityKindRow::Player => defaults::player_defaults(),
         EntityKindRow::Enemy => defaults::enemy_defaults(),
         EntityKindRow::Boss => defaults::boss_defaults(),
         EntityKindRow::Dummy | EntityKindRow::AllyDummy => defaults::dummy_defaults(),
-        // No default profile exists for NPCs; they are not meant to fight.
         EntityKindRow::Npc => return None,
     };
     Some(StatsRow::from(&defaults))

@@ -34,7 +34,7 @@ pub struct FloatingUiAttached;
 ///
 /// 0.02 px: abbastanza da evitare il relayout di un bersaglio immobile, troppo
 /// poco per essere percepita come uno scatto su un bersaglio in movimento.
-const VIEWPORT_EPSILON_SQUARED: f32 = 0.0004;
+const VIEWPORT_EPSILON_SQUARED: f32 = 1.0;
 
 pub fn spawn_ui_for_new_entities(
     mut commands: Commands,

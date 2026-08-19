@@ -2,7 +2,7 @@
 
 pub mod ability_vfx;
 pub mod aim_preview;
-pub mod available_choices;
+pub mod aoe_zones;
 pub mod cast_bar;
 pub mod cursor;
 pub mod effects;
@@ -49,12 +49,9 @@ impl Plugin for SpellsHudPlugin {
                 // After input, so the preview draws *this* frame's aim rather
                 // than the previous frame's.
                 aim_preview::draw_ability_aim_preview.after(input::cast_abilities_on_key),
-                // The legacy hotbar spell selector is unreachable on the one
-                // starting weapon (an Eidolon staff), but any weapon without
-                // Eidolon gestures still opens it, so the pool it reads must
-                // stay live rather than silently empty.
-                available_choices::sync_available_spell_choices,
                 dispatch_visual_effects,
+                aoe_zones::spawn_aoe_meshes,
+                aoe_zones::pulse_aoe_meshes,
                 ability_vfx::animate_lifecycle,
                 eidolon_effects::animate,
             )

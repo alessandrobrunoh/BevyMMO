@@ -162,6 +162,8 @@ fn spawn_screen_cc_bar(
 ) {
     let fill_color = match active_cc.kind {
         CrowdControlKind::Stun => Color::srgb(1.0, 0.55, 0.0),
+        CrowdControlKind::Root => Color::srgb(0.45, 0.75, 0.35),
+        CrowdControlKind::Silence => Color::srgb(0.55, 0.45, 0.9),
     };
 
     let bar_entity = commands
@@ -279,5 +281,7 @@ fn cc_label(active_cc: &ActiveCrowdControl) -> String {
     let remaining = active_cc.remaining_seconds.max(0.0);
     match active_cc.kind {
         CrowdControlKind::Stun => format!("Stun {:.1}s", remaining),
+        CrowdControlKind::Root => format!("Root {:.1}s", remaining),
+        CrowdControlKind::Silence => format!("Silence {:.1}s", remaining),
     }
 }

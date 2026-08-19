@@ -24,19 +24,16 @@ const SLOTS: [AbilitySlot; 3] = [
     AbilitySlot::Ultimate,
 ];
 
-/// Presentation-only mnemonic — the actual key is rebindable
-/// (`KeyAction::CastSpellQ/W/E`); this is just a label.
+/// Presentation-only mnemonic matching the default weapon HUD keys.
 fn slot_key_label(slot: AbilitySlot) -> &'static str {
     match slot {
-        AbilitySlot::Primary => "Q",
-        AbilitySlot::Secondary => "W",
-        AbilitySlot::Ultimate => "E",
+        AbilitySlot::Primary => "1",
+        AbilitySlot::Secondary => "2",
+        AbilitySlot::Ultimate => "3",
     }
 }
 
-/// `true` when the currently equipped weapon has Eidolon gestures — the
-/// condition both this window and `spell_selector` use to decide which of
-/// the two owns the shared toggle key.
+/// `true` when the currently equipped weapon has Eidolon gestures.
 const ARMOR_INSCRIPTION_SLOTS: [EquipSlot; 3] =
     [EquipSlot::Helmet, EquipSlot::Armor, EquipSlot::Shoes];
 
@@ -52,8 +49,7 @@ fn item_is_inscribable(item: &dyn Item) -> bool {
     item.ability_loadout().is_some() && item.rune_profile().is_some()
 }
 
-/// Whether this key should open the inscription window rather than the
-/// legacy spellbook. True for an Eidolon weapon or any inscribed armor piece.
+/// Whether the spellbook key should open this window.
 pub(crate) fn owns_inscription_hotkey(equipment: &Equipment, registry: &ItemRegistry) -> bool {
     if equipped_weapon_is_eidolon(equipment, registry) {
         return true;
@@ -97,7 +93,6 @@ pub fn toggle_inscription_window(
         return;
     };
     if !owns_inscription_hotkey(equipment, &item_registry) {
-        // Not our item type this press — `spell_selector` handles it.
         return;
     }
 

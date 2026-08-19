@@ -1,7 +1,7 @@
 //! Anteprima a terra dell'area che colpirà il gesto in mira.
 //!
 //! Disegnata finché il tasto dell'abilità resta premuto (vedi
-//! [`crate::spells::eidolon_input`]), a gizmos: sono ridisegnati ogni frame,
+//! [`crate::spells::input`]), a gizmos: sono ridisegnati ogni frame,
 //! quindi non c'è nessuna entità/mesh/materiale da tenere in vita e sparire
 //! è gratis.
 //!

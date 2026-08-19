@@ -56,7 +56,8 @@ use bevymmo_gameplay::items::components::{Equipment, Inventory};
 use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
 use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
 use bevymmo_network::world_components::{
-    EntityColor, LookDirection, NetworkEntityId, Position, ProjectileVisual,
+    AoeZone, EntityColor, LookDirection, NetworkEntityId, Position, ProjectileFlight,
+    ProjectileVisual,
 };
 use bevymmo_world::{CollisionGrid, SurfaceQuery};
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -67,6 +68,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::combat_input::send_combat_inputs;
 use super::module_bindings::active_status_table::ActiveStatusTableAccess;
+use super::module_bindings::aoe_region_table::AoeRegionTableAccess;
 use super::module_bindings::boss_state_table::BossStateTableAccess;
 use super::module_bindings::cast_ended_table::CastEndedTableAccess;
 use super::module_bindings::cast_state_table::CastStateTableAccess;
@@ -94,7 +96,8 @@ use super::module_bindings::session_table::SessionTableAccess;
 use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAccess;
 use super::module_bindings::stat_modifier_table::StatModifierTableAccess;
 use super::module_bindings::{
-    ActiveStatus, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState, ColorRow,
+    ActiveStatus, AoeRegion, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState,
+    ColorRow,
     Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow,
     EntityStats, EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable, ItemInstanceRow,
     KnownAncientLanguageTable, ModifierKindRow, PeriodicEffect, Player, PlayerMessageEvent,
@@ -175,6 +178,8 @@ enum RowEvent {
     CooldownRemoved(Cooldown),
     Projectile(Projectile),
     ProjectileRemoved(u64),
+    AoeRegion(AoeRegion),
+    AoeRegionRemoved(u64),
     PlayerMessage(PlayerMessageEvent),
     /// A reducer the client called came back with the module's own `Err`.
     ReducerRejected(String),
@@ -264,6 +269,30 @@ impl StdbConnection {
         self.conn.try_identity()
     }
 
+    /// Inventory, equipment, hotbar, language and cooldowns for *this*
+    /// character only. The initial subscribe is world-wide combat state;
+    /// bags stay off the wire until we know who we are playing.
+    fn subscribe_owned_rows(&self, character_id: Uuid, entity_id: Option<u64>) {
+        let mut queries = vec![
+            format!("SELECT * FROM inventory WHERE character_id = '{character_id}'"),
+            format!("SELECT * FROM equipment WHERE character_id = '{character_id}'"),
+            format!("SELECT * FROM hotbar WHERE character_id = '{character_id}'"),
+            format!(
+                "SELECT * FROM known_ancient_language WHERE character_id = '{character_id}'"
+            ),
+        ];
+        if let Some(entity_id) = entity_id {
+            queries.push(format!(
+                "SELECT * FROM cooldown WHERE entity_id = {entity_id}"
+            ));
+        }
+        let _ = self
+            .conn
+            .subscription_builder()
+            .on_error(|_ctx, err| error!("owned-row subscription failed: {err}"))
+            .subscribe(queries);
+    }
+
     /// Builds the callback every reducer wrapper hands to its `*_then` form.
     ///
     /// The module answers a rejected call with a sentence written for the
@@ -339,6 +368,7 @@ pub struct StdbEntityMap {
     /// separately from `game_entity.entity_id` — so they get their own map
     /// rather than colliding in the one above.
     projectiles: HashMap<u64, Entity>,
+    aoes: HashMap<u64, Entity>,
 }
 
 impl StdbEntityMap {
@@ -356,6 +386,8 @@ impl StdbEntityMap {
 /// `character_id`.
 #[derive(Resource, Default)]
 struct LocalCharacter {
+    /// Last character we opened a personal inventory/equipment subscription for.
+    subscribed_character: Option<Uuid>,
     account_id: Option<u64>,
     character_id: Option<Uuid>,
 }
@@ -540,7 +572,7 @@ impl Plugin for StdbPlugin {
             Update,
             send_heartbeat.run_if(resource_exists::<StdbConnection>),
         );
-        app.add_systems(Update, predict_and_reconcile);
+        app.add_systems(Update, (predict_and_reconcile, predict_projectiles));
     }
 }
 
@@ -643,18 +675,14 @@ fn connect(
             "SELECT * FROM entity_stats",
             "SELECT * FROM player",
             "SELECT * FROM session",
-            "SELECT * FROM inventory",
-            "SELECT * FROM equipment",
-            "SELECT * FROM hotbar",
-            "SELECT * FROM known_ancient_language",
             "SELECT * FROM cast_state",
             "SELECT * FROM boss_state",
             "SELECT * FROM active_status",
             "SELECT * FROM crowd_control",
             "SELECT * FROM stat_modifier",
             "SELECT * FROM periodic_effect",
-            "SELECT * FROM cooldown",
             "SELECT * FROM projectile",
+            "SELECT * FROM aoe_region",
             "SELECT * FROM cast_ended",
             "SELECT * FROM spell_visual_effect",
             "SELECT * FROM player_message",
@@ -741,6 +769,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(periodic_effect, PeriodicEffect);
     mirror!(cooldown, Cooldown);
     mirror!(projectile, Projectile);
+    mirror!(aoe_region, AoeRegion);
 
     // Deletions matter for anything the client keeps a copy of: a stun that
     // ends, a buff that expires, a projectile that lands. Without these the
@@ -778,6 +807,10 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     let projectile_removed = tx.clone();
     conn.db().projectile().on_delete(move |_ctx, row| {
         let _ = projectile_removed.send(RowEvent::ProjectileRemoved(row.id));
+    });
+    let aoe_removed = tx.clone();
+    conn.db().aoe_region().on_delete(move |_ctx, row| {
+        let _ = aoe_removed.send(RowEvent::AoeRegionRemoved(row.id));
     });
 
     let removed = tx.clone();
@@ -842,16 +875,19 @@ fn drain_events(
                     continue;
                 }
 
+                let is_new = !state.map.by_entity_id.contains_key(&entity_id);
                 apply_entity(&mut commands, &mut state.map, &row, &state.local);
                 replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
-                if let Some(character_id) = owner {
-                    replay_character(
-                        &mut commands,
-                        &state.map,
-                        &state.pending,
-                        character_id,
-                        state.local.character_id,
-                    );
+                if is_new {
+                    if let Some(character_id) = owner {
+                        replay_character(
+                            &mut commands,
+                            &state.map,
+                            &state.pending,
+                            character_id,
+                            state.local.character_id,
+                        );
+                    }
                 }
             }
             RowEvent::EntityRemoved(entity_id) => {
@@ -911,6 +947,10 @@ fn drain_events(
                     .map
                     .entity_of_character
                     .insert(row.character_id, row.entity_id);
+                if state.local.character_id == Some(row.character_id) {
+                    conn.subscribe_owned_rows(row.character_id, Some(row.entity_id));
+                    state.local.subscribed_character = Some(row.character_id);
+                }
 
                 // Cached regardless of account, then filtered back out in
                 // `recompute_roster` — this row can arrive before the
@@ -1011,12 +1051,10 @@ fn drain_events(
                 // which character it belongs to — apply the marker now rather
                 // than waiting for the next unrelated update to those rows.
                 if let Some(character_id) = row.character_id {
-                    if let Some(entity) = state
-                        .map
-                        .entity_of_character
-                        .get(&character_id)
-                        .and_then(|id| state.map.get(*id))
-                    {
+                    let entity_id = state.map.entity_of_character.get(&character_id).copied();
+                    conn.subscribe_owned_rows(character_id, entity_id);
+                    state.local.subscribed_character = Some(character_id);
+                    if let Some(entity) = entity_id.and_then(|id| state.map.get(id)) {
                         commands.entity(entity).insert(LocalPlayer);
                     }
                 }
@@ -1110,6 +1148,14 @@ fn drain_events(
             }
             RowEvent::ProjectileRemoved(id) => {
                 if let Some(entity) = state.map.projectiles.remove(&id) {
+                    commands.entity(entity).despawn();
+                }
+            }
+            RowEvent::AoeRegion(row) => {
+                apply_aoe_region(&mut commands, &mut state.map, &row);
+            }
+            RowEvent::AoeRegionRemoved(id) => {
+                if let Some(entity) = state.map.aoes.remove(&id) {
                     commands.entity(entity).despawn();
                 }
             }
@@ -1383,9 +1429,11 @@ fn crowd_control_state_for(entity_id: u64, pending: &PendingRows) -> CrowdContro
         .filter_map(|row| {
             let kind = match row.kind {
                 CrowdControlKindRow::Stun => CrowdControlKind::Stun,
-                other => {
+                CrowdControlKindRow::Root => CrowdControlKind::Root,
+                CrowdControlKindRow::Silence => CrowdControlKind::Silence,
+                CrowdControlKindRow::Slow => {
                     debug!(
-                        "omitting non-Stun CrowdControl row: entity={entity_id}, kind={other:?}"
+                        "omitting Slow CrowdControl row: entity={entity_id} (modeled as a stat modifier)"
                     );
                     return None;
                 }
@@ -1410,12 +1458,7 @@ fn modifier_signature_for(entity_id: u64, pending: &PendingRows) -> Vec<(u64, u3
         .stat_modifier
         .values()
         .filter(|row| row.entity_id == entity_id)
-        .map(|row| {
-            (
-                row.id,
-                row.remaining_seconds.unwrap_or(f32::INFINITY).to_bits(),
-            )
-        })
+        .map(|row| (row.id, 0))
         .chain(
             pending
                 .periodic_effect
@@ -1423,7 +1466,7 @@ fn modifier_signature_for(entity_id: u64, pending: &PendingRows) -> Vec<(u64, u3
                 .filter(|row| row.entity_id == entity_id)
                 // Periodic ids share the key space with modifier ids here, so
                 // they are offset to keep the two apart.
-                .map(|row| (row.id ^ (1 << 63), row.remaining_seconds.to_bits())),
+                .map(|row| (row.id ^ (1 << 63), 0)),
         )
         .collect();
     signature.sort_unstable();
@@ -1527,25 +1570,47 @@ fn stat_field_from(name: &str) -> StatField {
 /// small emissive cube rather than a character model.
 fn apply_projectile(commands: &mut Commands, map: &mut StdbEntityMap, row: &Projectile) {
     let position = to_vec3(&row.position);
+    let flight = ProjectileFlight {
+        speed: row.speed,
+        target_entity: row.target_entity,
+        target_position: row.target_position.as_ref().map(to_vec3),
+    };
 
     match map.projectiles.get(&row.id).copied() {
         Some(entity) => {
-            commands.entity(entity).insert(Position(position));
+            commands.entity(entity).insert((Position(position), flight));
         }
         None => {
             let entity = commands
                 .spawn((
                     Position(position),
+                    flight,
                     ProjectileVisual {
                         spell_id: row.spell_id.clone(),
                     },
-                    // The renderer needs a colour whether or not it uses this
-                    // one: the projectile material is shared when the asset
-                    // cache is warm, and this is the fallback tint.
                     EntityColor(Color::srgb(0.2, 0.7, 1.0)),
                 ))
                 .id();
             map.projectiles.insert(row.id, entity);
+        }
+    }
+}
+
+fn apply_aoe_region(commands: &mut Commands, map: &mut StdbEntityMap, row: &AoeRegion) {
+    let zone = AoeZone {
+        radius: row.radius,
+        remaining_seconds: row.remaining_seconds,
+        pending_delay_seconds: row.pending_delay_seconds,
+        spell_id: row.spell_id.clone(),
+    };
+    let position = Position(to_vec3(&row.center));
+    match map.aoes.get(&row.id).copied() {
+        Some(entity) => {
+            commands.entity(entity).insert((position, zone));
+        }
+        None => {
+            let entity = commands.spawn((position, zone)).id();
+            map.aoes.insert(row.id, entity);
         }
     }
 }
@@ -2011,7 +2076,7 @@ fn send_move_commands(
     }
     if let Ok((lock, cc)) = local_player.single() {
         let lock = lock.map(|lock| lock.0).unwrap_or(MovementLock::None);
-        let cc_blocks = cc.is_some_and(|state| state.has_blocking_cc());
+        let cc_blocks = cc.is_some_and(|state| state.blocks_movement());
         if !movement_intent_allowed(lock, cc_blocks) {
             return;
         }
@@ -2057,7 +2122,8 @@ fn predict_and_reconcile(
     time: Res<Time>,
     surfaces: Res<ClientSurfaceQuery>,
     collision: Res<ClientCollision>,
-    mut query: Query<(&mut Position, &StdbAuthoritative)>,
+    pending_move: Res<MoveTarget>,
+    mut query: Query<(&mut Position, &StdbAuthoritative, Option<&LocalPlayer>)>,
 ) {
     let dt = time.delta_secs();
     if dt <= 0.0 {
@@ -2072,8 +2138,25 @@ fn predict_and_reconcile(
         _ => None,
     };
 
-    for (mut position, authoritative) in &mut query {
-        if let Some(target) = authoritative.move_target {
+    for (mut position, authoritative, local) in &mut query {
+        let dest = if local.is_some() {
+            pending_move.0.or(authoritative.move_target)
+        } else {
+            authoritative.move_target
+        };
+
+        let error = authoritative.position - position.0;
+        let drift = error.length();
+        if drift > SNAP_DISTANCE {
+            position.0 = authoritative.position;
+        } else if dest.is_none() && drift > 0.0 {
+            // Only ease toward the last server pose when standing still.
+            // Pulling while still walking toward the same dest fights the
+            // predicted step and is the rubber-band at click destinations.
+            position.0 += error * (1.0 - (-RECONCILE_RATE * dt).exp());
+        }
+
+        if let Some(target) = dest {
             position.0 = match terrain {
                 Some((surfaces, grid)) => step_predicted_on_terrain(
                     position.0,
@@ -2082,21 +2165,12 @@ fn predict_and_reconcile(
                     surfaces,
                     grid,
                     collision.max_step_height,
+                    collision.collision_radius,
                 ),
                 None => match movement::step_towards(position.0, target, authoritative.speed, dt) {
                     Step::Moving(p) | Step::Arrived(p) => p,
                 },
             };
-        }
-
-        let error = authoritative.position - position.0;
-        let drift = error.length();
-        if drift > SNAP_DISTANCE {
-            position.0 = authoritative.position;
-        } else if drift > 0.0 {
-            // Exponential approach, framerate-independent: the fraction closed
-            // per second is constant regardless of how the frames fall.
-            position.0 += error * (1.0 - (-RECONCILE_RATE * dt).exp());
         }
     }
 }
@@ -2113,6 +2187,7 @@ fn step_predicted_on_terrain(
     surfaces: &SurfaceQuery,
     grid: &CollisionGrid,
     max_step_height: f32,
+    collision_radius: f32,
 ) -> Vec3 {
     let mut position = position;
     snap_to_ground(&mut position, surfaces, max_step_height);
@@ -2125,9 +2200,42 @@ fn step_predicted_on_terrain(
         surfaces,
         grid,
         max_step_height,
+        collision_radius,
     ) {
         TerrainStep::Moved(next) | TerrainStep::Arrived(next) => next,
         TerrainStep::Blocked | TerrainStep::NoSurface => position,
+    }
+}
+
+fn predict_projectiles(
+    time: Res<Time>,
+    mut projectiles: Query<(&mut Position, &ProjectileFlight), With<ProjectileVisual>>,
+    targets: Query<(&NetworkEntityId, &Position), Without<ProjectileVisual>>,
+) {
+    let dt = time.delta_secs();
+    if dt <= 0.0 {
+        return;
+    }
+
+    for (mut position, flight) in &mut projectiles {
+        let destination = match flight.target_entity {
+            Some(id) => targets
+                .iter()
+                .find(|(network_id, _)| network_id.0 == id)
+                .map(|(_, pos)| pos.0)
+                .or(flight.target_position),
+            None => flight.target_position,
+        };
+        let Some(destination) = destination else {
+            continue;
+        };
+        let offset = destination - position.0;
+        let distance = offset.length();
+        if distance <= f32::EPSILON {
+            continue;
+        }
+        let step = (flight.speed * dt).min(distance);
+        position.0 += offset / distance * step;
     }
 }
 
@@ -2410,7 +2518,7 @@ mod tests {
     }
 
     #[test]
-    fn crowd_control_projects_only_representable_stuns() {
+    fn crowd_control_projects_stun_and_root() {
         let mut pending = PendingRows::default();
         pending.crowd_control.insert(
             1,
@@ -2423,13 +2531,16 @@ mod tests {
 
         let state = crowd_control_state_for(7, &pending);
 
-        assert_eq!(state.effects.len(), 1);
-        assert_eq!(state.effects[0].kind, CrowdControlKind::Stun);
-        assert_eq!(state.effects[0].remaining_seconds, 1.5);
-        // Read from the row now, not guessed from the largest remainder ever
-        // seen: a bar that joins a stun in progress starts part-full, as it
-        // should, instead of snapping to full on the first frame.
-        assert_eq!(state.effects[0].total_seconds, 2.0);
+        assert_eq!(state.effects.len(), 2);
+        assert!(state.effects.iter().any(|e| e.kind == CrowdControlKind::Stun));
+        assert!(state.effects.iter().any(|e| e.kind == CrowdControlKind::Root));
+        let stun = state
+            .effects
+            .iter()
+            .find(|e| e.kind == CrowdControlKind::Stun)
+            .expect("stun");
+        assert_eq!(stun.remaining_seconds, 1.5);
+        assert_eq!(stun.total_seconds, 2.0);
     }
 
     #[test]

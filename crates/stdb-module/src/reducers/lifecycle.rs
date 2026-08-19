@@ -182,7 +182,17 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
             return Err(format!("name {display_name:?} is taken"));
         }
         // The caller's own character: reactivate it and make it this
-        // connection's active character.
+        // connection's active character — unless another live session already
+        // owns it.
+        let already_played = ctx.db.session().iter().any(|session| {
+            session.character_id == Some(existing.character_id)
+                && session.identity != ctx.sender()
+        });
+        if already_played {
+            return Err(format!(
+                "{display_name} is already in the world on another connection"
+            ));
+        }
         set_active_character(ctx, Some(existing.character_id));
         ctx.db.player().character_id().update(Player {
             online: true,
@@ -476,7 +486,14 @@ fn delete_character_rows(ctx: &ReducerContext, character: &Player) {
     ctx.db.equipment().character_id().delete(&character_id);
     ctx.db.inventory().character_id().delete(&character_id);
     ctx.db.hotbar().character_id().delete(&character_id);
+    ctx.db
+        .known_ancient_language()
+        .character_id()
+        .delete(&character_id);
     ctx.db.player_stats().character_id().delete(&character_id);
+
+    crate::reducers::parties::forget_deleted_character(ctx, character);
+
     ctx.db.player().character_id().delete(&character_id);
 }
 

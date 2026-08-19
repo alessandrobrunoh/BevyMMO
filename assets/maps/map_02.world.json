@@ -10334,6 +10334,28 @@
         ]
       },
       "blocks_movement": false
+    },
+    {
+      "id": "PLACEABLE_training_dummy_01",
+      "kind": "training_dummy",
+      "transform": {
+        "translation": [
+          4.0,
+          3.0,
+          0.0
+        ],
+        "rotation_deg": [
+          0.0,
+          -0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.5,
+          1.0
+        ]
+      },
+      "blocks_movement": false
     }
   ],
   "test_route": [],

@@ -233,7 +233,15 @@ pub fn seed(ctx: &ReducerContext) {
     let (mut enemies, mut bosses, mut npcs, mut unbound) = (0u32, 0u32, 0u32, 0u32);
 
     for prop in &props {
-        if let Some(definition) = registry.enemies.get(&prop.kind) {
+        if let Some(definition) = registry.dummies.get(&prop.kind) {
+            spawn_creature(
+                ctx,
+                prop,
+                EntityKindRow::Dummy,
+                definition.display_name(),
+                StatsRow::from(&definition.dummy_stats()),
+            );
+        } else if let Some(definition) = registry.enemies.get(&prop.kind) {
             let config = definition.enemy_config();
             spawn_creature(
                 ctx,

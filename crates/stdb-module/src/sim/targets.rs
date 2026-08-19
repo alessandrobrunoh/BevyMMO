@@ -93,6 +93,16 @@ mod tests {
             EntityStateRow::Dead,
             None,
         ));
+        assert!(is_valid_spell_target(
+            EntityKindRow::Dummy,
+            EntityStateRow::Idle,
+            None,
+        ));
+        assert!(!is_valid_spell_target(
+            EntityKindRow::Dummy,
+            EntityStateRow::Dead,
+            None,
+        ));
     }
 
     #[test]

@@ -28,6 +28,7 @@
 // rather than restated, because it *was* restated — as 30 seconds, under a
 // comment claiming it matched the domain's 10.
 use bevymmo_domain::content::items::default_items;
+use bevymmo_domain::entity::dummy::components::DUMMY_RESPAWN_SECONDS;
 use bevymmo_domain::entity::enemy::components::ENEMY_RESPAWN_SECONDS;
 use bevymmo_domain::items::effects::ItemEffect;
 use bevymmo_domain::stats::components::StatsBundleData;
@@ -949,15 +950,20 @@ fn stat_field_name(field: StatField) -> &'static str {
 /// Clearing `move_target` matters even though the movement step already skips
 /// the dead: without it a corpse that respawns mid-walk would resume the walk
 /// it was on when it died.
+fn respawn_delay(kind: EntityKindRow) -> Option<f32> {
+    match kind {
+        EntityKindRow::Player => None,
+        EntityKindRow::Dummy => Some(DUMMY_RESPAWN_SECONDS),
+        _ => Some(ENEMY_RESPAWN_SECONDS),
+    }
+}
+
 fn kill(ctx: &ReducerContext, entity: GameEntity) {
     // A player waits for the respawn reducer; everything else comes back on a
     // timer. Without this the world empties permanently after one sweep of the
     // map, which is what the Bevy server's despawn-and-respawn scheduling
     // avoided and the port initially lost.
-    let respawn_in_seconds = match entity.kind {
-        EntityKindRow::Player => None,
-        _ => Some(ENEMY_RESPAWN_SECONDS),
-    };
+    let respawn_in_seconds = respawn_delay(entity.kind);
     ctx.db.game_entity().entity_id().update(GameEntity {
         state: EntityStateRow::Dead,
         move_target: None,
@@ -1111,5 +1117,11 @@ mod tests {
             Some(100),
             Some(100),
         ));
+    }
+
+    #[test]
+    fn a_dummy_comes_back_after_ten_seconds() {
+        assert_eq!(respawn_delay(EntityKindRow::Dummy), Some(10.0));
+        assert_eq!(respawn_delay(EntityKindRow::Player), None);
     }
 }

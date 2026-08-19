@@ -16,8 +16,8 @@ pub use bevymmo_core::KindId;
 
 use super::category::PlaceableCategory;
 use super::definition::{
-    BossPlaceable, EnemyPlaceable, InteractablePlaceable, NpcPlaceable, PlayerSpawnPlaceable,
-    PropPlaceable, ResourceNodePlaceable, TriggerPlaceable,
+    BossPlaceable, DummyPlaceable, EnemyPlaceable, InteractablePlaceable, NpcPlaceable,
+    PlayerSpawnPlaceable, PropPlaceable, ResourceNodePlaceable, TriggerPlaceable,
 };
 
 // -------------------------------------------------------------------------
@@ -44,6 +44,8 @@ pub struct PlaceableRegistry {
     pub props: HashMap<KindId, Arc<dyn PropPlaceable>>,
     /// Hostile / neutral AI creatures.
     pub enemies: HashMap<KindId, Arc<dyn EnemyPlaceable>>,
+    /// Training dummies: hittable, no AI.
+    pub dummies: HashMap<KindId, Arc<dyn DummyPlaceable>>,
     /// Boss entities.
     pub bosses: HashMap<KindId, Arc<dyn BossPlaceable>>,
     /// Friendly interactable NPCs.
@@ -69,6 +71,11 @@ impl PlaceableRegistry {
     /// Registers an enemy archetype.
     pub fn register_enemy(&mut self, def: Arc<dyn EnemyPlaceable>) {
         self.enemies.insert(def.id(), def);
+    }
+
+    /// Registers a training dummy.
+    pub fn register_dummy(&mut self, def: Arc<dyn DummyPlaceable>) {
+        self.dummies.insert(def.id(), def);
     }
 
     /// Registers a boss archetype.
@@ -110,6 +117,7 @@ impl PlaceableRegistry {
     pub fn contains(&self, id: &KindId) -> bool {
         self.props.contains_key(id)
             || self.enemies.contains_key(id)
+            || self.dummies.contains_key(id)
             || self.bosses.contains_key(id)
             || self.npcs.contains_key(id)
             || self.player_spawns.contains_key(id)
@@ -122,6 +130,7 @@ impl PlaceableRegistry {
     pub fn len(&self) -> usize {
         self.props.len()
             + self.enemies.len()
+            + self.dummies.len()
             + self.bosses.len()
             + self.npcs.len()
             + self.player_spawns.len()
@@ -144,6 +153,7 @@ impl PlaceableRegistry {
         if self.props.contains_key(id) {
             Some(PlaceableCategory::Prop)
         } else if self.enemies.contains_key(id)
+            || self.dummies.contains_key(id)
             || self.bosses.contains_key(id)
             || self.npcs.contains_key(id)
             || self.player_spawns.contains_key(id)

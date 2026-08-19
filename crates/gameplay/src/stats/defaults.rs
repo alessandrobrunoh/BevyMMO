@@ -72,8 +72,8 @@ pub fn dummy_defaults() -> StatsBundleData {
             armor: 0.0,
         },
         vital: VitalStats {
-            current_health: 1_000_000_000.0,
-            max_health: 1_000_000_000.0,
+            current_health: 10_000.0,
+            max_health: 10_000.0,
             max_mana: 0.0,
             mana_regeneration: 0.0,
         },
@@ -123,6 +123,6 @@ mod tests {
     #[test]
     fn dummy_defaults_have_huge_hp() {
         let stats = dummy_defaults();
-        assert_eq!(stats.vital.max_health, 1_000_000_000.0);
+        assert_eq!(stats.vital.max_health, 10_000.0);
     }
 }

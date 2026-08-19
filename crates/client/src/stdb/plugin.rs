@@ -97,12 +97,11 @@ use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAcc
 use super::module_bindings::stat_modifier_table::StatModifierTableAccess;
 use super::module_bindings::{
     ActiveStatus, AoeRegion, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState,
-    ColorRow,
-    Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow, EntityStateRow,
-    EntityStats, EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable, ItemInstanceRow,
-    KnownAncientLanguageTable, ModifierKindRow, PeriodicEffect, Player, PlayerMessageEvent,
-    Projectile, ReducerEventContext, RemoteReducers, Session, SpellVisualEffectEvent, StatModifier,
-    Vec3Row,
+    ColorRow, Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow,
+    EntityStateRow, EntityStats, EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable,
+    ItemInstanceRow, KnownAncientLanguageTable, ModifierKindRow, PeriodicEffect, Player,
+    PlayerMessageEvent, Projectile, ReducerEventContext, RemoteReducers, Session,
+    SpellVisualEffectEvent, StatModifier, Vec3Row,
 };
 
 /// How fast predicted position is pulled back towards the authoritative one, as
@@ -277,9 +276,7 @@ impl StdbConnection {
             format!("SELECT * FROM inventory WHERE character_id = '{character_id}'"),
             format!("SELECT * FROM equipment WHERE character_id = '{character_id}'"),
             format!("SELECT * FROM hotbar WHERE character_id = '{character_id}'"),
-            format!(
-                "SELECT * FROM known_ancient_language WHERE character_id = '{character_id}'"
-            ),
+            format!("SELECT * FROM known_ancient_language WHERE character_id = '{character_id}'"),
         ];
         if let Some(entity_id) = entity_id {
             queries.push(format!(
@@ -2532,8 +2529,14 @@ mod tests {
         let state = crowd_control_state_for(7, &pending);
 
         assert_eq!(state.effects.len(), 2);
-        assert!(state.effects.iter().any(|e| e.kind == CrowdControlKind::Stun));
-        assert!(state.effects.iter().any(|e| e.kind == CrowdControlKind::Root));
+        assert!(state
+            .effects
+            .iter()
+            .any(|e| e.kind == CrowdControlKind::Stun));
+        assert!(state
+            .effects
+            .iter()
+            .any(|e| e.kind == CrowdControlKind::Root));
         let stun = state
             .effects
             .iter()

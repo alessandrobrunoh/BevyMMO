@@ -193,9 +193,7 @@ fn sync_world_queries(
         .manifest
         .as_ref()
         .map(|manifest| manifest.get_world_metrics());
-    shared_collision.max_step_height = metrics
-        .map(|m| m.max_step_height)
-        .unwrap_or_default();
+    shared_collision.max_step_height = metrics.map(|m| m.max_step_height).unwrap_or_default();
     shared_collision.collision_radius = metrics
         .map(|m| m.player_radius)
         .unwrap_or(bevymmo_gameplay::movement::DEFAULT_STEP_RADIUS);

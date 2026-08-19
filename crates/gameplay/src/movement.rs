@@ -335,10 +335,7 @@ fn recover_from_blocker(
         let z = current.z - direction_z / length * distance;
         let contact = surface_query.ground_at_reachable(x, z, current.y, max_step_height)?;
         let candidate = Vec3::new(x, contact.height, z);
-        if !collision_grid.is_blocked(
-            [candidate.x, candidate.y, candidate.z],
-            collision_radius,
-        ) {
+        if !collision_grid.is_blocked([candidate.x, candidate.y, candidate.z], collision_radius) {
             return Some(candidate);
         }
     }
@@ -441,11 +438,8 @@ fn try_terrain_step(
     let contact = surface_query.ground_at_reachable(next_x, next_z, current.y, max_step_height)?;
     let candidate = Vec3::new(next_x, contact.height, next_z);
 
-    (!collision_grid.is_blocked(
-        [candidate.x, candidate.y, candidate.z],
-        collision_radius,
-    ))
-    .then_some(candidate)
+    (!collision_grid.is_blocked([candidate.x, candidate.y, candidate.z], collision_radius))
+        .then_some(candidate)
 }
 
 #[cfg(test)]
@@ -690,7 +684,16 @@ mod tests {
     fn terrain_step_rejects_targets_outside_walkable_surfaces() {
         let (surfaces, collision) = flat_world(0.0);
         assert_eq!(
-            step_on_terrain(Vec3::ZERO, 20.0, 0.0, 1.0, &surfaces, &collision, 0.45, 0.45),
+            step_on_terrain(
+                Vec3::ZERO,
+                20.0,
+                0.0,
+                1.0,
+                &surfaces,
+                &collision,
+                0.45,
+                0.45
+            ),
             TerrainStep::NoSurface
         );
     }

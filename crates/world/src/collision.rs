@@ -103,11 +103,7 @@ impl CollisionGrid {
             if !blocker.blocks_movement {
                 continue;
             }
-            grid.push_obstacle(scaled_aabb(
-                transform.translation,
-                transform.scale,
-                shape,
-            ));
+            grid.push_obstacle(scaled_aabb(transform.translation, transform.scale, shape));
         }
 
         grid

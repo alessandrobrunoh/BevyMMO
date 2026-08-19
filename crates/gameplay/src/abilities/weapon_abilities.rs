@@ -99,10 +99,7 @@ pub fn resolve_armor_ability<'a>(
         .chain(abilities.secondary.iter())
         .chain(abilities.ultimate.iter())
         .collect::<Vec<_>>();
-    let picked = selection
-        .primary
-        .as_ref()
-        .filter(|id| options.contains(id));
+    let picked = selection.primary.as_ref().filter(|id| options.contains(id));
     picked.or_else(|| options.first().copied())
 }
 

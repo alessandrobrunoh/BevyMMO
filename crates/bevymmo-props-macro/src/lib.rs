@@ -710,7 +710,6 @@ impl AbilitiesDef {
 struct RuneProfileDef {
     capacity: LitInt,
     stability: LitFloat,
-
 }
 
 impl RuneProfileDef {
@@ -725,12 +724,12 @@ impl RuneProfileDef {
                 "capacity" => capacity = Some(content.parse::<LitInt>()?),
                 "stability" => stability = Some(content.parse::<LitFloat>()?),
 
-                other => {
-                    return Err(syn::Error::new_spanned(
-                        &key,
-                        format!("unknown key `{other}` in rune_profile(...) (expected capacity, stability)"),
-                    ))
-                }
+                other => return Err(syn::Error::new_spanned(
+                    &key,
+                    format!(
+                        "unknown key `{other}` in rune_profile(...) (expected capacity, stability)"
+                    ),
+                )),
             }
             if content.peek(Token![,]) {
                 content.parse::<Token![,]>()?;
@@ -744,7 +743,6 @@ impl RuneProfileDef {
                 .ok_or_else(|| content.error("rune_profile(...) requires `capacity = ...`"))?,
             stability: stability
                 .ok_or_else(|| content.error("rune_profile(...) requires `stability = ...`"))?,
-
         })
     }
 }

@@ -745,7 +745,10 @@ mod tests {
         let mut ctx = SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
 
         ctx.emit_status(target, StatusId::new("stun"));
-        ctx.emit_effect(target, EffectSpec::Damage(crate::effects::DamageEffect { amount: 100.0 }));
+        ctx.emit_effect(
+            target,
+            EffectSpec::Damage(crate::effects::DamageEffect { amount: 100.0 }),
+        );
         ctx.scale_outgoing_potency(0.5);
         match ctx.pending_effects[1].effects[0] {
             EffectSpec::Damage(damage) => assert!((damage.amount - 50.0).abs() < f32::EPSILON),

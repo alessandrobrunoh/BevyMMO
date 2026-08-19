@@ -17,6 +17,8 @@ pub enum EntityKindRow {
     Dummy,
 
     Npc,
+
+    AllyDummy,
 }
 
 impl __sdk::InModule for EntityKindRow {

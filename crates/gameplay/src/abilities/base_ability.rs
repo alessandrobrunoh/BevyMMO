@@ -352,15 +352,20 @@ pub trait BaseAbility: Send + Sync + 'static {
         effects: Vec<EffectSpec>,
     ) {
         let delay = self.impact_delay();
-        ctx.emit_aoe_excluding_caster(
-            self.impact_center(params, ctx),
-            self.impact_radius(params),
-            self.impact_shape(ctx),
-            delay,
-            delay,
-            self.id().as_str().to_string(),
-            effects,
-        );
+        let center = self.impact_center(params, ctx);
+        let radius = self.impact_radius(params);
+        let shape = self.impact_shape(ctx);
+        let spell_id = self.id().as_str().to_string();
+        if effects
+            .iter()
+            .any(|spec| matches!(spec, EffectSpec::Heal(_)))
+        {
+            // Authoritative heal filtering drops hostiles; include the caster
+            // so a Life wave can restore the wielder standing in their cone.
+            ctx.emit_aoe(center, radius, shape, delay, delay, spell_id, effects);
+        } else {
+            ctx.emit_aoe_excluding_caster(center, radius, shape, delay, delay, spell_id, effects);
+        }
     }
 
     /// Piazza l'impatto ad area del gesto con gli effetti già risolti
@@ -751,5 +756,60 @@ mod tests {
         let center = ability.impact_center(&ability.base_params(), &ctx);
         assert_eq!(center, target_on_mountain);
         assert_eq!(center.y, 14.0);
+    }
+
+    #[test]
+    fn a_heal_wave_includes_the_caster() {
+        use crate::abilities::blueprint::ManifestationPayload;
+        use crate::spells::context::AoeTargeting;
+        use crate::stats::components::CombatStats;
+
+        let ability = InstantAbility;
+        let mut blueprint = ability.blueprint();
+        blueprint.payload = ManifestationPayload::heal([]);
+        let combat = CombatStats {
+            attack_power: 10.0,
+            armor: 0.0,
+        };
+        let mut ctx = SpellCastContext::new(
+            EntityId::new(1),
+            Vec3::ZERO,
+            &combat,
+            Vec3::Z,
+            None,
+            None,
+            &[],
+        );
+        ability.manifest_blueprint(&blueprint, &mut ctx);
+        assert_eq!(ctx.pending_aoes.len(), 1);
+        assert_eq!(ctx.pending_aoes[0].targeting, AoeTargeting::Everyone);
+        assert!(matches!(
+            ctx.pending_aoes[0].effects[0],
+            crate::effects::EffectSpec::Heal(_)
+        ));
+    }
+
+    #[test]
+    fn a_damage_wave_excludes_the_caster() {
+        use crate::spells::context::AoeTargeting;
+        use crate::stats::components::CombatStats;
+
+        let ability = InstantAbility;
+        let combat = CombatStats {
+            attack_power: 10.0,
+            armor: 0.0,
+        };
+        let mut ctx = SpellCastContext::new(
+            EntityId::new(1),
+            Vec3::ZERO,
+            &combat,
+            Vec3::Z,
+            None,
+            None,
+            &[],
+        );
+        ability.default_manifestation(&ability.base_params(), &mut ctx);
+        assert_eq!(ctx.pending_aoes.len(), 1);
+        assert_eq!(ctx.pending_aoes[0].targeting, AoeTargeting::ExcludeCaster);
     }
 }

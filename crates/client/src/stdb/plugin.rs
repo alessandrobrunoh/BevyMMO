@@ -1625,6 +1625,7 @@ fn entity_kind(kind: EntityKindRow) -> EntityKind {
     match kind {
         EntityKindRow::Player => EntityKind::Player,
         EntityKindRow::Npc => EntityKind::Friendly,
+        EntityKindRow::AllyDummy => EntityKind::Ally,
         EntityKindRow::Dummy => EntityKind::Neutral,
         EntityKindRow::Enemy | EntityKindRow::Boss => EntityKind::Hostile,
     }

@@ -25,6 +25,8 @@ pub fn game_tick(ctx: &ReducerContext, _schedule: TickSchedule) {
         return;
     }
 
+    crate::world::ensure_ally_dummy(ctx);
+
     sim::status::step(ctx, dt);
     sim::crowd_control::step(ctx, dt);
     sim::movement::step(ctx, dt);

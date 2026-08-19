@@ -37,8 +37,12 @@ pub fn resolve_effect(ctx: &ReducerContext, effect: QueuedEffect) -> EffectOutco
             EffectOutcome::Applied
         }
         EffectSpec::Heal(heal) => {
-            crate::sim::combat::apply_healing(ctx, target, heal.amount);
-            EffectOutcome::Applied
+            if crate::sim::combat::heal_allowed_for(ctx, target, source) {
+                crate::sim::combat::apply_healing(ctx, target, heal.amount);
+                EffectOutcome::Applied
+            } else {
+                EffectOutcome::Ignored
+            }
         }
         EffectSpec::ApplyStatus(status) => {
             crate::sim::status::apply(

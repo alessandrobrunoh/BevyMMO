@@ -125,7 +125,10 @@ fn collect_actors(ctx: &ReducerContext) -> Actors {
             EntityKindRow::Enemy => enemies.push(entity),
             EntityKindRow::Boss => bosses.push(entity),
             // Players drive themselves; dummies and NPCs have no AI.
-            EntityKindRow::Player | EntityKindRow::Dummy | EntityKindRow::Npc => {}
+            EntityKindRow::Player
+            | EntityKindRow::Dummy
+            | EntityKindRow::AllyDummy
+            | EntityKindRow::Npc => {}
         }
     }
 

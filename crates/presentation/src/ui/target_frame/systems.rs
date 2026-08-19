@@ -194,6 +194,7 @@ pub fn update_target_frame_content(
             |k| match k {
                 EntityKind::Player => "Player".to_string(),
                 EntityKind::Friendly => "Friendly".to_string(),
+                EntityKind::Ally => "Ally".to_string(),
                 EntityKind::Neutral => "Neutral".to_string(),
                 EntityKind::Hostile => "Hostile".to_string(),
             },

@@ -333,6 +333,8 @@ pub enum EntityKindRow {
     Boss,
     Dummy,
     Npc,
+    /// Training dummy that receives heals the way a party member would.
+    AllyDummy,
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
@@ -358,6 +360,7 @@ impl ColorRow {
             EntityKindRow::Enemy => Self::srgb(0.8, 0.2, 0.2),
             EntityKindRow::Boss => Self::srgb(0.55, 0.05, 0.05),
             EntityKindRow::Dummy => Self::srgb(0.7, 0.1, 0.1),
+            EntityKindRow::AllyDummy => Self::srgb(0.2, 0.75, 0.35),
             EntityKindRow::Npc => Self::srgb(0.5, 0.5, 0.5),
         }
     }

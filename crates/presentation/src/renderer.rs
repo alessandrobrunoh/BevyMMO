@@ -118,7 +118,7 @@ pub(crate) fn visual_prefab(kind: Option<EntityKind>, is_boss: bool) -> VisualPr
         Some(EntityKind::Hostile) if is_boss => VisualPrefab::Dragon,
         Some(EntityKind::Hostile) => VisualPrefab::Goblin,
         Some(EntityKind::Friendly) => VisualPrefab::Merchant,
-        Some(EntityKind::Neutral) | None => VisualPrefab::Cube,
+        Some(EntityKind::Ally) | Some(EntityKind::Neutral) | None => VisualPrefab::Cube,
     }
 }
 
@@ -826,6 +826,10 @@ mod tests {
         );
         assert_eq!(
             visual_prefab(Some(EntityKind::Neutral), false),
+            VisualPrefab::Cube
+        );
+        assert_eq!(
+            visual_prefab(Some(EntityKind::Ally), false),
             VisualPrefab::Cube
         );
         assert_eq!(

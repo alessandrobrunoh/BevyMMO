@@ -10356,6 +10356,28 @@
         ]
       },
       "blocks_movement": false
+    },
+    {
+      "id": "PLACEABLE_ally_dummy_01",
+      "kind": "ally_dummy",
+      "transform": {
+        "translation": [
+          8.0,
+          3.0,
+          0.0
+        ],
+        "rotation_deg": [
+          0.0,
+          -0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.5,
+          1.0
+        ]
+      },
+      "blocks_movement": false
     }
   ],
   "test_route": [],

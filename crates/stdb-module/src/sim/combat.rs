@@ -486,6 +486,58 @@ fn is_friendly_fire(
     }
 }
 
+/// Whether a heal from `source` may land on `target`.
+///
+/// Life (and any other heal payload) restores the caster, their party, and
+/// allied training dummies. Enemies, the hostile dummy, bosses and NPCs are
+/// never healed — selecting one of them with Life is a no-op.
+pub fn can_receive_heal(
+    target_kind: EntityKindRow,
+    target_character_id: Option<Uuid>,
+    source_character_id: Option<Uuid>,
+    target_party_id: Option<u64>,
+    source_party_id: Option<u64>,
+) -> bool {
+    match target_kind {
+        EntityKindRow::AllyDummy => true,
+        EntityKindRow::Player => {
+            if target_character_id.is_some() && target_character_id == source_character_id {
+                return true;
+            }
+            match (target_party_id, source_party_id) {
+                (Some(target_party), Some(source_party)) => target_party == source_party,
+                _ => false,
+            }
+        }
+        EntityKindRow::Dummy
+        | EntityKindRow::Enemy
+        | EntityKindRow::Boss
+        | EntityKindRow::Npc => false,
+    }
+}
+
+/// Looks up party membership and asks [`can_receive_heal`]. Missing rows
+/// fail closed: the heal is dropped rather than applied to a stranger.
+pub fn heal_allowed_for(ctx: &ReducerContext, target: u64, source: Option<u64>) -> bool {
+    let Some(target_entity) = ctx.db.game_entity().entity_id().find(&target) else {
+        return false;
+    };
+    let source_entity = source.and_then(|id| ctx.db.game_entity().entity_id().find(&id));
+    let source_character_id = source_entity.as_ref().and_then(|entity| entity.owner_character_id);
+    can_receive_heal(
+        target_entity.kind,
+        target_entity.owner_character_id,
+        source_character_id,
+        target_entity
+            .owner_character_id
+            .and_then(|id| ctx.db.party_member().character_id().find(&id))
+            .map(|row| row.party_id),
+        source_character_id
+            .and_then(|id| ctx.db.party_member().character_id().find(&id))
+            .map(|row| row.party_id),
+    )
+}
+
 /// Heals `target` by `amount`, clamped to its `max_health`.
 ///
 /// Does not resurrect: a dead target is skipped. The Bevy server would happily
@@ -821,7 +873,7 @@ fn base_stats(ctx: &ReducerContext, entity: &GameEntity) -> Option<StatsRow> {
         EntityKindRow::Player => defaults::player_defaults(),
         EntityKindRow::Enemy => defaults::enemy_defaults(),
         EntityKindRow::Boss => defaults::boss_defaults(),
-        EntityKindRow::Dummy => defaults::dummy_defaults(),
+        EntityKindRow::Dummy | EntityKindRow::AllyDummy => defaults::dummy_defaults(),
         // No default profile exists for NPCs; they are not meant to fight.
         EntityKindRow::Npc => return None,
     };
@@ -953,7 +1005,7 @@ fn stat_field_name(field: StatField) -> &'static str {
 fn respawn_delay(kind: EntityKindRow) -> Option<f32> {
     match kind {
         EntityKindRow::Player => None,
-        EntityKindRow::Dummy => Some(DUMMY_RESPAWN_SECONDS),
+        EntityKindRow::Dummy | EntityKindRow::AllyDummy => Some(DUMMY_RESPAWN_SECONDS),
         _ => Some(ENEMY_RESPAWN_SECONDS),
     }
 }
@@ -997,6 +1049,8 @@ mod tests {
 
     const PLAYER: EntityKindRow = EntityKindRow::Player;
     const ENEMY: EntityKindRow = EntityKindRow::Enemy;
+    const DUMMY: EntityKindRow = EntityKindRow::Dummy;
+    const ALLY_DUMMY: EntityKindRow = EntityKindRow::AllyDummy;
 
     /// A deterministic, readable stand-in for a real `ctx.new_uuid_v4()`
     /// character id — tests only care that these compare equal/unequal
@@ -1122,6 +1176,54 @@ mod tests {
     #[test]
     fn a_dummy_comes_back_after_ten_seconds() {
         assert_eq!(respawn_delay(EntityKindRow::Dummy), Some(10.0));
+        assert_eq!(respawn_delay(EntityKindRow::AllyDummy), Some(10.0));
         assert_eq!(respawn_delay(EntityKindRow::Player), None);
+    }
+
+    #[test]
+    fn life_heals_the_caster() {
+        assert!(can_receive_heal(
+            PLAYER,
+            Some(cid(1)),
+            Some(cid(1)),
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn life_heals_a_party_member() {
+        assert!(can_receive_heal(
+            PLAYER,
+            Some(cid(1)),
+            Some(cid(2)),
+            Some(100),
+            Some(100),
+        ));
+    }
+
+    #[test]
+    fn life_does_not_heal_a_stranger() {
+        assert!(!can_receive_heal(
+            PLAYER,
+            Some(cid(1)),
+            Some(cid(2)),
+            None,
+            None,
+        ));
+        assert!(!can_receive_heal(
+            PLAYER,
+            Some(cid(1)),
+            Some(cid(2)),
+            Some(100),
+            Some(200),
+        ));
+    }
+
+    #[test]
+    fn life_heals_an_ally_dummy_and_not_the_hostile_one() {
+        assert!(can_receive_heal(ALLY_DUMMY, None, Some(cid(1)), None, None));
+        assert!(!can_receive_heal(DUMMY, None, Some(cid(1)), None, None));
+        assert!(!can_receive_heal(ENEMY, None, Some(cid(1)), None, None));
     }
 }

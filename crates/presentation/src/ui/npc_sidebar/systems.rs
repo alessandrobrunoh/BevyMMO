@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevymmo_client::pointer::{hud_wants_pointer, PointerOnHud};
 use bevymmo_client::stdb::{commands, StdbConnection};
+use bevymmo_content::item_definitions::greeter_stock;
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
 use bevymmo_gameplay::items::registry::ItemRegistry;
 use bevymmo_network::network::protocol::Position;
@@ -172,7 +173,7 @@ fn spawn_npc_sidebar(
             for (_, item) in item_registry
                 .sorted_items()
                 .into_iter()
-                .filter(|(_, item)| item.config().equippable_into.is_some())
+                .filter(|(_, item)| greeter_stock().iter().any(|id| item.id().as_str() == *id))
             {
                 body.spawn((
                     Button,
@@ -309,5 +310,17 @@ mod tests {
         let off_axis = Vec3::new(10.0, 0.0, 5.0); // 10 unità a destra del raggio
         let distance = point_to_ray_distance(off_axis, origin, direction);
         assert!((distance - 10.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn greeter_stock_matches_registered_weapons() {
+        let registry = bevymmo_content::item_definitions::default_items();
+        for id in greeter_stock() {
+            assert!(
+                registry.contains(&bevymmo_gameplay::items::registry::ItemId::new(*id)),
+                "greeter lists {id} but the catalogue does not"
+            );
+        }
+        assert_eq!(greeter_stock().len(), 4);
     }
 }

@@ -8,6 +8,16 @@ pub mod weapons;
 use crate::items::registry::ItemRegistry;
 use crate::items::WeaponFamilyRegistry;
 
+/// Item ids the greeter NPC will hand out. Must stay a subset of [`default_items`].
+pub fn greeter_stock() -> &'static [&'static str] {
+    &[
+        weapons::bow::bow::Bow::ID,
+        weapons::sword::sword::Sword::ID,
+        weapons::hammer::hammer::Hammer::ID,
+        weapons::staff::mage_staff::MageStaff::ID,
+    ]
+}
+
 /// Builds the registry containing every item shipped by this game build.
 pub fn default_items() -> ItemRegistry {
     let mut registry = ItemRegistry::default();
@@ -62,6 +72,17 @@ mod tests {
         assert!(registry.contains(&ItemId::new(weapons::staff::mage_staff::MageStaff::ID)));
 
         assert_eq!(registry.len(), 8); // 4 non-weapons + 4 weapons
+    }
+
+    #[test]
+    fn greeter_stock_is_in_the_catalogue() {
+        let registry = default_items();
+        for id in greeter_stock() {
+            assert!(
+                registry.contains(&ItemId::new(*id)),
+                "greeter offers unknown item {id}"
+            );
+        }
     }
 
     #[test]

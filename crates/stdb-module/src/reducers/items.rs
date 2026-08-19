@@ -266,6 +266,10 @@ pub fn claim_npc_item(
         return Err("you are too far from that NPC".to_string());
     }
 
+    if !is_greeter_stock(&item_id) {
+        return Err(format!("unknown item {item_id:?}"));
+    }
+
     grant_item(ctx, character.character_id, &item_id)?;
     Ok(())
 }
@@ -752,6 +756,12 @@ fn available_choices(equipment: &Equipment) -> AvailableSpellChoices {
 // Shared API: minting items
 // ---------------------------------------------------------------------------
 
+fn is_greeter_stock(item_id: &str) -> bool {
+    bevymmo_domain::content::items::greeter_stock()
+        .iter()
+        .any(|id| *id == item_id)
+}
+
 /// Puts a freshly minted esemplare of `item_id` into the first free inventory
 /// slot, returning the slot it landed in.
 ///
@@ -943,5 +953,26 @@ fn parse_ability_slot(name: &str) -> Result<AbilitySlot, String> {
         other => Err(format!(
             "unknown ability slot {other:?}; expected primary, secondary or ultimate"
         )),
+    }
+}
+
+#[cfg(test)]
+mod greeter_stock_tests {
+    use super::*;
+
+    #[test]
+    fn greeter_accepts_the_four_alpha_weapons() {
+        assert!(is_greeter_stock("bow"));
+        assert!(is_greeter_stock("sword"));
+        assert!(is_greeter_stock("hammer"));
+        assert!(is_greeter_stock("mage_staff"));
+    }
+
+    #[test]
+    fn greeter_rejects_retired_and_unknown_ids() {
+        assert!(!is_greeter_stock("longbow"));
+        assert!(!is_greeter_stock("conduit_staff_t4"));
+        assert!(!is_greeter_stock("arcane_focus"));
+        assert!(!is_greeter_stock("not_an_item"));
     }
 }

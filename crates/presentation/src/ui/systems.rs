@@ -16,11 +16,11 @@ use crate::game_state::{
     ConnectionFailure, ConnectionIntent, ConnectionRequest, EmailError, GameScreen, PasswordError,
     PlayerNameError, Screen, TypingFocus,
 };
-use crate::ui::button::{UiButton, UiButtonAction, UiButtonImages};
+use crate::ui::button::{apply_button_image, UiButton, UiButtonAction, UiButtonImages};
 use crate::ui::chat::ChatInput;
-use crate::ui::login::{EmailInput, PasswordInput};
+use crate::ui::login::{AuthPage, EmailInput, PasswordInput};
 use crate::ui::main_menu::PlayerNameInput;
-use crate::ui::text_input::{TextInput, TextInputErrorText, TextInputValueText};
+use crate::ui::text_input::{unfocus_all, TextInput, TextInputErrorText, TextInputValueText};
 use crate::ui::theme::UiTheme;
 
 /// Keeps [`TypingFocus`] in sync with whichever text field actually has
@@ -30,19 +30,63 @@ use crate::ui::theme::UiTheme;
 /// (click, Enter, Escape, sending a message, clicking the game world), and a
 /// single source of truth here cannot drift out of sync with any of them.
 ///
+/// Hidden fields are ignored: login/register/character-name inputs are spawned
+/// at startup and only switched to `Display::None`, so a leftover
+/// `focused: true` on a hidden node must not block gameplay keybinds. A
+/// focused chat field that is actually on-screen still sets [`TypingFocus`].
+///
 /// `client`-crate gameplay systems (`send_combat_inputs`, `send_move_commands`)
 /// read this — see [`bevymmo_client::app_state::TypingFocus`] for why it
 /// lives there and not next to the components it mirrors.
 pub(crate) fn sync_typing_focus(
-    chat_inputs: Query<&ChatInput>,
-    text_inputs: Query<&TextInput>,
+    chat_inputs: Query<(Entity, &ChatInput)>,
+    text_inputs: Query<(Entity, &TextInput)>,
+    nodes: Query<&Node>,
+    parents: Query<&ChildOf>,
     mut typing: ResMut<TypingFocus>,
 ) {
-    let focused = chat_inputs.iter().any(|input| input.focused)
-        || text_inputs.iter().any(|input| input.focused);
+    let focused = chat_inputs
+        .iter()
+        .any(|(entity, input)| input.focused && ui_tree_is_displayed(entity, &nodes, &parents))
+        || text_inputs
+            .iter()
+            .any(|(entity, input)| input.focused && ui_tree_is_displayed(entity, &nodes, &parents));
     if typing.0 != focused {
         typing.0 = focused;
     }
+}
+
+/// Login/character-name [`TextInput`]s are not used on these screens; any
+/// leftover focus would keep [`TypingFocus`] true and swallow I/K/Q/etc.
+/// Chat uses [`ChatInput`], not [`TextInput`], so it is left alone.
+pub(crate) fn unfocus_inputs_on_gameplay_screen(
+    screen: Res<GameScreen>,
+    mut text_inputs: Query<&mut TextInput>,
+    mut typing: ResMut<TypingFocus>,
+) {
+    if !matches!(screen.0, Screen::Connecting | Screen::InGame) {
+        return;
+    }
+    let had_focus = text_inputs.iter().any(|input| input.focused);
+    unfocus_all(&mut text_inputs);
+    if had_focus || screen.is_changed() {
+        typing.0 = false;
+    }
+}
+
+/// Walks from `entity` to the UI root. A field whose own node or any ancestor
+/// uses `Display::None` (hidden login/menu roots) is not capturing keyboard.
+fn ui_tree_is_displayed(entity: Entity, nodes: &Query<&Node>, parents: &Query<&ChildOf>) -> bool {
+    let mut current = Some(entity);
+    while let Some(entity) = current {
+        if let Ok(node) = nodes.get(entity) {
+            if node.display == Display::None {
+                return false;
+            }
+        }
+        current = parents.get(entity).ok().map(|parent| parent.0);
+    }
+    true
 }
 
 /// Condizione di esecuzione: il client è in una schermata di gameplay.
@@ -77,6 +121,7 @@ fn password_error_message(err: PasswordError) -> String {
 pub fn update_button_actions(
     mut screen: ResMut<GameScreen>,
     mut connection_request: ResMut<ConnectionRequest>,
+    mut auth_page: ResMut<AuthPage>,
     buttons: Query<(&Interaction, &UiButton), Changed<Interaction>>,
     mut name_input: Query<&mut TextInput, With<PlayerNameInput>>,
 ) {
@@ -106,6 +151,12 @@ pub fn update_button_actions(
             // Handled by `update_auth_button_actions`, which needs the
             // email/password fields this system does not query.
             UiButtonAction::Login | UiButtonAction::Register => {}
+            UiButtonAction::OpenRegister => {
+                *auth_page = AuthPage::Register;
+            }
+            UiButtonAction::OpenLogin => {
+                *auth_page = AuthPage::Login;
+            }
             UiButtonAction::OpenSettings => {
                 screen.0 = Screen::Settings;
             }
@@ -155,8 +206,9 @@ pub fn update_button_actions(
 pub fn update_auth_button_actions(
     mut auth_request: ResMut<AuthRequest>,
     buttons: Query<(&Interaction, &UiButton), Changed<Interaction>>,
-    mut email_input: Query<&mut TextInput, (With<EmailInput>, Without<PasswordInput>)>,
-    mut password_input: Query<&mut TextInput, (With<PasswordInput>, Without<EmailInput>)>,
+    email_entities: Query<Entity, (With<EmailInput>, Without<PasswordInput>)>,
+    password_entities: Query<Entity, (With<PasswordInput>, Without<EmailInput>)>,
+    mut inputs: Query<&mut TextInput>,
 ) {
     for (interaction, button) in buttons.iter() {
         if *interaction != Interaction::Pressed {
@@ -168,20 +220,35 @@ pub fn update_auth_button_actions(
             _ => continue,
         };
 
-        let Ok(mut email) = email_input.single_mut() else {
+        let Ok(email_entity) = email_entities.single() else {
             continue;
         };
-        let Ok(mut password) = password_input.single_mut() else {
+        let Ok(password_entity) = password_entities.single() else {
             continue;
         };
 
-        let email_result = validate_email(&email.value);
-        let password_result = validate_password(&password.value);
-        email.error = email_result.clone().err().map(email_error_message);
-        password.error = password_result.clone().err().map(password_error_message);
+        let email_result = {
+            let Ok(mut email) = inputs.get_mut(email_entity) else {
+                continue;
+            };
+            let result = validate_email(&email.value);
+            email.error = result.clone().err().map(email_error_message);
+            result
+        };
+        let password_result = {
+            let Ok(mut password) = inputs.get_mut(password_entity) else {
+                continue;
+            };
+            let result = validate_password(&password.value);
+            password.error = result.clone().err().map(password_error_message);
+            result
+        };
 
         if let (Ok(normalized_email), Ok(())) = (email_result, password_result) {
-            let password_value = password.value.clone();
+            let password_value = inputs
+                .get(password_entity)
+                .map(|input| input.value.clone())
+                .unwrap_or_default();
             auth_request.0 = Some(if is_register {
                 AuthIntent::Register {
                     email: normalized_email,
@@ -193,23 +260,20 @@ pub fn update_auth_button_actions(
                     password: password_value,
                 }
             });
+            unfocus_all(&mut inputs);
         }
     }
 }
 
 /// Aggiorna la texture in base allo stato di interazione.
+///
+/// Matches any node with [`UiButtonImages`] so Close / Equip / Respawn (which
+/// are not [`UiButton`]) still swap the ornate bar on hover/press.
 pub fn update_button_visuals(
-    mut query: Query<
-        (&Interaction, &mut ImageNode, &UiButtonImages),
-        (With<UiButton>, Changed<Interaction>),
-    >,
+    mut query: Query<(&Interaction, &mut ImageNode, &UiButtonImages), Changed<Interaction>>,
 ) {
     for (interaction, mut image, button_images) in query.iter_mut() {
-        image.image = match interaction {
-            Interaction::None => button_images.default.clone(),
-            Interaction::Hovered => button_images.hover.clone(),
-            Interaction::Pressed => button_images.clicked.clone(),
-        };
+        apply_button_image(*interaction, &mut image, button_images);
     }
 }
 
@@ -416,6 +480,7 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<GameScreen>();
         app.init_resource::<ConnectionRequest>();
+        app.init_resource::<AuthPage>();
         app.insert_resource(GameSettingsResource(GameSettings::default()));
 
         // Spawn a button with Logout action
@@ -446,5 +511,191 @@ mod tests {
 
         // Cleanup
         app.world_mut().despawn(button_entity);
+    }
+
+    fn spawn_test_text_input(world: &mut World, value: &str, focused: bool) -> Entity {
+        let value_text = world.spawn_empty().id();
+        let error_text = world.spawn_empty().id();
+        world
+            .spawn(TextInput {
+                value: value.to_string(),
+                focused,
+                error: None,
+                placeholder: String::new(),
+                max_chars: 64,
+                obscured: false,
+                value_text,
+                error_text,
+            })
+            .id()
+    }
+
+    #[derive(Resource, Default)]
+    struct GameplayRan(bool);
+
+    fn gameplay_if_not_typing(mut ran: ResMut<GameplayRan>) {
+        ran.0 = true;
+    }
+
+    #[test]
+    fn hidden_focused_password_does_not_block_gameplay_keys() {
+        let mut app = App::new();
+        app.init_resource::<TypingFocus>();
+        app.init_resource::<GameplayRan>();
+        app.init_resource::<GameScreen>();
+        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.world_mut().resource_mut::<TypingFocus>().0 = true;
+
+        let hidden_root = app
+            .world_mut()
+            .spawn(Node {
+                display: Display::None,
+                ..default()
+            })
+            .id();
+        let password = spawn_test_text_input(app.world_mut(), "password1", true);
+        app.world_mut().entity_mut(password).insert((
+            PasswordInput,
+            Node::default(),
+            ChildOf(hidden_root),
+        ));
+
+        app.add_systems(
+            Update,
+            (
+                sync_typing_focus,
+                gameplay_if_not_typing.run_if(crate::game_state::not_typing),
+            )
+                .chain(),
+        );
+        app.update();
+
+        assert!(
+            !app.world().resource::<TypingFocus>().0,
+            "hidden login fields must not hold TypingFocus in-game"
+        );
+        assert!(
+            app.world().resource::<GameplayRan>().0,
+            "not_typing must be true so gameplay keys run"
+        );
+        assert!(
+            app.world()
+                .entity(password)
+                .get::<TextInput>()
+                .is_some_and(|input| input.focused),
+            "sync must ignore hidden focus without requiring the flag to already be cleared"
+        );
+    }
+
+    #[test]
+    fn visible_focused_login_field_keeps_typing_focus() {
+        let mut app = App::new();
+        app.init_resource::<TypingFocus>();
+        app.init_resource::<GameScreen>();
+        app.world_mut().resource_mut::<GameScreen>().0 = Screen::MainMenu;
+
+        let root = app
+            .world_mut()
+            .spawn(Node {
+                display: Display::Flex,
+                ..default()
+            })
+            .id();
+        let email = spawn_test_text_input(app.world_mut(), "user@example.com", true);
+        app.world_mut()
+            .entity_mut(email)
+            .insert((EmailInput, Node::default(), ChildOf(root)));
+
+        app.add_systems(Update, sync_typing_focus);
+        app.update();
+
+        assert!(
+            app.world().resource::<TypingFocus>().0,
+            "visible login fields must still capture keys"
+        );
+    }
+
+    #[test]
+    fn successful_login_unfocuses_all_text_inputs() {
+        let mut app = App::new();
+        app.init_resource::<AuthRequest>();
+        app.add_systems(Update, update_auth_button_actions);
+
+        let email = spawn_test_text_input(app.world_mut(), "user@example.com", true);
+        app.world_mut().entity_mut(email).insert(EmailInput);
+        let password = spawn_test_text_input(app.world_mut(), "password1", true);
+        app.world_mut().entity_mut(password).insert(PasswordInput);
+        let extra = spawn_test_text_input(app.world_mut(), "Ada", true);
+
+        app.world_mut().spawn((
+            UiButton {
+                action: UiButtonAction::Login,
+            },
+            Interaction::Pressed,
+        ));
+
+        app.update();
+
+        for entity in [email, password, extra] {
+            let input = app
+                .world()
+                .entity(entity)
+                .get::<TextInput>()
+                .expect("text input");
+            assert!(
+                !input.focused,
+                "successful login must unfocus every TextInput"
+            );
+        }
+        assert!(matches!(
+            app.world().resource::<AuthRequest>().0,
+            Some(AuthIntent::Login { .. })
+        ));
+    }
+
+    #[test]
+    fn entering_ingame_unfocuses_text_inputs_and_clears_typing_focus() {
+        let mut app = App::new();
+        app.init_resource::<TypingFocus>();
+        app.init_resource::<GameScreen>();
+        app.world_mut().resource_mut::<TypingFocus>().0 = true;
+
+        let input = spawn_test_text_input(app.world_mut(), "password1", true);
+        app.add_systems(Update, unfocus_inputs_on_gameplay_screen);
+
+        app.update();
+        assert!(
+            app.world()
+                .entity(input)
+                .get::<TextInput>()
+                .is_some_and(|input| input.focused),
+            "MainMenu must leave login/character-name fields focusable"
+        );
+
+        app.world_mut().resource_mut::<GameScreen>().0 = Screen::Connecting;
+        app.update();
+
+        assert!(app
+            .world()
+            .entity(input)
+            .get::<TextInput>()
+            .is_some_and(|input| !input.focused));
+        assert!(!app.world().resource::<TypingFocus>().0);
+
+        app.world_mut()
+            .entity_mut(input)
+            .get_mut::<TextInput>()
+            .expect("text input")
+            .focused = true;
+        app.world_mut().resource_mut::<TypingFocus>().0 = true;
+        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.update();
+
+        assert!(app
+            .world()
+            .entity(input)
+            .get::<TextInput>()
+            .is_some_and(|input| !input.focused));
+        assert!(!app.world().resource::<TypingFocus>().0);
     }
 }

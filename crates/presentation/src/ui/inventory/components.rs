@@ -10,6 +10,21 @@ pub enum InventorySelection {
     Equipment(EquipSlot),
 }
 
+/// Equipment section inside the inventory card.
+#[derive(Component, Debug)]
+pub struct EquipmentPanel;
+
+/// Inventory section inside the inventory card.
+#[derive(Component, Debug)]
+pub struct InventoryPanel;
+
+/// Visual textures for an equipment or inventory slot.
+#[derive(Component, Clone)]
+pub struct InventorySlotImages {
+    pub empty: Handle<Image>,
+    pub active: Handle<Image>,
+}
+
 /// Button component attached to an inventory grid slot.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct ItemSlotButton {

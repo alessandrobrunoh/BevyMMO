@@ -12,7 +12,9 @@ use bevymmo_network::network::protocol::Position;
 use bevymmo_network::world_components::NetworkEntityId;
 
 use crate::ui::card::components::CardPositioning;
-use crate::ui::card::{CardBuilder, CardKind};
+use crate::ui::card::{
+    ornate_bar_image, CardBuilder, CardFrameAssets, CardKind, ORNATE_BAR_NEUTRAL_PATH,
+};
 use crate::ui::npc_sidebar::components::{NpcSidebar, VendorItemButton};
 use crate::ui::theme::UiTheme;
 
@@ -67,6 +69,7 @@ pub fn npc_sidebar_on_click(
     name_query: Query<&PlayerName>,
     // Query per le sidebar esistenti
     existing_sidebar: Query<Entity, With<NpcSidebar>>,
+    asset_server: Res<AssetServer>,
 ) {
     // Solo al frame del click sinistro
     if !mouse.just_pressed(MouseButton::Left) {
@@ -120,6 +123,7 @@ pub fn npc_sidebar_on_click(
         target_entity,
         &npc_name,
         &item_registry,
+        &asset_server,
     );
 }
 
@@ -153,15 +157,18 @@ fn spawn_npc_sidebar(
     target_entity: Entity,
     npc_name: &str,
     item_registry: &ItemRegistry,
+    asset_server: &AssetServer,
 ) {
+    let vendor_bar = asset_server.load(ORNATE_BAR_NEUTRAL_PATH);
     let card_entity = CardBuilder::new(CardKind::Generic, npc_name)
+        .frame(CardFrameAssets::load(asset_server))
         .width(Val::Px(320.0))
         .height(Val::Px(360.0))
         .positioning(CardPositioning::Left)
         .closeable()
         .exclusive()
         .scrollable()
-        .with_body(|body| {
+        .with_body(move |body| {
             body.spawn((
                 Text::new("Ciao! Scegli un oggetto:"),
                 TextFont {
@@ -179,13 +186,13 @@ fn spawn_npc_sidebar(
                     Button,
                     Node {
                         width: Val::Percent(100.0),
-                        min_height: Val::Px(30.0),
+                        min_height: Val::Px(32.0),
                         margin: UiRect::vertical(Val::Px(2.0)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    BackgroundColor(theme.button_bg),
+                    ornate_bar_image(vendor_bar.clone()),
                     VendorItemButton {
                         npc: target_entity,
                         item_id: item.id(),

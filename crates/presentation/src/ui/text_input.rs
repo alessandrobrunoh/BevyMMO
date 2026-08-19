@@ -73,6 +73,9 @@ fn spawn_text_input_with_options(
     let placeholder_str = placeholder.into();
     let wrapper = commands
         .spawn(Node {
+            width: Val::Percent(100.0),
+            max_width: Val::Px(280.0),
+            min_width: Val::Px(0.0),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
             row_gap: Val::Px(4.0),
@@ -112,7 +115,9 @@ fn spawn_text_input_with_options(
         .spawn((
             Button,
             Node {
-                width: Val::Px(280.0),
+                width: Val::Percent(100.0),
+                max_width: Val::Px(280.0),
+                min_width: Val::Px(0.0),
                 height: Val::Px(40.0),
                 padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
                 align_items: AlignItems::Center,
@@ -139,4 +144,18 @@ fn spawn_text_input_with_options(
     commands.entity(wrapper).add_child(error_text);
 
     input_entity
+}
+
+/// Clears keyboard focus on every [`TextInput`].
+///
+/// Login, register, and character-name fields are spawned once at startup and
+/// only hidden afterwards; calling this on a successful auth dispatch or when
+/// entering the game drops leftover focus so those fields cannot keep capturing
+/// keybinds.
+pub fn unfocus_all(inputs: &mut Query<&mut TextInput>) {
+    for mut input in inputs.iter_mut() {
+        if input.focused {
+            input.focused = false;
+        }
+    }
 }

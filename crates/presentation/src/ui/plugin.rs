@@ -5,8 +5,8 @@ use bevy::prelude::*;
 use super::{
     boss_bar, card, character_roster, chat, connecting, crowd_control_bar, death_screen,
     debug_position, entity_bar, inscription, inventory, login, main_menu, notices, npc_sidebar,
-    pause_menu, player_stats, scoreboard, scrollbar, settings, status_bar, systems,
-    target_frame, target_indicator,
+    pause_menu, player_stats, scoreboard, scrollbar, settings, status_bar, systems, target_frame,
+    target_indicator,
 };
 
 use bevymmo_client::pointer::{world_pointer_blocked, PointerOnHud};
@@ -60,12 +60,13 @@ impl Plugin for UiPlugin {
             (
                 systems::update_button_actions,
                 systems::update_auth_button_actions,
+                systems::unfocus_inputs_on_gameplay_screen,
                 systems::update_button_visuals,
                 systems::update_text_input_focus,
                 systems::update_text_input_keyboard,
                 systems::update_text_input_display,
                 systems::update_connection_failure,
-                systems::sync_typing_focus,
+                systems::sync_typing_focus.after(systems::unfocus_inputs_on_gameplay_screen),
                 systems::toggle_pause.run_if(not_typing),
             ),
         );

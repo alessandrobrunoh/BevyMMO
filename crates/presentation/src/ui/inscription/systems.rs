@@ -12,9 +12,12 @@ use bevymmo_gameplay::items::components::{EquipSlot, Equipment};
 use bevymmo_gameplay::items::definition::Item;
 use bevymmo_gameplay::items::registry::ItemRegistry;
 
+use crate::ui::card::{ornate_bar_image, FRAME_INNER_PADDING, ORNATE_BAR_NEUTRAL_PATH};
 use crate::ui::scrollbar::spawn_scroll_view;
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
-use crate::ui::theme::UiTheme;
+use crate::ui::theme::{ornate_panel_image, UiTheme};
+
+const PANEL_PATH: &str = "ui/extracted_065811/panel_large_left.png";
 
 const WINDOW_WIDTH: f32 = 900.0;
 const WINDOW_HEIGHT: f32 = 560.0;
@@ -84,6 +87,7 @@ pub fn toggle_inscription_window(
     root_word_registry: Res<RootWordRegistry>,
     ancient_word_registry: Res<AncientWordRegistry>,
     player_query: Query<(&Equipment, &KnownAncientLanguage), With<LocalPlayer>>,
+    asset_server: Res<AssetServer>,
 ) {
     if !settings.just_pressed(KeyAction::ToggleSpellbook, &keys) {
         return;
@@ -112,6 +116,7 @@ pub fn toggle_inscription_window(
         &ability_registry,
         &root_word_registry,
         &ancient_word_registry,
+        &asset_server,
     );
 }
 
@@ -133,6 +138,7 @@ pub fn refresh_inscription_window_on_equipment_change(
         (&Equipment, &KnownAncientLanguage),
         (With<LocalPlayer>, Changed<Equipment>),
     >,
+    asset_server: Res<AssetServer>,
 ) {
     if !state.is_open {
         return;
@@ -156,6 +162,7 @@ pub fn refresh_inscription_window_on_equipment_change(
         &ability_registry,
         &root_word_registry,
         &ancient_word_registry,
+        &asset_server,
     );
 }
 
@@ -169,6 +176,7 @@ fn spawn_window(
     ability_registry: &BaseAbilityRegistry,
     root_word_registry: &RootWordRegistry,
     ancient_word_registry: &AncientWordRegistry,
+    asset_server: &AssetServer,
 ) {
     let weapon = equipment.weapon.as_ref();
     let weapon_item = weapon.and_then(|instance| item_registry.get(&instance.item_id));
@@ -195,18 +203,19 @@ fn spawn_window(
                     ..default()
                 },
                 flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(12.0)),
+                padding: UiRect::all(Val::Px(FRAME_INNER_PADDING)),
                 row_gap: Val::Px(12.0),
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(theme.panel_bg),
+            ornate_panel_image(asset_server.load(PANEL_PATH)),
             Button,
             InscriptionWindow,
         ))
         .id();
 
     commands.entity(window).with_children(|parent| {
-        spawn_header(parent, theme, title);
+        spawn_header(parent, theme, title, asset_server);
         spawn_armor_inscription_section(
             parent,
             theme,
@@ -566,7 +575,12 @@ fn spawn_compact_toggle_button(
         });
 }
 
-fn spawn_header(parent: &mut ChildSpawnerCommands, theme: &UiTheme, weapon_name: &str) {
+fn spawn_header(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiTheme,
+    weapon_name: &str,
+    asset_server: &AssetServer,
+) {
     parent
         .spawn((Node {
             width: Val::Percent(100.0),
@@ -589,12 +603,15 @@ fn spawn_header(parent: &mut ChildSpawnerCommands, theme: &UiTheme, weapon_name:
                 .spawn((
                     Button,
                     Node {
-                        padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                        min_width: Val::Px(88.0),
+                        height: Val::Px(30.0),
+                        padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
+                        flex_shrink: 0.0,
                         ..default()
                     },
-                    BackgroundColor(theme.button_bg),
+                    ornate_bar_image(asset_server.load(ORNATE_BAR_NEUTRAL_PATH)),
                     CloseInscriptionButton,
                 ))
                 .with_children(|button| {

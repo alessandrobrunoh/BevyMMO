@@ -15,10 +15,8 @@ use bevymmo_gameplay::abilities::KnownAncientLanguage;
 use super::components::*;
 use super::weapon_detail::{meta_line, summarize_weapon, GlyphRegistries, SlotSummary};
 use crate::ui::{
-    card::{
-        builder::CardBuilder,
-        components::{CardKind, CardWindow},
-    },
+    button::{spawn_bar_child, BarButtonKind},
+    card::{CardBuilder, CardFrameAssets, CardKind, CardWindow},
     theme::UiTheme,
 };
 
@@ -44,6 +42,7 @@ pub fn spawn_item_detail_card(
     inventory: &Inventory,
     equipment: &Equipment,
     selection: InventorySelection,
+    asset_server: &AssetServer,
 ) {
     let (item_instance, equipped_slot, slot_index) = match selection {
         InventorySelection::Slot(idx) => {
@@ -82,6 +81,7 @@ pub fn spawn_item_detail_card(
     );
 
     CardBuilder::new(CardKind::ItemDetail, config.display_name.to_string())
+        .frame(CardFrameAssets::load(asset_server))
         .width(Val::Px(CARD_WIDTH))
         .height(Val::Px(height))
         .scrollable()
@@ -178,56 +178,28 @@ pub fn spawn_item_detail_card(
         })
         .with_footer(move |footer| {
             if let Some(slot) = equipped_slot {
-                footer
-                    .spawn((
-                        Button,
-                        Node {
-                            width: Val::Percent(100.0),
-                            height: Val::Px(36.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            border_radius: BorderRadius::all(Val::Px(6.0)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgba(0.7, 0.25, 0.25, 0.8)),
-                        UnequipButton { slot },
-                    ))
-                    .with_children(|btn| {
-                        btn.spawn((
-                            Text::new("Unequip".to_string()),
-                            TextFont {
-                                font_size: FontSize::Px(theme.button_font_size),
-                                ..default()
-                            },
-                            TextColor(theme.text_color),
-                        ));
-                    });
+                spawn_bar_child(
+                    footer,
+                    "Unequip",
+                    theme.button_font_size,
+                    theme.button_text_color,
+                    Val::Percent(100.0),
+                    Val::Px(36.0),
+                    BarButtonKind::Neutral,
+                    UnequipButton { slot },
+                );
             } else if equippable_into.is_some() {
                 if let Some(idx) = slot_index {
-                    footer
-                        .spawn((
-                            Button,
-                            Node {
-                                width: Val::Percent(100.0),
-                                height: Val::Px(36.0),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                border_radius: BorderRadius::all(Val::Px(6.0)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgba(0.25, 0.6, 0.35, 0.85)),
-                            EquipButton { slot_index: idx },
-                        ))
-                        .with_children(|btn| {
-                            btn.spawn((
-                                Text::new("Equip".to_string()),
-                                TextFont {
-                                    font_size: FontSize::Px(theme.button_font_size),
-                                    ..default()
-                                },
-                                TextColor(theme.text_color),
-                            ));
-                        });
+                    spawn_bar_child(
+                        footer,
+                        "Equip",
+                        theme.button_font_size,
+                        theme.button_text_color,
+                        Val::Percent(100.0),
+                        Val::Px(36.0),
+                        BarButtonKind::Primary,
+                        EquipButton { slot_index: idx },
+                    );
                 }
             }
         })

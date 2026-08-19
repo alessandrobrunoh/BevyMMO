@@ -13,46 +13,50 @@ use super::components::{
     CardBody, CardExclusivityPolicy, CardFooter, CardHeader, CardHeaderDragHandle, CardKind,
     CardPositioning, CardWindow, CloseCardButton, DraggableCard,
 };
+use crate::ui::button::{spawn_bar_child, BarButtonKind};
 use crate::ui::scrollbar::spawn_scroll_view;
-use crate::ui::theme::UiTheme;
+use crate::ui::theme::{ornate_panel_image, UiTheme};
 
-const CARD_FRAME_TOP_PATH: &str = "ui/extracted_065811/panel_header.png";
-const CARD_FRAME_BOTTOM_PATH: &str = "ui/extracted_065811/panel_bottom_center.png";
-const CARD_FRAME_SIDE_PATH: &str = "ui/extracted_065811/corner_frame_right_top.png";
-const CARD_FRAME_TOP_LEFT_PATH: &str = "ui/extracted_065811/corner_frame_top_left.png";
-const CARD_FRAME_TOP_RIGHT_PATH: &str = "ui/extracted_065811/corner_frame_top_right.png";
+const CARD_FRAME_PANEL_PATH: &str = "ui/extracted_065811/panel_large_left.png";
+/// Neutral bar used for Close / Unequip / vendor rows.
+pub const ORNATE_BAR_NEUTRAL_PATH: &str = "ui/extracted_065811/bar_neutral_right_01.png";
+/// Confirm bar used for Equip and other affirmative actions.
+pub const ORNATE_BAR_CONFIRM_PATH: &str = "ui/extracted_065811/bar_blue_left_01.png";
+/// Horizontal / vertical inset that keeps bar-end ornaments from stretching.
+const BAR_SLICE: [f32; 2] = [24.0, 10.0];
 
-/// Textures used by the resizable decorative Card frame.
+/// Texture used by the decorative Card frame.
 ///
-/// The four corners keep their original size. The top and bottom pieces stretch
-/// horizontally, while the side pieces stretch vertically. The center is the
-/// card's solid `#111A22` background.
-#[derive(Clone)]
+/// The extracted artwork currently contains a complete panel rather than clean
+/// independent 9-slice pieces. Keeping the complete panel intact avoids
+/// stretching its asymmetric corner decorations into the card content.
+///
+/// Tests that spawn without an `AssetServer` can use [`CardFrameAssets::default`]
+/// (`Handle::default()` for both images).
+#[derive(Clone, Default)]
 pub struct CardFrameAssets {
-    pub top_left: Handle<Image>,
-    pub top: Handle<Image>,
-    pub top_right: Handle<Image>,
-    pub left: Handle<Image>,
-    pub right: Handle<Image>,
-    pub bottom_left: Handle<Image>,
-    pub bottom: Handle<Image>,
-    pub bottom_right: Handle<Image>,
+    pub panel: Handle<Image>,
+    pub bar: Handle<Image>,
 }
 
 impl CardFrameAssets {
-    /// Loads the first frame assembled from the extracted UI components.
+    /// Loads the complete extracted panel and the matching action bar.
     pub fn load(asset_server: &AssetServer) -> Self {
         Self {
-            top_left: asset_server.load(CARD_FRAME_TOP_LEFT_PATH),
-            top: asset_server.load(CARD_FRAME_TOP_PATH),
-            top_right: asset_server.load(CARD_FRAME_TOP_RIGHT_PATH),
-            left: asset_server.load(CARD_FRAME_SIDE_PATH),
-            right: asset_server.load(CARD_FRAME_SIDE_PATH),
-            bottom_left: asset_server.load(CARD_FRAME_TOP_RIGHT_PATH),
-            bottom: asset_server.load(CARD_FRAME_BOTTOM_PATH),
-            bottom_right: asset_server.load(CARD_FRAME_TOP_LEFT_PATH),
+            panel: asset_server.load(CARD_FRAME_PANEL_PATH),
+            bar: asset_server.load(ORNATE_BAR_NEUTRAL_PATH),
         }
     }
+}
+
+/// 9-sliced ornate bar used by Close, Equip / Unequip, and vendor rows.
+pub fn ornate_bar_image(image: Handle<Image>) -> ImageNode {
+    ImageNode::new(image).with_mode(NodeImageMode::Sliced(TextureSlicer {
+        border: BorderRect::axes(BAR_SLICE[0], BAR_SLICE[1]),
+        center_scale_mode: SliceScaleMode::Stretch,
+        sides_scale_mode: SliceScaleMode::Stretch,
+        max_corner_scale: 1.0,
+    }))
 }
 
 /// Default card geometry. Callers override via [`CardBuilder::width`] /
@@ -73,11 +77,17 @@ const CARD_TITLE_FONT_SIZE: f32 = 22.0;
 /// adds nothing (and clippy rightly flags it).
 const _: () = assert!(CARD_TITLE_FONT_SIZE < HEADER_HEIGHT);
 const INNER_PADDING: f32 = 14.0;
+/// Inset for content inside the ornate `panel_large_left` frame. The gold
+/// corners occupy ~80 px; anything smaller draws slots on top of them.
+pub const FRAME_INNER_PADDING: f32 = 64.0;
 const HEADER_BOTTOM_GAP: f32 = 12.0;
 /// Gap between a `CardPositioning::Right` card and the right edge of the viewport.
-const RIGHT_EDGE_GAP: f32 = 40.0;
+const RIGHT_EDGE_GAP: f32 = 24.0;
 /// Gap between a `CardPositioning::Left` card and the left edge of the viewport.
 const LEFT_EDGE_GAP: f32 = 40.0;
+/// Leaves the ability hotbar readable under a right-docked card.
+pub const HOTBAR_CLEARANCE: f32 = 150.0;
+const TOP_EDGE_GAP: f32 = 28.0;
 
 /// Layout variant for the close button inside the header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -99,6 +109,7 @@ pub struct CardBuilder<'a> {
     width: Val,
     height: Val,
     layout: CardLayout,
+    show_header: bool,
     exclusivity: CardExclusivityPolicy,
     positioning: CardPositioning,
     draggable: bool,
@@ -110,6 +121,11 @@ pub struct CardBuilder<'a> {
 
 impl<'a> CardBuilder<'a> {
     /// Starts a new card. Title is shown in the header.
+    ///
+    /// Gameplay cards must call [`CardBuilder::frame`] with
+    /// [`CardFrameAssets::load`] so they get the ornate panel rather than the
+    /// legacy gray rectangle. Tests without an `AssetServer` may omit it or
+    /// pass [`CardFrameAssets::default`].
     pub fn new(kind: CardKind, title: impl Into<Cow<'a, str>>) -> Self {
         Self {
             kind,
@@ -117,6 +133,7 @@ impl<'a> CardBuilder<'a> {
             width: Val::Px(DEFAULT_CARD_WIDTH),
             height: Val::Px(DEFAULT_CARD_HEIGHT),
             layout: CardLayout::NoClose,
+            show_header: true,
             exclusivity: CardExclusivityPolicy::default(),
             positioning: CardPositioning::Center,
             draggable: false,
@@ -167,6 +184,12 @@ impl<'a> CardBuilder<'a> {
         self
     }
 
+    /// Hides the title header, leaving the decorative frame and body visible.
+    pub fn headerless(mut self) -> Self {
+        self.show_header = false;
+        self
+    }
+
     /// Adds a `Close` button to the header (sets layout to [`CardLayout::WithClose`]).
     pub fn closeable(mut self) -> Self {
         self.layout = CardLayout::WithClose;
@@ -211,6 +234,7 @@ impl<'a> CardBuilder<'a> {
             width,
             height,
             layout,
+            show_header,
             exclusivity,
             positioning,
             draggable,
@@ -220,7 +244,8 @@ impl<'a> CardBuilder<'a> {
             footer,
         } = self;
 
-        let header_style = HeaderStyle::from_theme(theme);
+        let framed = frame.is_some();
+        let header_style = HeaderStyle::from_theme(theme, framed);
 
         // Cards are placed relative to the viewport, never to a fixed
         // resolution: a 50% inset plus a negative half-size margin, the same
@@ -231,8 +256,11 @@ impl<'a> CardBuilder<'a> {
         // Sizes whose extent is not known at build time (anything but
         // `Val::Px`) fall back to `margin: auto` centring, which does not need
         // the size.
-        let (top, bottom, margin_top) = match height {
-            Val::Px(h) => (Val::Percent(50.0), Val::Auto, Val::Px(-h * 0.5)),
+        let (top, bottom, margin_top) = match (positioning, height) {
+            (_, Val::Px(h)) => (Val::Percent(50.0), Val::Auto, Val::Px(-h * 0.5)),
+            (CardPositioning::Right | CardPositioning::Left, _) => {
+                (Val::Px(TOP_EDGE_GAP), Val::Px(HOTBAR_CLEARANCE), Val::Auto)
+            }
             _ => (Val::Px(0.0), Val::Px(0.0), Val::Auto),
         };
         let (left, right, margin_left) = match positioning {
@@ -261,17 +289,21 @@ impl<'a> CardBuilder<'a> {
                 bottom,
                 margin,
                 flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(INNER_PADDING)),
+                padding: UiRect::all(Val::Px(if framed {
+                    FRAME_INNER_PADDING
+                } else {
+                    INNER_PADDING
+                })),
                 row_gap: Val::Px(HEADER_BOTTOM_GAP),
-                border: UiRect::all(Val::Px(1.5)),
+                border: UiRect::all(if framed { Val::Px(0.0) } else { Val::Px(1.5) }),
                 border_radius: BorderRadius::all(Val::Px(10.0)),
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(if frame.is_some() {
-                Color::srgb(17.0 / 255.0, 26.0 / 255.0, 34.0 / 255.0)
-            } else {
-                theme.panel_bg
-            }),
+            // The complete panel texture already contains its own dark center.
+            // A root background here would also fill the transparent pixels
+            // around the decorative corners.
+            BackgroundColor(if framed { Color::NONE } else { theme.panel_bg }),
             BorderColor {
                 top: Color::srgba(0.35, 0.38, 0.45, 0.6),
                 right: Color::srgba(0.35, 0.38, 0.45, 0.6),
@@ -294,7 +326,9 @@ impl<'a> CardBuilder<'a> {
         // needs `&mut Commands`, which `card_root_cmd` is holding borrowed.
         let mut body_container = Entity::PLACEHOLDER;
         card_root_cmd.with_children(|card_root| {
-            spawn_header(card_root, kind, layout, &title, &header_style);
+            if show_header {
+                spawn_header(card_root, kind, layout, &title, &header_style);
+            }
 
             body_container = card_root
                 .spawn((
@@ -350,137 +384,18 @@ impl<'a> CardBuilder<'a> {
     }
 }
 
-const FRAME_CORNER_SIZE: f32 = 58.0;
-const FRAME_EDGE_SIZE: f32 = 54.0;
-
 fn spawn_card_frame(parent: &mut ChildSpawnerCommands, frame: CardFrameAssets) {
-    let center = Color::srgb(17.0 / 255.0, 26.0 / 255.0, 34.0 / 255.0);
-
-    parent
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                right: Val::Px(0.0),
-                top: Val::Px(0.0),
-                bottom: Val::Px(0.0),
-                ..default()
-            },
-            BackgroundColor(center),
-        ))
-        .with_children(|frame_root| {
-            spawn_frame_piece(
-                frame_root,
-                frame.top_left,
-                Node {
-                    left: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    width: Val::Px(FRAME_CORNER_SIZE),
-                    height: Val::Px(FRAME_CORNER_SIZE),
-                    ..default()
-                },
-                None,
-            );
-            spawn_frame_piece(
-                frame_root,
-                frame.top,
-                Node {
-                    left: Val::Px(FRAME_CORNER_SIZE),
-                    right: Val::Px(FRAME_CORNER_SIZE),
-                    top: Val::Px(0.0),
-                    height: Val::Px(FRAME_EDGE_SIZE),
-                    ..default()
-                },
-                None,
-            );
-            spawn_frame_piece(
-                frame_root,
-                frame.top_right,
-                Node {
-                    right: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    width: Val::Px(FRAME_CORNER_SIZE),
-                    height: Val::Px(FRAME_CORNER_SIZE),
-                    ..default()
-                },
-                None,
-            );
-            spawn_frame_piece(
-                frame_root,
-                frame.left,
-                Node {
-                    left: Val::Px(0.0),
-                    top: Val::Px(FRAME_CORNER_SIZE),
-                    bottom: Val::Px(FRAME_CORNER_SIZE),
-                    width: Val::Px(FRAME_EDGE_SIZE),
-                    ..default()
-                },
-                None,
-            );
-            spawn_frame_piece(
-                frame_root,
-                frame.right,
-                Node {
-                    right: Val::Px(0.0),
-                    top: Val::Px(FRAME_CORNER_SIZE),
-                    bottom: Val::Px(FRAME_CORNER_SIZE),
-                    width: Val::Px(FRAME_EDGE_SIZE),
-                    ..default()
-                },
-                None,
-            );
-            spawn_frame_piece(
-                frame_root,
-                frame.bottom_left,
-                Node {
-                    left: Val::Px(0.0),
-                    bottom: Val::Px(0.0),
-                    width: Val::Px(FRAME_CORNER_SIZE),
-                    height: Val::Px(FRAME_CORNER_SIZE),
-                    ..default()
-                },
-                Some(Quat::from_rotation_z(std::f32::consts::PI)),
-            );
-            spawn_frame_piece(
-                frame_root,
-                frame.bottom,
-                Node {
-                    left: Val::Px(FRAME_CORNER_SIZE),
-                    right: Val::Px(FRAME_CORNER_SIZE),
-                    bottom: Val::Px(0.0),
-                    height: Val::Px(FRAME_EDGE_SIZE),
-                    ..default()
-                },
-                None,
-            );
-            spawn_frame_piece(
-                frame_root,
-                frame.bottom_right,
-                Node {
-                    right: Val::Px(0.0),
-                    bottom: Val::Px(0.0),
-                    width: Val::Px(FRAME_CORNER_SIZE),
-                    height: Val::Px(FRAME_CORNER_SIZE),
-                    ..default()
-                },
-                Some(Quat::from_rotation_z(std::f32::consts::PI)),
-            );
-        });
-}
-
-fn spawn_frame_piece(
-    parent: &mut ChildSpawnerCommands,
-    image: Handle<Image>,
-    node: Node,
-    rotation: Option<Quat>,
-) {
-    let mut entity = parent.spawn((
-        node,
-        ImageNode::new(image).with_mode(NodeImageMode::Stretch),
+    parent.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            right: Val::Px(0.0),
+            top: Val::Px(0.0),
+            bottom: Val::Px(0.0),
+            ..default()
+        },
+        ornate_panel_image(frame.panel),
     ));
-    if let Some(rotation) = rotation {
-        entity.insert(Transform::from_rotation(rotation));
-    }
 }
 
 fn spawn_header(
@@ -503,7 +418,13 @@ fn spawn_header(
             border_radius: BorderRadius::all(Val::Px(6.0)),
             ..default()
         },
-        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.06)),
+        // The ornate panel already provides the header field; a gray wash
+        // on top of it reads as the old flat card chrome.
+        BackgroundColor(if style.framed {
+            Color::NONE
+        } else {
+            Color::srgba(1.0, 1.0, 1.0, 0.06)
+        }),
         CardHeader,
     ));
 
@@ -542,28 +463,16 @@ fn spawn_header(
 }
 
 fn spawn_close_button(header: &mut ChildSpawnerCommands, kind: CardKind, style: &HeaderStyle) {
-    header
-        .spawn((
-            Button,
-            Node {
-                padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            BackgroundColor(style.button_bg),
-            CloseCardButton { kind },
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new("Close".to_string()),
-                TextFont {
-                    font_size: FontSize::Px(style.button_font_size),
-                    ..default()
-                },
-                TextColor(style.button_text_color),
-            ));
-        });
+    spawn_bar_child(
+        header,
+        "Close",
+        style.button_font_size * 0.55,
+        style.button_text_color,
+        Val::Px(92.0),
+        Val::Px(30.0),
+        BarButtonKind::Neutral,
+        CloseCardButton { kind },
+    );
 }
 
 /// Bundles the theme values used by the header so helper functions stay
@@ -572,18 +481,18 @@ struct HeaderStyle {
     title_font_size: f32,
     button_font_size: f32,
     text_color: Color,
-    button_bg: Color,
     button_text_color: Color,
+    framed: bool,
 }
 
 impl HeaderStyle {
-    fn from_theme(theme: &UiTheme) -> Self {
+    fn from_theme(theme: &UiTheme, framed: bool) -> Self {
         Self {
             title_font_size: CARD_TITLE_FONT_SIZE,
             button_font_size: theme.button_font_size,
             text_color: theme.text_color,
-            button_bg: theme.button_bg,
             button_text_color: theme.button_text_color,
+            framed,
         }
     }
 }
@@ -723,6 +632,31 @@ mod tests {
         assert_eq!(close_buttons.iter(world).count(), 1);
     }
 
+    #[test]
+    fn close_button_uses_sliced_bar_art() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        CardBuilder::new(CardKind::Generic, "Test")
+            .closeable()
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let world = app.world_mut();
+        let mut query = world.query::<(
+            &CloseCardButton,
+            &ImageNode,
+            &crate::ui::button::UiButtonImages,
+        )>();
+        let (_, image, _) = query
+            .iter(world)
+            .next()
+            .expect("close button carries bar visuals");
+        assert!(matches!(image.image_mode, NodeImageMode::Sliced(_)));
+    }
+
     /// Regression: centring used to be computed against a hardcoded 1920x1080,
     /// so at the default 800x600 window every card spawned off-screen. The
     /// placement must be expressed in viewport-relative terms instead.
@@ -791,6 +725,45 @@ mod tests {
     }
 
     #[test]
+    fn framed_card_pads_content_inside_the_ornate_border() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        let entity = CardBuilder::new(CardKind::Inventory, "Inventory")
+            .frame(CardFrameAssets::default())
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let node = app.world().get::<Node>(entity).expect("card node");
+        assert_eq!(node.padding.left, Val::Px(FRAME_INNER_PADDING));
+        assert_eq!(node.padding.right, Val::Px(FRAME_INNER_PADDING));
+        assert_eq!(node.padding.top, Val::Px(FRAME_INNER_PADDING));
+        assert_eq!(node.padding.bottom, Val::Px(FRAME_INNER_PADDING));
+    }
+
+    #[test]
+    fn auto_height_right_card_clears_the_hotbar() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        let entity = CardBuilder::new(CardKind::Inventory, "Inventory")
+            .width(Val::Px(400.0))
+            .height(Val::Auto)
+            .positioning(CardPositioning::Right)
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let node = app.world().get::<Node>(entity).expect("card node");
+        assert_eq!(node.top, Val::Px(TOP_EDGE_GAP));
+        assert_eq!(node.bottom, Val::Px(HOTBAR_CLEARANCE));
+        assert_eq!(node.right, Val::Px(RIGHT_EDGE_GAP));
+    }
+
+    #[test]
     fn coexist_flag_is_preserved_on_card_window() {
         let mut app = App::new();
         let theme = test_theme();
@@ -805,5 +778,50 @@ mod tests {
         let world = app.world();
         let window = world.get::<CardWindow>(entity).expect("card window");
         assert_eq!(window.exclusivity, CardExclusivityPolicy::Coexist);
+    }
+
+    #[test]
+    fn framed_card_header_is_transparent() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        CardBuilder::new(CardKind::ItemDetail, "Staff")
+            .frame(CardFrameAssets::default())
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let world = app.world_mut();
+        let mut headers = world.query::<(&CardHeader, &BackgroundColor)>();
+        let (_, bg) = headers.iter(world).next().expect("header");
+        assert_eq!(bg.0, Color::NONE);
+    }
+
+    #[test]
+    fn close_button_uses_bar_image_not_a_flat_fill() {
+        let mut app = App::new();
+        let theme = test_theme();
+        let mut commands = app.world_mut().commands();
+
+        CardBuilder::new(CardKind::ItemDetail, "Staff")
+            .frame(CardFrameAssets::default())
+            .closeable()
+            .spawn(&mut commands, &theme);
+
+        app.update();
+
+        let world = app.world_mut();
+        let mut close_buttons = world.query::<(&CloseCardButton, &ImageNode, &BackgroundColor)>();
+        let (_, image, fill) = close_buttons.iter(world).next().expect("close button");
+        assert!(
+            matches!(image.image_mode, NodeImageMode::Sliced(_)),
+            "close button must be 9-sliced bar art"
+        );
+        assert_eq!(
+            fill.0,
+            Color::NONE,
+            "close button must not keep a flat BackgroundColor fill"
+        );
     }
 }

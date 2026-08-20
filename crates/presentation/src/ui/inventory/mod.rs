@@ -3,20 +3,100 @@
 pub mod components;
 pub mod detail;
 pub mod drag;
+mod equipment_section;
+mod inventory_section;
 pub mod systems;
 pub mod weapon_detail;
 
 use bevy::prelude::*;
+use bevymmo_gameplay::items::{
+    components::{Equipment, Inventory},
+    registry::ItemRegistry,
+};
 
-use crate::game_state::{in_gameplay, not_typing};
-use components::InventorySelection;
+use crate::{
+    game_state::{in_gameplay, not_typing},
+    ui::{
+        card::{
+            builder::{CardBuilder, CardFrameAssets},
+            components::{CardKind, CardPositioning},
+        },
+        theme::UiTheme,
+    },
+};
+use components::{InventorySelection, InventorySlotImages};
 pub use drag::ItemDragState;
+use equipment_section::spawn_equipment_section;
+use inventory_section::spawn_inventory_section;
+
+const INVENTORY_CARD_WIDTH: f32 = 448.0;
+const INNER_CONTENT_PADDING: f32 = 12.0;
+const SECTION_GAP: f32 = 8.0;
+const SLOT_EMPTY_PATH: &str = "ui/extracted_065811/slot_empty_01.png";
+const SLOT_ACTIVE_PATH: &str = "ui/extracted_065811/slot_active.png";
+
+/// Root marker for the main inventory card.
+#[derive(Component, Debug)]
+pub struct InventoryCard;
 
 /// Global state resource for the Inventory UI.
 #[derive(Resource, Default)]
 pub struct InventoryUiState {
     pub is_open: bool,
     pub selected: Option<InventorySelection>,
+}
+
+pub(super) fn spawn_inventory_window(
+    commands: &mut Commands,
+    theme: &UiTheme,
+    registry: &ItemRegistry,
+    inventory: &Inventory,
+    equipment: &Equipment,
+    asset_server: &AssetServer,
+) {
+    let inventory = inventory.clone();
+    let equipment = equipment.clone();
+    let slot_images = InventorySlotImages {
+        empty: asset_server.load(SLOT_EMPTY_PATH),
+        active: asset_server.load(SLOT_ACTIVE_PATH),
+    };
+
+    let card = CardBuilder::new(CardKind::Inventory, "Inventory")
+        .frame(CardFrameAssets::load(asset_server))
+        .headerless()
+        .width(Val::Px(INVENTORY_CARD_WIDTH))
+        .height(Val::Auto)
+        .positioning(CardPositioning::Right)
+        .exclusive()
+        .with_body(move |body| {
+            body.spawn(Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(INNER_CONTENT_PADDING)),
+                row_gap: Val::Px(SECTION_GAP),
+                ..default()
+            })
+            .with_children(|main| {
+                spawn_equipment_section(main, theme, &equipment, registry, &slot_images);
+
+                main.spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(1.0),
+                        flex_shrink: 0.0,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.16)),
+                ));
+
+                spawn_inventory_section(main, theme, &inventory, registry, &slot_images);
+            });
+        })
+        .spawn(commands, theme);
+
+    commands.entity(card).insert(InventoryCard);
 }
 
 pub struct InventoryUiPlugin;

@@ -121,6 +121,7 @@ pub fn spawn_item_detail_card(
                         ItemEffect::StatBonus { field, op, value } => {
                             let field_str = match field {
                                 StatField::MaxHealth => "Max Health",
+                                StatField::MaxMana => "Max Mana",
                                 StatField::Speed => "Speed",
                                 StatField::AttackPower => "Attack Power",
                                 StatField::Armor => "Armor",

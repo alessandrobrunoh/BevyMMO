@@ -1172,8 +1172,12 @@ mod tests {
             .into_iter()
             .map(AncientWordId::new)
             .collect();
-        equipment.weapon.as_mut().expect("staff").ability_selection.secondary =
-            Some(bevymmo_gameplay::abilities::AbilityId::new("arcane_wave"));
+        equipment
+            .weapon
+            .as_mut()
+            .expect("staff")
+            .ability_selection
+            .secondary = Some(bevymmo_gameplay::abilities::AbilityId::new("arcane_wave"));
         spawn_test_window(&mut app, &equipment, &known);
 
         let world = app.world_mut();

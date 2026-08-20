@@ -6,6 +6,7 @@
 
 use bevy::prelude::*;
 use std::collections::HashMap;
+use std::f32::consts::TAU;
 
 use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::server_feed::SpellCooldownState;
@@ -22,11 +23,21 @@ use crate::game_state::{GameScreen, Screen};
 use crate::spells::input::WEAPON_HUD_BINDINGS;
 use crate::ui::theme::UiTheme;
 
-const SPELL_RING_SILVER_PATH: &str = "ui/extracted_kit/spell_ring_silver.png";
-const SPELL_SLOT_SIZE: f32 = 68.0;
+/// Ornate frame drawn on top of every hotbar slot.
+const SPELL_BORDER_PATH: &str = "ui/spells/spell_border.png";
+/// `{ability_id}` is substituted — drop a PNG at this path to show an icon.
+const SPELL_ICON_PATH: &str = "abilities/icons/{ability_id}.png";
+const SPELL_SLOT_SIZE: f32 = 76.0;
+/// Matches the inner hole of `spell_border.png` (~12.8% of the square).
+/// Slightly under that so the icon tucks under the ring; the border draws on top.
+const SPELL_ICON_INSET: f32 = 8.0;
 const SPELL_SLOT_GAP: f32 = 10.0;
-const SPELL_CENTER_FONT_SIZE: f32 = 16.0;
+const SPELL_CENTER_FONT_SIZE: f32 = 14.0;
 const SPELL_KEY_FONT_SIZE: f32 = 12.0;
+const SPELL_ICON_READY: Color = Color::WHITE;
+const SPELL_ICON_COOLDOWN: Color = Color::srgb(0.42, 0.44, 0.52);
+const SPELL_ICON_UNAFFORDABLE: Color = Color::srgb(0.22, 0.36, 0.62);
+const SPELL_CLOCK_DARK: Color = Color::srgba(0.02, 0.03, 0.07, 0.78);
 
 /// What a HUD cooldown countdown is keyed by.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -40,9 +51,25 @@ pub struct SpellHudCooldownStarted {
     pub cooldown_seconds: f32,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct HudCooldown {
+    remaining: f32,
+    total: f32,
+}
+
+impl HudCooldown {
+    fn ratio(&self) -> f32 {
+        if self.total <= 0.0 {
+            0.0
+        } else {
+            (self.remaining / self.total).clamp(0.0, 1.0)
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct SpellHudState {
-    remaining_seconds: HashMap<HudCooldownKey, f32>,
+    cooldowns: HashMap<HudCooldownKey, HudCooldown>,
 }
 
 /// Describes one hotbar column read from equipment + settings.
@@ -52,7 +79,15 @@ struct SpellHudEntry {
     cooldown_key: Option<HudCooldownKey>,
     display_name: String,
     key_label: String,
+    /// Base ability mana cost. Empty slots are 0 (always affordable).
+    energy_cost: f32,
 }
+
+#[derive(Component)]
+struct SpellHudIcon;
+
+#[derive(Component)]
+struct SpellHudClock;
 
 #[derive(Resource, Default)]
 struct SpellHudLayoutState {
@@ -64,14 +99,43 @@ struct SpellHudLayoutState {
 
 impl SpellHudState {
     pub fn is_on_cooldown(&self, key: &HudCooldownKey) -> bool {
-        self.remaining_seconds
+        self.cooldowns
             .get(key)
-            .is_some_and(|remaining| *remaining > 0.0)
+            .is_some_and(|cooldown| cooldown.remaining > 0.0)
     }
 
     pub fn ability_on_cooldown(&self, id: &AbilityId) -> bool {
         self.is_on_cooldown(&HudCooldownKey::Ability(id.clone()))
     }
+
+    fn remaining(&self, key: &HudCooldownKey) -> f32 {
+        self.cooldowns
+            .get(key)
+            .map(|cooldown| cooldown.remaining)
+            .unwrap_or(0.0)
+    }
+
+    fn ratio(&self, key: &HudCooldownKey) -> f32 {
+        self.cooldowns
+            .get(key)
+            .map(HudCooldown::ratio)
+            .unwrap_or(0.0)
+    }
+
+    fn begin(&mut self, key: HudCooldownKey, seconds: f32) {
+        let seconds = seconds.max(0.0);
+        self.cooldowns.insert(
+            key,
+            HudCooldown {
+                remaining: seconds,
+                total: seconds.max(0.001),
+            },
+        );
+    }
+}
+
+fn spell_icon_path(id: &AbilityId) -> String {
+    SPELL_ICON_PATH.replace("{ability_id}", id.as_str())
 }
 
 #[derive(Component)]
@@ -106,7 +170,7 @@ fn not_in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
 }
 
 fn setup_spell_hud(mut commands: Commands, _theme: Res<UiTheme>, asset_server: Res<AssetServer>) {
-    let _ring: Handle<Image> = asset_server.load(SPELL_RING_SILVER_PATH);
+    let _border: Handle<Image> = asset_server.load(SPELL_BORDER_PATH);
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
@@ -171,27 +235,32 @@ const HOTBAR_SLOTS: [HotbarSlotDef; 6] = [
 
 /// Resolves the active ability for one equipped item + ability-slot pair.
 ///
-/// Returns `(AbilityId, display_name)` if the item exists, has an ability
-/// loadout, and a valid ability can be resolved through its selection.
+/// Returns `(AbilityId, display_name, energy_cost)` if the item exists, has an
+/// ability loadout, and a valid ability can be resolved through its selection.
 fn resolve_equipment_entry(
     equipped: &Option<bevymmo_gameplay::items::instance::ItemInstance>,
     slot: AbilitySlot,
     item_registry: &ItemRegistry,
     ability_registry: &BaseAbilityRegistry,
-) -> Option<(AbilityId, String)> {
+) -> Option<(AbilityId, String, f32)> {
     let instance = equipped.as_ref()?;
     let item = item_registry.get(&instance.item_id)?;
     let loadout = item.ability_loadout()?;
     let ability_id = if matches!(
         item.config().category,
         bevymmo_gameplay::items::definition::ItemCategory::Armor
+            | bevymmo_gameplay::items::definition::ItemCategory::Accessory
     ) {
         bevymmo_gameplay::abilities::resolve_armor_ability(loadout, &instance.ability_selection)?
     } else {
         resolve_active_ability(slot, loadout, &instance.ability_selection)?
     };
     let ability = ability_registry.get(ability_id)?;
-    Some((ability_id.clone(), ability.display_name().to_string()))
+    Some((
+        ability_id.clone(),
+        ability.display_name().to_string(),
+        ability.base_params().energy_cost,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -224,15 +293,19 @@ fn sync_spell_hud(
             &ability_registry,
         );
 
-        let (cooldown_key, display_name) = match &resolved {
-            Some((id, name)) => (Some(HudCooldownKey::Ability(id.clone())), name.clone()),
-            None => (None, "Empty".to_string()),
+        let (cooldown_key, display_name, energy_cost) = match &resolved {
+            Some((id, name, cost)) => (
+                Some(HudCooldownKey::Ability(id.clone())),
+                name.clone(),
+                *cost,
+            ),
+            None => (None, "Empty".to_string(), 0.0),
         };
         let key_label = display_key_label(&settings.0.keybinds.get(def.action).label());
 
         signature.push((
             def.slot,
-            resolved.as_ref().map(|(id, _)| id.clone()),
+            resolved.as_ref().map(|(id, _, _)| id.clone()),
             key_label.clone(),
             display_name.clone(),
         ));
@@ -240,6 +313,7 @@ fn sync_spell_hud(
             cooldown_key,
             display_name,
             key_label,
+            energy_cost,
         });
     }
 
@@ -251,57 +325,140 @@ fn sync_spell_hud(
 
     commands.entity(root_entity).despawn_related::<Children>();
 
-    let ring = asset_server.load(SPELL_RING_SILVER_PATH);
+    let border = asset_server.load(SPELL_BORDER_PATH);
     commands.entity(root_entity).with_children(|parent| {
         for entry in entries {
-            parent
-                .spawn((
-                    Node {
-                        width: Val::Px(SPELL_SLOT_SIZE),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        row_gap: Val::Px(2.0),
-                        ..default()
-                    },
-                    BackgroundColor(Color::NONE),
-                    entry.clone(),
-                ))
-                .with_children(|slot| {
-                    slot.spawn((
-                        Node {
-                            width: Val::Px(SPELL_SLOT_SIZE),
-                            height: Val::Px(SPELL_SLOT_SIZE),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        ImageNode::new(ring.clone()).with_mode(NodeImageMode::Stretch),
-                    ))
-                    .with_children(|ring_slot| {
-                        ring_slot.spawn((
-                            Text(format_cooldown_text(&entry, 0.0)),
-                            TextFont {
-                                font_size: FontSize::Px(SPELL_CENTER_FONT_SIZE),
-                                ..default()
-                            },
-                            TextColor(theme.text_color),
-                            TextLayout::justify(Justify::Center),
-                            Name::new("hotbar-cooldown"),
-                            entry.clone(),
-                        ));
-                    });
-                    slot.spawn((
-                        Text(entry.key_label.clone()),
-                        TextFont {
-                            font_size: FontSize::Px(SPELL_KEY_FONT_SIZE),
-                            ..default()
-                        },
-                        TextColor(theme.muted_text_color),
-                        TextLayout::justify(Justify::Center),
-                    ));
-                });
+            spawn_hotbar_slot(parent, &theme, &asset_server, &border, entry);
         }
     });
+}
+
+fn spawn_hotbar_slot(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiTheme,
+    asset_server: &AssetServer,
+    border: &Handle<Image>,
+    entry: SpellHudEntry,
+) {
+    let icon = entry.cooldown_key.as_ref().and_then(|key| match key {
+        HudCooldownKey::Ability(id) => Some(asset_server.load(spell_icon_path(id))),
+    });
+
+    parent
+        .spawn((
+            Node {
+                width: Val::Px(SPELL_SLOT_SIZE),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                row_gap: Val::Px(2.0),
+                ..default()
+            },
+            BackgroundColor(Color::NONE),
+            entry.clone(),
+        ))
+        .with_children(|slot| {
+            slot.spawn((
+                Node {
+                    width: Val::Px(SPELL_SLOT_SIZE),
+                    height: Val::Px(SPELL_SLOT_SIZE),
+                    position_type: PositionType::Relative,
+                    ..default()
+                },
+                BackgroundColor(Color::NONE),
+            ))
+            .with_children(|face| {
+                if let Some(icon) = icon {
+                    face.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(SPELL_ICON_INSET),
+                            right: Val::Px(SPELL_ICON_INSET),
+                            top: Val::Px(SPELL_ICON_INSET),
+                            bottom: Val::Px(SPELL_ICON_INSET),
+                            border_radius: BorderRadius::all(Val::Percent(50.0)),
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                        ImageNode {
+                            image: icon,
+                            color: SPELL_ICON_READY,
+                            image_mode: NodeImageMode::Stretch,
+                            ..default()
+                        },
+                        SpellHudIcon,
+                        entry.clone(),
+                    ));
+                }
+
+                face.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(SPELL_ICON_INSET),
+                        right: Val::Px(SPELL_ICON_INSET),
+                        top: Val::Px(SPELL_ICON_INSET),
+                        bottom: Val::Px(SPELL_ICON_INSET),
+                        border_radius: BorderRadius::all(Val::Percent(50.0)),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    BackgroundGradient(Vec::new()),
+                    Visibility::Hidden,
+                    SpellHudClock,
+                    entry.clone(),
+                ));
+
+                face.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(0.0),
+                        right: Val::Px(0.0),
+                        top: Val::Px(0.0),
+                        bottom: Val::Px(0.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .with_children(|label| {
+                    label.spawn((
+                        Text(String::new()),
+                        TextFont {
+                            font_size: FontSize::Px(SPELL_CENTER_FONT_SIZE),
+                            ..default()
+                        },
+                        TextColor(theme.text_color),
+                        TextLayout::justify(Justify::Center),
+                        Name::new("hotbar-cooldown"),
+                        Visibility::Hidden,
+                        entry.clone(),
+                    ));
+                });
+
+                face.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(0.0),
+                        right: Val::Px(0.0),
+                        top: Val::Px(0.0),
+                        bottom: Val::Px(0.0),
+                        ..default()
+                    },
+                    ImageNode::new(border.clone()).with_mode(NodeImageMode::Stretch),
+                    Pickable::IGNORE,
+                ));
+            });
+
+            slot.spawn((
+                Text(entry.key_label.clone()),
+                TextFont {
+                    font_size: FontSize::Px(SPELL_KEY_FONT_SIZE),
+                    ..default()
+                },
+                TextColor(theme.muted_text_color),
+                TextLayout::justify(Justify::Center),
+            ));
+        });
 }
 
 /// Overwrites local cooldown guesses with authoritative server values.
@@ -321,11 +478,17 @@ fn adopt_server_cooldowns(
         }
         let key = HudCooldownKey::Ability(AbilityId::new(message.ability_id.clone()));
         if message.is_ready() {
-            state.remaining_seconds.remove(&key);
+            state.cooldowns.remove(&key);
         } else {
+            let remaining = message.remaining_seconds.max(0.0);
+            let total = if message.duration_seconds > 0.0 {
+                message.duration_seconds
+            } else {
+                remaining.max(0.001)
+            };
             state
-                .remaining_seconds
-                .insert(key, message.remaining_seconds);
+                .cooldowns
+                .insert(key, HudCooldown { remaining, total });
         }
     }
 }
@@ -336,20 +499,24 @@ fn update_spell_hud(
     mut state: ResMut<SpellHudState>,
     mut cooldown_started: MessageReader<SpellHudCooldownStarted>,
     mut roots: Query<&mut Node, With<SpellHudRoot>>,
-    mut texts: Query<(&SpellHudEntry, &mut Text), With<Name>>,
+    mut texts: Query<(&SpellHudEntry, &mut Text, &mut Visibility), With<Name>>,
+    mut icons: Query<(&SpellHudEntry, &mut ImageNode), With<SpellHudIcon>>,
+    mut clocks: Query<
+        (&SpellHudEntry, &mut BackgroundGradient, &mut Visibility),
+        (With<SpellHudClock>, Without<Name>),
+    >,
+    local_vitals: Query<&bevymmo_gameplay::stats::components::VitalStats, With<LocalPlayer>>,
 ) {
     let mut has_new_cooldown = false;
     for message in cooldown_started.read() {
         has_new_cooldown = true;
-        state
-            .remaining_seconds
-            .insert(message.key.clone(), message.cooldown_seconds.max(0.0));
+        state.begin(message.key.clone(), message.cooldown_seconds);
     }
 
     let delta = time.delta_secs();
-    state.remaining_seconds.retain(|_, remaining| {
-        *remaining = (*remaining - delta).max(0.0);
-        *remaining > 0.0
+    state.cooldowns.retain(|_, cooldown| {
+        cooldown.remaining = (cooldown.remaining - delta).max(0.0);
+        cooldown.remaining > 0.0
     });
 
     if let Ok(mut root) = roots.single_mut() {
@@ -357,24 +524,56 @@ fn update_spell_hud(
     }
 
     *elapsed_since_label_update += delta;
-    let should_update_labels = has_new_cooldown || *elapsed_since_label_update >= 0.1;
+    let should_update_labels = has_new_cooldown || *elapsed_since_label_update >= 0.05;
     if !should_update_labels {
         return;
     }
     *elapsed_since_label_update = 0.0;
 
-    // Only update the cooldown row (Name = "hotbar-cooldown").
-    for (entry, mut text) in texts.iter_mut() {
+    for (entry, mut text, mut vis) in texts.iter_mut() {
         let remaining = entry
             .cooldown_key
             .as_ref()
-            .and_then(|key| state.remaining_seconds.get(key).copied())
-            .unwrap_or_default();
+            .map(|key| state.remaining(key))
+            .unwrap_or(0.0);
         let next = format_cooldown_text(entry, remaining);
-        if text.0 == next {
+        if text.0 != next {
+            text.0 = next;
+        }
+        *vis = if remaining > 0.0 && entry.cooldown_key.is_some() {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+    }
+
+    let current_mana = local_vitals
+        .single()
+        .map(|vital| vital.current_mana)
+        .unwrap_or(f32::MAX);
+    for (entry, mut image) in icons.iter_mut() {
+        let cooling = entry
+            .cooldown_key
+            .as_ref()
+            .is_some_and(|key| state.remaining(key) > 0.0);
+        let unaffordable =
+            !bevymmo_gameplay::stats::formulas::can_afford_mana(current_mana, entry.energy_cost);
+        image.color = spell_icon_color(cooling, unaffordable);
+    }
+
+    for (entry, mut gradient, mut vis) in clocks.iter_mut() {
+        let ratio = entry
+            .cooldown_key
+            .as_ref()
+            .map(|key| state.ratio(key))
+            .unwrap_or(0.0);
+        if ratio <= 0.0 {
+            *vis = Visibility::Hidden;
+            gradient.0.clear();
             continue;
         }
-        text.0 = next;
+        *vis = Visibility::Inherited;
+        *gradient = clock_overlay(ratio);
     }
 }
 
@@ -385,6 +584,16 @@ fn hide_spell_hud(mut roots: Query<&mut Node, With<SpellHudRoot>>) {
 }
 
 /// Formats the caption printed on a keybind chip (`Digit1` → `1`).
+fn spell_icon_color(cooling: bool, unaffordable: bool) -> Color {
+    if cooling {
+        SPELL_ICON_COOLDOWN
+    } else if unaffordable {
+        SPELL_ICON_UNAFFORDABLE
+    } else {
+        SPELL_ICON_READY
+    }
+}
+
 fn display_key_label(label: &str) -> String {
     label
         .strip_prefix("Digit")
@@ -395,13 +604,35 @@ fn display_key_label(label: &str) -> String {
 
 fn format_cooldown_text(entry: &SpellHudEntry, remaining_seconds: f32) -> String {
     if entry.cooldown_key.is_none() || entry.display_name == "Empty" {
-        return "—".to_string();
+        return String::new();
     }
     if remaining_seconds > 0.0 {
         format!("{remaining_seconds:.1}")
     } else {
-        "(R)".to_string()
+        String::new()
     }
+}
+
+/// Clock wipe: remaining `ratio` (1 = just cast, 0 = ready).
+///
+/// Bevy's conic `0` is already 12 o'clock and increases clockwise
+/// (`atan2(-x, y)` in UI space). Elapsed time is revealed from 12 clockwise;
+/// the leftover pie stays dark.
+fn clock_overlay(ratio: f32) -> BackgroundGradient {
+    let remaining = ratio.clamp(0.0, 1.0);
+    let elapsed = (1.0 - remaining) * TAU;
+    BackgroundGradient::from(
+        ConicGradient::new(
+            UiPosition::CENTER,
+            vec![
+                AngularColorStop::new(Color::NONE, 0.0),
+                AngularColorStop::new(Color::NONE, elapsed),
+                AngularColorStop::new(SPELL_CLOCK_DARK, elapsed),
+                AngularColorStop::new(SPELL_CLOCK_DARK, TAU),
+            ],
+        )
+        .with_start(0.0),
+    )
 }
 
 #[cfg(test)]
@@ -413,6 +644,7 @@ mod tests {
             cooldown_key: Some(HudCooldownKey::Ability(AbilityId::new(id))),
             display_name: name.to_string(),
             key_label: key.to_string(),
+            energy_cost: 0.0,
         }
     }
 
@@ -421,6 +653,7 @@ mod tests {
             cooldown_key: None,
             display_name: "Empty".to_string(),
             key_label: key.to_string(),
+            energy_cost: 0.0,
         }
     }
 
@@ -434,17 +667,52 @@ mod tests {
     #[test]
     fn cooldown_text_formats_all_states() {
         let entry = ability_entry("bolt", "Arcane Bolt", "1");
-        assert_eq!(format_cooldown_text(&entry, 0.0), "(R)");
+        assert_eq!(format_cooldown_text(&entry, 0.0), "");
         assert_eq!(format_cooldown_text(&entry, 2.5), "2.5");
         assert_eq!(format_cooldown_text(&entry, 0.09), "0.1");
-        assert_eq!(format_cooldown_text(&empty_entry("1"), 0.0), "—");
+        assert_eq!(format_cooldown_text(&empty_entry("1"), 0.0), "");
     }
 
     #[test]
-    fn empty_slot_shashes() {
+    fn empty_slot_has_no_ready_label() {
         let entry = empty_entry("D");
-        assert_eq!(format_cooldown_text(&entry, 0.0), "—");
-        assert_eq!(format_cooldown_text(&entry, 99.0), "—");
+        assert_eq!(format_cooldown_text(&entry, 0.0), "");
+        assert_eq!(format_cooldown_text(&entry, 99.0), "");
+    }
+
+    #[test]
+    fn spell_icon_path_uses_the_ability_id() {
+        assert_eq!(
+            spell_icon_path(&AbilityId::new("arcane_bolt")),
+            "abilities/icons/arcane_bolt.png"
+        );
+    }
+
+    #[test]
+    fn clock_overlay_covers_the_full_face_at_cast() {
+        let gradient = clock_overlay(1.0);
+        assert_eq!(gradient.0.len(), 1);
+        let Gradient::Conic(conic) = &gradient.0[0] else {
+            panic!("clock overlay is a conic gradient");
+        };
+        assert!(
+            conic.start.abs() < 0.001,
+            "Bevy conic 0 is 12 o'clock; do not offset to 9 o'clock"
+        );
+        assert_eq!(conic.stops.len(), 4);
+    }
+
+    #[test]
+    fn clock_overlay_reveals_clockwise_from_noon() {
+        let gradient = clock_overlay(0.5);
+        let Gradient::Conic(conic) = &gradient.0[0] else {
+            panic!("clock overlay is a conic gradient");
+        };
+        // Half elapsed: clear from 12 to 6, dark from 6 to 12.
+        assert!((conic.stops[1].angle.unwrap() - std::f32::consts::PI).abs() < 0.001);
+        assert_eq!(conic.stops[0].color, Color::NONE);
+        assert_eq!(conic.stops[2].color, SPELL_CLOCK_DARK);
+        assert!(SPELL_ICON_INSET < 10.0);
     }
 
     #[test]
@@ -475,10 +743,23 @@ mod tests {
         let id = AbilityId::new("bolt");
         assert!(!state.ability_on_cooldown(&id));
 
-        state
-            .remaining_seconds
-            .insert(HudCooldownKey::Ability(id.clone()), 3.0);
+        state.begin(HudCooldownKey::Ability(id.clone()), 3.0);
         assert!(state.ability_on_cooldown(&id));
+        assert!((state.ratio(&HudCooldownKey::Ability(id.clone())) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn unaffordable_icon_is_distinct_from_ready_and_cooldown() {
+        assert_eq!(spell_icon_color(false, false), SPELL_ICON_READY);
+        assert_eq!(spell_icon_color(true, false), SPELL_ICON_COOLDOWN);
+        assert_eq!(spell_icon_color(false, true), SPELL_ICON_UNAFFORDABLE);
+        assert_eq!(
+            spell_icon_color(true, true),
+            SPELL_ICON_COOLDOWN,
+            "cooldown wins over mana so the clock remains readable"
+        );
+        assert_ne!(SPELL_ICON_UNAFFORDABLE, SPELL_ICON_COOLDOWN);
+        assert_ne!(SPELL_ICON_UNAFFORDABLE, SPELL_ICON_READY);
     }
 
     #[test]

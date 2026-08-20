@@ -199,6 +199,7 @@ impl From<StatsRow> for StatsBundleData {
             vital: VitalStats {
                 current_health: s.current_health,
                 max_health: s.max_health,
+                current_mana: s.max_mana,
                 max_mana: s.max_mana,
                 mana_regeneration: s.mana_regeneration,
             },

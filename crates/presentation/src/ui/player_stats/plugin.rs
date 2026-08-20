@@ -65,6 +65,7 @@ mod tests {
             VitalStats {
                 current_health: 100.0,
                 max_health: 100.0,
+                current_mana: 80.0,
                 max_mana: 80.0,
                 mana_regeneration: 4.0,
             },
@@ -82,7 +83,7 @@ mod tests {
         assert_eq!(root.top, Val::Px(16.0));
         assert_eq!(
             panel_text(&mut app),
-            "HP: 100/100\nMax Mana: 80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)\nAttack Power: 10\nMove Speed: 0.15"
+            "HP: 100/100\nMana: 80/80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)\nAttack Power: 10\nMove Speed: 0.15"
         );
     }
 
@@ -101,6 +102,7 @@ mod tests {
                 VitalStats {
                     current_health: 100.0,
                     max_health: 100.0,
+                    current_mana: 80.0,
                     max_mana: 80.0,
                     mana_regeneration: 4.0,
                 },
@@ -127,7 +129,7 @@ mod tests {
         app.update();
         assert_eq!(
             panel_text(&mut app),
-            "HP: 100/100\nMax Mana: 120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15"
+            "HP: 100/100\nMana: 80/120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15"
         );
     }
 }

@@ -283,6 +283,7 @@ mod tests {
             VitalStats {
                 current_health: 50.0,
                 max_health: 50.0,
+                current_mana: 40.0,
                 max_mana: 40.0,
                 mana_regeneration: 2.0,
             },
@@ -306,6 +307,7 @@ mod tests {
             VitalStats {
                 current_health: 150.0,
                 max_health: 100.0,
+                current_mana: 40.0,
                 max_mana: 40.0,
                 mana_regeneration: 2.0,
             },
@@ -325,6 +327,7 @@ mod tests {
             VitalStats {
                 current_health: -10.0,
                 max_health: 100.0,
+                current_mana: 40.0,
                 max_mana: 40.0,
                 mana_regeneration: 2.0,
             },
@@ -344,6 +347,7 @@ mod tests {
             VitalStats {
                 current_health: 25.0,
                 max_health: 100.0,
+                current_mana: 40.0,
                 max_mana: 40.0,
                 mana_regeneration: 2.0,
             },
@@ -366,6 +370,7 @@ mod tests {
             VitalStats {
                 current_health: 50.0,
                 max_health: 100.0,
+                current_mana: 40.0,
                 max_mana: 40.0,
                 mana_regeneration: 2.0,
             },
@@ -398,6 +403,7 @@ mod tests {
                 VitalStats {
                     current_health: 50.0,
                     max_health: 100.0,
+                    current_mana: 40.0,
                     max_mana: 40.0,
                     mana_regeneration: 2.0,
                 },
@@ -427,6 +433,7 @@ mod tests {
             VitalStats {
                 current_health: 100.0,
                 max_health: 100.0,
+                current_mana: 40.0,
                 max_mana: 40.0,
                 mana_regeneration: 2.0,
             }, // niente PlayerName
@@ -456,6 +463,7 @@ mod tests {
             VitalStats {
                 current_health: 50.0,
                 max_health: 50.0,
+                current_mana: 40.0,
                 max_mana: 40.0,
                 mana_regeneration: 2.0,
             },
@@ -492,6 +500,7 @@ mod tests {
                 VitalStats {
                     current_health: 50.0,
                     max_health: 50.0,
+                    current_mana: 40.0,
                     max_mana: 40.0,
                     mana_regeneration: 2.0,
                 },

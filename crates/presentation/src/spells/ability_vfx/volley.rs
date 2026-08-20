@@ -44,5 +44,4 @@ pub fn spawn(
             VfxExpandFade::new(0.22, 0.08, 0.5),
         );
     }
-
 }

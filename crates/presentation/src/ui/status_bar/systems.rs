@@ -513,6 +513,7 @@ mod tests {
                 VitalStats {
                     current_health: 80.0,
                     max_health: 100.0,
+                    current_mana: 0.0,
                     max_mana: 0.0,
                     mana_regeneration: 0.0,
                 },

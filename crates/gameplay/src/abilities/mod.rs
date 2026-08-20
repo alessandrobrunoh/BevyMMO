@@ -32,7 +32,10 @@ pub use base_ability::{
 pub use blueprint::{
     AbilityBlueprint, BlueprintExecution, ManifestationKind, ManifestationPayload,
 };
-pub use cast_intent::{charge_release_aim, weapon_cast_intent, WeaponCastIntent};
+pub use cast_intent::{
+    charge_release_aim, flush_queued_release, queue_release_until_observed, weapon_cast_intent,
+    WeaponCastIntent,
+};
 pub use cooldowns::AbilityCooldowns;
 
 pub use events::EidolonCastRequest;

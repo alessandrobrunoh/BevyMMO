@@ -20,7 +20,11 @@ pub fn spawn(
     spawn_matching_footprint(commands, meshes, materials, spec, color);
 
     // Vertical rising crack plane
-    let plane_mesh = meshes.add(Cuboid::from_size(Vec3::new(0.08, 1.2, spec.radius.max(1.0))));
+    let plane_mesh = meshes.add(Cuboid::from_size(Vec3::new(
+        0.08,
+        1.2,
+        spec.radius.max(1.0),
+    )));
     let plane_mat = super::vfx_material(materials, Color::srgb(1.0, 0.95, 0.7), 0.5, 3.0);
     let mut plane_tfm = Transform::from_translation(base + Vec3::Y * 0.6);
     plane_tfm.look_at(base + dir, Vec3::Y);

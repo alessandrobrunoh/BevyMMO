@@ -262,13 +262,15 @@ pub fn spend_energy(ctx: &ReducerContext, entity_id: u64, cost: f32) -> Result<(
     let Some(row) = ctx.db.entity_stats().entity_id().find(&entity_id) else {
         return Err("caster has no stats".to_string());
     };
-    if row.current_mana < cost {
-        return Err("not enough mana".to_string());
-    }
-    ctx.db.entity_stats().entity_id().update(crate::tables::EntityStats {
-        current_mana: row.current_mana - cost,
-        ..row
-    });
+    let current_mana = bevymmo_domain::stats::formulas::spend_mana(row.current_mana, cost)
+        .map_err(|_| "not enough mana".to_string())?;
+    ctx.db
+        .entity_stats()
+        .entity_id()
+        .update(crate::tables::EntityStats {
+            current_mana,
+            ..row
+        });
     Ok(())
 }
 

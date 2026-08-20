@@ -292,8 +292,12 @@ fn regenerate_mana(ctx: &ReducerContext, dt: f32) {
         if is_dead(ctx, row.entity_id) {
             continue;
         }
-        let current_mana =
-            (row.current_mana + row.stats.mana_regeneration * dt).min(row.stats.max_mana);
+        let current_mana = bevymmo_domain::stats::formulas::regenerated_mana(
+            row.current_mana,
+            row.stats.max_mana,
+            row.stats.mana_regeneration,
+            dt,
+        );
         updates.push(EntityStats {
             current_mana,
             ..row
@@ -591,7 +595,7 @@ pub fn apply_healing(ctx: &ReducerContext, target: u64, amount: f32) {
 /// Applies a timed buff or debuff to one stat field of `target`.
 ///
 /// `field` is a [`StatField`] debug name — `"Speed"`, `"Armor"`,
-/// `"AttackPower"`, `"MaxHealth"`, `"ManaRegeneration"` — matching how
+/// `"AttackPower"`, `"MaxHealth"`, `"MaxMana"`, `"ManaRegeneration"` — matching how
 /// `stat_modifier.field` is stored. An unrecognised name is logged and ignored
 /// rather than panicking: the caller is gameplay code, and a typo in a spell
 /// definition should not take down the tick.
@@ -976,6 +980,7 @@ fn apply_stat_op(stats: &mut StatsRow, field: StatField, op: ModifierOp, value: 
         StatField::Armor => &mut stats.armor,
         StatField::AttackPower => &mut stats.attack_power,
         StatField::MaxHealth => &mut stats.max_health,
+        StatField::MaxMana => &mut stats.max_mana,
         StatField::ManaRegeneration => &mut stats.mana_regeneration,
     };
     match op {
@@ -992,6 +997,7 @@ fn parse_stat_field(field: &str) -> Option<StatField> {
         "Armor" => Some(StatField::Armor),
         "AttackPower" => Some(StatField::AttackPower),
         "MaxHealth" => Some(StatField::MaxHealth),
+        "MaxMana" => Some(StatField::MaxMana),
         "ManaRegeneration" => Some(StatField::ManaRegeneration),
         _ => None,
     }
@@ -1004,6 +1010,7 @@ fn stat_field_name(field: StatField) -> &'static str {
         StatField::Armor => "Armor",
         StatField::AttackPower => "AttackPower",
         StatField::MaxHealth => "MaxHealth",
+        StatField::MaxMana => "MaxMana",
         StatField::ManaRegeneration => "ManaRegeneration",
     }
 }

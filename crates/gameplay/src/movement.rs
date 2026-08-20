@@ -81,6 +81,32 @@ pub fn movement_intent_allowed(lock: MovementLock, cc_blocks: bool) -> bool {
     }
 }
 
+/// Destination the local client should step towards this frame.
+///
+/// Charge/CastTime freeze movement on the server (`stop_movement`). If the
+/// client keeps walking to a stale click — or to the cursor, which is also
+/// the spell aim point while the right mouse is held — prediction fights
+/// the replicated pose and rubber-bands forever after the cast ends.
+///
+/// While the lock is up, follow only the server. While the player is
+/// actively click-moving, prefer the pending click. Otherwise follow the
+/// server so a cancelled dest is not resumed.
+pub fn predicted_move_dest(
+    pending: Option<Vec3>,
+    authoritative: Option<Vec3>,
+    lock: MovementLock,
+    right_mouse_held: bool,
+) -> Option<Vec3> {
+    if !movement_intent_allowed(lock, false) {
+        return authoritative;
+    }
+    if right_mouse_held {
+        pending.or(authoritative)
+    } else {
+        authoritative
+    }
+}
+
 /// Horizontal facing implied by moving from `position` to `target`.
 ///
 /// Returns `None` when the two are vertically aligned, in which case the caller
@@ -717,6 +743,46 @@ mod tests {
         assert_ne!(
             movement_intent_allowed(MovementLock::Charge, false),
             movement_intent_allowed(MovementLock::Channel, false)
+        );
+    }
+
+    #[test]
+    fn charge_lock_ignores_a_stale_click_dest() {
+        let click = Some(Vec3::new(10.0, 0.0, 0.0));
+        assert_eq!(
+            predicted_move_dest(click, None, MovementLock::Charge, false),
+            None
+        );
+        assert_eq!(
+            predicted_move_dest(click, None, MovementLock::Charge, true),
+            None
+        );
+    }
+
+    #[test]
+    fn after_charge_a_stale_click_is_not_resumed() {
+        let click = Some(Vec3::new(10.0, 0.0, 0.0));
+        assert_eq!(
+            predicted_move_dest(click, None, MovementLock::None, false),
+            None
+        );
+    }
+
+    #[test]
+    fn held_right_mouse_still_steers_when_unlocked() {
+        let click = Some(Vec3::new(10.0, 0.0, 0.0));
+        assert_eq!(
+            predicted_move_dest(click, None, MovementLock::None, true),
+            click
+        );
+    }
+
+    #[test]
+    fn unlocked_follows_the_server_dest() {
+        let server = Some(Vec3::new(3.0, 0.0, 1.0));
+        assert_eq!(
+            predicted_move_dest(None, server, MovementLock::None, false),
+            server
         );
     }
 }

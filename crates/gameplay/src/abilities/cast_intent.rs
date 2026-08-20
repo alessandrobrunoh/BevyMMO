@@ -81,6 +81,17 @@ pub fn weapon_cast_intent(
     intent
 }
 
+/// Queue a second `release_cast` when the first one raced ahead of the
+/// replicated charge snapshot.
+pub fn queue_release_until_observed(observed_matches: bool) -> bool {
+    !observed_matches
+}
+
+/// Fire the queued retry once the snapshot is ours and the key is up.
+pub fn flush_queued_release(observed_matches: bool, slot_held: bool) -> bool {
+    observed_matches && !slot_held
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,5 +273,14 @@ mod tests {
         let (position, entity) = charge_release_aim(Some(1), Some(7), None, None);
         assert_eq!(position, Some(1));
         assert_eq!(entity, Some(7));
+    }
+
+    #[test]
+    fn queued_release_waits_for_the_snapshot_then_fires_when_the_key_is_up() {
+        assert!(queue_release_until_observed(false));
+        assert!(!queue_release_until_observed(true));
+        assert!(flush_queued_release(true, false));
+        assert!(!flush_queued_release(true, true));
+        assert!(!flush_queued_release(false, false));
     }
 }

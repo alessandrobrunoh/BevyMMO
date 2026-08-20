@@ -100,9 +100,10 @@ fn format_stats(
 ) -> String {
     let move_speed = displayed_movement_speed(movement.speed, modifiers);
     format!(
-        "HP: {}/{}\nMax Mana: {}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)\nAttack Power: {}\nMove Speed: {:.2}",
+        "HP: {}/{}\nMana: {}/{}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)\nAttack Power: {}\nMove Speed: {:.2}",
         format_value(vital.current_health),
         format_value(vital.max_health),
+        format_value(vital.current_mana),
         format_value(vital.max_mana),
         vital.mana_regeneration,
         format_value(combat.armor),

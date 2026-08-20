@@ -13,7 +13,9 @@
 //!   instant cast because press and arrive a few frames apart.
 //! - **Charge**: press starts the server-side charge via `eidolon_cast` and
 //!   keeps the aim preview open; release calls `release_cast` with the cursor
-//!   at that moment so the impact follows the hold, not the press.
+//!   at that moment so the impact follows the hold, not the press.  A tap that
+//!   beats replication still sends the release — waiting for [`ObservedCasts`]
+//!   first is how a fast Q/W/E left the charge bar stuck at 0.0s.
 //! - **Channeling**: press **immediately** starts the server-side channel via
 //!   `eidolon_cast`; release calls `release_cast` with the resolved ability id
 //!   to end it early.  An optimistic HUD cooldown starts at press time (the
@@ -27,11 +29,13 @@ use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_client::targeting::CurrentTarget;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::{
-    resolve_active_ability, weapon_cast_intent, AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility,
-    BaseAbilityRegistry,
+    flush_queued_release, queue_release_until_observed, resolve_active_ability, weapon_cast_intent,
+    AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility, BaseAbilityRegistry, BlueprintExecution,
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
+use bevymmo_gameplay::stats::components::VitalStats;
+use bevymmo_gameplay::stats::formulas::can_afford_mana;
 use bevymmo_network::network::protocol::{LookDirection, NetworkEntityId, Position};
 
 use crate::game_state::{GameScreen, Screen};
@@ -54,6 +58,33 @@ pub fn weapon_slot_bindings() -> impl Iterator<Item = (KeyAction, AbilitySlot)> 
     WEAPON_HUD_BINDINGS.into_iter()
 }
 
+/// Charge/Channel key-up that left the client before the replicated snapshot.
+///
+/// The first `release_cast` still goes out immediately (same-client reducers
+/// stay ordered). This retry covers the case where that send raced ahead of
+/// `eidolon_cast` and no-op'd, which would otherwise leave the charge bar up
+/// until the player held the key again.
+#[derive(Resource, Default)]
+pub struct PendingCastRelease(Option<QueuedCastRelease>);
+
+#[derive(Clone)]
+struct QueuedCastRelease {
+    ability_id: AbilityId,
+    action: KeyAction,
+    target_id: Option<u64>,
+    target_position: Option<Vec3>,
+    stop_movement: bool,
+    /// `Some` for Charge (HUD countdown starts on fire). Channeling already
+    /// started its countdown on press.
+    hud_cooldown_seconds: Option<f32>,
+}
+
+impl PendingCastRelease {
+    fn clear(&mut self) {
+        self.0 = None;
+    }
+}
+
 /// Raycast and surface query parameters bundled for aiming.
 #[derive(SystemParam)]
 pub struct AimRaycastParams<'w, 's> {
@@ -72,10 +103,17 @@ pub fn cast_abilities_on_key(
     target_ids: Query<&NetworkEntityId>,
     aim_ray: AimRaycastParams,
     mut controlled_players: Query<
-        (&Equipment, &Position, &NetworkEntityId, &mut LookDirection),
+        (
+            &Equipment,
+            &Position,
+            &NetworkEntityId,
+            &mut LookDirection,
+            &VitalStats,
+        ),
         With<LocalPlayer>,
     >,
     observed_casts: Res<ObservedCasts>,
+    mut pending_release: ResMut<PendingCastRelease>,
     mut move_target: ResMut<bevymmo_client::movement::MoveTarget>,
     conn: Option<Res<StdbConnection>>,
     item_registry: Res<ItemRegistry>,
@@ -87,31 +125,37 @@ pub fn cast_abilities_on_key(
     // otherwise a stale aim would fire on the next unrelated key-release.
     let Some(keys) = keys else {
         aim.clear();
+        pending_release.clear();
         return;
     };
     if !matches!(screen.0, Screen::InGame | Screen::Paused) {
         aim.clear();
+        pending_release.clear();
         return;
     }
 
-    let Ok((equipment, player_position, local_network_id, mut look_direction)) =
+    let Ok((equipment, player_position, local_network_id, mut look_direction, vitals)) =
         controlled_players.single_mut()
     else {
         aim.clear();
+        pending_release.clear();
         return;
     };
 
     // Only weapons with Eidolon gestures drive Q/W/E.
     let Some(weapon) = &equipment.weapon else {
         aim.clear();
+        pending_release.clear();
         return;
     };
     let Some(item) = item_registry.get(&weapon.item_id) else {
         aim.clear();
+        pending_release.clear();
         return;
     };
     let Some(weapon_abilities) = item.ability_loadout() else {
         aim.clear();
+        pending_release.clear();
         return;
     };
 
@@ -143,11 +187,23 @@ pub fn cast_abilities_on_key(
             continue;
         }
 
+        // A new press of this slot is a new hold, not a retry of the last tap.
+        if pending_release
+            .0
+            .as_ref()
+            .is_some_and(|queued| queued.action == action)
+        {
+            pending_release.clear();
+        }
+
         let Some((ability_id, ability)) =
             active_ability(slot, weapon_abilities, weapon, &ability_registry)
         else {
             continue;
         };
+        if !can_afford_mana(vitals.current_mana, ability.base_params().energy_cost) {
+            continue;
+        }
 
         let blueprint = item.ability_blueprint(ability.as_ref());
         let intent = weapon_cast_intent(true, false, blueprint.execution, ability.cast_mode());
@@ -165,6 +221,13 @@ pub fn cast_abilities_on_key(
             if let Err(err) = stdb_commands::eidolon_cast(conn, slot, target_id, target_position) {
                 error!("could not start Eidolon cast: {err}");
             }
+        }
+        if blueprint.execution == BlueprintExecution::Charge
+            || stops_movement_for_ability(ability.cast_mode())
+        {
+            // Server `stop_movement` clears the dest; drop the local click
+            // dest too or prediction keeps walking into a snap-back loop.
+            move_target.0 = None;
         }
         // Channel cooldown starts on press (server does the same). Charge
         // waits for release_cast.
@@ -205,6 +268,12 @@ pub fn cast_abilities_on_key(
 
         let blueprint = item.ability_blueprint(ability.as_ref());
         let intent = weapon_cast_intent(false, true, blueprint.execution, ability.cast_mode());
+        if intent.start_cast
+            && !can_afford_mana(vitals.current_mana, ability.base_params().energy_cost)
+        {
+            aim.clear();
+            continue;
+        }
 
         if intent.start_cast {
             if aim.slot != Some(slot) {
@@ -245,36 +314,118 @@ pub fn cast_abilities_on_key(
         }
 
         if intent.release_cast {
-            let is_this_cast = observed_casts
-                .0
-                .get(&local_network_id.0)
-                .is_some_and(|cast| cast.spell_id == ability_id.as_str());
+            let observed_matches =
+                observed_cast_is(&observed_casts, local_network_id.0, &ability_id);
             aim.clear();
 
-            if is_this_cast {
-                if let Some(direction) = target_position
-                    .and_then(|target| flat_direction_towards(player_position.0, target))
-                {
-                    look_direction.0 = direction;
-                }
-                if let Some(conn) = conn.as_deref() {
-                    if let Err(err) = stdb_commands::release_cast(
-                        conn,
-                        ability_id.as_str().to_owned(),
-                        target_id,
-                        target_position,
-                    ) {
-                        error!("could not release cast: {err}");
-                    }
-                }
-                if !ability.cast_mode().is_channeling() {
-                    hud_cooldowns.write(SpellHudCooldownStarted {
-                        key: HudCooldownKey::Ability(ability_id.clone()),
-                        cooldown_seconds: ability.base_params().cooldown,
-                    });
-                }
+            let stop_movement = blueprint.execution == BlueprintExecution::Charge;
+            // Optimistic HUD cooldown only once we know this snapshot is ours.
+            // Starting it on a no-op release would lock the slot while the
+            // charge bar stayed up.
+            let hud_cooldown_seconds =
+                (!ability.cast_mode().is_channeling()).then_some(ability.base_params().cooldown);
+
+            let hud_cooldown = if observed_matches {
+                hud_cooldown_seconds
+            } else {
+                None
+            };
+            send_release_cast(
+                conn.as_deref(),
+                &ability_id,
+                target_id,
+                target_position,
+                player_position.0,
+                &mut look_direction,
+                &mut move_target,
+                stop_movement,
+                hud_cooldown.map(|seconds| (&mut hud_cooldowns, seconds)),
+            );
+
+            if queue_release_until_observed(observed_matches) {
+                pending_release.0 = Some(QueuedCastRelease {
+                    ability_id,
+                    action,
+                    target_id,
+                    target_position,
+                    stop_movement,
+                    hud_cooldown_seconds,
+                });
+            } else {
+                pending_release.clear();
             }
         }
+    }
+
+    // A tap that beat replication queued a retry; fire it once the charge
+    // row is visible and the key is still up.
+    let should_flush = pending_release.0.as_ref().is_some_and(|queued| {
+        let observed_matches =
+            observed_cast_is(&observed_casts, local_network_id.0, &queued.ability_id);
+        let slot_held = settings.pressed(queued.action, &keys);
+        flush_queued_release(observed_matches, slot_held)
+    });
+    if should_flush {
+        if let Some(queued) = pending_release.0.take() {
+            send_release_cast(
+                conn.as_deref(),
+                &queued.ability_id,
+                queued.target_id,
+                queued.target_position,
+                player_position.0,
+                &mut look_direction,
+                &mut move_target,
+                queued.stop_movement,
+                queued
+                    .hud_cooldown_seconds
+                    .map(|seconds| (&mut hud_cooldowns, seconds)),
+            );
+        }
+    }
+}
+
+fn observed_cast_is(observed: &ObservedCasts, caster: u64, ability_id: &AbilityId) -> bool {
+    observed
+        .0
+        .get(&caster)
+        .is_some_and(|cast| cast.spell_id == ability_id.as_str())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn send_release_cast(
+    conn: Option<&StdbConnection>,
+    ability_id: &AbilityId,
+    target_id: Option<u64>,
+    target_position: Option<Vec3>,
+    player_position: Vec3,
+    look_direction: &mut LookDirection,
+    move_target: &mut bevymmo_client::movement::MoveTarget,
+    stop_movement: bool,
+    hud_cooldown: Option<(&mut MessageWriter<SpellHudCooldownStarted>, f32)>,
+) {
+    if let Some(direction) =
+        target_position.and_then(|target| flat_direction_towards(player_position, target))
+    {
+        look_direction.0 = direction;
+    }
+    if stop_movement {
+        move_target.0 = None;
+    }
+    if let Some(conn) = conn {
+        if let Err(err) = stdb_commands::release_cast(
+            conn,
+            ability_id.as_str().to_owned(),
+            target_id,
+            target_position,
+        ) {
+            error!("could not release cast: {err}");
+        }
+    }
+    if let Some((hud_cooldowns, cooldown_seconds)) = hud_cooldown {
+        hud_cooldowns.write(SpellHudCooldownStarted {
+            key: HudCooldownKey::Ability(ability_id.clone()),
+            cooldown_seconds,
+        });
     }
 }
 
@@ -312,6 +463,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn unaffordable_weapon_casts_are_skipped() {
+        assert!(!can_afford_mana(5.0, 12.0));
+        assert!(can_afford_mana(12.0, 12.0));
+    }
+
+    #[test]
     fn hud_keys_drive_each_slot_once() {
         assert_eq!(WEAPON_HUD_BINDINGS[0].1, AbilitySlot::Primary);
         assert_eq!(WEAPON_HUD_BINDINGS[1].1, AbilitySlot::Secondary);
@@ -327,5 +484,36 @@ mod tests {
                 AbilitySlot::Ultimate,
             ]
         );
+    }
+
+    #[test]
+    fn observed_cast_matches_the_named_ability_only() {
+        let mut observed = ObservedCasts::default();
+        observed.0.insert(
+            1,
+            crate::spells::cast_bar::ObservedCast {
+                spell_id: "arcane_bolt".into(),
+                kind: 2,
+                elapsed_seconds: 0.0,
+                required_seconds: 0.15,
+                since_update_seconds: 0.0,
+                stale_after_seconds: 1.0,
+            },
+        );
+        assert!(observed_cast_is(
+            &observed,
+            1,
+            &AbilityId::new("arcane_bolt")
+        ));
+        assert!(!observed_cast_is(
+            &observed,
+            1,
+            &AbilityId::new("arcane_wave")
+        ));
+        assert!(!observed_cast_is(
+            &observed,
+            2,
+            &AbilityId::new("arcane_bolt")
+        ));
     }
 }

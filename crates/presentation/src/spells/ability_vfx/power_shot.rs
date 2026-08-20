@@ -52,8 +52,7 @@ pub fn spawn(
         height: 0.8,
     });
     let trail_mat = super::vfx_material(materials, color, 0.4, 2.0);
-    let mut trail_tfm =
-        Transform::from_translation(spec.start + Vec3::Y * CAST_HEIGHT - dir * 0.3);
+    let mut trail_tfm = Transform::from_translation(spec.start + Vec3::Y * CAST_HEIGHT - dir * 0.3);
     trail_tfm.look_at(spec.start, Vec3::Y);
     commands.spawn((
         Mesh3d(trail_mesh),

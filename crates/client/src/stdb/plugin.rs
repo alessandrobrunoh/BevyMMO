@@ -38,7 +38,7 @@ use crate::movement::{
 use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
-use bevymmo_domain::movement::{self, Step};
+use bevymmo_domain::movement::{self, predicted_move_dest, Step};
 use bevymmo_domain::movement::{movement_intent_allowed, MovementLock};
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
@@ -1282,22 +1282,27 @@ fn entity_for(map: &StdbEntityMap, character_id: Uuid) -> Option<Entity> {
 }
 
 fn apply_stats(commands: &mut Commands, entity: Entity, row: &EntityStats) {
-    let stats = &row.stats;
     commands.entity(entity).insert((
-        VitalStats {
-            current_health: stats.current_health,
-            max_health: stats.max_health,
-            max_mana: stats.max_mana,
-            mana_regeneration: stats.mana_regeneration,
-        },
+        vital_from_entity_stats(row),
         CombatStats {
-            armor: stats.armor,
-            attack_power: stats.attack_power,
+            armor: row.stats.armor,
+            attack_power: row.stats.attack_power,
         },
         MovementStats {
-            speed: stats.movement_speed,
+            speed: row.stats.movement_speed,
         },
     ));
+}
+
+fn vital_from_entity_stats(row: &EntityStats) -> VitalStats {
+    let stats = &row.stats;
+    VitalStats {
+        current_health: stats.current_health,
+        max_health: stats.max_health,
+        current_mana: row.current_mana,
+        max_mana: stats.max_mana,
+        mana_regeneration: stats.mana_regeneration,
+    }
 }
 
 fn hotbar_from(row: &Hotbar) -> SpellHotbar {
@@ -1555,6 +1560,7 @@ fn stat_field_from(name: &str) -> StatField {
         "Armor" => StatField::Armor,
         "AttackPower" => StatField::AttackPower,
         "MaxHealth" => StatField::MaxHealth,
+        "MaxMana" => StatField::MaxMana,
         "ManaRegeneration" => StatField::ManaRegeneration,
         other => {
             warn!("unknown stat field {other:?} from the module; treating it as Speed");
@@ -2129,7 +2135,13 @@ fn predict_and_reconcile(
     surfaces: Res<ClientSurfaceQuery>,
     collision: Res<ClientCollision>,
     pending_move: Res<MoveTarget>,
-    mut query: Query<(&mut Position, &StdbAuthoritative, Option<&LocalPlayer>)>,
+    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    mut query: Query<(
+        &mut Position,
+        &StdbAuthoritative,
+        Option<&LocalPlayer>,
+        Option<&ActiveCastLock>,
+    )>,
 ) {
     let dt = time.delta_secs();
     if dt <= 0.0 {
@@ -2144,9 +2156,18 @@ fn predict_and_reconcile(
         _ => None,
     };
 
-    for (mut position, authoritative, local) in &mut query {
+    let right_mouse_held = mouse
+        .as_ref()
+        .is_some_and(|buttons| buttons.pressed(MouseButton::Right));
+
+    for (mut position, authoritative, local, lock) in &mut query {
         let dest = if local.is_some() {
-            pending_move.0.or(authoritative.move_target)
+            predicted_move_dest(
+                pending_move.0,
+                authoritative.move_target,
+                lock.map(|lock| lock.0).unwrap_or(MovementLock::None),
+                right_mouse_held,
+            )
         } else {
             authoritative.move_target
         };
@@ -2419,7 +2440,30 @@ fn drain_party_events(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stdb::module_bindings::CastSourceRow;
+    use crate::stdb::module_bindings::{CastSourceRow, StatsRow};
+
+    #[test]
+    fn entity_stats_copy_current_mana_into_vital_stats() {
+        let row = EntityStats {
+            entity_id: 1,
+            stats: StatsRow {
+                current_health: 80.0,
+                max_health: 100.0,
+                max_mana: 50.0,
+                mana_regeneration: 5.0,
+                armor: 10.0,
+                movement_speed: 0.15,
+                attack_power: 12.0,
+            },
+            current_mana: 17.0,
+        };
+        let vital = vital_from_entity_stats(&row);
+        assert_eq!(vital.current_health, 80.0);
+        assert_eq!(vital.max_health, 100.0);
+        assert_eq!(vital.current_mana, 17.0);
+        assert_eq!(vital.max_mana, 50.0);
+        assert_eq!(vital.mana_regeneration, 5.0);
+    }
 
     #[test]
     fn status_signature_ignores_remaining_time() {

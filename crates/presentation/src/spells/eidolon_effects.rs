@@ -103,16 +103,10 @@ pub fn spawn_for_ability(
             );
         }
         AbilityGeometry::Cone { .. } | AbilityGeometry::Circle { .. } => {
-            let spec = crate::spells::ability_vfx::AbilityVfxSpec::from_ability(
-                effect,
-                ability.as_ref(),
-            );
+            let spec =
+                crate::spells::ability_vfx::AbilityVfxSpec::from_ability(effect, ability.as_ref());
             crate::spells::ability_vfx::spawn_matching_footprint(
-                commands,
-                meshes,
-                materials,
-                &spec,
-                color,
+                commands, meshes, materials, &spec, color,
             );
             let radius = spec.radius.max(0.5);
             if delay <= 0.0 {

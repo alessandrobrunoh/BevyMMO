@@ -93,6 +93,13 @@ impl AbilityVfxSpec {
             self.end
         }
     }
+
+    /// Delayed area hits already spawn a replicated `aoe_region` mesh. Drawing
+    /// a second cone from `SpellVisualEffect` sits slightly off the hitbox
+    /// (client look vs the server's stored direction).
+    pub fn footprint_drawn_by_aoe_region(&self) -> bool {
+        self.warning_seconds > 0.05
+    }
 }
 
 /// Signature every ability-VFX spawn function must satisfy.
@@ -207,6 +214,35 @@ pub fn animate_lifecycle(
 // ---------------------------------------------------------------------------
 // Common helpers – reused across ability modules
 // ---------------------------------------------------------------------------
+
+/// Yaw-only rotation that maps a ground sector (opens along local −Z) onto
+/// `direction`. Unlike [`Transform::looking_to`], this never tilts the mesh
+/// off the XZ plane, so the cone stays a floor decal like the aim preview.
+pub fn ground_yaw_towards(direction: Vec3) -> Quat {
+    let dir = Vec3::new(direction.x, 0.0, direction.z).normalize_or_zero();
+    if dir == Vec3::ZERO {
+        Quat::IDENTITY
+    } else {
+        Quat::from_rotation_arc(Vec3::NEG_Z, dir)
+    }
+}
+
+fn vfx_ground_material(
+    materials: &mut Assets<StandardMaterial>,
+    color: Color,
+    alpha: f32,
+    emissive_strength: f32,
+) -> Handle<StandardMaterial> {
+    materials.add(StandardMaterial {
+        base_color: color.with_alpha(alpha),
+        emissive: vfx_glow(color, emissive_strength),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        double_sided: true,
+        cull_mode: None,
+        ..default()
+    })
+}
 
 /// Emissive glow from a base colour.
 pub fn vfx_glow(color: Color, strength: f32) -> LinearRgba {
@@ -405,37 +441,112 @@ pub fn spawn_tetra<T: Component>(
     ));
 }
 
-/// Flat sector in XZ, apex at the origin, opening along local −Z so
-/// [`Transform::looking_to`] lines it up with a world-space aim direction.
+/// Extruded ground wedge: apex at the origin, opening along local −Z.
+///
+/// Thickness matches the circle AoE cylinders so the cone is visible from
+/// the same camera angles; a paper-thin fan is back-face culled and reads
+/// as "nothing", leaving only a circular burst at the caster's feet.
 pub fn ground_sector_mesh(radius: f32, angle_deg: f32) -> Mesh {
     let radius = radius.max(0.1);
-    let angle = angle_deg.clamp(1.0, 360.0);
-    if angle >= 359.0 {
-        return Cylinder::new(radius, 0.08).into();
-    }
+    let angle = angle_deg.clamp(1.0, 359.0);
     let half = angle.to_radians() * 0.5;
-    let steps = ((angle / 11.25).ceil() as usize).clamp(3, 32);
-    let mut positions = vec![[0.0, 0.0, 0.0]];
-    let mut normals = vec![[0.0, 1.0, 0.0]];
-    let mut uvs = vec![[0.5, 0.5]];
-    for i in 0..=steps {
-        let t = i as f32 / steps as f32;
-        let a = -half + half * 2.0 * t;
-        let x = a.sin() * radius;
-        let z = -a.cos() * radius;
-        positions.push([x, 0.0, z]);
-        normals.push([0.0, 1.0, 0.0]);
-        uvs.push([0.5 + 0.5 * (x / radius), 0.5 + 0.5 * (z / radius)]);
+    let steps = ((angle / 8.0).ceil() as usize).clamp(4, 32);
+    let thick = 0.1;
+    let arc = steps + 1;
+    let mut positions = Vec::with_capacity(2 * (1 + arc));
+    let mut normals = Vec::with_capacity(2 * (1 + arc));
+    let mut uvs = Vec::with_capacity(2 * (1 + arc));
+
+    let push_fan = |y: f32,
+                    ny: f32,
+                    positions: &mut Vec<[f32; 3]>,
+                    normals: &mut Vec<[f32; 3]>,
+                    uvs: &mut Vec<[f32; 2]>| {
+        positions.push([0.0, y, 0.0]);
+        normals.push([0.0, ny, 0.0]);
+        uvs.push([0.5, 0.5]);
+        for i in 0..arc {
+            let t = i as f32 / steps as f32;
+            let a = -half + half * 2.0 * t;
+            let x = a.sin() * radius;
+            let z = -a.cos() * radius;
+            positions.push([x, y, z]);
+            normals.push([0.0, ny, 0.0]);
+            uvs.push([0.5 + 0.5 * (x / radius), 0.5 + 0.5 * (z / radius)]);
+        }
+    };
+    push_fan(0.0, -1.0, &mut positions, &mut normals, &mut uvs);
+    push_fan(thick, 1.0, &mut positions, &mut normals, &mut uvs);
+
+    let bottom_apex = 0u32;
+    let top_apex = (1 + arc) as u32;
+    let mut indices = Vec::new();
+    for i in 1..arc as u32 {
+        // Bottom, winding so −Y is out.
+        indices.extend([bottom_apex, i + 1, i]);
+        // Top, winding so +Y is out.
+        indices.extend([top_apex, top_apex + i, top_apex + i + 1]);
     }
-    let mut indices = Vec::with_capacity(steps * 3);
-    for i in 1..=steps {
-        indices.extend([0u32, i as u32, (i + 1) as u32]);
+    // Radial walls and the outer arc.
+    let bottom_arc = 1u32;
+    let top_arc = top_apex + 1;
+    indices.extend([
+        bottom_apex,
+        bottom_arc,
+        top_arc,
+        bottom_apex,
+        top_arc,
+        top_apex,
+    ]);
+    let last = (arc - 1) as u32;
+    indices.extend([
+        bottom_apex,
+        top_apex,
+        top_arc + last,
+        bottom_apex,
+        top_arc + last,
+        bottom_arc + last,
+    ]);
+    for i in 0..last {
+        let b0 = bottom_arc + i;
+        let b1 = b0 + 1;
+        let t0 = top_arc + i;
+        let t1 = t0 + 1;
+        indices.extend([b0, b1, t1, b0, t1, t0]);
     }
-    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
-        .with_inserted_indices(Indices::U32(indices))
+
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    .with_inserted_indices(Indices::U32(indices))
+}
+
+/// Places a ground cone whose filled sector matches the aim-preview gizmos.
+pub fn spawn_ground_cone<T: Component>(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    apex: Vec3,
+    direction: Vec3,
+    radius: f32,
+    angle_deg: f32,
+    color: Color,
+    lifecycle: T,
+) {
+    let mesh = meshes.add(ground_sector_mesh(radius, angle_deg));
+    let mat = vfx_ground_material(materials, color, 0.45, 2.4);
+    commands.spawn((
+        Mesh3d(mesh),
+        MeshMaterial3d(mat),
+        Transform::from_translation(apex + Vec3::Y * 0.03)
+            .with_rotation(ground_yaw_towards(direction)),
+        SpellVisual,
+        lifecycle,
+    ));
 }
 
 /// Ground marker that covers the same circle or cone the aim preview drew.
@@ -449,30 +560,22 @@ pub fn spawn_matching_footprint(
     if spec.radius <= 0.05 {
         return;
     }
+    if spec.footprint_drawn_by_aoe_region() {
+        return;
+    }
     let warning = spec.warning_seconds.max(0.0);
     if let Some(angle) = spec.cone_angle_deg {
-        let mesh = meshes.add(ground_sector_mesh(spec.radius, angle));
-        let mat = vfx_material(materials, color, 0.4, 2.2);
-        let dir = spec.direction();
-        let transform = Transform::from_translation(spec.impact() + Vec3::Y * 0.05)
-            .looking_to(dir, Vec3::Y);
-        if warning > 0.05 {
-            commands.spawn((
-                Mesh3d(mesh),
-                MeshMaterial3d(mat),
-                transform,
-                SpellVisual,
-                lifecycle::VfxPulseRing::new(warning, 0.28),
-            ));
-        } else {
-            commands.spawn((
-                Mesh3d(mesh),
-                MeshMaterial3d(mat),
-                transform,
-                SpellVisual,
-                lifecycle::VfxExpandFade::new(0.4, 0.2, 1.0),
-            ));
-        }
+        spawn_ground_cone(
+            commands,
+            meshes,
+            materials,
+            spec.impact(),
+            spec.direction(),
+            spec.radius,
+            angle,
+            color,
+            lifecycle::VfxLifetime::new((warning + 0.35).max(0.45)),
+        );
         return;
     }
     if warning > 0.05 {
@@ -597,7 +700,58 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .map(bevy::mesh::VertexAttributeValues::len)
             .unwrap_or(0);
-        assert!(count >= 5, "apex + arc, got {count}");
+        assert!(count >= 10, "extruded apex + arc, got {count}");
+    }
+
+    #[test]
+    fn delayed_area_hits_leave_the_footprint_to_the_aoe_region() {
+        use bevymmo_content::ability_definitions::{
+            arcane_wave::ArcaneWave, cataclysm::Cataclysm, cleave::Cleave,
+            great_manifestation::GreatManifestation, ground_slam::GroundSlam, volley::Volley,
+        };
+        use bevymmo_gameplay::abilities::BaseAbility;
+        use bevymmo_network::network::protocol::SpellVisualEffect;
+
+        let effect = SpellVisualEffect {
+            spell_id: String::new(),
+            start: Vec3::ZERO,
+            end: Vec3::Z,
+        };
+        let delayed: [&dyn BaseAbility; 4] =
+            [&ArcaneWave, &GreatManifestation, &Cataclysm, &GroundSlam];
+        for ability in delayed {
+            let spec = AbilityVfxSpec::from_ability(&effect, ability);
+            assert!(
+                spec.footprint_drawn_by_aoe_region(),
+                "{} must not paint a second ground hitbox",
+                ability.id().as_str()
+            );
+        }
+        for ability in [&Cleave as &dyn BaseAbility, &Volley] {
+            let spec = AbilityVfxSpec::from_ability(&effect, ability);
+            assert!(
+                !spec.footprint_drawn_by_aoe_region(),
+                "{} is instant so VFX owns the footprint",
+                ability.id().as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn yaw_maps_the_sector_axis_onto_look() {
+        for dir in [
+            Vec3::Z,
+            Vec3::X,
+            -Vec3::X,
+            Vec3::new(1.0, 0.0, 1.0).normalize(),
+        ] {
+            let axis = ground_yaw_towards(dir) * Vec3::NEG_Z;
+            let expected = Vec3::new(dir.x, 0.0, dir.z).normalize();
+            assert!(
+                (axis - expected).length() < 0.02,
+                "look {dir:?} mapped to {axis:?}"
+            );
+        }
     }
 
     #[test]

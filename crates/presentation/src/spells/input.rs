@@ -24,21 +24,23 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
-use bevymmo_client::movement::ClientSurfaceQuery;
+use bevymmo_client::movement::{ClientSurfaceQuery, LocalMovementFreeze};
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_client::targeting::CurrentTarget;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::{
-    flush_queued_release, queue_release_until_observed, resolve_active_ability, weapon_cast_intent,
-    AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility, BaseAbilityRegistry, BlueprintExecution,
+    flush_queued_release, movement_lock_for_ability, queue_release_until_observed,
+    resolve_active_ability, weapon_cast_intent, AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility,
+    BaseAbilityRegistry, BlueprintExecution,
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
+use bevymmo_gameplay::movement::movement_intent_allowed;
 use bevymmo_gameplay::stats::components::VitalStats;
 use bevymmo_gameplay::stats::formulas::can_afford_mana;
 use bevymmo_network::network::protocol::{LookDirection, NetworkEntityId, Position};
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{in_gameplay, Screen};
 use crate::spells::cast_bar::ObservedCasts;
 use crate::spells::cursor::{cursor_ground_point, flat_direction_towards};
 use crate::spells::ui::{HudCooldownKey, SpellHudCooldownStarted, SpellHudState};
@@ -93,11 +95,20 @@ pub struct AimRaycastParams<'w, 's> {
     pub surface_query: Option<Res<'w, ClientSurfaceQuery>>,
 }
 
+/// Local movement side-effects of a weapon cast. Bundled so
+/// [`cast_abilities_on_key`] stays within Bevy's 16-argument system limit.
+#[derive(SystemParam)]
+pub struct CastMovementParams<'w> {
+    move_target: ResMut<'w, bevymmo_client::movement::MoveTarget>,
+    movement_freeze: ResMut<'w, LocalMovementFreeze>,
+    time: Res<'w, Time>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn cast_abilities_on_key(
     keys: Option<Res<ButtonInput<KeyCode>>>,
     settings: Res<GameSettingsResource>,
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     current_target: Res<CurrentTarget>,
     mut aim: ResMut<AbilityAim>,
     target_ids: Query<&NetworkEntityId>,
@@ -114,13 +125,18 @@ pub fn cast_abilities_on_key(
     >,
     observed_casts: Res<ObservedCasts>,
     mut pending_release: ResMut<PendingCastRelease>,
-    mut move_target: ResMut<bevymmo_client::movement::MoveTarget>,
+    movement: CastMovementParams,
     conn: Option<Res<StdbConnection>>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
     hud_state: Res<SpellHudState>,
     mut hud_cooldowns: MessageWriter<SpellHudCooldownStarted>,
 ) {
+    let CastMovementParams {
+        mut move_target,
+        mut movement_freeze,
+        time,
+    } = movement;
     // Any condition that invalidates the aiming context must close the aim window,
     // otherwise a stale aim would fire on the next unrelated key-release.
     let Some(keys) = keys else {
@@ -128,7 +144,7 @@ pub fn cast_abilities_on_key(
         pending_release.clear();
         return;
     };
-    if !matches!(screen.0, Screen::InGame | Screen::Paused) {
+    if !in_gameplay(screen) {
         aim.clear();
         pending_release.clear();
         return;
@@ -222,13 +238,16 @@ pub fn cast_abilities_on_key(
                 error!("could not start Eidolon cast: {err}");
             }
         }
-        if blueprint.execution == BlueprintExecution::Charge
-            || stops_movement_for_ability(ability.cast_mode())
-        {
-            // Server `stop_movement` clears the dest; drop the local click
-            // dest too or prediction keeps walking into a snap-back loop.
-            move_target.0 = None;
-        }
+        root_local_movement(
+            &mut move_target,
+            &mut movement_freeze,
+            time.elapsed_secs(),
+            movement_lock_for_ability(
+                ability.cast_mode(),
+                blueprint.execution == BlueprintExecution::Charge,
+            ),
+            ability.cast_mode(),
+        );
         // Channel cooldown starts on press (server does the same). Charge
         // waits for release_cast.
         if ability.cast_mode().is_channeling() {
@@ -293,9 +312,16 @@ pub fn cast_abilities_on_key(
             if let Some(direction) = face_direction {
                 look_direction.0 = direction;
             }
-            if stops_movement_for_ability(ability.cast_mode()) {
-                move_target.0 = None;
-            }
+            root_local_movement(
+                &mut move_target,
+                &mut movement_freeze,
+                time.elapsed_secs(),
+                movement_lock_for_ability(
+                    ability.cast_mode(),
+                    blueprint.execution == BlueprintExecution::Charge,
+                ),
+                ability.cast_mode(),
+            );
 
             if let Some(conn) = conn.as_deref() {
                 if let Err(err) =
@@ -338,6 +364,8 @@ pub fn cast_abilities_on_key(
                 player_position.0,
                 &mut look_direction,
                 &mut move_target,
+                &mut movement_freeze,
+                time.elapsed_secs(),
                 stop_movement,
                 hud_cooldown.map(|seconds| (&mut hud_cooldowns, seconds)),
             );
@@ -375,6 +403,8 @@ pub fn cast_abilities_on_key(
                 player_position.0,
                 &mut look_direction,
                 &mut move_target,
+                &mut movement_freeze,
+                time.elapsed_secs(),
                 queued.stop_movement,
                 queued
                     .hud_cooldown_seconds
@@ -400,6 +430,8 @@ fn send_release_cast(
     player_position: Vec3,
     look_direction: &mut LookDirection,
     move_target: &mut bevymmo_client::movement::MoveTarget,
+    freeze: &mut LocalMovementFreeze,
+    now: f32,
     stop_movement: bool,
     hud_cooldown: Option<(&mut MessageWriter<SpellHudCooldownStarted>, f32)>,
 ) {
@@ -410,6 +442,7 @@ fn send_release_cast(
     }
     if stop_movement {
         move_target.0 = None;
+        freeze.arm(now);
     }
     if let Some(conn) = conn {
         if let Err(err) = stdb_commands::release_cast(
@@ -455,6 +488,24 @@ fn stops_movement_for_ability(cast_mode: bevymmo_gameplay::abilities::AbilityCas
         AbilityCastMode::Channeling {
             movement_policy, ..
         } => movement_policy == ChannelMovementPolicy::InterruptOnMove,
+    }
+}
+
+/// Drop the local dest immediately, and root prediction when the ability
+/// will freeze the character. A channel that interrupts on move only
+/// clears the dest — walking is still allowed so a held click can cancel it.
+fn root_local_movement(
+    move_target: &mut bevymmo_client::movement::MoveTarget,
+    freeze: &mut LocalMovementFreeze,
+    now: f32,
+    lock: bevymmo_gameplay::movement::MovementLock,
+    cast_mode: bevymmo_gameplay::abilities::AbilityCastMode,
+) {
+    if !movement_intent_allowed(lock, false) {
+        move_target.0 = None;
+        freeze.arm(now);
+    } else if stops_movement_for_ability(cast_mode) {
+        move_target.0 = None;
     }
 }
 
@@ -515,5 +566,36 @@ mod tests {
             2,
             &AbilityId::new("arcane_bolt")
         ));
+    }
+
+    #[test]
+    fn rooted_cast_arms_the_optimistic_freeze() {
+        let mut dest = bevymmo_client::movement::MoveTarget(Some(Vec3::X));
+        let mut freeze = LocalMovementFreeze::default();
+        root_local_movement(
+            &mut dest,
+            &mut freeze,
+            1.0,
+            bevymmo_gameplay::movement::MovementLock::CastTime,
+            bevymmo_gameplay::abilities::AbilityCastMode::CastTime,
+        );
+        assert!(dest.0.is_none());
+        assert!(freeze.is_active(1.0));
+        assert!(!freeze.is_active(1.0 + LocalMovementFreeze::DURATION));
+    }
+
+    #[test]
+    fn instant_cast_does_not_root_prediction() {
+        let mut dest = bevymmo_client::movement::MoveTarget(Some(Vec3::X));
+        let mut freeze = LocalMovementFreeze::default();
+        root_local_movement(
+            &mut dest,
+            &mut freeze,
+            1.0,
+            bevymmo_gameplay::movement::MovementLock::None,
+            bevymmo_gameplay::abilities::AbilityCastMode::Instant,
+        );
+        assert_eq!(dest.0, Some(Vec3::X));
+        assert!(!freeze.is_active(1.0));
     }
 }

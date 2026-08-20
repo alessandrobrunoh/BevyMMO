@@ -7,9 +7,8 @@ mod components;
 pub(crate) mod systems;
 
 use bevy::prelude::*;
-use bevymmo_network::network::mode::has_client;
 
-use crate::game_state::{not_typing, GameScreen, Screen};
+use crate::game_state::{in_gameplay, not_typing};
 
 #[derive(Resource, Default)]
 pub struct InscriptionUiState {
@@ -38,12 +37,7 @@ impl Plugin for InscriptionUiPlugin {
                 systems::handle_inscription_interactions,
             )
                 .chain()
-                .run_if(has_client)
-                .run_if(in_gameplay_or_paused),
+                .run_if(in_gameplay),
         );
     }
-}
-
-fn in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
-    matches!(screen.0, Screen::InGame | Screen::Paused)
 }

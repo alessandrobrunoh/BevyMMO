@@ -33,8 +33,8 @@ pub use blueprint::{
     AbilityBlueprint, BlueprintExecution, ManifestationKind, ManifestationPayload,
 };
 pub use cast_intent::{
-    charge_release_aim, flush_queued_release, queue_release_until_observed, weapon_cast_intent,
-    WeaponCastIntent,
+    charge_release_aim, flush_queued_release, movement_lock_for_ability,
+    queue_release_until_observed, weapon_cast_intent, WeaponCastIntent,
 };
 pub use cooldowns::AbilityCooldowns;
 

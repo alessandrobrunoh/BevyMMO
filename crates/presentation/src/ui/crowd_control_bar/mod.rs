@@ -4,7 +4,6 @@ pub mod components;
 mod systems;
 
 use bevy::prelude::*;
-use bevymmo_network::network::mode::has_client;
 
 pub struct CrowdControlBarPlugin;
 
@@ -19,25 +18,11 @@ impl Plugin for CrowdControlBarPlugin {
                 systems::update_screen_cc_bars.in_set(crate::renderer::RenderSync::Project),
             )
                 .chain()
-                .run_if(has_client)
-                .run_if(in_gameplay),
+                .run_if(crate::game_state::in_gameplay),
         );
         app.add_systems(
             Update,
-            systems::cleanup_screen_cc_bars
-                .run_if(has_client)
-                .run_if(not_in_gameplay),
+            systems::cleanup_screen_cc_bars.run_if(crate::game_state::not_in_gameplay),
         );
     }
-}
-
-fn in_gameplay(screen: Res<crate::game_state::GameScreen>) -> bool {
-    matches!(
-        screen.0,
-        crate::game_state::Screen::InGame | crate::game_state::Screen::Paused
-    )
-}
-
-fn not_in_gameplay(screen: Res<crate::game_state::GameScreen>) -> bool {
-    !in_gameplay(screen)
 }

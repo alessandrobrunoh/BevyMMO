@@ -15,7 +15,6 @@ use bevymmo_gameplay::entity::components::{EntityKind, PlayerName};
 use bevymmo_gameplay::stats::components::VitalStats;
 use bevymmo_network::network::protocol::Position;
 
-use crate::game_state::{GameScreen, Screen};
 use crate::ui::bar::{get_hp_fill_color, get_or_spawn_root};
 use crate::ui::theme::UiTheme;
 use bevy::prelude::*;
@@ -242,11 +241,6 @@ pub fn cleanup_floating_ui_root(
     }
 }
 
-/// Condizione di esecuzione: il client NON è in una schermata di gameplay.
-pub(crate) fn not_in_gameplay(screen: Res<GameScreen>) -> bool {
-    !matches!(screen.0, Screen::InGame | Screen::Paused)
-}
-
 /// Determina il colore della barra HP in base al tipo di entità.
 ///
 /// - Player: verde-blu
@@ -257,13 +251,13 @@ pub(crate) fn not_in_gameplay(screen: Res<GameScreen>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game_state::Screen;
     use crate::ui::theme::UiTheme;
 
     /// App minima con solo le risorse/componenti necessarie; nessun renderer.
     fn content_app() -> App {
         let mut app = App::new();
         app.init_resource::<UiTheme>();
-        app.init_resource::<GameScreen>();
         app.add_systems(
             Update,
             (spawn_ui_for_new_entities, update_floating_ui_content).chain(),
@@ -448,16 +442,19 @@ mod tests {
     #[test]
     fn root_is_despawned_when_leaving_gameplay() {
         let mut app = App::new();
-        app.init_resource::<GameScreen>();
+        crate::game_state::init_screen_states(&mut app);
         app.init_resource::<UiTheme>();
         app.add_systems(
             Update,
-            spawn_ui_for_new_entities.run_if(crate::ui::systems::in_gameplay),
+            spawn_ui_for_new_entities.run_if(in_state(Screen::InGame)),
         );
-        app.add_systems(Update, cleanup_floating_ui_root.run_if(not_in_gameplay));
+        app.add_systems(
+            Update,
+            cleanup_floating_ui_root.run_if(crate::game_state::not_in_gameplay),
+        );
 
         // Enter gameplay: spawn di un'entità e della root.
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         app.world_mut().spawn((
             Position(Vec3::ZERO),
             VitalStats {
@@ -472,7 +469,7 @@ mod tests {
         assert_eq!(root_count(app.world_mut()), 1);
 
         // Leave gameplay: la root e i figli vengono despawnati.
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::MainMenu;
+        app.insert_state(Screen::MainMenu);
         app.update();
         assert_eq!(
             root_count(app.world_mut()),
@@ -484,15 +481,18 @@ mod tests {
     #[test]
     fn floating_ui_attached_is_cleared_on_root_cleanup_so_reentry_respawns() {
         let mut app = App::new();
-        app.init_resource::<GameScreen>();
+        crate::game_state::init_screen_states(&mut app);
         app.init_resource::<UiTheme>();
         app.add_systems(
             Update,
-            spawn_ui_for_new_entities.run_if(crate::ui::systems::in_gameplay),
+            spawn_ui_for_new_entities.run_if(in_state(Screen::InGame)),
         );
-        app.add_systems(Update, cleanup_floating_ui_root.run_if(not_in_gameplay));
+        app.add_systems(
+            Update,
+            cleanup_floating_ui_root.run_if(crate::game_state::not_in_gameplay),
+        );
 
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         let target = app
             .world_mut()
             .spawn((
@@ -514,7 +514,7 @@ mod tests {
             .is_some());
 
         // Leave + cleanup: marker rimosso.
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::MainMenu;
+        app.insert_state(Screen::MainMenu);
         app.update();
         assert!(
             app.world()

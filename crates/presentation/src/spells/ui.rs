@@ -16,10 +16,9 @@ use bevymmo_gameplay::abilities::{
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
-use bevymmo_network::network::mode::has_client;
 use bevymmo_network::network::protocol::NetworkEntityId;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{in_gameplay, not_in_gameplay};
 use crate::spells::input::WEAPON_HUD_BINDINGS;
 use crate::ui::theme::UiTheme;
 
@@ -145,28 +144,15 @@ pub fn spell_hud_systems(app: &mut App) {
     app.init_resource::<SpellHudState>();
     app.init_resource::<SpellHudLayoutState>();
     app.add_message::<SpellHudCooldownStarted>();
-    app.add_systems(Startup, setup_spell_hud.run_if(has_client));
+    app.add_message::<SpellCooldownState>();
+    app.add_systems(Startup, setup_spell_hud);
     app.add_systems(
         Update,
         (sync_spell_hud, adopt_server_cooldowns, update_spell_hud)
             .chain()
-            .run_if(has_client)
-            .run_if(in_gameplay_or_paused),
+            .run_if(in_gameplay),
     );
-    app.add_systems(
-        Update,
-        hide_spell_hud
-            .run_if(has_client)
-            .run_if(not_in_gameplay_or_paused),
-    );
-}
-
-fn in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
-    matches!(screen.0, Screen::InGame | Screen::Paused)
-}
-
-fn not_in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
-    !in_gameplay_or_paused(screen)
+    app.add_systems(Update, hide_spell_hud.run_if(not_in_gameplay));
 }
 
 fn setup_spell_hud(mut commands: Commands, _theme: Res<UiTheme>, asset_server: Res<AssetServer>) {

@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use crate::game_state::{AuthState, AuthStatus, GameScreen, Screen};
+use crate::game_state::{AuthState, AuthStatus, Screen};
 use crate::ui::button::{spawn_button, UiButtonAction};
 
 use crate::ui::text_input::{spawn_password_input, spawn_text_input};
@@ -53,8 +53,9 @@ impl Plugin for LoginPlugin {
         app.add_systems(
             Update,
             (
-                update_login_visibility,
-                update_auth_page_visibility,
+                update_login_visibility
+                    .run_if(state_changed::<Screen>.or_eager(resource_changed::<AuthState>)),
+                update_auth_page_visibility.run_if(resource_changed::<AuthPage>),
                 update_auth_failure_text,
             ),
         );
@@ -62,12 +63,12 @@ impl Plugin for LoginPlugin {
 }
 
 fn setup_login(mut commands: Commands, theme: Res<UiTheme>, asset_server: Res<AssetServer>) {
+    // Visible on the default screen (`MainMenu` + logged out). First Update
+    // may skip the visibility system if `Screen` was already initialized.
+    let mut root_node = menu_screen_root_node();
+    root_node.display = Display::Flex;
     let root = commands
-        .spawn((
-            menu_screen_root_node(),
-            BackgroundColor(theme.screen_bg),
-            LoginUi,
-        ))
+        .spawn((root_node, BackgroundColor(theme.screen_bg), LoginUi))
         .id();
     spawn_menu_screen_background(&mut commands, root, &asset_server);
 
@@ -126,7 +127,7 @@ fn setup_login(mut commands: Commands, theme: Res<UiTheme>, asset_server: Res<As
         &theme,
         &asset_server,
     );
-    commands.entity(register_submit).insert(RegisterOnlyAction);
+    hide_register_only(&mut commands, register_submit);
 
     let login_action = spawn_button(
         &mut commands,
@@ -146,7 +147,7 @@ fn setup_login(mut commands: Commands, theme: Res<UiTheme>, asset_server: Res<As
         &theme,
         &asset_server,
     );
-    commands.entity(register_action).insert(RegisterOnlyAction);
+    hide_register_only(&mut commands, register_action);
 
     spawn_button(
         &mut commands,
@@ -158,12 +159,22 @@ fn setup_login(mut commands: Commands, theme: Res<UiTheme>, asset_server: Res<As
     );
 }
 
+/// Default [`AuthPage`] is Login; register-only controls stay hidden until
+/// the page resource changes.
+fn hide_register_only(commands: &mut Commands, entity: Entity) {
+    commands
+        .entity(entity)
+        .insert(RegisterOnlyAction)
+        .entry::<Node>()
+        .and_modify(|mut node| node.display = Display::None);
+}
+
 fn update_login_visibility(
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     auth: Res<AuthState>,
     mut query: Query<&mut Node, With<LoginUi>>,
 ) {
-    let display = if matches!(screen.0, Screen::MainMenu) && auth.0 != AuthStatus::Authenticated {
+    let display = if *screen.get() == Screen::MainMenu && auth.0 != AuthStatus::Authenticated {
         Display::Flex
     } else {
         Display::None

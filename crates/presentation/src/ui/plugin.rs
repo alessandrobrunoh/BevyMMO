@@ -11,7 +11,7 @@ use super::{
 
 use bevymmo_client::pointer::{world_pointer_blocked, PointerOnHud};
 
-use crate::game_state::not_typing;
+use crate::game_state::{not_typing, Screen};
 use crate::ui::theme::UiTheme;
 
 /// Camera 2D dedicata alla UI. Resta attiva nel menu e durante la partita,
@@ -24,7 +24,7 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<UiTheme>();
-        app.init_resource::<PointerOnHud>();
+        bevymmo_client::pointer::PointerPlugin::ensure(app);
         app.add_systems(Startup, setup_ui_camera);
         app.add_systems(PreUpdate, refresh_pointer_on_hud);
         app.add_plugins((
@@ -68,7 +68,9 @@ impl Plugin for UiPlugin {
                 systems::scroll_text_input_to_caret,
                 systems::update_connection_failure,
                 systems::sync_typing_focus.after(systems::unfocus_inputs_on_gameplay_screen),
-                systems::toggle_pause.run_if(not_typing),
+                systems::toggle_pause
+                    .run_if(in_state(Screen::InGame))
+                    .run_if(not_typing),
             ),
         );
     }

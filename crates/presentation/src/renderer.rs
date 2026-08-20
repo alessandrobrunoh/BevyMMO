@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::assets::{BossDragonAssets, CreatureAssets, PlayerAssets};
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::Screen;
 use bevymmo_gameplay::entity::boss::components::Boss;
 use bevymmo_gameplay::entity::components::EntityKind;
 use bevymmo_network::network::protocol::*;
@@ -156,18 +156,13 @@ impl Plugin for RendererPlugin {
             )
                 .chain()
                 .in_set(RenderSync::Transforms)
-                .run_if(in_game_or_paused),
+                .run_if(in_state(Screen::InGame)),
         )
-        .add_systems(Update, cleanup_entity_render.run_if(not_in_game));
+        .add_systems(
+            Update,
+            cleanup_entity_render.run_if(not(in_state(Screen::InGame))),
+        );
     }
-}
-
-fn in_game_or_paused(screen: Res<GameScreen>) -> bool {
-    matches!(screen.0, Screen::InGame | Screen::Paused)
-}
-
-fn not_in_game(screen: Res<GameScreen>) -> bool {
-    !matches!(screen.0, Screen::InGame | Screen::Paused)
 }
 
 /// Gives every replicated entity its local render components.

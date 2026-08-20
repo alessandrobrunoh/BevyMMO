@@ -1,6 +1,6 @@
 //! Plugin per il target frame (UI panel con info sul target selezionato).
 
-use crate::ui::systems::in_gameplay;
+use crate::game_state::Screen;
 use bevy::prelude::*;
 
 use super::systems::{cleanup_target_frames, manage_target_frame, update_target_frame_content};
@@ -16,7 +16,7 @@ impl Plugin for TargetFramePlugin {
                 (update_target_frame_content, cleanup_target_frames).chain(),
             )
                 .chain()
-                .run_if(in_gameplay),
+                .run_if(in_state(Screen::InGame)),
         );
     }
 }

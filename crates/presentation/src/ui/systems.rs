@@ -13,8 +13,8 @@ use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::game_state::{
     validate_email, validate_password, validate_player_name, AuthIntent, AuthRequest,
-    ConnectionFailure, ConnectionIntent, ConnectionRequest, EmailError, GameScreen, PasswordError,
-    PlayerNameError, Screen, TypingFocus,
+    ConnectionFailure, ConnectionIntent, ConnectionRequest, EmailError, PasswordError,
+    PauseOverlay, PlayerNameError, Screen, TypingFocus,
 };
 use crate::ui::button::{apply_button_image, UiButton, UiButtonAction, UiButtonImages};
 use crate::ui::character_roster::SelectedRosterEntry;
@@ -63,11 +63,11 @@ pub(crate) fn sync_typing_focus(
 /// leftover focus would keep [`TypingFocus`] true and swallow I/K/Q/etc.
 /// Chat uses [`ChatInput`], not [`TextInput`], so it is left alone.
 pub(crate) fn unfocus_inputs_on_gameplay_screen(
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     mut text_inputs: Query<&mut TextInput>,
     mut typing: ResMut<TypingFocus>,
 ) {
-    if !matches!(screen.0, Screen::Connecting | Screen::InGame) {
+    if !matches!(*screen.get(), Screen::Connecting | Screen::InGame) {
         return;
     }
     let had_focus = text_inputs.iter().any(|input| input.focused);
@@ -90,11 +90,6 @@ fn ui_tree_is_displayed(entity: Entity, nodes: &Query<&Node>, parents: &Query<&C
         current = parents.get(entity).ok().map(|parent| parent.0);
     }
     true
-}
-
-/// Condizione di esecuzione: il client è in una schermata di gameplay.
-pub fn in_gameplay(screen: Res<GameScreen>) -> bool {
-    matches!(screen.0, Screen::InGame | Screen::Paused)
 }
 
 fn error_message(err: PlayerNameError) -> String {
@@ -122,7 +117,8 @@ fn password_error_message(err: PasswordError) -> String {
 ///
 /// Legge solo i pulsanti il cui [`Interaction`] è cambiato ed è `Pressed`.
 pub fn update_button_actions(
-    mut screen: ResMut<GameScreen>,
+    mut next_screen: ResMut<NextState<Screen>>,
+    mut next_pause: ResMut<NextState<PauseOverlay>>,
     mut connection_request: ResMut<ConnectionRequest>,
     mut auth_page: ResMut<AuthPage>,
     selected: Option<Res<SelectedRosterEntry>>,
@@ -141,7 +137,7 @@ pub fn update_button_actions(
                         input.error = None;
                         input.focused = false;
                     }
-                    screen.0 = Screen::Connecting;
+                    next_screen.set(Screen::Connecting);
                     connection_request.0 = Some(ConnectionIntent::Connect {
                         player_name: player_name.clone(),
                     });
@@ -154,7 +150,7 @@ pub fn update_button_actions(
                     Ok(name) => {
                         input.error = None;
                         input.focused = false;
-                        screen.0 = Screen::Connecting;
+                        next_screen.set(Screen::Connecting);
                         connection_request.0 =
                             Some(ConnectionIntent::Connect { player_name: name });
                     }
@@ -173,10 +169,10 @@ pub fn update_button_actions(
                 *auth_page = AuthPage::Login;
             }
             UiButtonAction::OpenSettings => {
-                screen.0 = Screen::Settings;
+                next_screen.set(Screen::Settings);
             }
             UiButtonAction::BackToMenu => {
-                screen.0 = Screen::MainMenu;
+                next_screen.set(Screen::MainMenu);
             }
             UiButtonAction::ReturnToMainMenu => {
                 // Previously sent `Disconnect`, which the SpacetimeDB path
@@ -185,13 +181,13 @@ pub fn update_button_actions(
                 // `LeaveCharacter` is what `UiButtonAction::Logout` (pause
                 // menu's "Leave Character") sends for the same reason.
                 connection_request.0 = Some(ConnectionIntent::LeaveCharacter);
-                screen.0 = Screen::MainMenu;
+                next_screen.set(Screen::MainMenu);
             }
             UiButtonAction::Logout => {
                 // Pause menu's "Leave Character": returns to character
                 // select, stays authenticated as the same account.
                 connection_request.0 = Some(ConnectionIntent::LeaveCharacter);
-                screen.0 = Screen::MainMenu;
+                next_screen.set(Screen::MainMenu);
             }
             UiButtonAction::LogoutAccount => {
                 // Character-select screen's "Logout": ends the account
@@ -199,7 +195,7 @@ pub fn update_button_actions(
                 connection_request.0 = Some(ConnectionIntent::LogoutAccount);
             }
             UiButtonAction::Resume => {
-                screen.0 = Screen::InGame;
+                next_pause.set(PauseOverlay::Off);
             }
             UiButtonAction::Exit => {
                 // Goes through `stdb::plugin::begin_shutdown`/`finish_shutdown`
@@ -434,36 +430,58 @@ pub fn update_connection_failure(
     text.0 = failure.0.clone().unwrap_or_default();
 }
 
-/// Mostra/nasconde il pause overlay con the configured `TogglePause` key,
-/// only in `InGame`/`Paused`.
+/// Mostra/nasconde il pause overlay with the configured `TogglePause` key,
+/// only while [`Screen::InGame`].
 ///
-/// Non tocca `Time`, `FixedUpdate` o la rete.
+/// Non tocca `Time`, `FixedUpdate` o la rete. `State<PauseOverlay>` is absent
+/// in menus, so this must not require that resource.
 pub fn toggle_pause(
     keys: Res<ButtonInput<KeyCode>>,
     settings: Res<GameSettingsResource>,
-    mut screen: ResMut<GameScreen>,
+    screen: Res<State<Screen>>,
+    pause: Option<Res<State<PauseOverlay>>>,
+    mut next_pause: ResMut<NextState<PauseOverlay>>,
 ) {
     if !settings.just_pressed(KeyAction::TogglePause, &keys) {
         return;
     }
-    match screen.0 {
-        Screen::InGame => screen.0 = Screen::Paused,
-        Screen::Paused => screen.0 = Screen::InGame,
-        _ => {}
+    if *screen.get() != Screen::InGame {
+        return;
+    }
+    let Some(pause) = pause else {
+        return;
+    };
+    match *pause.get() {
+        PauseOverlay::Off => next_pause.set(PauseOverlay::On),
+        PauseOverlay::On => next_pause.set(PauseOverlay::Off),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game_state::init_screen_states;
     use bevymmo_client::user_settings::{GameSettings, KeyBinding, KeyModifiers};
+
+    fn current_screen(app: &App) -> Screen {
+        *app.world().resource::<State<Screen>>().get()
+    }
+
+    fn current_pause(app: &App) -> Option<PauseOverlay> {
+        app.world()
+            .get_resource::<State<PauseOverlay>>()
+            .map(|pause| *pause.get())
+    }
 
     fn test_app() -> App {
         let mut app = App::new();
         app.init_resource::<ButtonInput<KeyCode>>();
-        app.init_resource::<GameScreen>();
+        init_screen_states(&mut app);
         app.insert_resource(GameSettingsResource(GameSettings::default()));
         app.add_systems(Update, toggle_pause);
+        app.insert_state(Screen::InGame);
+        // Sub-state exists only after the InGame enter transition.
+        app.update();
         app
     }
 
@@ -476,21 +494,23 @@ mod tests {
     #[test]
     fn pause_uses_default_escape_binding() {
         let mut app = test_app();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
 
         press(&mut app, KeyCode::KeyP);
         app.update();
-        assert_eq!(app.world().resource::<GameScreen>().0, Screen::InGame);
+        assert_eq!(current_screen(&app), Screen::InGame);
+        assert_eq!(current_pause(&app), Some(PauseOverlay::Off));
 
         press(&mut app, KeyCode::Escape);
         app.update();
-        assert_eq!(app.world().resource::<GameScreen>().0, Screen::Paused);
+        // NextState is applied in StateTransition, which runs before Update.
+        app.update();
+        assert_eq!(current_screen(&app), Screen::InGame);
+        assert_eq!(current_pause(&app), Some(PauseOverlay::On));
     }
 
     #[test]
     fn pause_respects_custom_binding() {
         let mut app = test_app();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
         app.world_mut()
             .resource_mut::<GameSettingsResource>()
             .0
@@ -506,11 +526,15 @@ mod tests {
 
         press(&mut app, KeyCode::Escape);
         app.update();
-        assert_eq!(app.world().resource::<GameScreen>().0, Screen::InGame);
+        assert_eq!(current_screen(&app), Screen::InGame);
+        assert_eq!(current_pause(&app), Some(PauseOverlay::Off));
 
         press(&mut app, KeyCode::KeyP);
         app.update();
-        assert_eq!(app.world().resource::<GameScreen>().0, Screen::Paused);
+        // NextState is applied in StateTransition, which runs before Update.
+        app.update();
+        assert_eq!(current_screen(&app), Screen::InGame);
+        assert_eq!(current_pause(&app), Some(PauseOverlay::On));
     }
 
     #[test]
@@ -518,7 +542,7 @@ mod tests {
         use crate::ui::button::{UiButton, UiButtonAction};
 
         let mut app = App::new();
-        app.init_resource::<GameScreen>();
+        init_screen_states(&mut app);
         app.init_resource::<ConnectionRequest>();
         app.init_resource::<AuthPage>();
         app.insert_resource(GameSettingsResource(GameSettings::default()));
@@ -536,9 +560,11 @@ mod tests {
 
         app.add_systems(Update, update_button_actions);
         app.update();
+        // NextState is applied in StateTransition, which runs before Update.
+        app.update();
 
         // Verify screen transitioned to MainMenu
-        assert_eq!(app.world().resource::<GameScreen>().0, Screen::MainMenu);
+        assert_eq!(current_screen(&app), Screen::MainMenu);
 
         // Verify connection request was set to leave the character (not to
         // log out of the account — see `UiButtonAction::LogoutAccount` for that).
@@ -580,7 +606,7 @@ mod tests {
 
     fn play_test_app() -> App {
         let mut app = App::new();
-        app.init_resource::<GameScreen>();
+        init_screen_states(&mut app);
         app.init_resource::<ConnectionRequest>();
         app.init_resource::<AuthPage>();
         app.init_resource::<SelectedRosterEntry>();
@@ -611,8 +637,10 @@ mod tests {
         let name = spawn_player_name(&mut app, "x");
         press_play(&mut app);
         app.update();
+        // NextState is applied in StateTransition, which runs before Update.
+        app.update();
 
-        assert_eq!(app.world().resource::<GameScreen>().0, Screen::Connecting);
+        assert_eq!(current_screen(&app), Screen::Connecting);
         assert!(matches!(
             app.world().resource::<ConnectionRequest>().0,
             Some(ConnectionIntent::Connect { ref player_name }) if player_name == "Al"
@@ -634,7 +662,7 @@ mod tests {
         press_play(&mut app);
         app.update();
 
-        assert_eq!(app.world().resource::<GameScreen>().0, Screen::MainMenu);
+        assert_eq!(current_screen(&app), Screen::MainMenu);
         assert!(app.world().resource::<ConnectionRequest>().0.is_none());
         assert!(app
             .world()
@@ -649,8 +677,10 @@ mod tests {
         spawn_player_name(&mut app, "Ada");
         press_play(&mut app);
         app.update();
+        // NextState is applied in StateTransition, which runs before Update.
+        app.update();
 
-        assert_eq!(app.world().resource::<GameScreen>().0, Screen::Connecting);
+        assert_eq!(current_screen(&app), Screen::Connecting);
         assert!(matches!(
             app.world().resource::<ConnectionRequest>().0,
             Some(ConnectionIntent::Connect { ref player_name }) if player_name == "Ada"
@@ -662,8 +692,8 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<TypingFocus>();
         app.init_resource::<GameplayRan>();
-        app.init_resource::<GameScreen>();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        init_screen_states(&mut app);
+        app.insert_state(Screen::InGame);
         app.world_mut().resource_mut::<TypingFocus>().0 = true;
 
         let hidden_root = app
@@ -711,8 +741,7 @@ mod tests {
     fn visible_focused_login_field_keeps_typing_focus() {
         let mut app = App::new();
         app.init_resource::<TypingFocus>();
-        app.init_resource::<GameScreen>();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::MainMenu;
+        init_screen_states(&mut app);
 
         let root = app
             .world_mut()
@@ -777,7 +806,7 @@ mod tests {
     fn entering_ingame_unfocuses_text_inputs_and_clears_typing_focus() {
         let mut app = App::new();
         app.init_resource::<TypingFocus>();
-        app.init_resource::<GameScreen>();
+        init_screen_states(&mut app);
         app.world_mut().resource_mut::<TypingFocus>().0 = true;
 
         let input = spawn_test_text_input(app.world_mut(), "password1", true);
@@ -792,7 +821,7 @@ mod tests {
             "MainMenu must leave login/character-name fields focusable"
         );
 
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::Connecting;
+        app.insert_state(Screen::Connecting);
         app.update();
 
         assert!(app
@@ -808,7 +837,7 @@ mod tests {
             .expect("text input")
             .focused = true;
         app.world_mut().resource_mut::<TypingFocus>().0 = true;
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         app.update();
 
         assert!(app

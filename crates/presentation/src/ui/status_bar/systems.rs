@@ -6,7 +6,7 @@ use bevymmo_gameplay::effects::{
     ActiveStatusSnapshot, ActiveStatuses, StatusCategory, StatusId, StatusRegistry,
 };
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{in_gameplay, Screen};
 use crate::ui::target_frame::components::{TargetFrame, TargetFrameTarget};
 
 /// Sits just above the ability hotbar (`bottom: 86`) so personal buffs are in
@@ -77,19 +77,15 @@ fn setup_status_bar(mut commands: Commands) {
     ));
 }
 
-fn in_gameplay(screen: &GameScreen) -> bool {
-    matches!(screen.0, Screen::InGame | Screen::Paused)
-}
-
 fn sync_status_bar(
     mut commands: Commands,
     local_player: Query<&ActiveStatuses, With<LocalPlayer>>,
     status_registry: Res<StatusRegistry>,
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     root: Single<(Entity, &mut Visibility, &mut StatusBarIdentity), With<StatusBarRoot>>,
 ) {
     let (root_entity, mut visibility, mut identity) = root.into_inner();
-    let playing = in_gameplay(&screen);
+    let playing = in_gameplay(screen);
     let empty = ActiveStatuses::default();
     let statuses = local_player.single().unwrap_or(&empty);
     if !playing || statuses.statuses.is_empty() {
@@ -562,8 +558,8 @@ mod tests {
     fn player_status_app(statuses: Vec<ActiveStatusSnapshot>) -> App {
         let mut app = App::new();
         app.insert_resource(bevymmo_content::status_definitions::default_statuses());
-        app.init_resource::<GameScreen>();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        crate::game_state::init_screen_states(&mut app);
+        app.insert_state(Screen::InGame);
         app.add_systems(Startup, setup_status_bar);
         app.add_systems(Update, sync_status_bar);
         app.world_mut()
@@ -608,8 +604,8 @@ mod tests {
     fn player_status_bar_appears_when_local_player_is_tagged_after_statuses() {
         let mut app = App::new();
         app.insert_resource(bevymmo_content::status_definitions::default_statuses());
-        app.init_resource::<GameScreen>();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        crate::game_state::init_screen_states(&mut app);
+        app.insert_state(Screen::InGame);
         app.add_systems(Startup, setup_status_bar);
         app.add_systems(Update, sync_status_bar);
 
@@ -643,7 +639,7 @@ mod tests {
     fn player_status_bar_hides_outside_gameplay() {
         let mut app = player_status_app(vec![snapshot("swift", 1)]);
         app.update();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::MainMenu;
+        app.insert_state(Screen::MainMenu);
         app.update();
 
         let mut vis = app

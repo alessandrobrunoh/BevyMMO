@@ -13,7 +13,6 @@ use bevy::window::PrimaryWindow;
 
 use crate::movement::{resolve_click_to_ground, ClientSurfaceQuery, MoveTarget};
 use crate::pointer::{hud_wants_pointer, PointerOnHud};
-use bevymmo_network::network::mode;
 
 const INDICATOR_DURATION: f32 = 0.55;
 
@@ -28,12 +27,10 @@ struct ClickIndicator {
 impl Plugin for PlayerMovementPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MoveTarget>();
+        app.init_resource::<crate::movement::LocalMovementFreeze>();
         app.init_resource::<ClientSurfaceQuery>();
-        app.init_resource::<PointerOnHud>();
-        app.add_systems(
-            Update,
-            (select_move_target, animate_click_indicators).run_if(mode::has_client),
-        );
+        crate::pointer::PointerPlugin::ensure(app);
+        app.add_systems(Update, (select_move_target, animate_click_indicators));
     }
 }
 

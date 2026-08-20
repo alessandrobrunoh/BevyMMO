@@ -1,12 +1,10 @@
-//! Lifecycle of the game scene, driven by [`GameScreen`].
+//! Lifecycle of the game scene, driven by [`Screen`] enter/exit.
 
 use bevy::light::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
 
 use bevymmo_network::network::protocol::Position;
-
-use crate::game_state::{GameScreen, Screen};
 
 /// Marker for the game scene root (camera, light, ground).
 ///
@@ -46,28 +44,21 @@ impl Default for CameraZoom {
     }
 }
 
-/// Spawns/despawns the game scene based on [`GameScreen`].
+/// Spawns the game scene when entering [`Screen::InGame`].
 ///
-/// - `InGame`/`Paused` + no root: spawns the scene.
-/// - `MainMenu`/`Settings`/`Connecting` + root present: recursive despawn.
-///
-/// The system is idempotent: it can run every frame without side effects
-/// when the state doesn't change.
-pub fn update_game_scene_lifecycle(
-    mut commands: Commands,
-    screen: Res<GameScreen>,
-    roots: Query<Entity, With<GameSceneRoot>>,
-) {
-    let in_game = matches!(screen.0, Screen::InGame | Screen::Paused);
-    let has_root = roots.iter().next().is_some();
+/// Idempotent via [`GameSceneRoot`]: a duplicate OnEnter is a no-op.
+pub fn spawn_game_scene(mut commands: Commands, roots: Query<Entity, With<GameSceneRoot>>) {
+    if !roots.is_empty() {
+        return;
+    }
+    spawn_game_scene_root(&mut commands);
+}
 
-    if in_game && !has_root {
-        spawn_game_scene(&mut commands);
-    } else if !in_game && has_root {
-        for root in roots.iter() {
-            // recursive despawn: removes camera and light.
-            commands.entity(root).despawn();
-        }
+/// Despawns the game scene when leaving [`Screen::InGame`]. Pause overlay
+/// does not trigger this.
+pub fn despawn_game_scene(mut commands: Commands, roots: Query<Entity, With<GameSceneRoot>>) {
+    for root in roots.iter() {
+        commands.entity(root).despawn();
     }
 }
 
@@ -136,7 +127,7 @@ pub fn handle_camera_zoom(
     }
 }
 
-fn spawn_game_scene(commands: &mut Commands) {
+fn spawn_game_scene_root(commands: &mut Commands) {
     let cam_transform = Transform::from_xyz(0.0, 15.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y);
     let light_transform = Transform::from_xyz(10.0, 20.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y);
 
@@ -193,13 +184,14 @@ fn spawn_game_scene(commands: &mut Commands) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game_state::{init_screen_states, PauseOverlay, Screen};
     use crate::renderer::RendererPlugin;
     use crate::scenes::base::BaseScenePlugin;
     use bevymmo_network::network::protocol::{EntityColor, Position};
 
     fn test_app() -> App {
         let mut app = App::new();
-        app.init_resource::<GameScreen>();
+        init_screen_states(&mut app);
         app.init_resource::<Assets<Mesh>>();
         app.init_resource::<Assets<StandardMaterial>>();
         // `handle_camera_zoom` reads the keyboard and the user keybinds.
@@ -217,7 +209,9 @@ mod tests {
     }
 
     fn set_screen(app: &mut App, screen: Screen) {
-        app.world_mut().resource_mut::<GameScreen>().0 = screen;
+        app.world_mut()
+            .resource_mut::<NextState<Screen>>()
+            .set(screen);
     }
 
     fn root_count(app: &mut App) -> usize {
@@ -321,7 +315,9 @@ mod tests {
         app.update();
         assert_eq!(root_count(&mut app), 1);
 
-        set_screen(&mut app, Screen::Paused);
+        app.world_mut()
+            .resource_mut::<NextState<PauseOverlay>>()
+            .set(PauseOverlay::On);
         app.update();
         assert_eq!(root_count(&mut app), 1, "Paused is an overlay, not despawn");
     }

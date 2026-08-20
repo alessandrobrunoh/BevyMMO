@@ -14,19 +14,25 @@ pub enum PlayerNameError {
 
 /// Local screen displayed by the client.
 ///
-/// `Paused` is only an overlay: it does not pause simulation or network.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Pause is a [`PauseOverlay`] sub-state of [`Screen::InGame`], not a screen of
+/// its own: it does not pause simulation or network.
+#[derive(States, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Screen {
     #[default]
     MainMenu,
     Settings,
     Connecting,
     InGame,
-    Paused,
 }
 
-#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct GameScreen(pub Screen);
+/// Client-only pause menu overlay. Exists only while [`Screen::InGame`].
+#[derive(SubStates, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[source(Screen = Screen::InGame)]
+pub enum PauseOverlay {
+    #[default]
+    Off,
+    On,
+}
 
 /// Whether a text-entry field (chat, login form, character name, ...) is
 /// currently capturing keyboard input.
@@ -50,6 +56,26 @@ pub struct TypingFocus(pub bool);
 /// [`TypingFocus`].
 pub fn not_typing(typing: Res<TypingFocus>) -> bool {
     !typing.0
+}
+
+/// True while a character is in the world, including with the pause overlay
+/// open: pause does not stop simulation or network.
+pub fn in_gameplay(state: Res<State<Screen>>) -> bool {
+    *state.get() == Screen::InGame
+}
+
+/// Inverse of [`in_gameplay`].
+pub fn not_in_gameplay(state: Res<State<Screen>>) -> bool {
+    *state.get() != Screen::InGame
+}
+
+/// True while in game with the pause overlay closed. `State<PauseOverlay>` is
+/// absent in menus, so this must not require that resource.
+pub fn in_unpaused_gameplay(
+    screen: Res<State<Screen>>,
+    pause: Option<Res<State<PauseOverlay>>>,
+) -> bool {
+    *screen.get() == Screen::InGame && pause.is_some_and(|pause| *pause.get() == PauseOverlay::Off)
 }
 
 #[derive(Resource, Debug, Default)]
@@ -85,7 +111,7 @@ pub struct ConnectionFailure(pub Option<String>);
 /// flash a disconnect overlay.
 pub fn screen_after_connection_loss(current: Screen) -> Option<Screen> {
     match current {
-        Screen::InGame | Screen::Paused | Screen::Connecting => Some(Screen::MainMenu),
+        Screen::InGame | Screen::Connecting => Some(Screen::MainMenu),
         Screen::MainMenu | Screen::Settings => None,
     }
 }
@@ -199,7 +225,8 @@ pub struct GameStatePlugin;
 
 impl Plugin for GameStatePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<GameScreen>();
+        app.init_state::<Screen>();
+        app.add_sub_state::<PauseOverlay>();
         app.init_resource::<ConnectionRequest>();
         app.init_resource::<ConnectionFailure>();
         app.init_resource::<AuthState>();
@@ -226,7 +253,8 @@ mod tests {
 
     #[test]
     fn screen_defaults_to_main_menu() {
-        assert_eq!(GameScreen::default().0, Screen::MainMenu);
+        assert_eq!(Screen::default(), Screen::MainMenu);
+        assert_eq!(PauseOverlay::default(), PauseOverlay::Off);
     }
 
     #[test]
@@ -278,10 +306,6 @@ mod tests {
         );
         assert_eq!(
             screen_after_connection_loss(Screen::Connecting),
-            Some(Screen::MainMenu)
-        );
-        assert_eq!(
-            screen_after_connection_loss(Screen::Paused),
             Some(Screen::MainMenu)
         );
         assert_eq!(screen_after_connection_loss(Screen::MainMenu), None);

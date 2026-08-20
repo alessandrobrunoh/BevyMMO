@@ -83,28 +83,95 @@ pub fn movement_intent_allowed(lock: MovementLock, cc_blocks: bool) -> bool {
 
 /// Destination the local client should step towards this frame.
 ///
-/// Charge/CastTime freeze movement on the server (`stop_movement`). If the
-/// client keeps walking to a stale click — or to the cursor, which is also
-/// the spell aim point while the right mouse is held — prediction fights
-/// the replicated pose and rubber-bands forever after the cast ends.
+/// Charge/CastTime freeze the character on the server (`stop_movement`). If
+/// the client keeps walking to a stale click — or to the last replicated
+/// dest, which lags the reducer by a tick — prediction walks past the root
+/// and then rubber-bands back. A lock or crowd-control block therefore
+/// returns `None` immediately, even when the server dest has not cleared
+/// yet.
 ///
-/// While the lock is up, follow only the server. While the player is
-/// actively click-moving, prefer the pending click. Otherwise follow the
-/// server so a cancelled dest is not resumed.
+/// While unlocked and the player is click-moving, prefer the pending click.
+/// Otherwise follow the server so a cancelled dest is not resumed.
 pub fn predicted_move_dest(
     pending: Option<Vec3>,
     authoritative: Option<Vec3>,
     lock: MovementLock,
     right_mouse_held: bool,
+    cc_blocks: bool,
 ) -> Option<Vec3> {
-    if !movement_intent_allowed(lock, false) {
-        return authoritative;
+    if !movement_intent_allowed(lock, cc_blocks) {
+        return None;
     }
     if right_mouse_held {
         pending.or(authoritative)
     } else {
         authoritative
     }
+}
+
+/// How far predicted position may lead the last server pose, in seconds of
+/// travel, before an idle reconcile starts pulling it back.
+///
+/// One 50 ms tick plus a little RTT slack: a rooted or arrived character is
+/// routinely this far ahead of the last replicated pose, and hauling that
+/// gap in reads as walking backwards.
+pub const RECONCILE_SLACK_SECONDS: f32 = 0.1;
+
+/// Beyond this much error, stop easing and teleport. Covers a genuine
+/// desync — a teleport, a respawn, a long stall — where smoothing would
+/// send the character gliding across the map.
+pub const PREDICTION_SNAP_DISTANCE: f32 = 5.0;
+
+/// What to do with the gap between predicted and authoritative position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reconcile {
+    /// Leave the predicted pose alone this frame.
+    Leave,
+    /// Ease toward the last server pose.
+    Ease,
+    /// Snap onto the last server pose.
+    Snap,
+}
+
+/// Whether a predicted pose should be corrected toward the last server pose.
+///
+/// While a destination is live the predicted step owns the motion; pulling
+/// toward a stale pose fights it. Once the dest is gone, a gap inside
+/// [`RECONCILE_SLACK_SECONDS`] of travel is ordinary prediction lead and
+/// must not walk the character backwards — that is the hitch at the start
+/// of a rooted cast.
+pub fn reconcile_offset(
+    predicted: Vec3,
+    authoritative: Vec3,
+    dest: Option<Vec3>,
+    speed: f32,
+) -> Reconcile {
+    let drift = predicted.distance(authoritative);
+    if drift > PREDICTION_SNAP_DISTANCE {
+        return Reconcile::Snap;
+    }
+    if dest.is_some() {
+        return Reconcile::Leave;
+    }
+    let slack = speed.max(0.0) * RECONCILE_SLACK_SECONDS;
+    if drift <= slack {
+        Reconcile::Leave
+    } else {
+        Reconcile::Ease
+    }
+}
+
+/// Whether a newly aimed cast should turn the character to face its target.
+///
+/// Instant casts while walking must not: the next movement tick (and the
+/// client's predicted look) would immediately overwrite it, which reads as
+/// a twitch toward the spell and back onto the path. Rooted casts
+/// (CastTime/Charge) and a standing Instant keep the facing.
+pub fn should_face_cast_target(moving: bool, lock: MovementLock) -> bool {
+    if !moving {
+        return true;
+    }
+    !movement_intent_allowed(lock, false)
 }
 
 /// Horizontal facing implied by moving from `position` to `target`.
@@ -750,11 +817,11 @@ mod tests {
     fn charge_lock_ignores_a_stale_click_dest() {
         let click = Some(Vec3::new(10.0, 0.0, 0.0));
         assert_eq!(
-            predicted_move_dest(click, None, MovementLock::Charge, false),
+            predicted_move_dest(click, None, MovementLock::Charge, false, false),
             None
         );
         assert_eq!(
-            predicted_move_dest(click, None, MovementLock::Charge, true),
+            predicted_move_dest(click, None, MovementLock::Charge, true, false),
             None
         );
     }
@@ -763,7 +830,7 @@ mod tests {
     fn after_charge_a_stale_click_is_not_resumed() {
         let click = Some(Vec3::new(10.0, 0.0, 0.0));
         assert_eq!(
-            predicted_move_dest(click, None, MovementLock::None, false),
+            predicted_move_dest(click, None, MovementLock::None, false, false),
             None
         );
     }
@@ -772,7 +839,7 @@ mod tests {
     fn held_right_mouse_still_steers_when_unlocked() {
         let click = Some(Vec3::new(10.0, 0.0, 0.0));
         assert_eq!(
-            predicted_move_dest(click, None, MovementLock::None, true),
+            predicted_move_dest(click, None, MovementLock::None, true, false),
             click
         );
     }
@@ -781,8 +848,121 @@ mod tests {
     fn unlocked_follows_the_server_dest() {
         let server = Some(Vec3::new(3.0, 0.0, 1.0));
         assert_eq!(
-            predicted_move_dest(None, server, MovementLock::None, false),
+            predicted_move_dest(None, server, MovementLock::None, false, false),
             server
         );
+    }
+
+    #[test]
+    fn rooted_cast_drops_a_live_server_dest() {
+        let click = Some(Vec3::new(10.0, 0.0, 0.0));
+        let server = Some(Vec3::new(4.0, 0.0, 1.0));
+        assert_eq!(
+            predicted_move_dest(click, server, MovementLock::CastTime, true, false),
+            None
+        );
+        assert_eq!(
+            predicted_move_dest(click, server, MovementLock::Charge, true, false),
+            None
+        );
+    }
+
+    #[test]
+    fn channel_lock_still_follows_the_server_dest() {
+        let server = Some(Vec3::new(4.0, 0.0, 1.0));
+        assert_eq!(
+            predicted_move_dest(None, server, MovementLock::Channel, false, false),
+            server
+        );
+    }
+
+    #[test]
+    fn crowd_control_drops_dest_even_when_unlocked() {
+        let click = Some(Vec3::new(10.0, 0.0, 0.0));
+        let server = Some(Vec3::new(4.0, 0.0, 1.0));
+        assert_eq!(
+            predicted_move_dest(click, server, MovementLock::None, true, true),
+            None
+        );
+        assert_eq!(
+            predicted_move_dest(click, server, MovementLock::Channel, true, true),
+            None
+        );
+    }
+
+    #[test]
+    fn idle_prediction_lead_is_left_alone() {
+        let predicted = Vec3::new(0.45, 0.0, 0.0);
+        let authoritative = Vec3::ZERO;
+        assert_eq!(
+            reconcile_offset(predicted, authoritative, None, 9.0),
+            Reconcile::Leave
+        );
+    }
+
+    #[test]
+    fn walking_prediction_is_not_pulled_toward_a_stale_pose() {
+        let predicted = Vec3::new(2.0, 0.0, 0.0);
+        let authoritative = Vec3::ZERO;
+        let dest = Some(Vec3::new(10.0, 0.0, 0.0));
+        assert_eq!(
+            reconcile_offset(predicted, authoritative, dest, 9.0),
+            Reconcile::Leave
+        );
+    }
+
+    #[test]
+    fn idle_error_beyond_slack_eases() {
+        let predicted = Vec3::new(2.0, 0.0, 0.0);
+        assert_eq!(
+            reconcile_offset(predicted, Vec3::ZERO, None, 9.0),
+            Reconcile::Ease
+        );
+    }
+
+    #[test]
+    fn large_desync_snaps_even_while_walking() {
+        let predicted = Vec3::new(PREDICTION_SNAP_DISTANCE + 0.1, 0.0, 0.0);
+        let dest = Some(Vec3::new(20.0, 0.0, 0.0));
+        assert_eq!(
+            reconcile_offset(predicted, Vec3::ZERO, dest, 9.0),
+            Reconcile::Snap
+        );
+    }
+
+    #[test]
+    fn zero_speed_has_no_idle_slack() {
+        let predicted = Vec3::new(0.05, 0.0, 0.0);
+        assert_eq!(
+            reconcile_offset(predicted, Vec3::ZERO, None, 0.0),
+            Reconcile::Ease
+        );
+    }
+
+    #[test]
+    fn slack_is_travel_time_not_a_fixed_distance() {
+        // 0.5 m at 9 u/s is inside slack; the same gap at 2 u/s is not.
+        let predicted = Vec3::new(0.5, 0.0, 0.0);
+        assert_eq!(
+            reconcile_offset(predicted, Vec3::ZERO, None, 9.0),
+            Reconcile::Leave
+        );
+        assert_eq!(
+            reconcile_offset(predicted, Vec3::ZERO, None, 2.0),
+            Reconcile::Ease
+        );
+    }
+
+    #[test]
+    fn instant_while_moving_does_not_steal_walk_facing() {
+        assert!(!should_face_cast_target(true, MovementLock::None));
+        assert!(!should_face_cast_target(true, MovementLock::Channel));
+    }
+
+    #[test]
+    fn rooted_or_standing_casts_still_face_the_target() {
+        assert!(should_face_cast_target(true, MovementLock::CastTime));
+        assert!(should_face_cast_target(true, MovementLock::Charge));
+        assert!(should_face_cast_target(false, MovementLock::None));
     }
 }

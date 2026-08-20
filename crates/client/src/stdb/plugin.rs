@@ -28,17 +28,17 @@
 
 use crate::app_state::{
     screen_after_connection_loss, AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus,
-    ConnectionFailure, ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, GameScreen,
-    Screen,
+    ConnectionFailure, ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, Screen,
 };
 use crate::local_player::LocalPlayer;
 use crate::movement::{
-    snap_to_ground, step_on_terrain, ClientCollision, ClientSurfaceQuery, MoveTarget, TerrainStep,
+    snap_to_ground, step_on_terrain, ClientCollision, ClientSurfaceQuery, LocalMovementFreeze,
+    MoveTarget, TerrainStep,
 };
 use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
-use bevymmo_domain::movement::{self, predicted_move_dest, Step};
+use bevymmo_domain::movement::{self, predicted_move_dest, reconcile_offset, Reconcile, Step};
 use bevymmo_domain::movement::{movement_intent_allowed, MovementLock};
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
@@ -47,7 +47,7 @@ use bevymmo_domain::stats::modifiers::{
     ActiveStatModifiers, ModifierEffectInstance, ModifierId as StatModifierId, StatModifierInstance,
 };
 use bevymmo_domain::EntityId;
-use bevymmo_gameplay::abilities::{AncientWordId, KnownAncientLanguage};
+use bevymmo_gameplay::abilities::{AbilityAim, AncientWordId, KnownAncientLanguage};
 use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
 use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
 use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
@@ -109,11 +109,6 @@ use super::module_bindings::{
 /// drifts visibly before catching up.
 const RECONCILE_RATE: f32 = 8.0;
 
-/// Beyond this much error, stop easing and just teleport. Covers a genuine
-/// desync — a teleport, a respawn, a long stall — where smoothing would send the
-/// character gliding across the map.
-const SNAP_DISTANCE: f32 = 5.0;
-
 /// Seconds between destination updates while the mouse button is held.
 const MOVE_COMMAND_INTERVAL: f32 = 0.1;
 
@@ -149,6 +144,16 @@ pub struct StdbAuthoritative {
 /// spam Charge-cancelling destinations.
 #[derive(Component, Debug, Clone, Copy)]
 pub struct ActiveCastLock(pub MovementLock);
+
+/// Client simulation that presentation systems order against.
+///
+/// Ability input arms [`LocalMovementFreeze`] and writes aim facing *before*
+/// prediction runs, so a rooted cast stops on the same frame and the walk
+/// look does not overwrite the cursor facing.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ClientSimulation {
+    Predict,
+}
 
 /// Row changes handed from the SDK's thread to the Bevy schedule.
 enum RowEvent {
@@ -491,6 +496,11 @@ pub struct StdbPlugin {
 impl Plugin for StdbPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<ChatLine>();
+        app.add_message::<SpellVisualEffect>();
+        app.add_message::<SpellCastProgress>();
+        app.add_message::<SpellCastEnded>();
+        app.add_message::<ServerNotice>();
+        app.add_message::<SpellCooldownState>();
 
         let uri = self.uri.clone();
         let module = self.module.clone();
@@ -503,6 +513,7 @@ impl Plugin for StdbPlugin {
         // with — a missing resource is a panic, not a skipped system.
         app.init_resource::<ClientSurfaceQuery>();
         app.init_resource::<ClientCollision>();
+        app.init_resource::<LocalMovementFreeze>();
         app.init_resource::<LocalCharacter>();
         app.init_resource::<CharacterRoster>();
         app.init_resource::<ShuttingDown>();
@@ -562,31 +573,21 @@ impl Plugin for StdbPlugin {
                 send_combat_inputs,
             )
                 .run_if(resource_exists::<StdbConnection>)
-                .run_if(in_gameplay)
+                // InGame includes the pause overlay: pause is client-only and
+                // does not stop the network or simulation (see `Screen`).
+                .run_if(in_state(Screen::InGame))
                 .run_if(crate::app_state::not_typing),
         );
         app.add_systems(
             Update,
             send_heartbeat.run_if(resource_exists::<StdbConnection>),
         );
-        app.add_systems(Update, (predict_and_reconcile, predict_projectiles));
+        app.configure_sets(Update, ClientSimulation::Predict);
+        app.add_systems(
+            Update,
+            (predict_and_reconcile, predict_projectiles).in_set(ClientSimulation::Predict),
+        );
     }
-}
-
-/// Whether gameplay actions (movement, casting) are meaningful right now —
-/// i.e. a character exists in the world. `Paused` counts: it is a
-/// client-side overlay only and does not pause the network or the
-/// simulation (see [`Screen`]'s doc comment), so a cast queued while the
-/// pause menu is open still has somewhere to go.
-///
-/// Without this, [`send_move_commands`]/[`send_combat_inputs`] read the raw
-/// keyboard/mouse state unconditionally — including at the main menu, where
-/// they have no character to act through and the server just rejects every
-/// call. Worse, cast keybinds default to plain letters (`D`, `R`, `F`, ...),
-/// so typing an email into the login form could — and did — fire spurious
-/// `armor_cast` calls for every letter that happened to match one.
-fn in_gameplay(screen: Res<GameScreen>) -> bool {
-    matches!(screen.0, Screen::InGame | Screen::Paused)
 }
 
 /// Produces a filesystem-safe cache key per SpacetimeDB instance and module.
@@ -824,7 +825,8 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
 /// immediately after and see a consistent batch.
 fn pump_connection(
     conn: Res<StdbConnection>,
-    mut screen: ResMut<GameScreen>,
+    screen: Res<State<Screen>>,
+    mut next_screen: ResMut<NextState<Screen>>,
     mut failure: ResMut<ConnectionFailure>,
 ) {
     let lost = match conn.conn.frame_tick() {
@@ -838,9 +840,9 @@ fn pump_connection(
     let Some(message) = lost else {
         return;
     };
-    if let Some(next) = screen_after_connection_loss(screen.0) {
+    if let Some(next) = screen_after_connection_loss(*screen.get()) {
         failure.0 = Some(message);
-        screen.0 = next;
+        next_screen.set(next);
     }
 }
 
@@ -856,7 +858,7 @@ fn drain_events(
     mut notices: MessageWriter<ServerNotice>,
     mut chat_lines: MessageWriter<ChatLine>,
     mut failure: ResMut<ConnectionFailure>,
-    mut screen: ResMut<GameScreen>,
+    mut next_screen: ResMut<NextState<Screen>>,
 ) {
     let local_identity = conn.identity();
 
@@ -1172,7 +1174,7 @@ fn drain_events(
             }
             RowEvent::JoinRejected(message) => {
                 failure.0 = Some(message);
-                screen.0 = Screen::MainMenu;
+                next_screen.set(Screen::MainMenu);
             }
             RowEvent::AuthAccepted => {
                 auth.state.0 = AuthStatus::Authenticated;
@@ -1861,7 +1863,7 @@ fn delete_character_on_request(
 fn retry_connect_on_play(
     mut commands: Commands,
     mut request: ResMut<ConnectionRequest>,
-    mut screen: ResMut<GameScreen>,
+    mut next_screen: ResMut<NextState<Screen>>,
     mut failure: ResMut<ConnectionFailure>,
     conn: Option<Res<StdbConnection>>,
     config: Res<StdbConnectionConfig>,
@@ -1880,7 +1882,7 @@ fn retry_connect_on_play(
         Err(err) => {
             request.0 = None;
             failure.0 = Some(format!("Impossibile connettersi: {err}"));
-            screen.0 = Screen::MainMenu;
+            next_screen.set(Screen::MainMenu);
         }
     }
 }
@@ -1888,7 +1890,7 @@ fn retry_connect_on_play(
 fn join_on_request(
     conn: Res<StdbConnection>,
     mut request: ResMut<ConnectionRequest>,
-    mut screen: ResMut<GameScreen>,
+    mut next_screen: ResMut<NextState<Screen>>,
     mut failure: ResMut<ConnectionFailure>,
     mut commands: Commands,
     mut state: ReplicationState,
@@ -1909,7 +1911,7 @@ fn join_on_request(
                     // Optimistic: the reducer is authoritative and may still reject the
                     // name, in which case `player` never gains a row and the character
                     // never appears.
-                    screen.0 = Screen::InGame;
+                    next_screen.set(Screen::InGame);
                 }
                 Err(err) => {
                     error!("join failed: {err}");
@@ -1926,7 +1928,7 @@ fn join_on_request(
             if let Err(err) = conn.reducers().leave() {
                 error!("leave failed to send: {err}");
             }
-            screen.0 = Screen::MainMenu;
+            next_screen.set(Screen::MainMenu);
         }
         ConnectionIntent::LogoutAccount => {
             if let Err(err) = conn.reducers().logout() {
@@ -1944,7 +1946,7 @@ fn join_on_request(
             );
             auth.state.0 = AuthStatus::LoggedOut;
             auth.failure.0 = None;
-            screen.0 = Screen::MainMenu;
+            next_screen.set(Screen::MainMenu);
         }
         ConnectionIntent::Disconnect => {}
         // Handled by `begin_shutdown`, which runs in `PreUpdate` and takes the
@@ -2135,12 +2137,16 @@ fn predict_and_reconcile(
     surfaces: Res<ClientSurfaceQuery>,
     collision: Res<ClientCollision>,
     pending_move: Res<MoveTarget>,
+    freeze: Res<LocalMovementFreeze>,
+    aim: Option<Res<AbilityAim>>,
     mouse: Option<Res<ButtonInput<MouseButton>>>,
     mut query: Query<(
         &mut Position,
+        &mut LookDirection,
         &StdbAuthoritative,
         Option<&LocalPlayer>,
         Option<&ActiveCastLock>,
+        Option<&CrowdControlState>,
     )>,
 ) {
     let dt = time.delta_secs();
@@ -2159,28 +2165,39 @@ fn predict_and_reconcile(
     let right_mouse_held = mouse
         .as_ref()
         .is_some_and(|buttons| buttons.pressed(MouseButton::Right));
+    let now = time.elapsed_secs();
+    let local_frozen = freeze.is_active(now);
+    let aiming = aim.is_some_and(|aim| aim.is_active());
 
-    for (mut position, authoritative, local, lock) in &mut query {
+    for (mut position, mut look, authoritative, local, lock, cc) in &mut query {
         let dest = if local.is_some() {
-            predicted_move_dest(
-                pending_move.0,
-                authoritative.move_target,
-                lock.map(|lock| lock.0).unwrap_or(MovementLock::None),
-                right_mouse_held,
-            )
+            if local_frozen {
+                None
+            } else {
+                predicted_move_dest(
+                    pending_move.0,
+                    authoritative.move_target,
+                    lock.map(|lock| lock.0).unwrap_or(MovementLock::None),
+                    right_mouse_held,
+                    cc.is_some_and(|state| state.blocks_movement()),
+                )
+            }
         } else {
             authoritative.move_target
         };
 
-        let error = authoritative.position - position.0;
-        let drift = error.length();
-        if drift > SNAP_DISTANCE {
-            position.0 = authoritative.position;
-        } else if dest.is_none() && drift > 0.0 {
-            // Only ease toward the last server pose when standing still.
-            // Pulling while still walking toward the same dest fights the
-            // predicted step and is the rubber-band at click destinations.
-            position.0 += error * (1.0 - (-RECONCILE_RATE * dt).exp());
+        match reconcile_offset(
+            position.0,
+            authoritative.position,
+            dest,
+            authoritative.speed,
+        ) {
+            Reconcile::Leave => {}
+            Reconcile::Snap => position.0 = authoritative.position,
+            Reconcile::Ease => {
+                let error = authoritative.position - position.0;
+                position.0 += error * (1.0 - (-RECONCILE_RATE * dt).exp());
+            }
         }
 
         if let Some(target) = dest {
@@ -2198,6 +2215,11 @@ fn predict_and_reconcile(
                     Step::Moving(p) | Step::Arrived(p) => p,
                 },
             };
+            if !(local.is_some() && aiming) {
+                if let Some(direction) = movement::look_direction(position.0, target) {
+                    look.0 = direction;
+                }
+            }
         }
     }
 }

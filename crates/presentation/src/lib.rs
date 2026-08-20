@@ -28,6 +28,11 @@ impl Plugin for PresentationCorePlugin {
         app.init_state::<PresentationState>()
             .init_resource::<bevymmo_gameplay::placeables::PlaceableRegistry>()
             .insert_resource(bevymmo_content::status_definitions::default_statuses())
+            .insert_resource(bevymmo_content::spell_definitions::default_spells())
+            .insert_resource(bevymmo_content::item_definitions::default_items())
+            .insert_resource(bevymmo_content::ability_definitions::default_base_abilities())
+            .insert_resource(bevymmo_content::ancient_word_definitions::default_ancient_words())
+            .insert_resource(bevymmo_content::root_word_definitions::default_root_words())
             .add_loading_state(
                 LoadingState::new(PresentationState::Loading)
                     .continue_to_state(PresentationState::Ready)
@@ -48,7 +53,6 @@ impl Plugin for PresentationPlugin {
             crate::ui::UiPlugin,
             crate::scenes::ScenesPlugin,
             crate::renderer::RendererPlugin,
-            crate::entity::EntityVisualsPlugin,
             crate::spells::SpellsHudPlugin,
             crate::world::WorldMapPlugin,
         ));
@@ -62,10 +66,9 @@ fn register_presentation_placeables(
 }
 
 pub mod prelude {
-    pub use crate::entity::EntityVisualsPlugin;
     pub use crate::game_state::{
-        validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen,
-        GameStatePlugin, PlayerNameError, Screen,
+        validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest,
+        GameStatePlugin, PauseOverlay, PlayerNameError, Screen,
     };
     pub use crate::renderer::RendererPlugin;
     pub use crate::scenes::ScenesPlugin;

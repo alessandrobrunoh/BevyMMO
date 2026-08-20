@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 use bevymmo_client::stdb::CharacterRoster;
 
-use crate::game_state::{AuthState, AuthStatus, GameScreen, Screen, MAX_CHARACTERS_PER_ACCOUNT};
+use crate::game_state::{AuthState, AuthStatus, Screen, MAX_CHARACTERS_PER_ACCOUNT};
 use crate::ui::button::{spawn_button, UiButtonAction};
 use crate::ui::character_roster::{spawn_roster_list, SelectedRosterEntry};
 
@@ -34,20 +34,24 @@ impl Plugin for MainMenuPlugin {
         app.add_systems(
             Update,
             (
-                update_main_menu_visibility,
-                update_create_character_visibility,
+                update_main_menu_visibility
+                    .run_if(state_changed::<Screen>.or_eager(resource_changed::<AuthState>)),
+                update_create_character_visibility.run_if(
+                    resource_changed::<CharacterRoster>
+                        .or_eager(resource_changed::<SelectedRosterEntry>),
+                ),
             ),
         );
     }
 }
 
 fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Res<AssetServer>) {
+    // Hidden until authenticated. Do not put this on `menu_screen_root_node`
+    // (login shares it and must spawn visible).
+    let mut root_node = menu_screen_root_node();
+    root_node.display = Display::None;
     let root = commands
-        .spawn((
-            menu_screen_root_node(),
-            BackgroundColor(theme.screen_bg),
-            MainMenuUi,
-        ))
+        .spawn((root_node, BackgroundColor(theme.screen_bg), MainMenuUi))
         .id();
 
     spawn_menu_screen_background(&mut commands, root, &asset_server);
@@ -141,11 +145,11 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Re
 }
 
 fn update_main_menu_visibility(
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     auth: Res<AuthState>,
     mut query: Query<&mut Node, With<MainMenuUi>>,
 ) {
-    let display = if matches!(screen.0, Screen::MainMenu) && auth.0 == AuthStatus::Authenticated {
+    let display = if *screen.get() == Screen::MainMenu && auth.0 == AuthStatus::Authenticated {
         Display::Flex
     } else {
         Display::None

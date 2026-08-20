@@ -4,7 +4,7 @@
 //! primitives. A future asset registry will replace these meshes with GLB
 //! scenes without changing the map manifest contract.
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::Screen;
 use bevy::prelude::*;
 use bevymmo_app_support::paths;
 use bevymmo_client::movement::{ClientCollision, ClientSurfaceQuery};
@@ -97,7 +97,7 @@ impl Plugin for WorldMapPlugin {
 
 fn load_map_when_in_game(
     mut commands: Commands,
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     mut world_map: ResMut<ClientWorldMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -105,7 +105,7 @@ fn load_map_when_in_game(
     placeables: Res<PlaceableRegistry>,
     asset_server: Res<AssetServer>,
 ) {
-    if world_map.load_attempted || !matches!(screen.0, Screen::InGame | Screen::Paused) {
+    if world_map.load_attempted || *screen.get() != Screen::InGame {
         return;
     }
     world_map.load_attempted = true;
@@ -154,13 +154,13 @@ fn load_map_when_in_game(
 
 fn cleanup_map_when_not_in_game(
     mut commands: Commands,
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     mut world_map: ResMut<ClientWorldMap>,
     props: Query<Entity, With<MapPropVisual>>,
     terrain: Query<Entity, With<MapTerrainVisual>>,
     scenes: Query<Entity, With<MapSceneVisual>>,
 ) {
-    if world_map.load_attempted && !matches!(screen.0, Screen::InGame | Screen::Paused) {
+    if world_map.load_attempted && *screen.get() != Screen::InGame {
         for entity in props.iter().chain(terrain.iter()).chain(scenes.iter()) {
             commands.entity(entity).despawn();
         }

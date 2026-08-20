@@ -22,10 +22,11 @@
 
 use bevymmo_domain::abilities::{
     cast_armor_inscribed_ability, cast_root_inscribed_slot, charge_release_aim,
-    resolve_active_ability, resolve_armor_ability, resolve_armor_inscribed_ability,
-    resolve_root_inscribed_slot, AbilityCastMode, AbilitySlot, BlueprintExecution,
-    CastBlockedReason, ChannelMovementPolicy as EidolonChannelMovementPolicy,
+    movement_lock_for_ability, resolve_active_ability, resolve_armor_ability,
+    resolve_armor_inscribed_ability, resolve_root_inscribed_slot, AbilityCastMode, AbilitySlot,
+    BlueprintExecution, CastBlockedReason, ChannelMovementPolicy as EidolonChannelMovementPolicy,
 };
+use bevymmo_domain::movement::{should_face_cast_target, MovementLock};
 // Legacy spell channeling uses spells::context::ChannelMovementPolicy.
 use bevymmo_domain::items::components::EquipSlot;
 use bevymmo_domain::spells::components::SpellHotbar;
@@ -99,7 +100,12 @@ pub fn cast_spell(
         target_position,
     )?;
 
-    let caster = face_target(ctx, caster, target_position);
+    let lock = match spell.cast_kind() {
+        CastKind::Instant => MovementLock::None,
+        CastKind::CastTime => MovementLock::CastTime,
+        CastKind::Channeling => MovementLock::Channel,
+    };
+    let caster = face_target(ctx, caster, target_position, lock);
     cancel_active_cast(ctx, caster.entity_id);
 
     match spell.cast_kind() {
@@ -200,7 +206,8 @@ pub fn release_cast(
                     target_position.map(Vec3::from),
                     target_entity,
                 );
-                let caster_entity = face_target(ctx, caster_entity, aim_position);
+                let caster_entity =
+                    face_target(ctx, caster_entity, aim_position, MovementLock::Charge);
                 let charged = if cast.required_seconds > 0.0 {
                     (cast.elapsed_seconds / cast.required_seconds).clamp(0.25, 1.0)
                 } else {
@@ -326,12 +333,16 @@ pub fn eidolon_cast(
         target_position.map(Vec3::from),
     )?;
     spells::spend_energy(ctx, caster.entity_id, preview.params.energy_cost)?;
-    let caster = face_target(ctx, caster, target_position.map(Vec3::from));
-    cancel_active_cast(ctx, caster.entity_id);
-
     // Branch on the resolved ability's cast mode and execution.
     let cast_mode = preview.ability.cast_mode();
     let is_charge = preview.blueprint.execution == BlueprintExecution::Charge;
+    let caster = face_target(
+        ctx,
+        caster,
+        target_position.map(Vec3::from),
+        movement_lock_for_ability(cast_mode, is_charge),
+    );
+    cancel_active_cast(ctx, caster.entity_id);
 
     match (cast_mode, is_charge) {
         (AbilityCastMode::Instant, _) => {
@@ -584,7 +595,12 @@ pub fn armor_cast(
         _ => return Err("invalid armor source".to_string()),
     };
 
-    let caster = face_target(ctx, caster, target_position.map(Vec3::from));
+    let caster = face_target(
+        ctx,
+        caster,
+        target_position.map(Vec3::from),
+        movement_lock_for_ability(cast_mode, is_charge),
+    );
     cancel_active_cast(ctx, caster.entity_id);
     if matches!(cast_mode, AbilityCastMode::Instant) {
         return cast_armor_instant(
@@ -716,15 +732,20 @@ fn cast_armor_instant(
 ///
 /// Applied only once validation has passed, so a rejected cast cannot silently
 /// spin the character around. Self-cast spells send no point and keep the facing
-/// they had.
+/// they had. Instant casts while walking also keep the walk facing: the next
+/// movement tick would overwrite a one-tick turn, which reads as a twitch.
 fn face_target(
     ctx: &ReducerContext,
     caster: GameEntity,
     target_position: Option<Vec3>,
+    lock: MovementLock,
 ) -> GameEntity {
     let Some(target) = target_position else {
         return caster;
     };
+    if !should_face_cast_target(caster.move_target.is_some(), lock) {
+        return caster;
+    }
     let offset = target - Vec3::from(caster.position);
     let offset = Vec3::new(offset.x, 0.0, offset.z);
     if offset.length() <= 0.001 {

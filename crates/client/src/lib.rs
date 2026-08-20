@@ -16,7 +16,7 @@ pub mod user_settings;
 
 pub mod prelude {
     pub use crate::app_state::{
-        ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen, GameStatePlugin,
+        ConnectionFailure, ConnectionIntent, ConnectionRequest, GameStatePlugin, PauseOverlay,
         PlayerNameError, Screen,
     };
     pub use crate::local_player::LocalPlayer;

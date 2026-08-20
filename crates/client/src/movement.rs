@@ -29,6 +29,35 @@ pub const ARRIVAL_DISTANCE: f32 = 0.05;
 #[derive(Resource, Default)]
 pub struct MoveTarget(pub Option<Vec3>);
 
+/// Optimistic root applied the frame a CastTime/Charge is sent, before
+/// `cast_state` replicates.
+///
+/// Without this the client keeps walking toward the last server dest for
+/// ~100 ms, then yanks back when the lock arrives. The freeze expires on
+/// its own so a rejected reducer cannot leave the character planted.
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct LocalMovementFreeze {
+    until: f32,
+}
+
+impl LocalMovementFreeze {
+    /// How long the optimistic root lasts if `cast_state` never arrives.
+    pub const DURATION: f32 = 0.3;
+
+    /// Start (or refresh) the freeze at `now` seconds of app time.
+    pub fn arm(&mut self, now: f32) {
+        self.until = now + Self::DURATION;
+    }
+
+    pub fn is_active(&self, now: f32) -> bool {
+        now < self.until
+    }
+
+    pub fn clear(&mut self) {
+        self.until = 0.0;
+    }
+}
+
 /// Client-side surface query data for height-aware click-to-move.
 ///
 /// Populated by the presentation layer from loaded map data, consumed by the
@@ -759,5 +788,17 @@ mod tests {
             "Hit height should be ~10.0 on the mountain, got {}",
             hit.y
         );
+    }
+
+    #[test]
+    fn local_freeze_is_active_until_it_expires() {
+        let mut freeze = LocalMovementFreeze::default();
+        assert!(!freeze.is_active(0.0));
+        freeze.arm(1.0);
+        assert!(freeze.is_active(1.0));
+        assert!(freeze.is_active(1.0 + LocalMovementFreeze::DURATION - 0.001));
+        assert!(!freeze.is_active(1.0 + LocalMovementFreeze::DURATION));
+        freeze.clear();
+        assert!(!freeze.is_active(1.0));
     }
 }

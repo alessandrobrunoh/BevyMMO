@@ -13,6 +13,7 @@
 mod systems;
 
 use bevy::prelude::*;
+use bevymmo_client::server_feed::ServerNotice;
 
 pub use systems::NoticeLog;
 
@@ -20,6 +21,7 @@ pub struct NoticesPlugin;
 
 impl Plugin for NoticesPlugin {
     fn build(&self, app: &mut App) {
+        app.add_message::<ServerNotice>();
         app.init_resource::<NoticeLog>();
         app.add_systems(Startup, systems::setup_notice_log);
         app.add_systems(

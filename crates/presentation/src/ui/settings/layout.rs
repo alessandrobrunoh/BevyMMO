@@ -147,7 +147,7 @@ pub fn spawn_settings_shell(
         .id();
     commands.entity(content).add_child(content_area);
 
-    // Build the three panels (visibility is set in `update_panel_visibility`).
+    // Non-default panels spawn hidden; `update_panel_visibility` runs on tab change.
     let _ = crate::ui::settings::panels::general::spawn_general_panel(
         commands,
         content_area,

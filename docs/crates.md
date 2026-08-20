@@ -49,7 +49,7 @@ Belongs in `bevymmo_domain`:
 Belongs in `bevymmo_shared`:
 - the Bevy components and resources that wrap those types
 - anything touching the filesystem, the window, or the ECS
-- app-local resources shared across client/presentation (`GameScreen`, `ConnectionRequest`, ...)
+- app-local resources shared across client/presentation (`ConnectionRequest`, ...). `Screen` / `PauseOverlay` are Bevy states in `bevymmo_client::app_state` (presentation re-exports them)
 
 If a module needs windows, the filesystem, or Bevy UI trees, it does **not** belong in `bevymmo_domain`.
 

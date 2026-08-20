@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevymmo_client::server_feed::{ChatLine, ServerNotice};
 use bevymmo_client::stdb::{commands, PartyRoster, StdbConnection};
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{in_unpaused_gameplay, PauseOverlay, Screen};
 use crate::ui::scrollbar::spawn_scroll_view_with_content;
 use crate::ui::theme::UiTheme;
 
@@ -45,8 +45,9 @@ impl Plugin for ChatPlugin {
         app.add_systems(
             Update,
             (
-                sync_chat_visibility,
-                focus_chat_on_enter,
+                sync_chat_visibility
+                    .run_if(state_changed::<Screen>.or_eager(state_changed::<PauseOverlay>)),
+                focus_chat_on_enter.run_if(in_unpaused_gameplay),
                 focus_chat_on_click,
                 defocus_chat_on_world_click,
                 edit_chat_input,
@@ -70,6 +71,8 @@ fn setup_chat(mut commands: Commands, mut chat: ResMut<ChatUi>, theme: Res<UiThe
                 width: Val::Px(560.0),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(6.0),
+                // Default screen is MainMenu; hide until unpaused InGame.
+                display: Display::None,
                 ..default()
             },
         ))
@@ -136,12 +139,12 @@ fn setup_chat(mut commands: Commands, mut chat: ResMut<ChatUi>, theme: Res<UiThe
     chat.history = Some(history);
 }
 
-fn chat_is_active(screen: &GameScreen) -> bool {
-    matches!(screen.0, Screen::InGame)
-}
-
-fn sync_chat_visibility(screen: Res<GameScreen>, mut roots: Query<&mut Node, With<ChatRoot>>) {
-    let display = if chat_is_active(&screen) {
+fn sync_chat_visibility(
+    screen: Res<State<Screen>>,
+    pause: Option<Res<State<PauseOverlay>>>,
+    mut roots: Query<&mut Node, With<ChatRoot>>,
+) {
+    let display = if in_unpaused_gameplay(screen, pause) {
         Display::Flex
     } else {
         Display::None
@@ -153,11 +156,10 @@ fn sync_chat_visibility(screen: Res<GameScreen>, mut roots: Query<&mut Node, Wit
 
 fn focus_chat_on_enter(
     keys: Res<ButtonInput<KeyCode>>,
-    screen: Res<GameScreen>,
     chat: Res<ChatUi>,
     mut inputs: Query<&mut ChatInput>,
 ) {
-    if !chat_is_active(&screen) || !keys.just_pressed(KeyCode::Enter) {
+    if !keys.just_pressed(KeyCode::Enter) {
         return;
     }
     let Some(input_entity) = chat.input else {
@@ -215,7 +217,8 @@ fn defocus_chat_on_world_click(
 
 fn edit_chat_input(
     mut events: MessageReader<KeyboardInput>,
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
+    pause: Option<Res<State<PauseOverlay>>>,
     chat: Res<ChatUi>,
     mut inputs: Query<&mut ChatInput>,
     conn: Option<Res<StdbConnection>>,
@@ -223,7 +226,7 @@ fn edit_chat_input(
     roster: Option<Res<PartyRoster>>,
     mut chat_lines: MessageWriter<ChatLine>,
 ) {
-    if !chat_is_active(&screen) {
+    if !in_unpaused_gameplay(screen, pause) {
         events.clear();
         return;
     }

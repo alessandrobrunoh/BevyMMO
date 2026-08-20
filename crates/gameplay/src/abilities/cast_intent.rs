@@ -7,6 +7,7 @@
 
 use super::base_ability::AbilityCastMode;
 use super::blueprint::BlueprintExecution;
+use crate::movement::MovementLock;
 
 /// What one frame of a slot key should do.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -34,6 +35,21 @@ pub fn charge_release_aim<P: Copy>(
         release_position.or(stored_position),
         release_entity.or(stored_entity),
     )
+}
+
+/// Movement lock this ability will apply once the reducer accepts it.
+///
+/// Charge roots even when the base mode is CastTime. Instant and Channeling
+/// do not, so a walking Instant must not steal facing from the path.
+pub fn movement_lock_for_ability(cast_mode: AbilityCastMode, is_charge: bool) -> MovementLock {
+    if is_charge {
+        return MovementLock::Charge;
+    }
+    match cast_mode {
+        AbilityCastMode::Instant => MovementLock::None,
+        AbilityCastMode::CastTime => MovementLock::CastTime,
+        AbilityCastMode::Channeling { .. } => MovementLock::Channel,
+    }
 }
 
 /// Maps a key edge + ability shape onto the reducer calls the client must make.
@@ -282,5 +298,29 @@ mod tests {
         assert!(flush_queued_release(true, false));
         assert!(!flush_queued_release(true, true));
         assert!(!flush_queued_release(false, false));
+    }
+
+    #[test]
+    fn charge_roots_even_when_the_base_mode_is_instant() {
+        assert_eq!(
+            movement_lock_for_ability(AbilityCastMode::Instant, true),
+            MovementLock::Charge
+        );
+    }
+
+    #[test]
+    fn instant_and_channel_do_not_root() {
+        assert_eq!(
+            movement_lock_for_ability(AbilityCastMode::Instant, false),
+            MovementLock::None
+        );
+        assert_eq!(
+            movement_lock_for_ability(channel(), false),
+            MovementLock::Channel
+        );
+        assert_eq!(
+            movement_lock_for_ability(AbilityCastMode::CastTime, false),
+            MovementLock::CastTime
+        );
     }
 }

@@ -1,6 +1,6 @@
 //! Plugin per il target indicator (anello rosso sotto il target).
 
-use crate::ui::systems::in_gameplay;
+use crate::game_state::Screen;
 use bevy::prelude::*;
 
 use super::systems::{cleanup_target_rings, update_target_ring};
@@ -13,7 +13,7 @@ impl Plugin for TargetIndicatorPlugin {
             Update,
             (update_target_ring, cleanup_target_rings)
                 .chain()
-                .run_if(in_gameplay),
+                .run_if(in_state(Screen::InGame)),
         );
     }
 }

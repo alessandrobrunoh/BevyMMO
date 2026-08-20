@@ -118,7 +118,7 @@ pub fn update_scoreboard(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_state::{GameScreen, Screen};
+    use crate::game_state::{init_screen_states, Screen};
     use crate::ui::scoreboard::ScoreboardPlugin;
     use bevy::input::InputPlugin;
 
@@ -126,13 +126,13 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(InputPlugin);
         app.init_resource::<UiTheme>();
-        app.init_resource::<GameScreen>();
+        init_screen_states(&mut app);
         app.init_resource::<bevymmo_client::app_state::TypingFocus>();
         app.insert_resource(GameSettingsResource(
             bevymmo_client::user_settings::GameSettings::default(),
         ));
         app.add_plugins(ScoreboardPlugin);
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         app
     }
 

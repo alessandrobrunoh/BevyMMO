@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::Screen;
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 
@@ -19,7 +19,10 @@ pub struct ConnectingPlugin;
 impl Plugin for ConnectingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_connecting);
-        app.add_systems(Update, update_connecting_visibility);
+        app.add_systems(
+            Update,
+            update_connecting_visibility.run_if(state_changed::<Screen>),
+        );
     }
 }
 
@@ -49,10 +52,10 @@ fn setup_connecting(mut commands: Commands, theme: Res<UiTheme>) {
 }
 
 fn update_connecting_visibility(
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     mut query: Query<&mut Node, With<ConnectingUi>>,
 ) {
-    let display = if matches!(screen.0, Screen::Connecting) {
+    let display = if *screen.get() == Screen::Connecting {
         Display::Flex
     } else {
         Display::None

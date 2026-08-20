@@ -30,7 +30,7 @@ impl Plugin for ScoreboardPlugin {
         app.add_systems(
             Update,
             systems::update_scoreboard
-                .run_if(crate::ui::systems::in_gameplay)
+                .run_if(in_state(crate::game_state::Screen::InGame))
                 .run_if(crate::game_state::not_typing),
         );
     }

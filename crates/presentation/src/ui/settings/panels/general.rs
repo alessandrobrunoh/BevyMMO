@@ -31,6 +31,7 @@ pub fn spawn_general_panel(
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(12.0),
                 padding: UiRect::all(Val::Px(24.0)),
+                display: Display::Flex,
                 ..default()
             },
             GeneralRoot,

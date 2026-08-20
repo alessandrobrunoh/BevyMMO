@@ -134,10 +134,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.init_resource::<UiTheme>();
-        app.init_resource::<NoticeLog>();
-        app.add_message::<ServerNotice>();
-        app.add_systems(Startup, setup_notice_log);
-        app.add_systems(Update, (collect_notices, expire_notices).chain());
+        app.add_plugins(crate::ui::notices::NoticesPlugin);
         app
     }
 

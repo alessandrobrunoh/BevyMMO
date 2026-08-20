@@ -4,7 +4,7 @@
 //! World click systems (move, target, NPC pick) must not fire when the pointer
 //! is already claimed by one of those nodes.
 
-use bevy::prelude::Resource;
+use bevy::prelude::*;
 
 /// `true` when a gameplay HUD node is currently Pressed or Hovered.
 ///
@@ -12,6 +12,25 @@ use bevy::prelude::Resource;
 /// write a move target, even though that click never Pressed a HUD button.
 pub fn world_pointer_blocked(ui_pressed: bool, ui_hovered: bool) -> bool {
     ui_pressed || ui_hovered
+}
+
+/// Owns [`PointerOnHud`]. Movement, targeting, and UI all need it; add it
+/// with [`PointerPlugin::ensure`] so a second owner does not panic.
+pub struct PointerPlugin;
+
+impl PointerPlugin {
+    /// Insert this plugin unless it is already in the app.
+    pub fn ensure(app: &mut App) {
+        if !app.is_plugin_added::<Self>() {
+            app.add_plugins(Self);
+        }
+    }
+}
+
+impl Plugin for PointerPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<PointerOnHud>();
+    }
 }
 
 /// Set once per frame from UI `Interaction`s. World-click systems early-out
@@ -48,5 +67,14 @@ mod tests {
     #[test]
     fn pressed_and_hovered_still_blocks() {
         assert!(world_pointer_blocked(true, true));
+    }
+
+    #[test]
+    fn pointer_plugin_can_be_ensured_twice() {
+        let mut app = App::new();
+        PointerPlugin::ensure(&mut app);
+        PointerPlugin::ensure(&mut app);
+        assert!(app.is_plugin_added::<PointerPlugin>());
+        assert!(app.world().contains_resource::<PointerOnHud>());
     }
 }

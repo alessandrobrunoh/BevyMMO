@@ -5,27 +5,26 @@
 
 use bevy::prelude::*;
 
-use bevymmo_network::network::protocol::SpellVisualEffect;
-
 use crate::spells::ability_vfx::lifecycle::VfxSpinExpand;
-use crate::spells::ability_vfx::palette;
+use crate::spells::ability_vfx::{palette, spawn_matching_footprint, AbilityVfxSpec};
 
 const BLADE_COUNT: usize = 6;
-const ORBIT_RADIUS: f32 = 1.6;
 const BLADE_SIZE: Vec3 = Vec3::new(0.08, 0.7, 0.25);
 
 pub fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    effect: &SpellVisualEffect,
+    spec: &AbilityVfxSpec,
 ) {
     let color = palette::SWORD;
-    let center = effect.start + Vec3::Y * 1.0;
+    spawn_matching_footprint(commands, meshes, materials, spec, color);
+    let orbit = spec.radius.max(0.6);
+    let center = spec.impact() + Vec3::Y * 1.0;
 
     for i in 0..BLADE_COUNT {
         let angle = (i as f32 / BLADE_COUNT as f32) * std::f32::consts::TAU;
-        let offset = Vec3::new(angle.cos() * ORBIT_RADIUS, 0.0, angle.sin() * ORBIT_RADIUS);
+        let offset = Vec3::new(angle.cos() * orbit, 0.0, angle.sin() * orbit);
         let pos = center + offset;
 
         // Tilt each blade outward slightly

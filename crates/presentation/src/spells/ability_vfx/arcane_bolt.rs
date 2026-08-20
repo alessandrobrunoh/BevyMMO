@@ -5,10 +5,8 @@
 
 use bevy::prelude::*;
 
-use bevymmo_network::network::protocol::SpellVisualEffect;
-
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxLifetime};
-use crate::spells::ability_vfx::{palette, spawn_sphere};
+use crate::spells::ability_vfx::{palette, spawn_sphere, AbilityVfxSpec};
 
 const CAST_HEIGHT: f32 = 1.1;
 const BOLT_LENGTH: f32 = 1.8;
@@ -18,17 +16,17 @@ pub fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    effect: &SpellVisualEffect,
+    spec: &AbilityVfxSpec,
 ) {
     let color = palette::STAFF;
-    let dir = (effect.end - effect.start).normalize_or_zero();
+    let dir = spec.direction();
 
     // Muzzle flash at caster hand
     spawn_sphere(
         commands,
         meshes,
         materials,
-        effect.start + Vec3::Y * CAST_HEIGHT,
+        spec.start + Vec3::Y * CAST_HEIGHT,
         0.2,
         color,
         0.9,
@@ -42,8 +40,8 @@ pub fn spawn(
     let mat = super::vfx_material(materials, color, 0.85, 5.0);
 
     let mut transform =
-        Transform::from_translation(effect.start + Vec3::Y * CAST_HEIGHT + dir * BOLT_LENGTH * 0.5);
-    transform.look_at(effect.end, Vec3::Y);
+        Transform::from_translation(spec.start + Vec3::Y * CAST_HEIGHT + dir * BOLT_LENGTH * 0.5);
+    transform.look_at(spec.end, Vec3::Y);
 
     commands.spawn((
         Mesh3d(mesh),

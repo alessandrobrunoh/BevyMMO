@@ -5,29 +5,27 @@
 
 use bevy::prelude::*;
 
-use bevymmo_network::network::protocol::SpellVisualEffect;
-
-use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxPulseRing};
-use crate::spells::ability_vfx::{palette, spawn_disc, spawn_sphere};
+use crate::spells::ability_vfx::lifecycle::VfxExpandFade;
+use crate::spells::ability_vfx::{palette, spawn_matching_footprint, spawn_sphere, AbilityVfxSpec};
 
 const ARROW_COUNT: usize = 5;
-const SPREAD_ANGLE_DEG: f32 = 36.0; // total fan width
 const CAST_HEIGHT: f32 = 1.15;
 
 pub fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    effect: &SpellVisualEffect,
+    spec: &AbilityVfxSpec,
 ) {
     let color = palette::BOW;
-    let base_dir = (effect.end - effect.start).normalize_or_zero();
-    let center = effect.end;
+    spawn_matching_footprint(commands, meshes, materials, spec, color);
+    let base_dir = spec.direction();
+    let spread = spec.cone_angle_deg.unwrap_or(70.0);
 
     // Fan of arrows (small spheres representing projectiles)
     for i in 0..ARROW_COUNT {
         let frac = i as f32 / (ARROW_COUNT.saturating_sub(1)) as f32; // 0..1
-        let angle_offset = (frac - 0.5) * SPREAD_ANGLE_DEG.to_radians();
+        let angle_offset = (frac - 0.5) * spread.to_radians();
         // Rotate base_dir around Y
         let rot = Quat::from_rotation_y(angle_offset);
         let dir = rot * base_dir;
@@ -37,7 +35,7 @@ pub fn spawn(
             commands,
             meshes,
             materials,
-            effect.start + Vec3::Y * CAST_HEIGHT + offset,
+            spec.start + Vec3::Y * CAST_HEIGHT + offset,
             0.1,
             color,
             0.85,
@@ -47,18 +45,4 @@ pub fn spawn(
         );
     }
 
-    // Ground impact area – wide pulsing disc
-    spawn_disc(
-        commands,
-        meshes,
-        materials,
-        center,
-        2.0,
-        0.04,
-        color.with_hue(0.15), // slight yellow-green shift
-        0.4,
-        2.0,
-        Vec3::splat(0.2),
-        VfxPulseRing::new(0.15, 0.3),
-    );
 }

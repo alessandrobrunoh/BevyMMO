@@ -6,19 +6,20 @@
 
 use bevy::prelude::*;
 
-use bevymmo_network::network::protocol::SpellVisualEffect;
-
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxSpinExpand};
-use crate::spells::ability_vfx::{palette, spawn_disc, spawn_sphere, spawn_torus};
+use crate::spells::ability_vfx::{
+    palette, spawn_disc, spawn_matching_footprint, spawn_sphere, spawn_torus, AbilityVfxSpec,
+};
 
 pub fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    effect: &SpellVisualEffect,
+    spec: &AbilityVfxSpec,
 ) {
     let color = palette::HAMMER;
-    let center = effect.end;
+    let center = spec.impact();
+    spawn_matching_footprint(commands, meshes, materials, spec, color);
 
     // Outer shockwave sphere (largest, slowest)
     spawn_sphere(
@@ -62,14 +63,14 @@ pub fn spawn(
         VfxExpandFade::new(0.35, 0.2, 1.4),
     );
 
-    // Ground rings at 3 radii
-    for (i, &(radius, hue_offset)) in [(3.0, 0.0), (2.2, 0.04), (1.4, 0.08)].iter().enumerate() {
+    // Ground rings at fractions of the preview radius
+    for (i, &(frac, hue_offset)) in [(1.0, 0.0), (0.72, 0.04), (0.48, 0.08)].iter().enumerate() {
         spawn_disc(
             commands,
             meshes,
             materials,
             center,
-            radius,
+            spec.radius * frac,
             0.06,
             color.with_hue(hue_offset),
             0.35 - i as f32 * 0.08,
@@ -90,7 +91,7 @@ pub fn spawn(
         meshes,
         materials,
         center + Vec3::Y * 0.15,
-        2.8,
+        spec.radius.max(0.5),
         0.1,
         Color::srgb(1.0, 0.5, 0.05),
         0.25,

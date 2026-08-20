@@ -5,13 +5,11 @@
 
 use bevy::prelude::*;
 
-use bevymmo_network::network::protocol::SpellVisualEffect;
-
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxLifetime};
-use crate::spells::ability_vfx::{palette, spawn_box, spawn_sphere};
+use crate::spells::ability_vfx::{
+    palette, spawn_box, spawn_matching_footprint, spawn_sphere, AbilityVfxSpec,
+};
 
-const ARC_ANGLE_DEG: f32 = 90.0;
-const ARC_RADIUS: f32 = 1.8;
 const BLADE_THICKNESS: f32 = 0.06;
 const SPARK_COUNT: usize = 6;
 
@@ -19,18 +17,21 @@ pub fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    effect: &SpellVisualEffect,
+    spec: &AbilityVfxSpec,
 ) {
     let color = palette::SWORD;
-    let base = effect.start + Vec3::Y * 0.8;
+    spawn_matching_footprint(commands, meshes, materials, spec, color);
+    let arc_radius = spec.radius.max(0.5);
+    let arc_angle = spec.cone_angle_deg.unwrap_or(85.0);
+    let base = spec.start + Vec3::Y * 0.8;
 
     // Crescent blade – wide flat box
-    let arc_len = ARC_RADIUS * ARC_ANGLE_DEG.to_radians();
+    let arc_len = arc_radius * arc_angle.to_radians();
     spawn_box(
         commands,
         meshes,
         materials,
-        base + Vec3::Z * (ARC_RADIUS * 0.5),
+        base + spec.direction() * (arc_radius * 0.5),
         Vec3::new(arc_len, BLADE_THICKNESS, 0.4),
         color,
         0.8,
@@ -41,8 +42,8 @@ pub fn spawn(
     // Sparks along the arc
     for i in 0..SPARK_COUNT {
         let frac = i as f32 / (SPARK_COUNT.saturating_sub(1)) as f32;
-        let angle = (frac - 0.5) * ARC_ANGLE_DEG.to_radians();
-        let rad = ARC_RADIUS * 0.8;
+        let angle = (frac - 0.5) * arc_angle.to_radians();
+        let rad = arc_radius * 0.8;
         let offset = Vec3::new(angle.sin() * rad, 0.0, angle.cos() * rad);
 
         spawn_sphere(

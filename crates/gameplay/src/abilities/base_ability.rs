@@ -379,7 +379,18 @@ pub trait BaseAbility: Send + Sync + 'static {
         self.emit_area_effect(params, ctx, effects);
 
         let center = self.impact_center(params, ctx);
-        ctx.emit_visual(self.id().as_str().to_string(), center, center);
+        let spell_id = self.id().as_str().to_string();
+        match self.geometry() {
+            AbilityGeometry::Cone { .. } => {
+                let direction = match self.impact_shape(ctx) {
+                    AoeShape::Cone { direction, .. } => flat_direction(direction),
+                    _ => flat_direction(ctx.caster_look_direction),
+                };
+                let end = center + direction * self.impact_radius(params);
+                ctx.emit_visual(spell_id, center, end);
+            }
+            _ => ctx.emit_visual(spell_id, ctx.caster_position, center),
+        }
     }
 
     /// Emette il payload nella forma dettata dalla geometria di questa abilità.

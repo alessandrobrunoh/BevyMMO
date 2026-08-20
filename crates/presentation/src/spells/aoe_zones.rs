@@ -18,8 +18,23 @@ pub fn spawn_aoe_meshes(
         } else {
             Color::srgb(0.55, 0.25, 0.95)
         };
+        let (mesh, transform) = if let Some(angle) = zone.cone_angle_deg {
+            let dir = Vec3::new(zone.direction.x, 0.0, zone.direction.z).normalize_or_zero();
+            let mesh = meshes.add(crate::spells::ability_vfx::ground_sector_mesh(
+                zone.radius.max(0.1),
+                angle,
+            ));
+            let transform = Transform::from_translation(position.0 + Vec3::Y * 0.04)
+                .looking_to(if dir == Vec3::ZERO { Vec3::Z } else { dir }, Vec3::Y);
+            (mesh, transform)
+        } else {
+            (
+                meshes.add(Cylinder::new(zone.radius.max(0.1), 0.08)),
+                Transform::from_translation(position.0 + Vec3::Y * 0.04),
+            )
+        };
         commands.entity(entity).insert((
-            Mesh3d(meshes.add(Cylinder::new(zone.radius.max(0.1), 0.08))),
+            Mesh3d(mesh),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: color.with_alpha(0.35),
                 emissive: crate::spells::ability_vfx::vfx_glow(color, 1.5),
@@ -27,7 +42,7 @@ pub fn spawn_aoe_meshes(
                 unlit: true,
                 ..default()
             })),
-            Transform::from_translation(position.0 + Vec3::Y * 0.04),
+            transform,
             SpellVisual,
         ));
     }
@@ -41,6 +56,10 @@ pub fn pulse_aoe_meshes(time: Res<Time>, mut zones: Query<(&AoeZone, &mut Transf
         } else {
             1.0
         };
-        transform.scale = Vec3::new(pulse, 1.0, pulse);
+        if zone.cone_angle_deg.is_some() {
+            transform.scale = Vec3::splat(pulse);
+        } else {
+            transform.scale = Vec3::new(pulse, 1.0, pulse);
+        }
     }
 }

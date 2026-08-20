@@ -52,6 +52,9 @@ pub struct AoeZone {
     pub remaining_seconds: f32,
     pub pending_delay_seconds: f32,
     pub spell_id: String,
+    /// `None` = circle. Degrees when the region is a frontal cone.
+    pub cone_angle_deg: Option<f32>,
+    pub direction: Vec3,
 }
 
 /// Marks a spell projectile so the renderer draws it as one rather than as a

@@ -13,7 +13,7 @@ pub mod ui;
 use bevy::prelude::*;
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{populate_registry, AbilityVfxRegistry};
+use crate::spells::ability_vfx::{populate_registry, AbilityVfxRegistry, AbilityVfxSpec};
 
 /// Registers spell HUD, cast-bar and client visual systems.
 pub struct SpellsHudPlugin;
@@ -91,16 +91,21 @@ fn dispatch_visual_effects(
     vfx_registry: Res<AbilityVfxRegistry>,
 ) {
     for effect in effects.read() {
+        let ability = abilities.get(&bevymmo_gameplay::abilities::AbilityId::new(
+            effect.spell_id.clone(),
+        ));
+        let spec = match ability.as_ref() {
+            Some(ability) => AbilityVfxSpec::from_ability(effect, ability.as_ref()),
+            None => AbilityVfxSpec::from_effect(effect),
+        };
+
         // 1) Try the per-ability VFX registry (alpha abilities with unique geometry).
         if let Some(spawn_fn) = vfx_registry.get(effect.spell_id.as_str()) {
-            spawn_fn(&mut commands, &mut meshes, &mut materials, effect);
+            spawn_fn(&mut commands, &mut meshes, &mut materials, &spec);
             continue;
         }
 
         // 2) Fall back to legacy geometry-based selector for known BaseAbilities.
-        let ability = abilities.get(&bevymmo_gameplay::abilities::AbilityId::new(
-            effect.spell_id.clone(),
-        ));
         match ability {
             Some(ability) => eidolon_effects::spawn_for_ability(
                 &mut commands,

@@ -6,9 +6,12 @@
 //! in `mod.rs` consults it before falling back to the legacy geometry-based
 //! selector in `eidolon_effects`.
 
+use bevy::asset::RenderAssetUsages;
 use bevy::color::Color;
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 
+use bevymmo_gameplay::abilities::{AbilityGeometry, BaseAbility};
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
 use crate::spells::effects::SpellVisual;
@@ -35,9 +38,66 @@ pub mod volley;
 // Registry types
 // ---------------------------------------------------------------------------
 
+/// Geometry taken from the same `BaseAbility` the aim preview reads, so the
+/// spawned mesh covers the telegraph instead of a hardcoded prop size.
+#[derive(Clone, Copy, Debug)]
+pub struct AbilityVfxSpec {
+    pub start: Vec3,
+    pub end: Vec3,
+    pub radius: f32,
+    pub cone_angle_deg: Option<f32>,
+    pub warning_seconds: f32,
+}
+
+impl AbilityVfxSpec {
+    pub fn from_ability(effect: &SpellVisualEffect, ability: &dyn BaseAbility) -> Self {
+        let params = ability.base_params();
+        let cone_angle_deg = match ability.geometry() {
+            AbilityGeometry::Cone { angle_deg, .. } => Some(angle_deg),
+            _ => None,
+        };
+        Self {
+            start: effect.start,
+            end: effect.end,
+            radius: ability.impact_radius(&params),
+            cone_angle_deg,
+            warning_seconds: ability.impact_delay(),
+        }
+    }
+
+    pub fn from_effect(effect: &SpellVisualEffect) -> Self {
+        Self {
+            start: effect.start,
+            end: effect.end,
+            radius: effect.end.distance(effect.start).max(0.5),
+            cone_angle_deg: None,
+            warning_seconds: 0.0,
+        }
+    }
+
+    /// Horizontal aim axis. Cone visuals point this way; projectiles travel it.
+    pub fn direction(&self) -> Vec3 {
+        let offset = Vec3::new(self.end.x - self.start.x, 0.0, self.end.z - self.start.z);
+        if offset.length_squared() > 0.0001 {
+            offset.normalize()
+        } else {
+            Vec3::Z
+        }
+    }
+
+    /// Ground point the preview would have drawn as the impact origin.
+    pub fn impact(&self) -> Vec3 {
+        if self.cone_angle_deg.is_some() {
+            self.start
+        } else {
+            self.end
+        }
+    }
+}
+
 /// Signature every ability-VFX spawn function must satisfy.
 pub type AbilityVfxFn =
-    fn(&mut Commands, &mut Assets<Mesh>, &mut Assets<StandardMaterial>, &SpellVisualEffect);
+    fn(&mut Commands, &mut Assets<Mesh>, &mut Assets<StandardMaterial>, &AbilityVfxSpec);
 
 /// Runtime registry mapping ability ID → VFX spawn function.
 #[derive(Resource, Default, Debug)]
@@ -345,6 +405,107 @@ pub fn spawn_tetra<T: Component>(
     ));
 }
 
+/// Flat sector in XZ, apex at the origin, opening along local −Z so
+/// [`Transform::looking_to`] lines it up with a world-space aim direction.
+pub fn ground_sector_mesh(radius: f32, angle_deg: f32) -> Mesh {
+    let radius = radius.max(0.1);
+    let angle = angle_deg.clamp(1.0, 360.0);
+    if angle >= 359.0 {
+        return Cylinder::new(radius, 0.08).into();
+    }
+    let half = angle.to_radians() * 0.5;
+    let steps = ((angle / 11.25).ceil() as usize).clamp(3, 32);
+    let mut positions = vec![[0.0, 0.0, 0.0]];
+    let mut normals = vec![[0.0, 1.0, 0.0]];
+    let mut uvs = vec![[0.5, 0.5]];
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        let a = -half + half * 2.0 * t;
+        let x = a.sin() * radius;
+        let z = -a.cos() * radius;
+        positions.push([x, 0.0, z]);
+        normals.push([0.0, 1.0, 0.0]);
+        uvs.push([0.5 + 0.5 * (x / radius), 0.5 + 0.5 * (z / radius)]);
+    }
+    let mut indices = Vec::with_capacity(steps * 3);
+    for i in 1..=steps {
+        indices.extend([0u32, i as u32, (i + 1) as u32]);
+    }
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+        .with_inserted_indices(Indices::U32(indices))
+}
+
+/// Ground marker that covers the same circle or cone the aim preview drew.
+pub fn spawn_matching_footprint(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    spec: &AbilityVfxSpec,
+    color: Color,
+) {
+    if spec.radius <= 0.05 {
+        return;
+    }
+    let warning = spec.warning_seconds.max(0.0);
+    if let Some(angle) = spec.cone_angle_deg {
+        let mesh = meshes.add(ground_sector_mesh(spec.radius, angle));
+        let mat = vfx_material(materials, color, 0.4, 2.2);
+        let dir = spec.direction();
+        let transform = Transform::from_translation(spec.impact() + Vec3::Y * 0.05)
+            .looking_to(dir, Vec3::Y);
+        if warning > 0.05 {
+            commands.spawn((
+                Mesh3d(mesh),
+                MeshMaterial3d(mat),
+                transform,
+                SpellVisual,
+                lifecycle::VfxPulseRing::new(warning, 0.28),
+            ));
+        } else {
+            commands.spawn((
+                Mesh3d(mesh),
+                MeshMaterial3d(mat),
+                transform,
+                SpellVisual,
+                lifecycle::VfxExpandFade::new(0.4, 0.2, 1.0),
+            ));
+        }
+        return;
+    }
+    if warning > 0.05 {
+        spawn_disc(
+            commands,
+            meshes,
+            materials,
+            spec.impact(),
+            spec.radius,
+            0.08,
+            color,
+            0.4,
+            2.2,
+            Vec3::ONE,
+            lifecycle::VfxPulseRing::new(warning, 0.3),
+        );
+    } else {
+        spawn_disc(
+            commands,
+            meshes,
+            materials,
+            spec.impact(),
+            spec.radius,
+            0.08,
+            color,
+            0.4,
+            2.2,
+            Vec3::ONE,
+            lifecycle::VfxLifetime::new(0.45),
+        );
+    }
+}
+
 /// Colour palette per weapon family (used as base; each ability tweaks it).
 mod palette {
     use bevy::color::Color;
@@ -394,6 +555,49 @@ mod tests {
     fn registry_returns_none_for_unknown() {
         let reg = AbilityVfxRegistry::default();
         assert!(reg.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn circle_spec_matches_the_preview_radius() {
+        use bevymmo_content::ability_definitions::great_manifestation::GreatManifestation;
+        use bevymmo_network::network::protocol::SpellVisualEffect;
+
+        let effect = SpellVisualEffect {
+            spell_id: "great_manifestation".into(),
+            start: Vec3::ZERO,
+            end: Vec3::new(5.0, 0.0, 1.0),
+        };
+        let spec = AbilityVfxSpec::from_ability(&effect, &GreatManifestation);
+        assert!((spec.radius - 9.0).abs() < f32::EPSILON);
+        assert!(spec.cone_angle_deg.is_none());
+        assert_eq!(spec.impact(), effect.end);
+    }
+
+    #[test]
+    fn cone_spec_keeps_the_preview_apex_and_angle() {
+        use bevymmo_content::ability_definitions::arcane_wave::ArcaneWave;
+        use bevymmo_network::network::protocol::SpellVisualEffect;
+
+        let effect = SpellVisualEffect {
+            spell_id: "arcane_wave".into(),
+            start: Vec3::ZERO,
+            end: Vec3::Z * 8.0,
+        };
+        let spec = AbilityVfxSpec::from_ability(&effect, &ArcaneWave);
+        assert!((spec.radius - 8.0).abs() < f32::EPSILON);
+        assert_eq!(spec.cone_angle_deg, Some(55.0));
+        assert_eq!(spec.impact(), effect.start);
+        assert!((spec.direction() - Vec3::Z).length() < 0.01);
+    }
+
+    #[test]
+    fn sector_mesh_covers_an_arc() {
+        let mesh = ground_sector_mesh(8.0, 55.0);
+        let count = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .map(bevy::mesh::VertexAttributeValues::len)
+            .unwrap_or(0);
+        assert!(count >= 5, "apex + arc, got {count}");
     }
 
     #[test]

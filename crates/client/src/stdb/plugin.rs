@@ -1254,13 +1254,17 @@ fn replay_character(
     };
 
     if let Some(row) = pending.inventory.get(&character_id) {
-        commands.entity(entity).insert(inventory_from(&row.slots));
+        commands
+            .entity(entity)
+            .insert_if_neq(inventory_from(&row.slots));
     }
     if let Some(row) = pending.equipment.get(&character_id) {
-        commands.entity(entity).insert(equipment_from(&row.slots));
+        commands
+            .entity(entity)
+            .insert_if_neq(equipment_from(&row.slots));
     }
     if let Some(row) = pending.hotbar.get(&character_id) {
-        commands.entity(entity).insert(hotbar_from(row));
+        commands.entity(entity).insert_if_neq(hotbar_from(row));
     }
     if local_character_id == Some(character_id) {
         if let Some(row) = pending.known_ancient_language.get(&character_id) {
@@ -1599,6 +1603,11 @@ fn apply_aoe_region(commands: &mut Commands, map: &mut StdbEntityMap, row: &AoeR
         remaining_seconds: row.remaining_seconds,
         pending_delay_seconds: row.pending_delay_seconds,
         spell_id: row.spell_id.clone(),
+        cone_angle_deg: match row.shape {
+            super::module_bindings::AoeShapeRow::Cone => Some(row.angle_deg),
+            super::module_bindings::AoeShapeRow::Circle => None,
+        },
+        direction: to_vec3(&row.direction),
     };
     let position = Position(to_vec3(&row.center));
     match map.aoes.get(&row.id).copied() {

@@ -5,10 +5,8 @@
 
 use bevy::prelude::*;
 
-use bevymmo_network::network::protocol::SpellVisualEffect;
-
 use crate::spells::ability_vfx::lifecycle::VfxLifetime;
-use crate::spells::ability_vfx::{palette, spawn_box, spawn_sphere};
+use crate::spells::ability_vfx::{palette, spawn_box, spawn_sphere, AbilityVfxSpec};
 
 const BARRAGE_COUNT: usize = 7;
 const ARROW_LEN: f32 = 1.6;
@@ -18,19 +16,19 @@ pub fn spawn(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    effect: &SpellVisualEffect,
+    spec: &AbilityVfxSpec,
 ) {
     let color = palette::BOW;
-    let dir = (effect.end - effect.start).normalize_or_zero();
+    let dir = spec.direction();
     let right = dir.cross(Vec3::Y).normalize_or_zero();
-    let center = effect.end;
+    let center = spec.end;
 
     // Muzzle burst
     spawn_sphere(
         commands,
         meshes,
         materials,
-        effect.start + Vec3::Y * 1.15,
+        spec.start + Vec3::Y * 1.15,
         0.25,
         color,
         0.9,

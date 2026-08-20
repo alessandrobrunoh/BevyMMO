@@ -19,6 +19,23 @@ pub struct WeaponCastIntent {
     pub release_cast: bool,
 }
 
+/// Aim used when a Charge fires on key-release.
+///
+/// The preview follows the cursor during the hold, so the fire must too:
+/// prefer the point/entity from the release frame, and fall back to the
+/// aim captured when the charge started if the release omitted one.
+pub fn charge_release_aim<P: Copy>(
+    stored_position: Option<P>,
+    stored_entity: Option<u64>,
+    release_position: Option<P>,
+    release_entity: Option<u64>,
+) -> (Option<P>, Option<u64>) {
+    (
+        release_position.or(stored_position),
+        release_entity.or(stored_entity),
+    )
+}
+
 /// Maps a key edge + ability shape onto the reducer calls the client must make.
 ///
 /// `just_pressed` and `just_released` can both be true on a same-frame tap;
@@ -231,5 +248,19 @@ mod tests {
             ),
             WeaponCastIntent::default()
         );
+    }
+
+    #[test]
+    fn charge_release_prefers_the_cursor_at_release() {
+        let (position, entity) = charge_release_aim(Some(1), Some(7), Some(2), Some(8));
+        assert_eq!(position, Some(2));
+        assert_eq!(entity, Some(8));
+    }
+
+    #[test]
+    fn charge_release_keeps_the_press_aim_when_release_sends_nothing() {
+        let (position, entity) = charge_release_aim(Some(1), Some(7), None, None);
+        assert_eq!(position, Some(1));
+        assert_eq!(entity, Some(7));
     }
 }

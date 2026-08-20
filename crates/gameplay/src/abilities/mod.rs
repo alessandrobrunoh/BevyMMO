@@ -22,7 +22,8 @@ pub mod weapon_abilities;
 
 pub use aim::AbilityAim;
 pub use ancient_word::{
-    AncientWord, AncientWordEffect, AncientWordId, AncientWordRegistry, ArcAncientWord,
+    AncientWord, AncientWordEffect, AncientWordId, AncientWordMetadata, AncientWordRegistry,
+    ArcAncientWord,
 };
 pub use base_ability::{
     AbilityCastMode, AbilityGeometry, AbilityId, AbilityParams, AbilityTag, ArcBaseAbility,
@@ -31,7 +32,7 @@ pub use base_ability::{
 pub use blueprint::{
     AbilityBlueprint, BlueprintExecution, ManifestationKind, ManifestationPayload,
 };
-pub use cast_intent::{weapon_cast_intent, WeaponCastIntent};
+pub use cast_intent::{charge_release_aim, weapon_cast_intent, WeaponCastIntent};
 pub use cooldowns::AbilityCooldowns;
 
 pub use events::EidolonCastRequest;

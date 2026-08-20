@@ -11,6 +11,9 @@
 //!   [`crate::spells::aim_preview`] draws the exact impact area on the ground;
 //!   the release closes it and sends the command.  A quick tap behaves like an
 //!   instant cast because press and arrive a few frames apart.
+//! - **Charge**: press starts the server-side charge via `eidolon_cast` and
+//!   keeps the aim preview open; release calls `release_cast` with the cursor
+//!   at that moment so the impact follows the hold, not the press.
 //! - **Channeling**: press **immediately** starts the server-side channel via
 //!   `eidolon_cast`; release calls `release_cast` with the resolved ability id
 //!   to end it early.  An optimistic HUD cooldown starts at press time (the
@@ -249,10 +252,18 @@ pub fn cast_abilities_on_key(
             aim.clear();
 
             if is_this_cast {
+                if let Some(direction) = target_position
+                    .and_then(|target| flat_direction_towards(player_position.0, target))
+                {
+                    look_direction.0 = direction;
+                }
                 if let Some(conn) = conn.as_deref() {
-                    if let Err(err) =
-                        stdb_commands::release_cast(conn, ability_id.as_str().to_owned())
-                    {
+                    if let Err(err) = stdb_commands::release_cast(
+                        conn,
+                        ability_id.as_str().to_owned(),
+                        target_id,
+                        target_position,
+                    ) {
                         error!("could not release cast: {err}");
                     }
                 }

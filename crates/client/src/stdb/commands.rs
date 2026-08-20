@@ -141,11 +141,23 @@ pub fn set_ability_selection(conn: &StdbConnection, slot: AbilitySlot, ability_i
     )
 }
 
-/// Ends a channelled cast. Naming the spell stops a stale release from
-/// cancelling a cast that started after it.
-pub fn release_cast(conn: &StdbConnection, spell_id: String) -> Sent {
-    conn.reducers()
-        .release_cast_then(spell_id, conn.report_rejection("could not end that cast"))
+/// Ends a channelled or charged cast. Naming the spell stops a stale release
+/// from cancelling a cast that started after it.
+///
+/// Charge uses `target_position` / `target_entity` as the aim at release;
+/// Channeling ignores them.
+pub fn release_cast(
+    conn: &StdbConnection,
+    spell_id: String,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3>,
+) -> Sent {
+    conn.reducers().release_cast_then(
+        spell_id,
+        target_entity,
+        target_position.map(to_row),
+        conn.report_rejection("could not end that cast"),
+    )
 }
 
 /// Casts the weapon's Eidolon gesture bound to an ability slot.

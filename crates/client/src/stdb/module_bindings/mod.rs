@@ -338,6 +338,8 @@ pub enum Reducer {
     },
     ReleaseCast {
         spell_id: String,
+        target_entity: Option<u64>,
+        target_position: Option<Vec3Row>,
     },
     Respawn,
     SendChatMessage {
@@ -550,11 +552,15 @@ impl __sdk::Reducer for Reducer {
                     password: password.clone(),
                 })
             }
-            Reducer::ReleaseCast { spell_id } => {
-                __sats::bsatn::to_vec(&release_cast_reducer::ReleaseCastArgs {
-                    spell_id: spell_id.clone(),
-                })
-            }
+            Reducer::ReleaseCast {
+                spell_id,
+                target_entity,
+                target_position,
+            } => __sats::bsatn::to_vec(&release_cast_reducer::ReleaseCastArgs {
+                spell_id: spell_id.clone(),
+                target_entity: target_entity.clone(),
+                target_position: target_position.clone(),
+            }),
             Reducer::Respawn => __sats::bsatn::to_vec(&respawn_reducer::RespawnArgs {}),
             Reducer::SendChatMessage { text } => {
                 __sats::bsatn::to_vec(&send_chat_message_reducer::SendChatMessageArgs {

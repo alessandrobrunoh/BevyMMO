@@ -21,10 +21,10 @@
 //!   is the same function the hotbar path ends in.
 
 use bevymmo_domain::abilities::{
-    cast_armor_inscribed_ability, cast_root_inscribed_slot, resolve_active_ability,
-    resolve_armor_ability, resolve_armor_inscribed_ability, resolve_root_inscribed_slot,
-    AbilityCastMode, AbilitySlot, BlueprintExecution, CastBlockedReason,
-    ChannelMovementPolicy as EidolonChannelMovementPolicy,
+    cast_armor_inscribed_ability, cast_root_inscribed_slot, charge_release_aim,
+    resolve_active_ability, resolve_armor_ability, resolve_armor_inscribed_ability,
+    resolve_root_inscribed_slot, AbilityCastMode, AbilitySlot, BlueprintExecution,
+    CastBlockedReason, ChannelMovementPolicy as EidolonChannelMovementPolicy,
 };
 // Legacy spell channeling uses spells::context::ChannelMovementPolicy.
 use bevymmo_domain::items::components::EquipSlot;
@@ -167,8 +167,17 @@ pub fn cast_spell(
 /// along — while a cast-time wind-up released early is a cancellation. Releasing
 /// a cast that already ended is not an error: the tick may well have finished it
 /// between the key going up and this reducer running.
+///
+/// For Charge, `target_position` / `target_entity` are the aim at release (the
+/// cursor may have moved during the hold). Missing values fall back to the
+/// aim stored when the charge started.
 #[reducer]
-pub fn release_cast(ctx: &ReducerContext, spell_id: String) -> Result<(), String> {
+pub fn release_cast(
+    ctx: &ReducerContext,
+    spell_id: String,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3Row>,
+) -> Result<(), String> {
     let caster = caller_entity(ctx)?;
     let Some(cast) = ctx.db.cast_state().entity_id().find(&caster.entity_id) else {
         return Ok(());
@@ -185,7 +194,13 @@ pub fn release_cast(ctx: &ReducerContext, spell_id: String) -> Result<(), String
         CastKindRow::Charge => {
             // Charge fires on release. Resolve and fire the ability now.
             if let Some(caster_entity) = ctx.db.game_entity().entity_id().find(&caster.entity_id) {
-                let target_position = cast.target_position.map(Vec3::from);
+                let (aim_position, aim_entity) = charge_release_aim(
+                    cast.target_position.map(Vec3::from),
+                    cast.target_entity,
+                    target_position.map(Vec3::from),
+                    target_entity,
+                );
+                let caster_entity = face_target(ctx, caster_entity, aim_position);
                 let charged = if cast.required_seconds > 0.0 {
                     (cast.elapsed_seconds / cast.required_seconds).clamp(0.25, 1.0)
                 } else {
@@ -195,8 +210,8 @@ pub fn release_cast(ctx: &ReducerContext, spell_id: String) -> Result<(), String
                     ctx,
                     &caster_entity,
                     &cast.spell_id,
-                    target_position,
-                    cast.target_entity,
+                    aim_position,
+                    aim_entity,
                     cast.source,
                     charged,
                 ) {

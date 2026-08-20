@@ -295,8 +295,7 @@ fn spawn_portrait_well(
                 flex_shrink: 0.0,
                 ..default()
             },
-            ImageNode::new(asset_server.load(PORTRAIT_RING_PATH))
-                .with_mode(NodeImageMode::Stretch),
+            ImageNode::new(asset_server.load(PORTRAIT_RING_PATH)).with_mode(NodeImageMode::Stretch),
             BackgroundColor(PORTRAIT_BG),
         ))
         .with_children(|well| {

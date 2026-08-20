@@ -8,10 +8,7 @@ use bevymmo_gameplay::items::{
     registry::ItemRegistry,
 };
 
-use bevymmo_gameplay::abilities::KnownAncientLanguage;
-
-use super::weapon_detail::GlyphRegistries;
-use super::{components::*, detail::*, InventoryUiState};
+use super::{components::*, detail::despawn_detail_cards, InventoryUiState};
 use crate::ui::{
     card::{
         builder::{CardBuilder, CardFrameAssets},
@@ -404,18 +401,6 @@ pub fn update_inventory_ui(
     }
 }
 
-type SlotClicksQuery<'w, 's> = Query<
-    'w,
-    's,
-    (&'static Interaction, &'static ItemSlotButton),
-    (Changed<Interaction>, With<Button>),
->;
-type EquipSlotClicksQuery<'w, 's> = Query<
-    'w,
-    's,
-    (&'static Interaction, &'static EquipSlotButton),
-    (Changed<Interaction>, With<Button>),
->;
 type EquipClicksQuery<'w, 's> = Query<
     'w,
     's,
@@ -429,74 +414,16 @@ type UnequipClicksQuery<'w, 's> = Query<
     (Changed<Interaction>, With<Button>),
 >;
 
-#[allow(clippy::too_many_arguments)]
+/// Equip / Unequip on the detail card. Slot inspect happens on click-release
+/// in [`super::drag::end_item_drag`], so a drag never opens the info panel.
 pub fn handle_inventory_interactions(
     mut state: ResMut<InventoryUiState>,
-    slot_clicks: SlotClicksQuery,
-    equip_slot_clicks: EquipSlotClicksQuery,
     equip_clicks: EquipClicksQuery,
     unequip_clicks: UnequipClicksQuery,
     conn: Option<Res<StdbConnection>>,
-    player_query: Query<(&Inventory, &Equipment, Option<&KnownAncientLanguage>), With<LocalPlayer>>,
-    registry: Res<ItemRegistry>,
-    glyphs: GlyphRegistries,
-    theme: Res<UiTheme>,
     all_cards: Query<(Entity, &CardWindow)>,
-    asset_server: Res<AssetServer>,
     mut commands: Commands,
 ) {
-    // `KnownGlyphs` decides whether an inscribed slot is castable at all, so
-    // the detail card needs it to mark a locked slot. It is replicated
-    // separately from `Inventory`/`Equipment` and may not have arrived yet —
-    // an empty Vocabulary is the correct stand-in until it does.
-    let (inventory, equipment, known) = player_query
-        .iter()
-        .next()
-        .map(|(i, e, k)| (i.clone(), e.clone(), k.cloned().unwrap_or_default()))
-        .unwrap_or_default();
-
-    for (interaction, slot_btn) in slot_clicks.iter() {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        state.selected = Some(InventorySelection::Slot(slot_btn.index));
-        despawn_detail_cards(&mut commands, &all_cards);
-        spawn_item_detail_card(
-            &mut commands,
-            &theme,
-            &registry,
-            &glyphs,
-            &known,
-            &inventory,
-            &equipment,
-            InventorySelection::Slot(slot_btn.index),
-            &asset_server,
-        );
-    }
-
-    for (interaction, equip_btn) in equip_slot_clicks.iter() {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        if equipment.get(equip_btn.slot).is_none() {
-            // Empty equipment slot: nothing to inspect.
-            continue;
-        }
-        state.selected = Some(InventorySelection::Equipment(equip_btn.slot));
-        despawn_detail_cards(&mut commands, &all_cards);
-        spawn_item_detail_card(
-            &mut commands,
-            &theme,
-            &registry,
-            &glyphs,
-            &known,
-            &inventory,
-            &equipment,
-            InventorySelection::Equipment(equip_btn.slot),
-            &asset_server,
-        );
-    }
-
     for (interaction, equip_btn) in equip_clicks.iter() {
         if *interaction != Interaction::Pressed {
             continue;

@@ -2,12 +2,14 @@
 //!
 //! Press on a slot records the origin. A ghost appears only after the pointer
 //! travels [`DRAG_THRESHOLD_PX`]. Release then resolves through
-//! [`drag_outcome`]: a click inspects, a drop on another slot moves, a drop on
-//! the destroy zone asks for confirmation, and anything else cancels.
+//! [`drag_outcome`]: a click inspects, a drop on another slot moves, a drop
+//! outside the inventory window asks to destroy, and a drop on inventory
+//! chrome puts the item back.
 
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
+use bevymmo_gameplay::abilities::KnownAncientLanguage;
 use bevymmo_gameplay::items::{
     components::{Equipment, Inventory},
     instance::ItemInstanceId,
@@ -15,11 +17,15 @@ use bevymmo_gameplay::items::{
 };
 
 use super::components::{
-    CancelDestroyButton, ConfirmDestroyButton, DestroyDropZone, DestroyItemDialog, EquipSlotButton,
-    ItemDragGhost, ItemSlotButton, ItemSlotOrigin,
+    CancelDestroyButton, ConfirmDestroyButton, DestroyItemDialog, EquipSlotButton,
+    InventorySelection, ItemDragGhost, ItemSlotButton, ItemSlotOrigin,
 };
+use super::detail::{despawn_detail_cards, spawn_item_detail_card};
+use super::weapon_detail::GlyphRegistries;
+use super::InventoryUiState;
 use crate::ui::{
-    card::components::CardWindow, inventory::detail::despawn_detail_cards, scale::window_to_ui_px,
+    card::components::{CardKind, CardWindow},
+    scale::{physical_to_ui_px, window_to_ui_px},
     theme::UiTheme,
 };
 
@@ -32,38 +38,40 @@ pub const DRAG_THRESHOLD_PX: f32 = 6.0;
 /// What happens when the pointer is released after picking a slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DragOutcome {
-    /// Movement stayed under the threshold: inspect, never destroy.
+    /// Movement stayed under the threshold and no ghost spawned: inspect.
     ClickInspect,
     /// Drag ended over another slot: move or equip.
     MoveItem,
-    /// Drag ended over empty space: put the item back.
+    /// Drag ended over inventory chrome (not a slot): put the item back.
     Cancel,
-    /// Drag ended over the dedicated destroy zone.
+    /// Drag ended outside the inventory window: confirm destroy.
     RequestDestroy,
 }
 
 /// Resolves a slot press/release into inspect, move, cancel, or destroy.
 ///
-/// A click (distance below `threshold`) is always inspect, even if the pointer
-/// is no longer over a slot. Destroy only happens when the pointer actually
-/// travelled and landed on the destroy zone.
+/// A click (never crossed the drag threshold) is always inspect, even if the
+/// pointer is no longer over a slot. Once the pointer has actually travelled,
+/// releasing outside the inventory window destroys; releasing on inventory
+/// chrome that is not a slot puts the item back.
 pub fn drag_outcome(
     start: Vec2,
     end: Vec2,
     over_slot: bool,
-    over_destroy_zone: bool,
+    over_inventory: bool,
+    did_drag: bool,
     threshold: f32,
 ) -> DragOutcome {
-    if start.distance(end) < threshold {
+    if !did_drag && start.distance(end) < threshold {
         return DragOutcome::ClickInspect;
     }
     if over_slot {
         return DragOutcome::MoveItem;
     }
-    if over_destroy_zone {
-        return DragOutcome::RequestDestroy;
+    if over_inventory {
+        return DragOutcome::Cancel;
     }
-    DragOutcome::Cancel
+    DragOutcome::RequestDestroy
 }
 
 /// Background alpha applied to the origin slot while its item is being
@@ -87,6 +95,8 @@ struct PendingDrag {
 #[derive(Resource, Default)]
 pub struct ItemDragState {
     pending: Option<PendingDrag>,
+    /// Filled on a click-release (no drag). Consumed by [`inspect_clicked_item`].
+    inspect: Option<ItemSlotOrigin>,
 }
 
 /// Mouse-down on an occupied slot: records the origin. The ghost is spawned
@@ -180,6 +190,8 @@ pub fn update_item_drag(
     mut ghost_nodes: Query<&mut Node, With<ItemDragGhost>>,
     theme: Res<UiTheme>,
     mut backgrounds: Query<&mut BackgroundColor>,
+    all_cards: Query<(Entity, &CardWindow)>,
+    mut state: ResMut<InventoryUiState>,
     mut commands: Commands,
 ) {
     if !mouse.pressed(MouseButton::Left) {
@@ -202,6 +214,8 @@ pub fn update_item_drag(
         if let Ok(mut bg) = backgrounds.get_mut(pending.origin_entity) {
             bg.0.set_alpha(DRAGGED_FROM_ALPHA);
         }
+        despawn_detail_cards(&mut commands, &all_cards);
+        state.selected = None;
         pending.ghost = Some(spawn_drag_ghost(
             &mut commands,
             &theme,
@@ -231,7 +245,7 @@ pub fn end_item_drag(
     mut drag_state: ResMut<ItemDragState>,
     slot_hover: Query<(&Interaction, &ItemSlotButton)>,
     equip_hover: Query<(&Interaction, &EquipSlotButton)>,
-    destroy_hover: Query<&Interaction, With<DestroyDropZone>>,
+    inventory_cards: Query<(&CardWindow, &ComputedNode, &UiGlobalTransform)>,
     registry: Res<ItemRegistry>,
     theme: Res<UiTheme>,
     mut backgrounds: Query<&mut BackgroundColor>,
@@ -246,6 +260,7 @@ pub fn end_item_drag(
         return;
     };
 
+    let did_drag = pending.ghost.is_some();
     if let Some(ghost) = pending.ghost {
         commands.entity(ghost).despawn();
     }
@@ -270,18 +285,20 @@ pub fn end_item_drag(
                 .find(|(i, _)| matches!(**i, Interaction::Hovered | Interaction::Pressed))
                 .map(|(_, b)| ItemSlotOrigin::Equipment(b.slot))
         });
-    let over_destroy_zone = destroy_hover
-        .iter()
-        .any(|i| matches!(*i, Interaction::Hovered | Interaction::Pressed));
+    let over_inventory = cursor_over_inventory_card(end, &inventory_cards);
 
     match drag_outcome(
         pending.start,
         end,
         target.is_some(),
-        over_destroy_zone,
+        over_inventory,
+        did_drag,
         DRAG_THRESHOLD_PX,
     ) {
-        DragOutcome::ClickInspect | DragOutcome::Cancel => {}
+        DragOutcome::Cancel => {}
+        DragOutcome::ClickInspect => {
+            drag_state.inspect = Some(pending.origin);
+        }
         DragOutcome::RequestDestroy => {
             if matches!(pending.origin, ItemSlotOrigin::Inventory(_)) {
                 spawn_destroy_dialog(&mut commands, &theme, pending.instance_id.0, &pending.label);
@@ -304,6 +321,63 @@ pub fn end_item_drag(
             );
         }
     }
+}
+
+/// Opens the item-info card for a click that never became a drag.
+#[allow(clippy::too_many_arguments)]
+pub fn inspect_clicked_item(
+    mut drag_state: ResMut<ItemDragState>,
+    mut state: ResMut<InventoryUiState>,
+    player_query: Query<(&Inventory, &Equipment, Option<&KnownAncientLanguage>), With<LocalPlayer>>,
+    registry: Res<ItemRegistry>,
+    glyphs: GlyphRegistries,
+    theme: Res<UiTheme>,
+    all_cards: Query<(Entity, &CardWindow)>,
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+) {
+    let Some(origin) = drag_state.inspect.take() else {
+        return;
+    };
+    let Some((inventory, equipment, known)) = player_query.iter().next() else {
+        return;
+    };
+    // `KnownGlyphs` decides whether an inscribed slot is castable at all, so
+    // the detail card needs it to mark a locked slot. It is replicated
+    // separately from `Inventory`/`Equipment` and may not have arrived yet —
+    // an empty Vocabulary is the correct stand-in until it does.
+    let known = known.cloned().unwrap_or_default();
+    let selection = match origin {
+        ItemSlotOrigin::Inventory(idx) => InventorySelection::Slot(idx),
+        ItemSlotOrigin::Equipment(slot) => InventorySelection::Equipment(slot),
+    };
+    state.selected = Some(selection);
+    despawn_detail_cards(&mut commands, &all_cards);
+    spawn_item_detail_card(
+        &mut commands,
+        &theme,
+        &registry,
+        &glyphs,
+        &known,
+        inventory,
+        equipment,
+        selection,
+        &asset_server,
+    );
+}
+
+fn cursor_over_inventory_card(
+    cursor: Vec2,
+    cards: &Query<(&CardWindow, &ComputedNode, &UiGlobalTransform)>,
+) -> bool {
+    cards.iter().any(|(window, computed, transform)| {
+        if window.kind != CardKind::Inventory {
+            return false;
+        }
+        let top_left = physical_to_ui_px(transform.translation - computed.size() * 0.5, computed);
+        let size = physical_to_ui_px(computed.size(), computed);
+        Rect::from_corners(top_left, top_left + size).contains(cursor)
+    })
 }
 
 fn apply_slot_drop(
@@ -554,6 +628,7 @@ mod tests {
                 pt(10.0, 10.0),
                 pt(12.0, 11.0),
                 true,
+                true,
                 false,
                 DRAG_THRESHOLD_PX
             ),
@@ -564,7 +639,8 @@ mod tests {
                 pt(10.0, 10.0),
                 pt(12.0, 11.0),
                 false,
-                true,
+                false,
+                false,
                 DRAG_THRESHOLD_PX
             ),
             DragOutcome::ClickInspect
@@ -573,6 +649,7 @@ mod tests {
             drag_outcome(
                 pt(10.0, 10.0),
                 pt(10.0, 10.0),
+                false,
                 false,
                 false,
                 DRAG_THRESHOLD_PX
@@ -584,32 +661,86 @@ mod tests {
     #[test]
     fn drag_onto_another_slot_moves() {
         assert_eq!(
-            drag_outcome(pt(0.0, 0.0), pt(20.0, 0.0), true, false, DRAG_THRESHOLD_PX),
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(20.0, 0.0),
+                true,
+                true,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
             DragOutcome::MoveItem
         );
     }
 
     #[test]
-    fn drag_onto_slot_wins_over_destroy_zone() {
+    fn drag_onto_slot_wins_over_outside_inventory() {
         assert_eq!(
-            drag_outcome(pt(0.0, 0.0), pt(20.0, 0.0), true, true, DRAG_THRESHOLD_PX),
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(20.0, 0.0),
+                true,
+                false,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
             DragOutcome::MoveItem
         );
     }
 
     #[test]
-    fn drag_onto_destroy_zone_requests_destroy() {
+    fn drag_outside_inventory_requests_destroy() {
         assert_eq!(
-            drag_outcome(pt(0.0, 0.0), pt(20.0, 0.0), false, true, DRAG_THRESHOLD_PX),
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(20.0, 0.0),
+                false,
+                false,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
             DragOutcome::RequestDestroy
         );
     }
 
     #[test]
-    fn drag_onto_empty_world_cancels() {
+    fn drag_onto_inventory_chrome_cancels() {
         assert_eq!(
-            drag_outcome(pt(0.0, 0.0), pt(20.0, 0.0), false, false, DRAG_THRESHOLD_PX),
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(20.0, 0.0),
+                false,
+                true,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
             DragOutcome::Cancel
+        );
+    }
+
+    #[test]
+    fn returning_near_the_start_after_a_drag_does_not_inspect() {
+        assert_eq!(
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(2.0, 0.0),
+                true,
+                true,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::MoveItem
+        );
+        assert_eq!(
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(2.0, 0.0),
+                false,
+                false,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::RequestDestroy
         );
     }
 
@@ -617,11 +748,18 @@ mod tests {
     fn threshold_must_be_positive_so_clicks_are_not_drags() {
         // A zero threshold would classify a stationary click as a drag.
         assert_eq!(
-            drag_outcome(pt(4.0, 4.0), pt(4.0, 4.0), false, false, DRAG_THRESHOLD_PX),
+            drag_outcome(
+                pt(4.0, 4.0),
+                pt(4.0, 4.0),
+                false,
+                false,
+                false,
+                DRAG_THRESHOLD_PX
+            ),
             DragOutcome::ClickInspect
         );
         assert_ne!(
-            drag_outcome(pt(4.0, 4.0), pt(4.0, 4.0), false, false, 0.0),
+            drag_outcome(pt(4.0, 4.0), pt(4.0, 4.0), false, false, false, 0.0),
             DragOutcome::ClickInspect
         );
     }

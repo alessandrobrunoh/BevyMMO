@@ -39,6 +39,7 @@ impl Plugin for InventoryUiPlugin {
                 drag::start_item_drag,
                 drag::update_item_drag,
                 drag::end_item_drag,
+                drag::inspect_clicked_item,
                 drag::handle_destroy_dialog,
             )
                 .chain()

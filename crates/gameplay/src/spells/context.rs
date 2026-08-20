@@ -29,6 +29,17 @@ pub enum TargetingMode {
     GroundAoe,
 }
 
+impl TargetingMode {
+    /// Whether a leftover selected unit is range-checked before the cast.
+    ///
+    /// The HUD always has a current target. Only a homing / single-entity
+    /// spell consumes it; an AoE cone must not fail because a dummy 20 m
+    /// away is still selected.
+    pub fn range_checks_selected_entity(self) -> bool {
+        matches!(self, Self::SingleEntity)
+    }
+}
+
 /// Classifies the timing model of a spell for the cast pipeline.
 ///
 /// The value is derived in [`Spell::cast_kind`] from [`SpellConfig`], but can
@@ -869,5 +880,13 @@ mod tests {
 
         assert_eq!(ctx.pending_aoes[0].targeting, AoeTargeting::ExcludeCaster);
         assert!(!ctx.pending_aoes[0].targeting.allows(caster, caster));
+    }
+
+    #[test]
+    fn only_single_entity_spells_range_check_a_selected_unit() {
+        assert!(TargetingMode::SingleEntity.range_checks_selected_entity());
+        assert!(!TargetingMode::SelfCentered.range_checks_selected_entity());
+        assert!(!TargetingMode::GroundAoe.range_checks_selected_entity());
+        assert!(!TargetingMode::DirectionalLine.range_checks_selected_entity());
     }
 }

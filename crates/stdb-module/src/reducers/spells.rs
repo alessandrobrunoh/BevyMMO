@@ -96,6 +96,7 @@ pub fn cast_spell(
         ctx,
         &caster,
         config.cast_range,
+        config.targeting,
         target_entity,
         target_position,
     )?;
@@ -329,6 +330,7 @@ pub fn eidolon_cast(
         ctx,
         &caster,
         preview.params.range,
+        preview.ability.geometry().targeting_mode(),
         target_entity,
         target_position.map(Vec3::from),
     )?;
@@ -582,6 +584,7 @@ pub fn armor_cast(
         ctx,
         &caster,
         preview.params.range,
+        preview.ability.geometry().targeting_mode(),
         target_entity,
         target_position.map(Vec3::from),
     )?;

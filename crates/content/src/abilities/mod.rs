@@ -117,4 +117,28 @@ mod tests {
         assert!(registry.contains(&crate::abilities::AbilityId::new("ground_slam")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("cataclysm")));
     }
+
+    #[test]
+    fn ability_icon_filenames_match_ability_ids() {
+        let icons =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/abilities/icons");
+        let registry = default_base_abilities();
+        let mut files = 0;
+        for entry in std::fs::read_dir(&icons).expect("assets/abilities/icons") {
+            let path = entry.expect("icon dir entry").path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("png") {
+                continue;
+            }
+            files += 1;
+            let stem = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .expect("utf-8 icon filename");
+            assert!(
+                registry.contains(&crate::abilities::AbilityId::new(stem.to_string())),
+                "icon {stem}.png has no matching ability id; the hotbar loads abilities/icons/{{id}}.png"
+            );
+        }
+        assert!(files > 0, "expected PNG icons in assets/abilities/icons");
+    }
 }

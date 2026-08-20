@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::abilities::blueprint::AbilityBlueprint;
 use crate::effects::EffectSpec;
 use crate::registry::Registry;
-use crate::spells::context::{AoeShape, SpellCastContext};
+use crate::spells::context::{AoeShape, SpellCastContext, TargetingMode};
 
 /// Raggio d'impatto di una palla lanciata da un gesto `Projectile`.
 pub const PROJECTILE_HIT_RADIUS: f32 = 1.0;
@@ -53,6 +53,30 @@ pub enum AbilityGeometry {
     Circle { radius: f32 },
     Projectile { speed: f32 },
     SelfBuff { duration_seconds: f32 },
+}
+
+impl AbilityGeometry {
+    /// How this gesture consumes the HUD's selected target and cursor point.
+    ///
+    /// The client always *has* both; only some geometries *use* them. Mapping
+    /// onto [`TargetingMode`] is what stops a leftover selected dummy from
+    /// failing a self-centered cleave as "out of range".
+    pub fn targeting_mode(self) -> TargetingMode {
+        match self {
+            Self::Cone { .. } | Self::SelfBuff { .. } => TargetingMode::SelfCentered,
+            Self::Circle { .. } => TargetingMode::GroundAoe,
+            Self::Projectile { .. } => TargetingMode::DirectionalLine,
+        }
+    }
+
+    /// Selected-unit id to send with the reducer. Cones, ground circles and
+    /// self-buffs ignore a selected entity; attaching one would range-check it.
+    pub fn selected_entity_payload(self, selected: Option<u64>) -> Option<u64> {
+        match self {
+            Self::Projectile { .. } => selected,
+            Self::Cone { .. } | Self::Circle { .. } | Self::SelfBuff { .. } => None,
+        }
+    }
 }
 
 /// How an ability executes when activated.
@@ -822,5 +846,64 @@ mod tests {
         ability.default_manifestation(&ability.base_params(), &mut ctx);
         assert_eq!(ctx.pending_aoes.len(), 1);
         assert_eq!(ctx.pending_aoes[0].targeting, AoeTargeting::ExcludeCaster);
+    }
+
+    #[test]
+    fn cones_and_self_buffs_are_self_centered() {
+        assert_eq!(
+            AbilityGeometry::Cone {
+                radius: 5.0,
+                angle_deg: 85.0
+            }
+            .targeting_mode(),
+            TargetingMode::SelfCentered
+        );
+        assert_eq!(
+            AbilityGeometry::SelfBuff {
+                duration_seconds: 1.0
+            }
+            .targeting_mode(),
+            TargetingMode::SelfCentered
+        );
+    }
+
+    #[test]
+    fn circles_are_ground_aoe_and_projectiles_are_directional() {
+        assert_eq!(
+            AbilityGeometry::Circle { radius: 5.5 }.targeting_mode(),
+            TargetingMode::GroundAoe
+        );
+        assert_eq!(
+            AbilityGeometry::Projectile { speed: 24.0 }.targeting_mode(),
+            TargetingMode::DirectionalLine
+        );
+    }
+
+    #[test]
+    fn only_projectiles_send_a_selected_entity() {
+        let selected = Some(7);
+        assert_eq!(
+            AbilityGeometry::Projectile { speed: 24.0 }.selected_entity_payload(selected),
+            selected
+        );
+        assert_eq!(
+            AbilityGeometry::Cone {
+                radius: 5.0,
+                angle_deg: 85.0
+            }
+            .selected_entity_payload(selected),
+            None
+        );
+        assert_eq!(
+            AbilityGeometry::Circle { radius: 5.5 }.selected_entity_payload(selected),
+            None
+        );
+        assert_eq!(
+            AbilityGeometry::SelfBuff {
+                duration_seconds: 1.0
+            }
+            .selected_entity_payload(selected),
+            None
+        );
     }
 }

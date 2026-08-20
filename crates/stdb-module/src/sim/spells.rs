@@ -40,7 +40,7 @@ use bevymmo_domain::items::WeaponFamilyRegistry;
 use bevymmo_domain::spells::components::MOVEMENT_INTERRUPT_EPSILON;
 use bevymmo_domain::spells::context::{
     AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ProjectileSpawnRequest, Spell,
-    SpellCastContext,
+    SpellCastContext, TargetingMode,
 };
 use bevymmo_domain::spells::registry::{SpellId, SpellRegistry};
 use bevymmo_domain::stats::components::{CombatStats, StatsBundleData};
@@ -215,42 +215,48 @@ pub fn point_in_cast_range(caster: Vec3, point: Vec3, range: f32) -> bool {
     range <= 0.0 || flat_distance(caster, point) <= range + CAST_RANGE_TOLERANCE
 }
 
-/// Rejects a missing, dead, offline, or out-of-range target.
+/// Rejects a missing, dead, offline, or out-of-range target when the
+/// ability actually uses a selected unit.
 ///
-/// The entity is range-checked on its live position even when the client also
-/// sent a nearby `target_position` — otherwise a homing spell can be aimed at
-/// feet and lock onto anyone on the map.
+/// The HUD always knows the current target and the cursor. The client used
+/// to attach both to every reducer call, so a self-centered cleave failed
+/// whenever a dummy selected 20 m away was still targeted — or whenever the
+/// isometric camera put the cursor on distant ground. Only
+/// [`TargetingMode::SingleEntity`] range-checks a unit: a homing spell must
+/// not lock onto someone across the map by aiming at their feet. Ground
+/// circles clamp at fire (`clamp_to_range`); cones ignore the cursor for
+/// range and use it only as facing. Projectiles treat a selected unit as a
+/// preference and fall back to the forward lane.
 pub fn validate_cast_target(
     ctx: &ReducerContext,
     caster: &GameEntity,
     range: f32,
+    targeting: TargetingMode,
     target_entity: Option<u64>,
     target_position: Option<Vec3>,
 ) -> Result<(), String> {
+    if !targeting.range_checks_selected_entity() {
+        return Ok(());
+    }
+
     let origin = Vec3::from(caster.position);
     let online = targets::online_character_ids(ctx);
-
-    if let Some(id) = target_entity {
-        let Some(target) = ctx.db.game_entity().entity_id().find(&id) else {
-            return Err("that target is gone".to_string());
-        };
-        let online_flag = target.owner_character_id.map(|cid| online.contains(&cid));
-        if !targets::is_valid_spell_target(target.kind, target.state, online_flag)
-            || !is_alive(ctx, &target)
-        {
-            return Err("that target cannot be hit".to_string());
-        }
-        if !point_in_cast_range(origin, Vec3::from(target.position), range) {
-            return Err("target is out of range".to_string());
-        }
+    let Some(id) = target_entity else {
+        return Ok(());
+    };
+    let Some(target) = ctx.db.game_entity().entity_id().find(&id) else {
+        return Err("that target is gone".to_string());
+    };
+    let online_flag = target.owner_character_id.map(|cid| online.contains(&cid));
+    if !targets::is_valid_spell_target(target.kind, target.state, online_flag)
+        || !is_alive(ctx, &target)
+    {
+        return Err("that target cannot be hit".to_string());
     }
-
-    if let Some(point) = target_position {
-        if !point_in_cast_range(origin, point, range) {
-            return Err("target is out of range".to_string());
-        }
+    if !point_in_cast_range(origin, Vec3::from(target.position), range) {
+        return Err("target is out of range".to_string());
     }
-
+    let _ = target_position;
     Ok(())
 }
 

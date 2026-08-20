@@ -7,7 +7,7 @@
 //! server-authoritative in SpacetimeDB.
 
 use bevy::prelude::*;
-use bevymmo_gameplay::abilities::{AbilitySlot, BaseAbilityRegistry};
+use bevymmo_gameplay::abilities::{AbilityGeometry, AbilitySlot, BaseAbilityRegistry};
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
 use bevymmo_gameplay::items::EquipSlot;
@@ -37,11 +37,10 @@ pub fn send_combat_inputs(
     item_registry: Option<Res<ItemRegistry>>,
     ability_registry: Option<Res<BaseAbilityRegistry>>,
 ) {
-    let target = current_target
+    let selected = current_target
         .entity
         .and_then(|entity| target_entities.get(entity).ok())
-        .map(|(network_id, position)| (Some(network_id.0), Some(position.0)));
-    let (target_entity, target_position) = target.unwrap_or((None, None));
+        .map(|(network_id, position)| (network_id.0, position.0));
     let local = player.single().ok();
 
     for (action, slot) in [
@@ -52,17 +51,24 @@ pub fn send_combat_inputs(
         if !settings.just_pressed(action, &keyboard) {
             continue;
         }
+        let mut geometry = None;
         if let Some((equipment, vitals)) = local {
             if let (Some(items), Some(abilities)) =
                 (item_registry.as_deref(), ability_registry.as_deref())
             {
-                if let Some(cost) = armor_energy_cost(equipment, slot, items, abilities) {
+                if let Some((cost, resolved)) = armor_cast_info(equipment, slot, items, abilities) {
                     if !can_afford_mana(vitals.current_mana, cost) {
                         continue;
                     }
+                    geometry = Some(resolved);
                 }
             }
         }
+        let selected_id = selected.map(|(id, _)| id);
+        let target_entity = geometry
+            .map(|geometry| geometry.selected_entity_payload(selected_id))
+            .unwrap_or(selected_id);
+        let target_position = selected.map(|(_, position)| position);
         let _ = commands::armor_cast(
             &connection,
             slot,
@@ -73,12 +79,12 @@ pub fn send_combat_inputs(
     }
 }
 
-fn armor_energy_cost(
+fn armor_cast_info(
     equipment: &Equipment,
     slot: EquipSlot,
     items: &ItemRegistry,
     abilities: &BaseAbilityRegistry,
-) -> Option<f32> {
+) -> Option<(f32, AbilityGeometry)> {
     let instance = match slot {
         EquipSlot::Helmet => equipment.helmet.as_ref(),
         EquipSlot::Armor => equipment.armor.as_ref(),
@@ -89,5 +95,6 @@ fn armor_energy_cost(
     let loadout = item.ability_loadout()?;
     let ability_id =
         bevymmo_gameplay::abilities::resolve_armor_ability(loadout, &instance.ability_selection)?;
-    Some(abilities.get(ability_id)?.base_params().energy_cost)
+    let ability = abilities.get(ability_id)?;
+    Some((ability.base_params().energy_cost, ability.geometry()))
 }

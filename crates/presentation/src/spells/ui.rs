@@ -672,6 +672,10 @@ mod tests {
             spell_icon_path(&AbilityId::new("arcane_bolt")),
             "abilities/icons/arcane_bolt.png"
         );
+        assert_eq!(
+            spell_icon_path(&AbilityId::new("lunge")),
+            "abilities/icons/lunge.png"
+        );
     }
 
     #[test]

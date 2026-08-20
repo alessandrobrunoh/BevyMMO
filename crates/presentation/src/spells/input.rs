@@ -190,7 +190,7 @@ pub fn cast_abilities_on_key(
         None
     };
 
-    let target_id = current_target
+    let selected_id = current_target
         .entity
         .and_then(|entity| target_ids.get(entity).ok())
         .map(|net_id| net_id.0);
@@ -234,7 +234,12 @@ pub fn cast_abilities_on_key(
             continue;
         }
         if let Some(conn) = conn.as_deref() {
-            if let Err(err) = stdb_commands::eidolon_cast(conn, slot, target_id, target_position) {
+            if let Err(err) = stdb_commands::eidolon_cast(
+                conn,
+                slot,
+                ability.geometry().selected_entity_payload(selected_id),
+                target_position,
+            ) {
                 error!("could not start Eidolon cast: {err}");
             }
         }
@@ -324,9 +329,12 @@ pub fn cast_abilities_on_key(
             );
 
             if let Some(conn) = conn.as_deref() {
-                if let Err(err) =
-                    stdb_commands::eidolon_cast(conn, slot, target_id, target_position)
-                {
+                if let Err(err) = stdb_commands::eidolon_cast(
+                    conn,
+                    slot,
+                    ability.geometry().selected_entity_payload(selected_id),
+                    target_position,
+                ) {
                     error!("could not cast Eidolon ability: {err}");
                 }
             }
@@ -359,7 +367,7 @@ pub fn cast_abilities_on_key(
             send_release_cast(
                 conn.as_deref(),
                 &ability_id,
-                target_id,
+                ability.geometry().selected_entity_payload(selected_id),
                 target_position,
                 player_position.0,
                 &mut look_direction,
@@ -374,7 +382,7 @@ pub fn cast_abilities_on_key(
                 pending_release.0 = Some(QueuedCastRelease {
                     ability_id,
                     action,
-                    target_id,
+                    target_id: ability.geometry().selected_entity_payload(selected_id),
                     target_position,
                     stop_movement,
                     hud_cooldown_seconds,

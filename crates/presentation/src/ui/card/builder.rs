@@ -248,8 +248,8 @@ impl<'a> CardBuilder<'a> {
         let header_style = HeaderStyle::from_theme(theme, framed);
 
         // Cards are placed relative to the viewport, never to a fixed
-        // resolution: a 50% inset plus a negative half-size margin, the same
-        // pattern `ui::spellbook` uses. Centring against a hardcoded 1920x1080
+        // resolution: a 50% inset plus a negative half-size margin. Centring
+        // against a hardcoded 1920x1080
         // put every card partly or fully off-screen at the default 800x600
         // window (`bins/game/src/main.rs`).
         //

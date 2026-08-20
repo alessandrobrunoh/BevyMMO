@@ -72,6 +72,7 @@ use super::module_bindings::aoe_region_table::AoeRegionTableAccess;
 use super::module_bindings::boss_state_table::BossStateTableAccess;
 use super::module_bindings::cast_ended_table::CastEndedTableAccess;
 use super::module_bindings::cast_state_table::CastStateTableAccess;
+use super::module_bindings::character_wallet_table::CharacterWalletTableAccess;
 use super::module_bindings::cooldown_table::CooldownTableAccess;
 use super::module_bindings::crowd_control_table::CrowdControlTableAccess;
 use super::module_bindings::delete_character_reducer::delete_character;
@@ -86,7 +87,10 @@ use super::module_bindings::known_ancient_language_table::KnownAncientLanguageTa
 use super::module_bindings::leave_reducer::leave;
 use super::module_bindings::login_reducer::login;
 use super::module_bindings::logout_reducer::logout;
+use super::module_bindings::market_buy_order_table::MarketBuyOrderTableAccess;
+use super::module_bindings::market_sell_order_table::MarketSellOrderTableAccess;
 use super::module_bindings::move_to_reducer::move_to;
+use super::module_bindings::npc_table::NpcTableAccess;
 use super::module_bindings::periodic_effect_table::PeriodicEffectTableAccess;
 use super::module_bindings::player_message_table::PlayerMessageTableAccess;
 use super::module_bindings::player_table::PlayerTableAccess;
@@ -97,11 +101,11 @@ use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAcc
 use super::module_bindings::stat_modifier_table::StatModifierTableAccess;
 use super::module_bindings::{
     ActiveStatus, AoeRegion, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState,
-    ColorRow, Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow,
-    EntityStateRow, EntityStats, EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable,
-    ItemInstanceRow, KnownAncientLanguageTable, ModifierKindRow, PeriodicEffect, Player,
-    PlayerMessageEvent, Projectile, ReducerEventContext, RemoteReducers, Session,
-    SpellVisualEffectEvent, StatModifier, Vec3Row,
+    CharacterWallet, ColorRow, Cooldown, CrowdControl, CrowdControlKindRow, DbConnection,
+    EntityKindRow, EntityStateRow, EntityStats, EquipmentTable, GameEntity as EntityRow, Hotbar,
+    InventoryTable, ItemInstanceRow, KnownAncientLanguageTable, MarketBuyOrder, MarketSellOrder,
+    ModifierKindRow, Npc, PeriodicEffect, Player, PlayerMessageEvent, Projectile,
+    ReducerEventContext, RemoteReducers, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
 };
 
 /// How fast predicted position is pulled back towards the authoritative one, as
@@ -163,6 +167,7 @@ enum RowEvent {
     Player(Player),
     Session(Session),
     Inventory(InventoryTable),
+    Wallet(CharacterWallet),
     Equipment(EquipmentTable),
     Hotbar(Hotbar),
     KnownAncientLanguage(KnownAncientLanguageTable),
@@ -184,6 +189,11 @@ enum RowEvent {
     ProjectileRemoved(u64),
     AoeRegion(AoeRegion),
     AoeRegionRemoved(u64),
+    Npc(Npc),
+    SellOrder(MarketSellOrder),
+    SellOrderRemoved(u64),
+    BuyOrder(MarketBuyOrder),
+    BuyOrderRemoved(u64),
     PlayerMessage(PlayerMessageEvent),
     /// A reducer the client called came back with the module's own `Err`.
     ReducerRejected(String),
@@ -214,6 +224,7 @@ struct PendingRows {
     equipment: HashMap<Uuid, EquipmentTable>,
     hotbar: HashMap<Uuid, Hotbar>,
     known_ancient_language: HashMap<Uuid, KnownAncientLanguageTable>,
+    npcs: HashMap<u64, Npc>,
     boss_state: HashMap<u64, BossState>,
     /// Keyed by `active_status.id`, not by entity: one entity can carry several.
     active_status: HashMap<u64, ActiveStatus>,
@@ -282,6 +293,7 @@ impl StdbConnection {
             format!("SELECT * FROM equipment WHERE character_id = '{character_id}'"),
             format!("SELECT * FROM hotbar WHERE character_id = '{character_id}'"),
             format!("SELECT * FROM known_ancient_language WHERE character_id = '{character_id}'"),
+            format!("SELECT * FROM character_wallet WHERE character_id = '{character_id}'"),
         ];
         if let Some(entity_id) = entity_id {
             queries.push(format!(
@@ -405,6 +417,34 @@ pub struct RosterCharacter {
     pub online: bool,
 }
 
+/// Gold of the character this client is currently playing.
+///
+/// The table `character_wallet` is the source of truth; this resource is the
+/// HUD-facing copy for the local character only. Other characters' wallets
+/// are ignored even though the table is public.
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalGold {
+    pub amount: u64,
+}
+
+/// Sell orders replicated from `market_sell_order`. UI filters by `market_id`.
+#[derive(Resource, Default)]
+pub struct MarketOrderBook {
+    pub orders: HashMap<u64, MarketSellOrder>,
+}
+
+/// Buy orders replicated from `market_buy_order`. UI filters by `market_id`.
+#[derive(Resource, Default)]
+pub struct MarketBuyBook {
+    pub orders: HashMap<u64, MarketBuyOrder>,
+}
+
+/// Present on an NPC entity that opens an isolated player market.
+#[derive(Component, Debug, Clone)]
+pub struct NpcMarket {
+    pub market_id: String,
+}
+
 /// The caller's own characters (from the public `player` table, filtered to
 /// [`LocalCharacter::account_id`]), for the character-select screen.
 ///
@@ -469,6 +509,9 @@ struct ReplicationState<'w> {
     pending: ResMut<'w, PendingRows>,
     local: ResMut<'w, LocalCharacter>,
     roster: ResMut<'w, CharacterRoster>,
+    gold: ResMut<'w, LocalGold>,
+    markets: ResMut<'w, MarketOrderBook>,
+    bids: ResMut<'w, MarketBuyBook>,
 }
 
 /// [`AuthState`]/[`AuthFailure`], bundled for the same reason as
@@ -516,6 +559,9 @@ impl Plugin for StdbPlugin {
         app.init_resource::<LocalMovementFreeze>();
         app.init_resource::<LocalCharacter>();
         app.init_resource::<CharacterRoster>();
+        app.init_resource::<LocalGold>();
+        app.init_resource::<MarketOrderBook>();
+        app.init_resource::<MarketBuyBook>();
         app.init_resource::<ShuttingDown>();
         app.insert_resource(StdbConnectionConfig {
             uri: uri.clone(),
@@ -686,6 +732,10 @@ fn connect(
             "SELECT * FROM player_message",
             "SELECT * FROM party",
             "SELECT * FROM party_member",
+            "SELECT * FROM npc",
+            "SELECT * FROM market",
+            "SELECT * FROM market_sell_order",
+            "SELECT * FROM market_buy_order",
         ]);
 
     Ok((
@@ -756,6 +806,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(player, Player);
     mirror!(session, Session);
     mirror!(inventory, Inventory);
+    mirror!(character_wallet, Wallet);
     mirror!(equipment, Equipment);
     mirror!(hotbar, Hotbar);
     mirror!(known_ancient_language, KnownAncientLanguage);
@@ -768,6 +819,9 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(cooldown, Cooldown);
     mirror!(projectile, Projectile);
     mirror!(aoe_region, AoeRegion);
+    mirror!(npc, Npc);
+    mirror!(market_sell_order, SellOrder);
+    mirror!(market_buy_order, BuyOrder);
 
     // Deletions matter for anything the client keeps a copy of: a stun that
     // ends, a buff that expires, a projectile that lands. Without these the
@@ -786,6 +840,20 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror_delete!(stat_modifier, StatModifierRemoved);
     mirror_delete!(periodic_effect, PeriodicEffectRemoved);
     mirror_delete!(cooldown, CooldownRemoved);
+
+    {
+        let deleted = tx.clone();
+        conn.db().market_sell_order().on_delete(move |_ctx, row| {
+            let _ = deleted.send(RowEvent::SellOrderRemoved(row.id));
+        });
+    }
+
+    {
+        let deleted = tx.clone();
+        conn.db().market_buy_order().on_delete(move |_ctx, row| {
+            let _ = deleted.send(RowEvent::BuyOrderRemoved(row.id));
+        });
+    }
 
     // Event tables are insert-only by design: a row is delivered and not
     // retained, which is exactly the lifetime "play this once" wants.
@@ -875,7 +943,13 @@ fn drain_events(
                 }
 
                 let is_new = !state.map.by_entity_id.contains_key(&entity_id);
-                apply_entity(&mut commands, &mut state.map, &row, &state.local);
+                apply_entity(
+                    &mut commands,
+                    &mut state.map,
+                    &row,
+                    &state.local,
+                    &state.pending,
+                );
                 replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
                 if is_new {
                     if let Some(character_id) = owner {
@@ -964,7 +1038,13 @@ fn drain_events(
                 if row.online {
                     state.pending.offline_players.remove(&row.character_id);
                     if let Some(entity_row) = state.pending.entities.get(&row.entity_id).cloned() {
-                        apply_entity(&mut commands, &mut state.map, &entity_row, &state.local);
+                        apply_entity(
+                            &mut commands,
+                            &mut state.map,
+                            &entity_row,
+                            &state.local,
+                            &state.pending,
+                        );
                         replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
                     }
                     replay_character(
@@ -980,6 +1060,31 @@ fn drain_events(
                         commands.entity(entity).despawn();
                     }
                 }
+            }
+            RowEvent::Wallet(row) => {
+                if state.local.character_id == Some(row.character_id) {
+                    state.gold.amount = row.gold;
+                }
+            }
+            RowEvent::Npc(row) => {
+                if let Some(entity) = state.map.get(row.entity_id) {
+                    if let Some(market_id) = row.market_id.clone() {
+                        commands.entity(entity).insert(NpcMarket { market_id });
+                    }
+                }
+                state.pending.npcs.insert(row.entity_id, row);
+            }
+            RowEvent::SellOrder(row) => {
+                state.markets.orders.insert(row.id, row);
+            }
+            RowEvent::SellOrderRemoved(id) => {
+                state.markets.orders.remove(&id);
+            }
+            RowEvent::BuyOrder(row) => {
+                state.bids.orders.insert(row.id, row);
+            }
+            RowEvent::BuyOrderRemoved(id) => {
+                state.bids.orders.remove(&id);
             }
             RowEvent::Inventory(row) => {
                 let character_id = row.character_id;
@@ -1039,6 +1144,9 @@ fn drain_events(
                     continue;
                 }
                 state.local.account_id = Some(row.account_id);
+                if state.local.character_id != row.character_id {
+                    state.gold.amount = 0;
+                }
                 state.local.character_id = row.character_id;
                 // Catches every `player` row that already arrived before
                 // this `Session` row told us which account they should be
@@ -1635,6 +1743,7 @@ fn apply_entity(
     map: &mut StdbEntityMap,
     row: &EntityRow,
     local: &LocalCharacter,
+    pending: &PendingRows,
 ) {
     let authoritative = StdbAuthoritative {
         position: to_vec3(&row.position),
@@ -1683,6 +1792,11 @@ fn apply_entity(
     }
     if matches!(row.kind, EntityKindRow::Player) && local.is(row.owner_character_id) {
         cmd.insert(LocalPlayer);
+    }
+    if let Some(npc) = pending.npcs.get(&row.entity_id) {
+        if let Some(market_id) = npc.market_id.clone() {
+            cmd.insert(NpcMarket { market_id });
+        }
     }
 }
 
@@ -1943,6 +2057,9 @@ fn join_on_request(
                 &mut state.pending,
                 &mut state.local,
                 &mut state.roster,
+                &mut state.gold,
+                &mut state.markets,
+                &mut state.bids,
             );
             auth.state.0 = AuthStatus::LoggedOut;
             auth.failure.0 = None;
@@ -1966,6 +2083,9 @@ fn clear_replicated_state(
     pending: &mut PendingRows,
     local: &mut LocalCharacter,
     roster: &mut CharacterRoster,
+    gold: &mut LocalGold,
+    markets: &mut MarketOrderBook,
+    bids: &mut MarketBuyBook,
 ) {
     for entity in map
         .by_entity_id
@@ -1979,6 +2099,9 @@ fn clear_replicated_state(
     *pending = PendingRows::default();
     *local = LocalCharacter::default();
     roster.characters.clear();
+    gold.amount = 0;
+    markets.orders.clear();
+    bids.orders.clear();
 }
 
 /// Tells the server the client is still here.

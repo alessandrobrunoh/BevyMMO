@@ -37,14 +37,14 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use bevymmo_domain::content::placeables::register_all;
-use bevymmo_domain::placeables::PlaceableRegistry;
+use bevymmo_domain::placeables::{InteractionKind, PlaceableRegistry};
 use bevymmo_domain::world::{CollisionGrid, GroundContact, MapManifest, Prop, SurfaceQuery};
 use spacetimedb::{reducer, ReducerContext, Table};
 
 use crate::rows::{StatsRow, Vec3Row};
 use crate::tables::{
-    boss_state, entity_stats, game_entity, grid_cell, player, prop_override, BossPhaseRow,
-    BossState, ColorRow, EntityKindRow, EntityStateRow, EntityStats, GameEntity, PropOverride,
+    boss_state, entity_stats, game_entity, grid_cell, npc, player, prop_override, BossPhaseRow,
+    BossState, ColorRow, EntityKindRow, EntityStateRow, EntityStats, GameEntity, Npc, PropOverride,
 };
 
 // `EMBEDDED_MAPS: &[(&str, &[u8])]`, one entry per authored map.
@@ -287,13 +287,22 @@ pub fn seed(ctx: &ReducerContext) {
         } else if let Some(definition) = registry.npcs.get(&prop.kind) {
             // No `entity_stats` row: NPCs are not combatants, and the Bevy
             // server likewise gave them a marker and a transform only.
-            spawn_entity(
+            let entity = spawn_entity(
                 ctx,
                 prop,
                 EntityKindRow::Npc,
                 definition.display_name(),
                 0.0,
             );
+            let market_id = match definition.interaction() {
+                InteractionKind::Market { market_id } => Some(market_id),
+                _ => None,
+            };
+            ctx.db.npc().insert(Npc {
+                entity_id: entity.entity_id,
+                kind_id: prop.kind.as_str().to_string(),
+                market_id,
+            });
             npcs += 1;
         } else if registry.player_spawns.contains_key(&prop.kind) {
             // Read on demand by `player_spawn_point`, not turned into an entity.
@@ -530,7 +539,7 @@ fn authored_facing(prop: &Prop) -> Vec3Row {
 const GM_IDENTITIES: Option<&str> = option_env!("BEVYMMO_GM_IDENTITIES");
 
 /// Rejects everyone who is not a configured game master.
-fn require_gm(ctx: &ReducerContext) -> Result<(), String> {
+pub(crate) fn require_gm(ctx: &ReducerContext) -> Result<(), String> {
     let sender = ctx.sender().to_hex().to_string();
     let allowed = GM_IDENTITIES.unwrap_or("").split(',').any(|entry| {
         // `0x`-prefixed is how `spacetime sql` prints identities, bare is how

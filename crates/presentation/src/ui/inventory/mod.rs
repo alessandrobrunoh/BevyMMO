@@ -4,14 +4,18 @@ pub mod components;
 pub mod detail;
 pub mod drag;
 mod equipment_section;
+mod inscription_editor;
 mod inventory_section;
 pub mod systems;
 pub mod weapon_detail;
 
 use bevy::prelude::*;
-use bevymmo_gameplay::items::{
-    components::{Equipment, Inventory},
-    registry::ItemRegistry,
+use bevymmo_gameplay::{
+    abilities::AbilitySlot,
+    items::{
+        components::{Equipment, Inventory},
+        registry::ItemRegistry,
+    },
 };
 
 use crate::{
@@ -44,6 +48,21 @@ pub struct InventoryCard;
 pub struct InventoryUiState {
     pub is_open: bool,
     pub selected: Option<InventorySelection>,
+}
+
+#[derive(Resource)]
+pub(super) struct ItemDetailUiState {
+    pub active_slot: AbilitySlot,
+    pub scroll: f32,
+}
+
+impl Default for ItemDetailUiState {
+    fn default() -> Self {
+        Self {
+            active_slot: AbilitySlot::Primary,
+            scroll: 0.0,
+        }
+    }
 }
 
 pub(super) fn spawn_inventory_window(
@@ -104,6 +123,7 @@ pub struct InventoryUiPlugin;
 impl Plugin for InventoryUiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InventoryUiState>();
+        app.init_resource::<ItemDetailUiState>();
         app.init_resource::<ItemDragState>();
         app.add_systems(
             Update,
@@ -115,6 +135,10 @@ impl Plugin for InventoryUiPlugin {
                 systems::toggle_inventory.run_if(not_typing),
                 systems::update_inventory_ui,
                 systems::handle_inventory_interactions,
+                inscription_editor::handle_item_editor_tabs,
+                inscription_editor::update_item_editor_tabs,
+                inscription_editor::handle_item_editor_choices,
+                detail::refresh_item_detail_on_equipment_change,
                 drag::start_item_drag,
                 drag::update_item_drag,
                 drag::end_item_drag,

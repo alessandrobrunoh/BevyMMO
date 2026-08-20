@@ -197,7 +197,9 @@ async fn authenticated_response(
     Ok(response)
 }
 
-fn session_id_from_cookie(headers: &HeaderMap) -> Option<String> {
+/// The session id on the request cookie, if any. Shared with the
+/// authenticated character routes that reuse the same cookie.
+pub(crate) fn session_id_from_cookie(headers: &HeaderMap) -> Option<String> {
     let raw = headers.get(header::COOKIE)?.to_str().ok()?;
     raw.split(';').find_map(|pair| {
         let (name, value) = pair.trim().split_once('=')?;

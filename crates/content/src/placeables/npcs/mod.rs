@@ -4,6 +4,7 @@
 //! definition registered at startup via [`register_all`].
 
 pub mod greeter;
+pub mod market;
 pub mod merchant;
 
 use crate::placeables::PlaceableRegistry;
@@ -13,4 +14,5 @@ use crate::placeables::PlaceableRegistry;
 pub fn register_all(registry: &mut PlaceableRegistry) {
     greeter::register(registry);
     merchant::register(registry);
+    market::register(registry);
 }

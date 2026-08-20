@@ -90,7 +90,7 @@ impl AbilityGeometry {
 pub enum AbilityCastMode {
     /// Effect fires on press, no wind-up.
     Instant,
-    /// Blocking wind-up: caster must remain stationary for `cast_time` seconds.
+    /// Wind-up: click starts the cast; it fires when `cast_time` elapses.
     /// Movement always interrupts.
     CastTime,
     /// Repeated effect while held. Movement interrupts iff

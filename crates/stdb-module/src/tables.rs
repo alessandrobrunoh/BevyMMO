@@ -10,8 +10,9 @@
 //! enforces. The distinction below is one the module has to keep for itself:
 //!
 //! - **Persistent**: `player`, `player_stats`, `hotbar`, `inventory`,
-//!   `equipment`, `known_glyphs`, `prop_override`. These outlive a session and
-//!   must survive a republish.
+//!   `equipment`, `known_glyphs`, `character_wallet`, `account_economy`,
+//!   `market`, `market_sell_order`, `market_buy_order`, `prop_override`. These
+//!   outlive a session and must survive a republish.
 //! - **Runtime**: `game_entity`, `entity_stats`, `cast_state`, `cooldown`,
 //!   `projectile`, `aoe_region`, `crowd_control`, `threat`, `stat_modifier`.
 //!   Conceptually these die with the session, so `init` clears and re-seeds
@@ -149,6 +150,86 @@ pub struct Player {
     /// from row existence: the character outlives the session.
     pub online: bool,
     pub last_seen: Timestamp,
+}
+
+/// Gold of one character. Not shared across an account's other characters.
+///
+/// Created at `join` with `gold = 0`. `Account` itself holds no Gold — that
+/// table is credentials, and Crystals (later) get their own account-scoped
+/// table rather than a column here.
+#[table(accessor = character_wallet, public)]
+pub struct CharacterWallet {
+    #[primary_key]
+    pub character_id: Uuid,
+    pub gold: u64,
+}
+
+/// Account-wide economy knobs. Public the way `player` is: it is not a
+/// credential. `fee_bps` starts at
+/// [`bevymmo_domain::economy::DEFAULT_ACCOUNT_FEE_BPS`] and a future
+/// subscription reducer writes `0` without touching each market's own fee.
+#[table(accessor = account_economy, public)]
+pub struct AccountEconomy {
+    #[primary_key]
+    pub account_id: u64,
+    pub fee_bps: u16,
+}
+
+/// Isolated player market. Seeded in `init`; not cleared as runtime state.
+#[table(accessor = market, public)]
+pub struct Market {
+    #[primary_key]
+    pub id: String,
+    pub display_name: String,
+    pub fee_bps: u16,
+    pub allowed_item_ids: Vec<String>,
+}
+
+/// Runtime NPC profile. Re-seeded with `game_entity` because entity ids
+/// change every `init`. `market_id` is `Some` only for market NPCs.
+#[table(accessor = npc, public)]
+pub struct Npc {
+    #[primary_key]
+    pub entity_id: u64,
+    pub kind_id: String,
+    pub market_id: Option<String>,
+}
+
+/// One listed item instance, escrowed out of the seller's inventory.
+#[table(
+    accessor = market_sell_order,
+    public,
+    index(accessor = by_market_item, btree(columns = [market_id, item_id]))
+)]
+pub struct MarketSellOrder {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub market_id: String,
+    #[index(btree)]
+    pub seller_character_id: Uuid,
+    pub item_id: String,
+    pub item: ItemInstanceRow,
+    pub price_gold: u64,
+    pub created_at: Timestamp,
+}
+
+/// One bid: `price_gold` is Gold escrowed from the buyer until fill or cancel.
+#[table(
+    accessor = market_buy_order,
+    public,
+    index(accessor = by_market_item, btree(columns = [market_id, item_id]))
+)]
+pub struct MarketBuyOrder {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub market_id: String,
+    #[index(btree)]
+    pub buyer_character_id: Uuid,
+    pub item_id: String,
+    pub price_gold: u64,
+    pub created_at: Timestamp,
 }
 
 /// Base stats, without equipment bonuses. See [`StatsRow`].

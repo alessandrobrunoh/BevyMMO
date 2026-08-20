@@ -1,6 +1,7 @@
 //! The gateway's HTTP surface, one module per API area.
 //!
 //! - [`auth`]: `/v1/auth/*` and `/v1/profile`, session-cookie based.
+//! - [`characters`]: `/v1/characters/:id/wallet`, session-cookie based.
 //! - [`public`]: `/v1/public/*`, no session required — reads only data the
 //!   module already replicates publicly.
 //! - [`docs`]: the Scalar API reference at `/docs`.
@@ -18,6 +19,7 @@
 //! rules live in the SpacetimeDB module, connection plumbing in [`crate::stdb`].
 
 pub mod auth;
+pub mod characters;
 pub mod docs;
 pub mod error;
 pub mod public;
@@ -56,6 +58,7 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(welcome))
         .route("/health", get(health))
         .merge(auth::router())
+        .merge(characters::router())
         .merge(public::router())
         .merge(docs::router())
         // Unmatched paths get the same JSON error body as everything else,

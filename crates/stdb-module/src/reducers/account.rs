@@ -155,6 +155,7 @@ pub fn register(ctx: &ReducerContext, email: String, password: String) -> Result
     });
 
     bind_session(ctx, account_row.id);
+    crate::reducers::economy::ensure_account_economy(ctx, account_row.id);
     Ok(())
 }
 
@@ -178,6 +179,7 @@ pub fn login(ctx: &ReducerContext, email: String, password: String) -> Result<()
     }
 
     bind_session(ctx, account_row.id);
+    crate::reducers::economy::ensure_account_economy(ctx, account_row.id);
     Ok(())
 }
 

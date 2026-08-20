@@ -49,8 +49,8 @@ pub enum CastKind {
     /// Immediate effect on `just_pressed` (historical behavior).
     #[default]
     Instant,
-    /// Blocking wind-up: caster must remain stationary for `cast_time_seconds`
-    /// before the effect fires. Movement always cancels the cast.
+    /// Wind-up: click starts the cast; it fires when `cast_time_seconds`
+    /// elapses. Movement always cancels the cast.
     CastTime,
     /// Repeated effect as long as the caster holds down the key.
     /// Movement interrupts or not according to [`SpellConfig::channel_movement`].

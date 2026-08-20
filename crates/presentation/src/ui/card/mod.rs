@@ -1,5 +1,5 @@
 //! Standard `Card` UI component: reusable panel for every modular screen
-//! (inventory, spellbook, character sheet, item detail, ...).
+//! (inventory, market, character sheet, item detail, ...).
 //!
 //! A Card is a centered `Node` with a uniform header (title + optional close
 //! button) and caller-supplied body and footer. Each card also declares an

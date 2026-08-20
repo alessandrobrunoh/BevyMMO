@@ -1,0 +1,111 @@
+<app-page-header
+  [title]="displayItemName(itemId())"
+  [subtitle]="(market()?.display_name || 'Market') + ' — read-only order book'"
+  badge="Item Ticket"
+  bgImage="assets/images/channeling-staff.jpg"
+  [breadcrumbs]="[
+    { label: 'Market', route: '/market' },
+    { label: market()?.display_name || marketId(), route: ['/market', marketId()] },
+    { label: displayItemName(itemId()) }
+  ]"
+></app-page-header>
+
+<div class="market-page-section section-padding">
+  <div class="container">
+    <div class="market-toolbar stone-panel chamfer-box">
+      <div class="toolbar-left">
+        <span class="item-icon">{{ displayItemName(itemId()).charAt(0) }}</span>
+        <div>
+          <h2 class="toolbar-title">{{ displayItemName(itemId()) }}</h2>
+          <p class="toolbar-sub">{{ market()?.display_name || marketId() }}</p>
+        </div>
+      </div>
+      <div class="toolbar-right">
+        @if (auth.isLoggedIn()) {
+          @if (characters().length > 1) {
+            <label class="char-select">
+              <span>Character</span>
+              <select [value]="selectedCharacterId() ?? ''" (change)="onCharacterChange($event)">
+                @for (character of characters(); track character.character_id) {
+                  <option [value]="character.character_id">{{ character.display_name }}</option>
+                }
+              </select>
+            </label>
+          }
+          <div class="gold-pill">
+            <span class="gold-icon">✦</span>
+            <span>{{ gold() === null ? '—' : formatGold(gold()!) }}</span>
+          </div>
+        } @else {
+          <a class="login-hint" [routerLink]="['/login']" [queryParams]="{ returnUrl: loginReturnUrl() }">
+            Sign in to see Gold
+          </a>
+        }
+      </div>
+    </div>
+
+    @if (loading()) {
+      <div class="market-empty stone-panel chamfer-box"><p>Opening the ticket…</p></div>
+    } @else if (unknownMarket()) {
+      <div class="market-empty stone-panel chamfer-box">
+        <h3>Unknown market</h3>
+        <a routerLink="/market">Return to markets</a>
+      </div>
+    } @else if (error(); as message) {
+      <div class="market-empty stone-panel chamfer-box">
+        <h3>Could not load ticket</h3>
+        <p>{{ message }}</p>
+      </div>
+    } @else {
+      @if (feeQuote(); as quote) {
+        <div class="fee-panel stone-panel chamfer-box">
+          <h3>Fee on the lowest ask</h3>
+          <p>Fee {{ quote.fee }} Gold ({{ quote.marketBps }} + {{ quote.accountBps }} bps)</p>
+          <p>You pay {{ quote.youPay }} Gold</p>
+          <p>Seller receives {{ quote.sellerReceives }} Gold</p>
+        </div>
+      } @else if (market(); as hall) {
+        <div class="fee-panel stone-panel chamfer-box">
+          <h3>Fee schedule</h3>
+          <p>Market {{ hall.fee_bps }} bps + account {{ 100 }} bps. No ask to quote yet.</p>
+        </div>
+      }
+
+      <div class="book-grid">
+        <section class="book-col stone-panel chamfer-box">
+          <header class="book-head">
+            <h3>Sell orders</h3>
+            <span>{{ isolatedSells().length }}</span>
+          </header>
+          @if (isolatedSells().length === 0) {
+            <p class="empty-side">No sell offers for this good in this hall.</p>
+          } @else {
+            <ul class="book-list">
+              @for (offer of isolatedSells(); track offer.id) {
+                <li>
+                  <span class="price">{{ formatGold(offer.price_gold) }}</span>
+                  <span class="muted">{{ offer.seller_character_id.slice(0, 8) }}…</span>
+                  @if (auth.isLoggedIn()) {
+                    <app-eivar-button variant="cyan" size="sm" [disabled]="true">Buy</app-eivar-button>
+                  } @else {
+                    <a [routerLink]="['/login']" [queryParams]="{ returnUrl: loginReturnUrl() }">
+                      <app-eivar-button variant="cyan" size="sm">Login to Buy</app-eivar-button>
+                    </a>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
+        <section class="book-col stone-panel chamfer-box">
+          <header class="book-head">
+            <h3>Buy orders</h3>
+            <span>{{ ticket()?.buy_orders.length ?? 0 }}</span>
+          </header>
+          <p class="empty-side">No buy orders. The module has no public buy book yet.</p>
+        </section>
+      </div>
+    }
+  </div>
+</div>

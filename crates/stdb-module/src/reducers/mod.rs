@@ -8,8 +8,10 @@
 pub mod account;
 pub mod chat;
 pub mod combat;
+pub mod economy;
 pub mod items;
 pub mod lifecycle;
+pub mod market;
 pub mod movement;
 pub mod parties;
 pub mod resonance;

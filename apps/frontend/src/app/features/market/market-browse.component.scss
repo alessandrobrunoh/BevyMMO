@@ -1,0 +1,232 @@
+@use '../../../styles/variables' as *;
+
+.market-page-section {
+  background: linear-gradient(
+    180deg,
+    #dce7ea 0%,
+    var(--parchment) 25%,
+    var(--parchment) 80%,
+    #d9c9aa 100%
+  );
+  padding: 60px 0 90px;
+  min-height: 80vh;
+}
+
+.market-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  padding: 1.1rem 1.5rem;
+  margin-bottom: 1.75rem;
+  background: #ded2bb;
+  border: 1px solid rgba(117, 107, 90, 0.35);
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.toolbar-rune {
+  font-size: 1.5rem;
+  color: var(--gold-dark);
+}
+
+.toolbar-title {
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  color: var(--text-dark);
+}
+
+.toolbar-sub {
+  font-family: var(--font-serif);
+  font-size: 0.8rem;
+  color: var(--text-dark-dim);
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.char-select {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-serif);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dark-dim);
+
+  select {
+    margin-top: 0.2rem;
+    background: #f5edd9;
+    border: 1px solid rgba(117, 107, 90, 0.35);
+    color: var(--text-dark);
+    padding: 0.35rem 0.5rem;
+    font-family: var(--font-serif);
+  }
+}
+
+.gold-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  background: #f5edd9;
+  border: 1px solid rgba(117, 107, 90, 0.3);
+  font-family: var(--font-serif);
+  font-size: 0.88rem;
+  color: var(--text-dark);
+
+  .gold-icon {
+    color: var(--gold-dark);
+  }
+}
+
+.login-hint {
+  font-family: var(--font-serif);
+  font-size: 0.85rem;
+  color: var(--blue-700);
+  text-decoration: underline;
+}
+
+.search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  background: #f5edd9;
+  border: 1px solid rgba(117, 107, 90, 0.3);
+
+  input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-family: var(--font-serif);
+    color: var(--text-dark);
+    min-width: 160px;
+  }
+}
+
+.offers-table-wrap {
+  display: none;
+  background: var(--parchment-news);
+  border: 1px solid rgba(117, 107, 90, 0.3);
+  overflow-x: auto;
+
+  @media (min-width: 769px) {
+    display: block;
+  }
+}
+
+.offers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-serif);
+
+  th,
+  td {
+    padding: 0.85rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(117, 107, 90, 0.2);
+  }
+
+  th {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gold-dark);
+  }
+
+  .price {
+    font-weight: 700;
+    color: var(--text-dark);
+  }
+
+  .muted {
+    color: var(--text-dark-dim);
+    font-size: 0.85rem;
+  }
+
+  .actions {
+    text-align: right;
+  }
+}
+
+.item-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  color: var(--text-dark);
+}
+
+.item-icon {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  background: var(--blue-800);
+  color: var(--gold-light);
+  font-weight: 700;
+}
+
+.offers-cards {
+  display: grid;
+  gap: 1rem;
+
+  @media (min-width: 769px) {
+    display: none;
+  }
+}
+
+.offer-card {
+  padding: 1.1rem 1.25rem;
+  background: var(--parchment-news);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  .item-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .price {
+    font-weight: 700;
+  }
+
+  .muted {
+    color: var(--text-dark-dim);
+    font-size: 0.85rem;
+  }
+}
+
+.market-empty {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  background: #ded2bb;
+  border: 1px solid rgba(117, 107, 90, 0.35);
+  font-family: var(--font-serif);
+  color: var(--text-dark);
+
+  .empty-rune {
+    font-size: 2rem;
+    color: var(--gold-dark);
+  }
+
+  a {
+    color: var(--blue-700);
+    text-decoration: underline;
+  }
+}

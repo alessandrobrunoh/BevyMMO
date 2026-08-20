@@ -10314,6 +10314,50 @@
       "blocks_movement": false
     },
     {
+      "id": "PLACEABLE_npc_market_1",
+      "kind": "npc_market_1",
+      "transform": {
+        "translation": [
+          -4.0,
+          3.0,
+          0.0
+        ],
+        "rotation_deg": [
+          0.0,
+          -0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "blocks_movement": false
+    },
+    {
+      "id": "PLACEABLE_npc_market_2",
+      "kind": "npc_market_2",
+      "transform": {
+        "translation": [
+          -8.0,
+          3.0,
+          0.0
+        ],
+        "rotation_deg": [
+          0.0,
+          -0.0,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "blocks_movement": false
+    },
+    {
       "id": "PLACEABLE_npc_greeter_01",
       "kind": "npc_greeter",
       "transform": {

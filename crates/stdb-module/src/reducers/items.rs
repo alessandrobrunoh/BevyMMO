@@ -879,7 +879,7 @@ fn check_equip_requirements(requirements: &[EquipRequirement]) -> Result<(), Str
 // Row access
 // ---------------------------------------------------------------------------
 
-fn load_inventory(ctx: &ReducerContext, character_id: Uuid) -> Result<Inventory, String> {
+pub(crate) fn load_inventory(ctx: &ReducerContext, character_id: Uuid) -> Result<Inventory, String> {
     ctx.db
         .inventory()
         .character_id()
@@ -888,7 +888,7 @@ fn load_inventory(ctx: &ReducerContext, character_id: Uuid) -> Result<Inventory,
         .ok_or_else(|| "no character for this identity; call `join` first".to_string())
 }
 
-fn store_inventory(ctx: &ReducerContext, character_id: Uuid, inventory: &Inventory) {
+pub(crate) fn store_inventory(ctx: &ReducerContext, character_id: Uuid, inventory: &Inventory) {
     ctx.db.inventory().character_id().update(InventoryTable {
         character_id,
         slots: inventory_to_rows(inventory),

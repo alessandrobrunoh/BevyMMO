@@ -2,9 +2,11 @@
 
 pub mod abilities;
 pub mod crowd_control;
+pub mod economy;
 pub mod effects;
 pub mod entity;
 pub mod items;
+pub mod markets;
 pub mod movement;
 pub mod placeables;
 pub mod registry;

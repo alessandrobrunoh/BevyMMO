@@ -28,8 +28,12 @@ use crate::AppState;
         crate::api::auth::login,
         crate::api::auth::logout,
         crate::api::auth::profile,
+        crate::api::characters::wallet,
         crate::api::public::accounts::search,
         crate::api::public::accounts::detail,
+        crate::api::public::markets::list_markets,
+        crate::api::public::markets::list_offers,
+        crate::api::public::markets::item_ticket,
     ),
     components(schemas(
         crate::api::WelcomeResponse,
@@ -37,14 +41,20 @@ use crate::AppState;
         crate::api::error::ErrorResponse,
         crate::api::auth::AuthRequest,
         crate::api::auth::ProfileResponse,
+        crate::api::characters::WalletResponse,
         crate::stdb::connection::CharacterSummary,
         crate::api::public::accounts::AccountSummary,
         crate::stdb::directory::PlayerEntry,
+        crate::api::public::markets::MarketSummary,
+        crate::api::public::markets::SellOffer,
+        crate::api::public::markets::BuyOffer,
+        crate::api::public::markets::ItemTicket,
     )),
     tags(
         (name = "meta", description = "Service banner and liveness"),
         (name = "auth", description = "Registration, login, logout, own profile — cookie-based"),
         (name = "public", description = "Session-less reads of already-public game data"),
+        (name = "market", description = "Isolated public market listings and item tickets"),
     )
 )]
 struct ApiDoc;

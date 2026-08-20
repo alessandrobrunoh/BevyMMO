@@ -22,7 +22,7 @@ use super::components::{
 };
 use super::detail::{despawn_detail_cards, spawn_item_detail_card};
 use super::weapon_detail::GlyphRegistries;
-use super::InventoryUiState;
+use super::{InventoryUiState, ItemDetailUiState};
 use crate::ui::{
     card::components::{CardKind, CardWindow},
     scale::{physical_to_ui_px, window_to_ui_px},
@@ -325,9 +325,10 @@ pub fn end_item_drag(
 
 /// Opens the item-info card for a click that never became a drag.
 #[allow(clippy::too_many_arguments)]
-pub fn inspect_clicked_item(
+pub(super) fn inspect_clicked_item(
     mut drag_state: ResMut<ItemDragState>,
     mut state: ResMut<InventoryUiState>,
+    mut detail_state: ResMut<ItemDetailUiState>,
     player_query: Query<(&Inventory, &Equipment, Option<&KnownAncientLanguage>), With<LocalPlayer>>,
     registry: Res<ItemRegistry>,
     glyphs: GlyphRegistries,
@@ -351,7 +352,15 @@ pub fn inspect_clicked_item(
         ItemSlotOrigin::Inventory(idx) => InventorySelection::Slot(idx),
         ItemSlotOrigin::Equipment(slot) => InventorySelection::Equipment(slot),
     };
+    let detail_is_open = all_cards
+        .iter()
+        .any(|(_, card)| card.kind == CardKind::ItemDetail);
+    if selection_is_already_open(state.selected, selection, detail_is_open) {
+        return;
+    }
     state.selected = Some(selection);
+    detail_state.active_slot = bevymmo_gameplay::abilities::AbilitySlot::Primary;
+    detail_state.scroll = 0.0;
     despawn_detail_cards(&mut commands, &all_cards);
     spawn_item_detail_card(
         &mut commands,
@@ -362,8 +371,17 @@ pub fn inspect_clicked_item(
         inventory,
         equipment,
         selection,
+        &detail_state,
         &asset_server,
     );
+}
+
+fn selection_is_already_open(
+    current: Option<InventorySelection>,
+    clicked: InventorySelection,
+    detail_is_open: bool,
+) -> bool {
+    detail_is_open && current == Some(clicked)
 }
 
 fn cursor_over_inventory_card(
@@ -742,6 +760,22 @@ mod tests {
             ),
             DragOutcome::RequestDestroy
         );
+    }
+
+    #[test]
+    fn clicking_the_open_selection_does_not_rebuild_its_detail() {
+        let selection = InventorySelection::Slot(3);
+        assert!(selection_is_already_open(Some(selection), selection, true));
+        assert!(!selection_is_already_open(
+            Some(selection),
+            selection,
+            false
+        ));
+        assert!(!selection_is_already_open(
+            Some(InventorySelection::Slot(2)),
+            selection,
+            true
+        ));
     }
 
     #[test]

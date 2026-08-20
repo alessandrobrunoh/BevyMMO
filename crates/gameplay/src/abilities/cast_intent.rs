@@ -1,8 +1,9 @@
 //! Pure press/release policy for weapon (Eidolon) casts.
 //!
 //! The HUD and the keyboard system must agree on this: a Charge starts on
-//! press (`eidolon_cast`) and fires on release (`release_cast`). Instant and
-//! CastTime open an aim window on press and send `eidolon_cast` on release.
+//! press (`eidolon_cast`) and fires on release (`release_cast`). Instant opens
+//! an aim window on press and sends `eidolon_cast` on release. CastTime starts
+//! the wind-up on press and auto-fires when it fills — release does nothing.
 //! Channeling starts on press and ends on release.
 
 use super::base_ability::AbilityCastMode;
@@ -39,8 +40,9 @@ pub fn charge_release_aim<P: Copy>(
 
 /// Movement lock this ability will apply once the reducer accepts it.
 ///
-/// Charge roots even when the base mode is CastTime. Instant and Channeling
-/// do not, so a walking Instant must not steal facing from the path.
+/// Charge roots even when the base mode is CastTime. Instant, CastTime, and
+/// Channeling do not: Instant must not steal facing from the path, and
+/// CastTime / Channeling accept a later click so movement can interrupt.
 pub fn movement_lock_for_ability(cast_mode: AbilityCastMode, is_charge: bool) -> MovementLock {
     if is_charge {
         return MovementLock::Charge;
@@ -67,8 +69,11 @@ pub fn weapon_cast_intent(
 
     if just_pressed {
         match (cast_mode, is_charge) {
-            (AbilityCastMode::Instant | AbilityCastMode::CastTime, false) => {
+            (AbilityCastMode::Instant, false) => {
                 intent.open_aim = true;
+            }
+            (AbilityCastMode::CastTime, false) => {
+                intent.start_cast = true;
             }
             (_, true) => {
                 intent.open_aim = true;
@@ -82,9 +87,10 @@ pub fn weapon_cast_intent(
 
     if just_released {
         match (cast_mode, is_charge) {
-            (AbilityCastMode::Instant | AbilityCastMode::CastTime, false) => {
+            (AbilityCastMode::Instant, false) => {
                 intent.start_cast = true;
             }
+            (AbilityCastMode::CastTime, false) => {}
             (_, true) => {
                 intent.release_cast = true;
             }
@@ -199,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn cast_time_matches_instant_edges() {
+    fn cast_time_starts_on_press_and_ignores_release() {
         let press = weapon_cast_intent(
             true,
             false,
@@ -212,8 +218,21 @@ mod tests {
             BlueprintExecution::Base,
             AbilityCastMode::CastTime,
         );
-        assert!(press.open_aim && !press.start_cast && !press.release_cast);
-        assert!(release.start_cast && !release.release_cast && !release.open_aim);
+        assert!(press.start_cast && !press.open_aim && !press.release_cast);
+        assert!(!release.start_cast && !release.release_cast && !release.open_aim);
+    }
+
+    #[test]
+    fn cast_time_tap_starts_once_and_does_not_release() {
+        let tap = weapon_cast_intent(
+            true,
+            true,
+            BlueprintExecution::Base,
+            AbilityCastMode::CastTime,
+        );
+        assert!(tap.start_cast);
+        assert!(!tap.release_cast);
+        assert!(!tap.open_aim);
     }
 
     #[test]

@@ -57,6 +57,8 @@ pub struct BossConfig {
 pub enum InteractionKind {
     /// Opens a shop inventory. `inventory_id` references a content table.
     Shop { inventory_id: String },
+    /// Opens an isolated player market. `market_id` is `market_1` / `market_2`.
+    Market { market_id: String },
     /// Opens a dialogue tree. `dialogue_tree_id` references a dialogue asset.
     Dialogue { dialogue_tree_id: String },
     /// Opens a chest and rolls the given loot table.

@@ -6,11 +6,15 @@
 //!
 //! # Cast behavior by [`AbilityCastMode`]
 //!
-//! - **Instant / CastTime**: press-to-aim, release-to-confirm.  The press opens
-//!   an aim window ([`AbilityAim`]) during which
-//!   [`crate::spells::aim_preview`] draws the exact impact area on the ground;
-//!   the release closes it and sends the command.  A quick tap behaves like an
-//!   instant cast because press and arrive a few frames apart.
+//! - **Instant**: press-to-aim, release-to-confirm.  The press opens an aim
+//!   window ([`AbilityAim`]) during which [`crate::spells::aim_preview`] draws
+//!   the exact impact area on the ground; the release closes it and sends the
+//!   command.  A quick tap behaves like an instant cast because press and
+//!   release arrive a few frames apart.
+//! - **CastTime**: press starts the server-side wind-up via `eidolon_cast`.
+//!   The bar fills on its own and the spell fires when it completes.  A later
+//!   click-to-move interrupts it.  Release does nothing — holding the key is
+//!   not required.
 //! - **Charge**: press starts the server-side charge via `eidolon_cast` and
 //!   keeps the aim preview open; release calls `release_cast` with the cursor
 //!   at that moment so the impact follows the hold, not the press.  A tap that
@@ -196,8 +200,8 @@ pub fn cast_abilities_on_key(
         .map(|net_id| net_id.0);
 
     // ── Press handling ────────────────────────────────────────────────
-    // Instant/CastTime open aim; Charge starts the server-side charge and
-    // keeps the preview open; Channeling starts immediately.
+    // Instant opens aim; CastTime and Channeling start immediately; Charge
+    // starts the server-side charge and keeps the preview open.
     for (action, slot) in weapon_slot_bindings() {
         if !settings.just_pressed(action, &keys) {
             continue;
@@ -233,6 +237,13 @@ pub fn cast_abilities_on_key(
         if hud_state.ability_on_cooldown(&ability_id) {
             continue;
         }
+
+        let face_direction =
+            target_position.and_then(|target| flat_direction_towards(player_position.0, target));
+        if let Some(direction) = face_direction {
+            look_direction.0 = direction;
+        }
+
         if let Some(conn) = conn.as_deref() {
             if let Err(err) = stdb_commands::eidolon_cast(
                 conn,
@@ -254,7 +265,7 @@ pub fn cast_abilities_on_key(
             ability.cast_mode(),
         );
         // Channel cooldown starts on press (server does the same). Charge
-        // waits for release_cast.
+        // waits for release_cast. CastTime waits until the wind-up fires.
         if ability.cast_mode().is_channeling() {
             hud_cooldowns.write(SpellHudCooldownStarted {
                 key: HudCooldownKey::Ability(ability_id.clone()),
@@ -276,9 +287,10 @@ pub fn cast_abilities_on_key(
     }
 
     // ── Release handling ─────────────────────────────────────────────
-    // Instant/CastTime confirm the aimed `eidolon_cast`. Charge and
-    // Channeling call `release_cast`. Channeling is not gated on `aim.slot`
-    // because it never opens an aim window.
+    // Instant confirms the aimed `eidolon_cast`. Charge and Channeling
+    // call `release_cast`. CastTime ignores release: the wind-up already
+    // started on press. Channeling is not gated on `aim.slot` because it
+    // never opens an aim window.
     for (action, slot) in weapon_slot_bindings() {
         if !settings.just_released(action, &keys) {
             continue;
@@ -500,8 +512,9 @@ fn stops_movement_for_ability(cast_mode: bevymmo_gameplay::abilities::AbilityCas
 }
 
 /// Drop the local dest immediately, and root prediction when the ability
-/// will freeze the character. A channel that interrupts on move only
-/// clears the dest — walking is still allowed so a held click can cancel it.
+/// will freeze the character. CastTime and a channel that interrupts on
+/// move only clear the dest — walking is still allowed so a later click
+/// can cancel them.
 fn root_local_movement(
     move_target: &mut bevymmo_client::movement::MoveTarget,
     freeze: &mut LocalMovementFreeze,
@@ -577,7 +590,23 @@ mod tests {
     }
 
     #[test]
-    fn rooted_cast_arms_the_optimistic_freeze() {
+    fn rooted_charge_arms_the_optimistic_freeze() {
+        let mut dest = bevymmo_client::movement::MoveTarget(Some(Vec3::X));
+        let mut freeze = LocalMovementFreeze::default();
+        root_local_movement(
+            &mut dest,
+            &mut freeze,
+            1.0,
+            bevymmo_gameplay::movement::MovementLock::Charge,
+            bevymmo_gameplay::abilities::AbilityCastMode::Instant,
+        );
+        assert!(dest.0.is_none());
+        assert!(freeze.is_active(1.0));
+        assert!(!freeze.is_active(1.0 + LocalMovementFreeze::DURATION));
+    }
+
+    #[test]
+    fn cast_time_clears_dest_without_rooting() {
         let mut dest = bevymmo_client::movement::MoveTarget(Some(Vec3::X));
         let mut freeze = LocalMovementFreeze::default();
         root_local_movement(
@@ -588,8 +617,7 @@ mod tests {
             bevymmo_gameplay::abilities::AbilityCastMode::CastTime,
         );
         assert!(dest.0.is_none());
-        assert!(freeze.is_active(1.0));
-        assert!(!freeze.is_active(1.0 + LocalMovementFreeze::DURATION));
+        assert!(!freeze.is_active(1.0));
     }
 
     #[test]

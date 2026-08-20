@@ -1,0 +1,135 @@
+<app-page-header
+  [title]="market()?.display_name || 'Market'"
+  subtitle="Sell offers in this hall only. Other markets keep their own books."
+  badge="Isolated Hall"
+  bgImage="assets/images/ancient-citadel.jpg"
+  [breadcrumbs]="[{ label: 'Market', route: '/market' }, { label: market()?.display_name || marketId() }]"
+></app-page-header>
+
+<div class="market-page-section section-padding">
+  <div class="container">
+    <div class="market-toolbar stone-panel chamfer-box">
+      <div class="toolbar-left">
+        <span class="toolbar-rune">ᛟ</span>
+        <div>
+          <h2 class="toolbar-title">{{ market()?.display_name || 'Unknown hall' }}</h2>
+          @if (market(); as hall) {
+            <p class="toolbar-sub">Market fee {{ hall.fee_bps }} bps · Account fee 100 bps</p>
+          }
+        </div>
+      </div>
+
+      <div class="toolbar-right">
+        @if (auth.isLoggedIn()) {
+          @if (characters().length > 1) {
+            <label class="char-select">
+              <span>Character</span>
+              <select [value]="selectedCharacterId() ?? ''" (change)="onCharacterChange($event)">
+                @for (character of characters(); track character.character_id) {
+                  <option [value]="character.character_id">{{ character.display_name }}</option>
+                }
+              </select>
+            </label>
+          }
+          <div class="gold-pill">
+            <span class="gold-icon">✦</span>
+            <span>{{ gold() === null ? '—' : formatGold(gold()!) }}</span>
+          </div>
+        } @else {
+          <a class="login-hint" [routerLink]="['/login']" [queryParams]="{ returnUrl: loginReturnUrl() }">
+            Sign in to see Gold
+          </a>
+        }
+
+        <div class="search-wrap">
+          <span class="material-symbols-outlined">search</span>
+          <input
+            type="search"
+            placeholder="Search goods…"
+            [value]="search()"
+            (input)="onSearch($event)"
+          />
+        </div>
+      </div>
+    </div>
+
+    @if (loading()) {
+      <div class="market-empty stone-panel chamfer-box">
+        <p>Reading the order board…</p>
+      </div>
+    } @else if (unknownMarket()) {
+      <div class="market-empty stone-panel chamfer-box">
+        <h3>Unknown market</h3>
+        <p>This hall is not in the ledger.</p>
+        <a routerLink="/market">Return to markets</a>
+      </div>
+    } @else if (error(); as message) {
+      <div class="market-empty stone-panel chamfer-box">
+        <h3>Could not load offers</h3>
+        <p>{{ message }}</p>
+      </div>
+    } @else if (visibleOffers().length === 0) {
+      <div class="market-empty stone-panel chamfer-box">
+        <span class="empty-rune">ᛟ</span>
+        <h3>No offers in this hall</h3>
+        <p>Nothing is listed here yet — and nothing from other markets will ever appear.</p>
+      </div>
+    } @else {
+      <div class="offers-table-wrap stone-panel chamfer-box">
+        <table class="offers-table">
+          <thead>
+            <tr>
+              <th>Good</th>
+              <th>Seller</th>
+              <th>Price</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (offer of visibleOffers(); track offer.id) {
+              <tr>
+                <td>
+                  <button type="button" class="item-link" (click)="openTicket(offer.item_id)">
+                    <span class="item-icon">{{ displayItemName(offer.item_id).charAt(0) }}</span>
+                    <span>{{ displayItemName(offer.item_id) }}</span>
+                  </button>
+                </td>
+                <td class="muted">{{ offer.seller_character_id.slice(0, 8) }}…</td>
+                <td class="price">{{ formatGold(offer.price_gold) }}</td>
+                <td class="actions">
+                  @if (auth.isLoggedIn()) {
+                    <app-eivar-button variant="cyan" size="sm" [disabled]="true">Buy</app-eivar-button>
+                  } @else {
+                    <a [routerLink]="['/login']" [queryParams]="{ returnUrl: loginReturnUrl() }">
+                      <app-eivar-button variant="cyan" size="sm">Login to Buy</app-eivar-button>
+                    </a>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="offers-cards">
+        @for (offer of visibleOffers(); track offer.id) {
+          <article class="offer-card stone-panel chamfer-box">
+            <button type="button" class="item-link" (click)="openTicket(offer.item_id)">
+              <span class="item-icon">{{ displayItemName(offer.item_id).charAt(0) }}</span>
+              <span class="item-name">{{ displayItemName(offer.item_id) }}</span>
+            </button>
+            <p class="muted">Seller {{ offer.seller_character_id.slice(0, 8) }}…</p>
+            <p class="price">{{ formatGold(offer.price_gold) }}</p>
+            @if (auth.isLoggedIn()) {
+              <app-eivar-button variant="cyan" size="sm" [disabled]="true" [fullWidth]="true">Buy</app-eivar-button>
+            } @else {
+              <a [routerLink]="['/login']" [queryParams]="{ returnUrl: loginReturnUrl() }">
+                <app-eivar-button variant="cyan" size="sm" [fullWidth]="true">Login to Buy</app-eivar-button>
+              </a>
+            }
+          </article>
+        }
+      </div>
+    }
+  </div>
+</div>

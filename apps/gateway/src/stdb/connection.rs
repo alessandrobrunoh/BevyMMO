@@ -30,7 +30,9 @@ use super::module_bindings::login_reducer::login;
 use super::module_bindings::logout_reducer::logout;
 use super::module_bindings::register_reducer::register;
 use super::module_bindings::{
-    DbConnection, ErrorContext, Player, PlayerTableAccess, ReducerEventContext, SessionTableAccess,
+    CharacterWalletTableAccess, DbConnection, ErrorContext, Market, MarketBuyOrder,
+    MarketBuyOrderTableAccess, MarketSellOrder, MarketSellOrderTableAccess, MarketTableAccess,
+    Player, PlayerTableAccess, ReducerEventContext, SessionTableAccess,
 };
 
 /// One of the caller's own characters, for the `/profile` endpoint.
@@ -113,10 +115,12 @@ impl GatewayConnection {
         Ok(this)
     }
 
-    /// Subscribes to `player` (for the character roster) and `session` (for
-    /// this connection's own `account_id` — see `tables::Session`'s doc
-    /// comment on why it is public). Awaits the initial snapshot so the
-    /// caller does not race an empty local cache.
+    /// Subscribes to the public tables this gateway reads, then awaits the
+    /// initial snapshot so callers do not race an empty local cache.
+    ///
+    /// `player` / `session` back the character roster and this connection's
+    /// `account_id`. `market` / `market_sell_order` / `market_buy_order` /
+    /// `character_wallet` back the public market APIs and the wallet lookup.
     async fn subscribe(&self) -> Result<(), String> {
         let (tx, rx) = oneshot::channel();
         let tx = Arc::new(Mutex::new(Some(tx)));
@@ -135,7 +139,14 @@ impl GatewayConnection {
                     let _ = tx.send(Err(err.to_string()));
                 }
             })
-            .subscribe(["SELECT * FROM player", "SELECT * FROM session"]);
+            .subscribe([
+                "SELECT * FROM player",
+                "SELECT * FROM session",
+                "SELECT * FROM market",
+                "SELECT * FROM market_sell_order",
+                "SELECT * FROM market_buy_order",
+                "SELECT * FROM character_wallet",
+            ]);
 
         rx.await
             .map_err(|_| "subscription dropped before it applied".to_string())?
@@ -196,6 +207,43 @@ impl GatewayConnection {
     /// row per character ever created, so the copy is not worth fighting for.
     pub fn players(&self) -> Vec<Player> {
         self.conn.db().player().iter().collect()
+    }
+
+    /// Every `market` row in this connection's local cache.
+    pub fn markets(&self) -> Vec<Market> {
+        self.conn.db().market().iter().collect()
+    }
+
+    /// Every `market_sell_order` row in this connection's local cache.
+    pub fn sell_orders(&self) -> Vec<MarketSellOrder> {
+        self.conn.db().market_sell_order().iter().collect()
+    }
+
+    /// Every `market_buy_order` row in this connection's local cache.
+    pub fn buy_orders(&self) -> Vec<MarketBuyOrder> {
+        self.conn.db().market_buy_order().iter().collect()
+    }
+
+    /// One `player` row by character UUID, if present in the local cache.
+    pub fn player(&self, character_id: uuid::Uuid) -> Option<Player> {
+        let character_id = spacetimedb_sdk::Uuid::from_u128(character_id.as_u128());
+        self.conn
+            .db()
+            .player()
+            .iter()
+            .find(|row| row.character_id == character_id)
+    }
+
+    /// Gold on `character_id`'s wallet, or `0` if no wallet row exists yet.
+    pub fn wallet_gold(&self, character_id: uuid::Uuid) -> u64 {
+        let character_id = spacetimedb_sdk::Uuid::from_u128(character_id.as_u128());
+        self.conn
+            .db()
+            .character_wallet()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .map(|row| row.gold)
+            .unwrap_or(0)
     }
 
     pub async fn register(&self, email: String, password: String) -> Result<(), String> {

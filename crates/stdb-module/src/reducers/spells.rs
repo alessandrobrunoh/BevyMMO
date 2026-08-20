@@ -768,8 +768,9 @@ fn cancel_active_cast(ctx: &ReducerContext, entity_id: u64) {
     }
 }
 
-/// Cast-time spells root the caster for their wind-up rather than allowing a
-/// movement command to advance one tick and then cancel the cast.
+/// Clears the leftover dest when a wind-up starts so a previous click does
+/// not walk one tick and cancel the cast. A later click is still allowed
+/// and interrupts CastTime in `advance_casts`.
 fn stop_movement(ctx: &ReducerContext, caster: GameEntity) -> GameEntity {
     ctx.db.game_entity().entity_id().update(GameEntity {
         move_target: None,

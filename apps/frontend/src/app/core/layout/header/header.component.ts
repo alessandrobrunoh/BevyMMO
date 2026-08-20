@@ -47,6 +47,10 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
           <a routerLink="/store" routerLinkActive="active" class="nav-link">
             <span>Store</span>
           </a>
+          <span class="nav-sep">◈</span>
+          <a routerLink="/market" routerLinkActive="active" class="nav-link">
+            <span>Market</span>
+          </a>
         </nav>
 
         <!-- Right Nav Actions Group -->
@@ -110,6 +114,7 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
       <a routerLink="/updates" (click)="closeMobileMenu()">Updates</a>
       <a routerLink="/wiki" (click)="closeMobileMenu()">Wiki</a>
       <a routerLink="/store" (click)="closeMobileMenu()">Store</a>
+      <a routerLink="/market" (click)="closeMobileMenu()">Market</a>
       <a (click)="onCommunityClick(); closeMobileMenu()">Community</a>
       @if (authService.isLoggedIn()) {
         <a (click)="authService.logout(); closeMobileMenu()">Logout ({{ authService.email() ?? 'Wayfarer' }})</a>

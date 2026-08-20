@@ -27,6 +27,7 @@ mod tests {
     use crate::game_state::{init_screen_states, Screen};
     use crate::ui::theme::UiTheme;
     use bevymmo_client::local_player::LocalPlayer;
+    use bevymmo_client::stdb::LocalGold;
     use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
 
     fn test_app() -> App {
@@ -83,7 +84,7 @@ mod tests {
         assert_eq!(root.top, Val::Px(16.0));
         assert_eq!(
             panel_text(&mut app),
-            "HP: 100/100\nMana: 80/80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)\nAttack Power: 10\nMove Speed: 0.15"
+            "HP: 100/100\nMana: 80/80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)\nAttack Power: 10\nMove Speed: 0.15\nGold: 0"
         );
     }
 
@@ -129,7 +130,33 @@ mod tests {
         app.update();
         assert_eq!(
             panel_text(&mut app),
-            "HP: 100/100\nMana: 80/120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15"
+            "HP: 100/100\nMana: 80/120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15\nGold: 0"
+        );
+    }
+
+    #[test]
+    fn shows_local_character_gold() {
+        let mut app = test_app();
+        app.insert_resource(LocalGold { amount: 150 });
+        app.world_mut().spawn((
+            LocalPlayer,
+            MovementStats { speed: 0.15 },
+            CombatStats {
+                attack_power: 10.0,
+                armor: 0.0,
+            },
+            VitalStats {
+                current_health: 100.0,
+                max_health: 100.0,
+                current_mana: 80.0,
+                max_mana: 80.0,
+                mana_regeneration: 4.0,
+            },
+        ));
+        app.update();
+        assert_eq!(
+            panel_text(&mut app),
+            "HP: 100/100\nMana: 80/80\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15\nGold: 150"
         );
     }
 }

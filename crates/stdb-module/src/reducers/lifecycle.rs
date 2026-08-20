@@ -6,11 +6,13 @@ use std::time::Duration;
 use crate::reducers::account::caller_session;
 use crate::rows::{equipment_to_rows, inventory_to_rows, HotbarRow, StatsRow, Vec3Row};
 use crate::tables::{
-    active_status, aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats,
-    equipment, game_entity, grid_cell, hotbar, inventory, known_ancient_language, periodic_effect,
-    player, player_stats, projectile, resonance, session, stat_modifier, threat, tick_schedule,
-    tick_stats, ColorRow, EntityKindRow, EntityStateRow, EquipmentTable, GameEntity, Hotbar,
-    InventoryTable, KnownAncientLanguageTable, Player, PlayerStats, Session, TickSchedule,
+    active_status, aoe_region, boss_state, cast_state, character_wallet, cooldown, crowd_control,
+    entity_stats, equipment, game_entity, grid_cell, hotbar, inventory, known_ancient_language,
+    npc,
+    periodic_effect, player, player_stats, projectile, resonance, session, stat_modifier, threat,
+    tick_schedule, tick_stats, CharacterWallet, ColorRow, EntityKindRow, EntityStateRow,
+    EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownAncientLanguageTable, Player,
+    PlayerStats, Session, TickSchedule,
 };
 use crate::{
     normalize_name, world, DEFAULT_SPEED_PER_SECOND, MAX_CHARACTERS_PER_ACCOUNT, TICK_INTERVAL_MS,
@@ -26,6 +28,7 @@ pub fn init(ctx: &ReducerContext) {
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(TICK_INTERVAL_MS).into()),
     });
 
+    crate::reducers::market::seed_markets(ctx);
     world::seed(ctx);
 
     log::info!("module initialised; tick every {TICK_INTERVAL_MS} ms");
@@ -68,6 +71,7 @@ fn clear_runtime_state(ctx: &ReducerContext) {
         .map(|row| row.entity_id)
         .collect();
     let tick_stat_ids: Vec<_> = ctx.db.tick_stats().iter().map(|row| row.id).collect();
+    let npc_ids: Vec<_> = ctx.db.npc().iter().map(|row| row.entity_id).collect();
 
     for id in projectile_ids {
         ctx.db.projectile().id().delete(&id);
@@ -103,6 +107,9 @@ fn clear_runtime_state(ctx: &ReducerContext) {
     }
     for id in tick_stat_ids {
         ctx.db.tick_stats().id().delete(&id);
+    }
+    for entity_id in npc_ids {
+        ctx.db.npc().entity_id().delete(&entity_id);
     }
 }
 
@@ -274,6 +281,11 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         character_id,
         slots: inventory_to_rows(&Default::default()),
     });
+    ctx.db.character_wallet().insert(CharacterWallet {
+        character_id,
+        gold: 0,
+    });
+    crate::reducers::economy::ensure_account_economy(ctx, account_id);
     crate::reducers::items::grant_item(ctx, character_id, "mage_staff")?;
     ctx.db.equipment().insert(EquipmentTable {
         character_id,
@@ -491,6 +503,10 @@ fn delete_character_rows(ctx: &ReducerContext, character: &Player) {
         .character_id()
         .delete(&character_id);
     ctx.db.player_stats().character_id().delete(&character_id);
+    ctx.db
+        .character_wallet()
+        .character_id()
+        .delete(&character_id);
 
     crate::reducers::parties::forget_deleted_character(ctx, character);
 

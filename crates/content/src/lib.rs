@@ -7,6 +7,8 @@ pub mod ancient_word_definitions;
 
 #[path = "items/mod.rs"]
 pub mod item_definitions;
+#[path = "markets/mod.rs"]
+pub mod market_definitions;
 
 #[path = "placeables/mod.rs"]
 pub mod placeable_definitions;

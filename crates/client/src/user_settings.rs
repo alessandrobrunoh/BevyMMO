@@ -179,7 +179,6 @@ pub enum KeyAction {
     TogglePause,
     ShowScoreboard,
     ToggleInventory,
-    ToggleSpellbook,
     ClearTarget,
     CastSpellQ,
     CastSpellW,
@@ -199,11 +198,10 @@ pub enum KeyAction {
 
 impl KeyAction {
     /// All rebindable actions in display order.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 15] = [
         Self::TogglePause,
         Self::ShowScoreboard,
         Self::ToggleInventory,
-        Self::ToggleSpellbook,
         Self::ClearTarget,
         Self::CastPrimary,
         Self::CastSecondary,
@@ -224,7 +222,6 @@ impl KeyAction {
             Self::TogglePause => "Toggle Pause",
             Self::ShowScoreboard => "Show Scoreboard",
             Self::ToggleInventory => "Toggle Inventory",
-            Self::ToggleSpellbook => "Toggle Spellbook",
             Self::ClearTarget => "Clear Target",
             Self::CastSpellQ => "Cast Spell (Q slot)",
             Self::CastSpellW => "Cast Spell (W slot)",
@@ -249,7 +246,6 @@ impl KeyAction {
             Self::TogglePause => KeyCode::Escape,
             Self::ShowScoreboard => KeyCode::Tab,
             Self::ToggleInventory => KeyCode::KeyI,
-            Self::ToggleSpellbook => KeyCode::KeyK,
             Self::ClearTarget => KeyCode::Escape,
             Self::CastSpellQ => KeyCode::KeyQ,
             Self::CastSpellW => KeyCode::KeyW,
@@ -418,12 +414,24 @@ pub fn settings_path() -> PathBuf {
 }
 
 /// Loads settings from disk. Missing or malformed file → defaults.
+fn parse_settings(contents: &str) -> Result<GameSettings, serde_json::Error> {
+    let mut value: serde_json::Value = serde_json::from_str(contents)?;
+    if let Some(bindings) = value
+        .get_mut("keybinds")
+        .and_then(|keybinds| keybinds.get_mut("bindings"))
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        bindings.remove("toggle_spellbook");
+    }
+    serde_json::from_value(value)
+}
+
 pub fn load_settings() -> GameSettings {
     let path = settings_path();
     let Ok(contents) = std::fs::read_to_string(&path) else {
         return GameSettings::default();
     };
-    match serde_json::from_str::<GameSettings>(&contents) {
+    match parse_settings(&contents) {
         Ok(s) => s,
         Err(err) => {
             bevy::log::warn!(
@@ -565,6 +573,27 @@ mod tests {
     fn malformed_json_falls_back_to_defaults() {
         let settings: GameSettings = serde_json::from_str("{ invalid }").unwrap_or_default();
         assert!(settings.graphics.vsync); // default
+    }
+
+    #[test]
+    fn legacy_spellbook_binding_is_ignored_during_settings_load() {
+        let json = r#"{
+            "keybinds": {
+                "bindings": {
+                    "toggle_spellbook": {
+                        "key": "KeyK",
+                        "modifiers": {
+                            "shift": false,
+                            "ctrl": false,
+                            "alt": false,
+                            "super_key": false
+                        }
+                    }
+                }
+            }
+        }"#;
+        let settings = parse_settings(json).expect("legacy settings should migrate");
+        assert!(settings.keybinds.bindings.is_empty());
     }
 
     #[test]

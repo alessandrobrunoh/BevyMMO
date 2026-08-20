@@ -43,6 +43,24 @@ export const routes: Routes = [
     title: 'Supporter Store — Eivar Online'
   },
   {
+    path: 'market',
+    loadComponent: () =>
+      import('./features/market/market-list.component').then(m => m.MarketListComponent),
+    title: 'Player Markets — Eivar Online'
+  },
+  {
+    path: 'market/:marketId',
+    loadComponent: () =>
+      import('./features/market/market-browse.component').then(m => m.MarketBrowseComponent),
+    title: 'Market Hall — Eivar Online'
+  },
+  {
+    path: 'market/:marketId/:itemId',
+    loadComponent: () =>
+      import('./features/market/market-ticket.component').then(m => m.MarketTicketComponent),
+    title: 'Item Ticket — Eivar Online'
+  },
+  {
     path: 'login',
     loadComponent: () => import('./features/auth/login.component').then(m => m.LoginComponent),
     title: 'Alpha Login — Eivar Online'

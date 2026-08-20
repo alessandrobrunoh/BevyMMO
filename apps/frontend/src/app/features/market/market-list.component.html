@@ -1,0 +1,46 @@
+<app-page-header
+  title="Player Markets"
+  subtitle="Isolated trading halls. Offers listed in one market never appear in another."
+  badge="Public Exchange"
+  bgImage="assets/images/ancient-citadel.jpg"
+  [breadcrumbs]="[{ label: 'Market' }]"
+></app-page-header>
+
+<div class="market-page-section section-padding">
+  <div class="container">
+    @if (loading()) {
+      <div class="market-empty stone-panel chamfer-box">
+        <span class="empty-rune">ᛟ</span>
+        <p>Consulting the exchange ledgers…</p>
+      </div>
+    } @else if (error(); as message) {
+      <div class="market-empty stone-panel chamfer-box">
+        <span class="empty-rune">ᛟ</span>
+        <h3>The halls are unreachable</h3>
+        <p>{{ message }}</p>
+      </div>
+    } @else if (markets().length === 0) {
+      <div class="market-empty stone-panel chamfer-box">
+        <span class="empty-rune">ᛟ</span>
+        <h3>No markets seeded</h3>
+        <p>The world has no open halls yet. Check back after the module is published.</p>
+      </div>
+    } @else {
+      <div class="market-grid">
+        @for (market of markets(); track market.id) {
+          <a [routerLink]="['/market', market.id]" class="market-card stone-panel chamfer-box">
+            <div class="market-card-rune">ᛟ</div>
+            <div class="market-card-body">
+              <h3 class="market-card-name">{{ market.display_name }}</h3>
+              <p class="market-card-meta">Fee {{ market.fee_bps / 100 | number:'1.0-2' }}% market cut</p>
+              <p class="market-card-items">
+                {{ market.allowed_item_ids.length }} listed goods
+              </p>
+            </div>
+            <span class="market-card-arrow">Browse →</span>
+          </a>
+        }
+      </div>
+    }
+  </div>
+</div>

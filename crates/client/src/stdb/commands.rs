@@ -30,16 +30,22 @@ use bevymmo_domain::abilities::AbilitySlot;
 use bevymmo_domain::items::EquipSlot;
 
 use super::module_bindings::armor_cast_reducer::armor_cast as armor_cast_reducer;
+use super::module_bindings::cancel_buy_order_reducer::cancel_buy_order as cancel_buy_order_reducer;
+use super::module_bindings::cancel_sell_order_reducer::cancel_sell_order as cancel_sell_order_reducer;
 use super::module_bindings::claim_npc_item_reducer::claim_npc_item as claim_npc_item_reducer;
 use super::module_bindings::destroy_item_reducer::destroy_item as destroy_item_reducer;
 use super::module_bindings::eidolon_cast_reducer::eidolon_cast as eidolon_cast_reducer;
 use super::module_bindings::equip_item_reducer::equip_item as equip_item_reducer;
+use super::module_bindings::market_buy_reducer::market_buy as market_buy_reducer;
+use super::module_bindings::market_sell_reducer::market_sell as market_sell_reducer;
 use super::module_bindings::move_item_reducer::move_item as move_item_reducer;
 use super::module_bindings::party_accept_reducer::party_accept as party_accept_reducer;
 use super::module_bindings::party_decline_reducer::party_decline as party_decline_reducer;
 use super::module_bindings::party_invite_reducer::party_invite as party_invite_reducer;
 use super::module_bindings::party_join_reducer::party_join as party_join_reducer;
 use super::module_bindings::party_leave_reducer::party_leave as party_leave_reducer;
+use super::module_bindings::place_buy_order_reducer::place_buy_order as place_buy_order_reducer;
+use super::module_bindings::place_sell_order_reducer::place_sell_order as place_sell_order_reducer;
 use super::module_bindings::release_cast_reducer::release_cast as release_cast_reducer;
 use super::module_bindings::respawn_reducer::respawn as respawn_reducer;
 use super::module_bindings::send_chat_message_reducer::send_chat_message as send_chat_message_reducer;
@@ -70,6 +76,74 @@ pub fn claim_npc_item(conn: &StdbConnection, npc_entity_id: u64, item_id: String
         item_id,
         conn.report_rejection("could not claim that item"),
     )
+}
+
+/// Lists an inventory instance on the NPC's isolated market.
+pub fn place_sell_order(
+    conn: &StdbConnection,
+    npc_entity_id: u64,
+    instance_id: u64,
+    price: u64,
+) -> Sent {
+    conn.reducers().place_sell_order_then(
+        npc_entity_id,
+        instance_id,
+        price,
+        conn.report_rejection("could not list that item"),
+    )
+}
+
+/// Buys a sell order from the NPC's isolated market.
+pub fn market_buy(conn: &StdbConnection, npc_entity_id: u64, sell_order_id: u64) -> Sent {
+    conn.reducers().market_buy_then(
+        npc_entity_id,
+        sell_order_id,
+        conn.report_rejection("could not buy that listing"),
+    )
+}
+
+/// Cancels one of the caller's sell listings.
+pub fn cancel_sell_order(conn: &StdbConnection, order_id: u64) -> Sent {
+    conn.reducers().cancel_sell_order_then(
+        order_id,
+        conn.report_rejection("could not cancel that listing"),
+    )
+}
+
+/// Places a Gold bid for a catalogue item in the NPC's market.
+pub fn place_buy_order(
+    conn: &StdbConnection,
+    npc_entity_id: u64,
+    item_id: String,
+    price: u64,
+) -> Sent {
+    conn.reducers().place_buy_order_then(
+        npc_entity_id,
+        item_id,
+        price,
+        conn.report_rejection("could not place that bid"),
+    )
+}
+
+/// Instant-sells an inventory instance into the best matching bid.
+pub fn market_sell(
+    conn: &StdbConnection,
+    npc_entity_id: u64,
+    instance_id: u64,
+    min_price: u64,
+) -> Sent {
+    conn.reducers().market_sell_then(
+        npc_entity_id,
+        instance_id,
+        min_price,
+        conn.report_rejection("could not sell that item"),
+    )
+}
+
+/// Cancels one of the caller's bids and refunds escrowed Gold.
+pub fn cancel_buy_order(conn: &StdbConnection, order_id: u64) -> Sent {
+    conn.reducers()
+        .cancel_buy_order_then(order_id, conn.report_rejection("could not cancel that bid"))
 }
 
 /// Permanently destroys an item instance from the inventory.

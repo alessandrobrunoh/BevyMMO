@@ -13,10 +13,11 @@ pub mod crowd_control_bar;
 pub mod death_screen;
 pub mod debug_position;
 pub mod entity_bar;
-pub mod inscription;
+
 pub mod inventory;
 pub mod login;
 pub mod main_menu;
+pub mod market;
 pub mod notices;
 pub mod npc_sidebar;
 pub mod pause_menu;

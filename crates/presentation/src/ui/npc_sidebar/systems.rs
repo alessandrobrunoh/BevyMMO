@@ -65,7 +65,15 @@ pub fn npc_sidebar_on_click(
     theme: Res<UiTheme>,
     item_registry: Res<ItemRegistry>,
     // Query per le entità game (NPC = GameEntity + Position + EntityKind::Friendly)
-    entity_query: Query<(Entity, &Position, &EntityKind), With<GameEntity>>,
+    entity_query: Query<
+        (
+            Entity,
+            &Position,
+            &EntityKind,
+            Option<&bevymmo_client::stdb::NpcMarket>,
+        ),
+        With<GameEntity>,
+    >,
     name_query: Query<&PlayerName>,
     // Query per le sidebar esistenti
     existing_sidebar: Query<Entity, With<NpcSidebar>>,
@@ -86,8 +94,11 @@ pub fn npc_sidebar_on_click(
 
     // Costruisci lista di hits per le entità Friendly
     let mut hits: Vec<EntityHit> = Vec::new();
-    for (entity, position, kind) in entity_query.iter() {
+    for (entity, position, kind, market) in entity_query.iter() {
         if *kind != EntityKind::Friendly {
+            continue;
+        }
+        if market.is_some() {
             continue;
         }
 

@@ -5,7 +5,8 @@
 
 pub mod content;
 pub use bevymmo_gameplay::{
-    abilities, crowd_control, effects, entity, items, movement, placeables, spells, stats,
+    abilities, crowd_control, economy, effects, entity, items, markets, movement, placeables,
+    spells, stats,
 };
 pub use bevymmo_gameplay::{EntityId, Rgba};
 pub use bevymmo_world as world;

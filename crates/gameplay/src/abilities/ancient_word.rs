@@ -94,10 +94,15 @@ impl AncientWordMetadata {
     }
 
     /// Controlla se un'abilità con i tag dati è compatibile con questa Parola Antica.
+    ///
+    /// An empty `required_tags` list means the word is universal. Otherwise
+    /// the ability must carry **any** of the required tags, and none of the
+    /// forbidden ones.
     #[inline]
     pub fn is_compatible_with(&self, tags: &[AbilityTag]) -> bool {
-        self.required_tags.iter().any(|t| tags.contains(t))
-            && !self.forbidden_tags.iter().any(|t| tags.contains(t))
+        let required_ok =
+            self.required_tags.is_empty() || self.required_tags.iter().any(|t| tags.contains(t));
+        required_ok && !self.forbidden_tags.iter().any(|t| tags.contains(t))
     }
 }
 
@@ -228,6 +233,15 @@ mod tests {
     fn is_compatible_with_required_tag_missing() {
         let meta = AncientWordMetadata::from_legacy("Test", AbilityTag::Area, 2);
         assert!(!meta.is_compatible_with(&[AbilityTag::Projectile, AbilityTag::Ranged]));
+    }
+
+    #[test]
+    fn empty_required_tags_are_universal() {
+        let mut meta = AncientWordMetadata::from_legacy("Test", AbilityTag::Area, 2);
+        meta.required_tags.clear();
+        assert!(meta.is_compatible_with(&[AbilityTag::Projectile]));
+        meta.forbidden_tags.push(AbilityTag::Projectile);
+        assert!(!meta.is_compatible_with(&[AbilityTag::Projectile]));
     }
 
     #[test]

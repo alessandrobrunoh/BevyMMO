@@ -724,12 +724,14 @@ impl RuneProfileDef {
                 "capacity" => capacity = Some(content.parse::<LitInt>()?),
                 "stability" => stability = Some(content.parse::<LitFloat>()?),
 
-                other => return Err(syn::Error::new_spanned(
-                    &key,
-                    format!(
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!(
                         "unknown key `{other}` in rune_profile(...) (expected capacity, stability)"
                     ),
-                )),
+                    ))
+                }
             }
             if content.peek(Token![,]) {
                 content.parse::<Token![,]>()?;
@@ -2141,6 +2143,8 @@ struct AncientWordDef {
     id: LitStr,
     name: LitStr,
     tag: Ident,
+    /// Full required-tag list when `tags = [...]` is set; otherwise just `tag`.
+    required_tags: Vec<Ident>,
     rune_cost: LitInt,
 }
 
@@ -2149,6 +2153,7 @@ impl Parse for AncientWordDef {
         let mut id = None;
         let mut name = None;
         let mut tag = None;
+        let mut required_tags = Vec::new();
         let mut rune_cost = None;
 
         while !input.is_empty() {
@@ -2158,11 +2163,17 @@ impl Parse for AncientWordDef {
                 "id" => id = Some(input.parse::<LitStr>()?),
                 "name" => name = Some(input.parse::<LitStr>()?),
                 "tag" => tag = Some(input.parse::<Ident>()?),
+                "tags" => {
+                    let content;
+                    bracketed!(content in input);
+                    let list: Punctuated<Ident, Token![,]> = Punctuated::parse_terminated(&content)?;
+                    required_tags = list.into_iter().collect();
+                }
                 "rune_cost" => rune_cost = Some(input.parse::<LitInt>()?),
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in #[ancient_word(...)] (expected id, name, tag, rune_cost)"),
+                        format!("unknown key `{other}` in #[ancient_word(...)] (expected id, name, tag, tags, rune_cost)"),
                     ))
                 }
             }
@@ -2180,6 +2191,7 @@ impl Parse for AncientWordDef {
             tag: tag.ok_or_else(|| {
                 input.error("#[ancient_word(...)] requires `tag = ...` (an AbilityTag)")
             })?,
+            required_tags,
             rune_cost: rune_cost
                 .ok_or_else(|| input.error("#[ancient_word(...)] requires `rune_cost = ...`"))?,
         })
@@ -2199,6 +2211,11 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name_lit = &def.name;
     let tag = &def.tag;
     let rune_cost = &def.rune_cost;
+    let required_tags = if def.required_tags.is_empty() {
+        vec![tag.clone()]
+    } else {
+        def.required_tags.clone()
+    };
 
     let expanded = quote! {
         #input
@@ -2219,6 +2236,17 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             fn rune_cost(&self) -> u32 {
                 #rune_cost
+            }
+            fn metadata(&self) -> crate::abilities::AncientWordMetadata {
+                crate::abilities::AncientWordMetadata {
+                    display_name: #name_lit,
+                    required_tags: vec![#(crate::abilities::AbilityTag::#required_tags),*],
+                    forbidden_tags: Vec::new(),
+                    exclusive_group: None,
+                    phase: 0,
+                    visual_priority: 0,
+                    rune_cost: #rune_cost,
+                }
             }
             fn post_process(
                 &self,

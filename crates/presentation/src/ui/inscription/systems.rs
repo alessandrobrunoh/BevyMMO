@@ -13,7 +13,7 @@ use bevymmo_gameplay::items::definition::Item;
 use bevymmo_gameplay::items::registry::ItemRegistry;
 
 use crate::ui::button::{spawn_bar_child, BarButtonKind};
-use crate::ui::scrollbar::spawn_scroll_view;
+use crate::ui::scrollbar::{spawn_scroll_view_scrolled, ScrollView};
 use crate::ui::settings::state::{GameSettingsResource, KeyAction};
 use crate::ui::theme::{ornate_panel_image, UiTheme};
 
@@ -179,10 +179,14 @@ pub fn toggle_inscription_window(
     state.is_open = !state.is_open;
 
     if !state.is_open {
+        state.scroll = 0.0;
+        state.shown_equipment = None;
         despawn_windows(&mut commands, &window_query);
         return;
     }
 
+    state.scroll = 0.0;
+    state.shown_equipment = Some(equipment.clone());
     spawn_window(
         &mut commands,
         &theme,
@@ -193,6 +197,7 @@ pub fn toggle_inscription_window(
         &root_word_registry,
         &ancient_word_registry,
         &asset_server,
+        0.0,
     );
 }
 
@@ -203,8 +208,10 @@ pub fn toggle_inscription_window(
 #[allow(clippy::too_many_arguments)]
 pub fn refresh_inscription_window_on_equipment_change(
     mut commands: Commands,
-    state: Res<InscriptionUiState>,
+    mut state: ResMut<InscriptionUiState>,
     window_query: Query<Entity, With<InscriptionWindow>>,
+    children: Query<&Children>,
+    scroll_views: Query<&ScrollView>,
     theme: Res<UiTheme>,
     item_registry: Res<ItemRegistry>,
     ability_registry: Res<BaseAbilityRegistry>,
@@ -222,13 +229,23 @@ pub fn refresh_inscription_window_on_equipment_change(
     let Ok((equipment, known)) = player_query.single() else {
         return;
     };
+    if state.shown_equipment.as_ref() == Some(equipment) {
+        return;
+    }
+
+    state.scroll = window_query
+        .iter()
+        .map(|root| descendant_scroll(root, &children, &scroll_views))
+        .fold(state.scroll, f32::max);
 
     despawn_windows(&mut commands, &window_query);
 
     if !owns_inscription_hotkey(equipment, &item_registry) {
+        state.shown_equipment = None;
         return;
     }
 
+    state.shown_equipment = Some(equipment.clone());
     spawn_window(
         &mut commands,
         &theme,
@@ -239,7 +256,25 @@ pub fn refresh_inscription_window_on_equipment_change(
         &root_word_registry,
         &ancient_word_registry,
         &asset_server,
+        state.scroll,
     );
+}
+
+fn descendant_scroll(
+    root: Entity,
+    children: &Query<&Children>,
+    scroll_views: &Query<&ScrollView>,
+) -> f32 {
+    let mut stack = vec![root];
+    while let Some(entity) = stack.pop() {
+        if let Ok(view) = scroll_views.get(entity) {
+            return view.current_scroll;
+        }
+        if let Ok(child_list) = children.get(entity) {
+            stack.extend(child_list.iter());
+        }
+    }
+    0.0
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -253,6 +288,7 @@ fn spawn_window(
     root_word_registry: &RootWordRegistry,
     ancient_word_registry: &AncientWordRegistry,
     asset_server: &AssetServer,
+    initial_scroll: f32,
 ) {
     let weapon = equipment.weapon.as_ref();
     let weapon_item = weapon.and_then(|instance| item_registry.get(&instance.item_id));
@@ -315,7 +351,7 @@ fn spawn_window(
         .id();
     commands.entity(window).add_child(scroll_body);
 
-    spawn_scroll_view(commands, scroll_body, theme, |commands| {
+    spawn_scroll_view_scrolled(commands, scroll_body, theme, initial_scroll, |commands| {
         commands
             .spawn((Node {
                 width: Val::Percent(100.0),
@@ -432,11 +468,7 @@ fn spawn_armor_slot_card(
         flex_shrink: 1.0,
         flex_basis: if filled { Val::Px(0.0) } else { Val::Auto },
         min_width: Val::Px(0.0),
-        min_height: Val::Px(if filled {
-            ARMOR_SLOT_MIN_HEIGHT
-        } else {
-            20.0
-        }),
+        min_height: Val::Px(if filled { ARMOR_SLOT_MIN_HEIGHT } else { 20.0 }),
         padding: UiRect::all(Val::Px(if filled { 6.0 } else { 2.0 })),
         flex_direction: FlexDirection::Column,
         row_gap: Val::Px(3.0),
@@ -831,6 +863,10 @@ fn spawn_slot_column(
                             let Some(word) = ancient_word_registry.get(word_id) else {
                                 continue;
                             };
+                            if !word.metadata().is_compatible_with(ability.tags()) {
+                                spawn_muted_line(row, theme, word.display_name());
+                                continue;
+                            }
                             let is_active = slot_ins
                                 .secondary_words
                                 .iter()
@@ -887,6 +923,9 @@ pub fn handle_inscription_interactions(
     >,
     close_interactions: Query<&Interaction, (Changed<Interaction>, With<CloseInscriptionButton>)>,
     player_query: Query<&Equipment, With<LocalPlayer>>,
+    item_registry: Res<ItemRegistry>,
+    ability_registry: Res<BaseAbilityRegistry>,
+    ancient_word_registry: Res<AncientWordRegistry>,
     conn: Option<Res<StdbConnection>>,
     mut commands: Commands,
     window_query: Query<Entity, With<InscriptionWindow>>,
@@ -968,6 +1007,16 @@ pub fn handle_inscription_interactions(
         {
             slot_ins.secondary_words.remove(pos);
         } else {
+            if !ancient_word_fits_weapon_slot(
+                toggle.slot,
+                &word_id,
+                weapon,
+                &item_registry,
+                &ability_registry,
+                &ancient_word_registry,
+            ) {
+                continue;
+            }
             slot_ins.secondary_words.push(SecondaryWord::new(word_id));
         }
         send_full_update(conn.as_deref(), &updated);
@@ -1009,6 +1058,32 @@ fn send_root_update(
     let mut updated = current.clone();
     updated.root_word = root_word;
     send_full_update(Some(conn), &updated);
+}
+
+fn ancient_word_fits_weapon_slot(
+    slot: AbilitySlot,
+    word_id: &AncientWordId,
+    weapon: &bevymmo_gameplay::items::instance::ItemInstance,
+    item_registry: &ItemRegistry,
+    ability_registry: &BaseAbilityRegistry,
+    ancient_word_registry: &AncientWordRegistry,
+) -> bool {
+    let Some(item) = item_registry.get(&weapon.item_id) else {
+        return false;
+    };
+    let Some(loadout) = item.ability_loadout() else {
+        return false;
+    };
+    let Some(ability_id) = resolve_active_ability(slot, loadout, &weapon.ability_selection) else {
+        return false;
+    };
+    let Some(ability) = ability_registry.get(ability_id) else {
+        return false;
+    };
+    let Some(word) = ancient_word_registry.get(word_id) else {
+        return false;
+    };
+    word.metadata().is_compatible_with(ability.tags())
 }
 
 fn send_full_update(conn: Option<&StdbConnection>, inscription: &WeaponInscription) {
@@ -1090,6 +1165,39 @@ mod tests {
     }
 
     #[test]
+    fn staff_secondary_only_toggles_compatible_ancient_words() {
+        let mut app = test_app();
+        let (mut equipment, mut known) = staff_and_boots();
+        known.ancient_words = ["anchor", "echo", "hunger", "return", "reversal", "twin"]
+            .into_iter()
+            .map(AncientWordId::new)
+            .collect();
+        equipment.weapon.as_mut().expect("staff").ability_selection.secondary =
+            Some(bevymmo_gameplay::abilities::AbilityId::new("arcane_wave"));
+        spawn_test_window(&mut app, &equipment, &known);
+
+        let world = app.world_mut();
+        let mut toggles = world.query::<&AncientWordToggleButton>();
+        let secondary: Vec<&str> = toggles
+            .iter(world)
+            .filter(|toggle| toggle.slot == AbilitySlot::Secondary)
+            .map(|toggle| toggle.word_id.as_str())
+            .collect();
+        assert!(
+            secondary.contains(&"reversal"),
+            "Ranged words must stay clickable on Arcane Wave, got {secondary:?}"
+        );
+        assert!(
+            secondary.contains(&"echo"),
+            "Echo should apply to a ranged area wave, got {secondary:?}"
+        );
+        assert!(
+            !secondary.contains(&"return"),
+            "Return is projectile-only and must not be clickable on Arcane Wave, got {secondary:?}"
+        );
+    }
+
+    #[test]
     fn ancient_word_order_is_stable_for_hash_set_storage() {
         let known = KnownAncientLanguage {
             ancient_words: ["twin", "echo", "anchor"]
@@ -1148,6 +1256,7 @@ mod tests {
                 &root_word_registry,
                 &ancient_word_registry,
                 &asset_server,
+                0.0,
             );
         }
         app.world_mut().flush();

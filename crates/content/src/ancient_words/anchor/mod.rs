@@ -7,7 +7,13 @@ use bevymmo_gameplay::abilities::{
 use bevymmo_gameplay::spells::context::SpellCastContext;
 use bevymmo_props_macro::ancient_word;
 
-#[ancient_word(id = "anchor", name = "Anchor", tag = Ground, rune_cost = 2)]
+#[ancient_word(
+    id = "anchor",
+    name = "Anchor",
+    tag = Ground,
+    tags = [Ground, Area],
+    rune_cost = 2
+)]
 pub struct Anchor;
 
 impl Anchor {
@@ -48,6 +54,7 @@ mod tests {
         let metadata = <Anchor as bevymmo_gameplay::abilities::AncientWord>::metadata(&Anchor);
         assert_eq!(metadata.rune_cost, 2);
         assert!(metadata.required_tags.contains(&AbilityTag::Ground));
+        assert!(metadata.is_compatible_with(&[AbilityTag::Area]));
     }
 
     #[test]

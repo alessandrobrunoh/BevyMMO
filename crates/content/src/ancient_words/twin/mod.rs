@@ -7,7 +7,13 @@ use bevymmo_gameplay::abilities::{
 use bevymmo_gameplay::spells::context::SpellCastContext;
 use bevymmo_props_macro::ancient_word;
 
-#[ancient_word(id = "twin", name = "Twin", tag = Projectile, rune_cost = 2)]
+#[ancient_word(
+    id = "twin",
+    name = "Twin",
+    tag = Projectile,
+    tags = [Projectile, Area, RepeatCompatible],
+    rune_cost = 2
+)]
 pub struct Twin;
 
 impl Twin {
@@ -45,6 +51,7 @@ mod tests {
         let metadata = <Twin as bevymmo_gameplay::abilities::AncientWord>::metadata(&Twin);
         assert_eq!(metadata.rune_cost, 2);
         assert!(metadata.required_tags.contains(&AbilityTag::Projectile));
+        assert!(metadata.is_compatible_with(&[AbilityTag::Area]));
     }
 
     #[test]

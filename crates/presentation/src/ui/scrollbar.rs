@@ -71,6 +71,18 @@ pub fn spawn_scroll_view(
     spawn_scroll_view_with_content(commands, parent, theme, content_builder).0
 }
 
+/// Like [`spawn_scroll_view`], but the viewport starts at `initial_scroll`
+/// instead of the top. Used when a panel is rebuilt and must keep its place.
+pub fn spawn_scroll_view_scrolled(
+    commands: &mut Commands,
+    parent: Entity,
+    theme: &UiTheme,
+    initial_scroll: f32,
+    content_builder: impl FnOnce(&mut Commands) -> Entity,
+) -> Entity {
+    spawn_scroll_view_configured(commands, parent, theme, initial_scroll, content_builder).0
+}
+
 /// Crea una ScrollView e ritorna sia il wrapper sia l'entity del contenuto.
 ///
 /// La variante pubblica standard ritorna solo il wrapper; questa serve ai
@@ -78,7 +90,17 @@ pub fn spawn_scroll_view(
 pub fn spawn_scroll_view_with_content(
     commands: &mut Commands,
     parent: Entity,
+    theme: &UiTheme,
+    content_builder: impl FnOnce(&mut Commands) -> Entity,
+) -> (Entity, Entity) {
+    spawn_scroll_view_configured(commands, parent, theme, 0.0, content_builder)
+}
+
+fn spawn_scroll_view_configured(
+    commands: &mut Commands,
+    parent: Entity,
     _theme: &UiTheme,
+    initial_scroll: f32,
     content_builder: impl FnOnce(&mut Commands) -> Entity,
 ) -> (Entity, Entity) {
     let wrapper = commands
@@ -177,7 +199,7 @@ pub fn spawn_scroll_view_with_content(
         content_entity: content,
         scrollbar_entity: Some(thumb),
         track_entity: Some(track),
-        current_scroll: 0.0,
+        current_scroll: initial_scroll.max(0.0),
         max_scroll: 0.0,
     });
 

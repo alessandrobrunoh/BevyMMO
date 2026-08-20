@@ -7,7 +7,13 @@ use bevymmo_gameplay::abilities::{
 use bevymmo_gameplay::spells::context::SpellCastContext;
 use bevymmo_props_macro::ancient_word;
 
-#[ancient_word(id = "hunger", name = "Hunger", tag = Melee, rune_cost = 2)]
+#[ancient_word(
+    id = "hunger",
+    name = "Hunger",
+    tag = Melee,
+    tags = [Melee, Ranged, Area],
+    rune_cost = 2
+)]
 pub struct Hunger;
 
 impl Hunger {
@@ -45,6 +51,7 @@ mod tests {
         let metadata = <Hunger as bevymmo_gameplay::abilities::AncientWord>::metadata(&Hunger);
         assert_eq!(metadata.rune_cost, 2);
         assert!(metadata.required_tags.contains(&AbilityTag::Melee));
+        assert!(metadata.is_compatible_with(&[AbilityTag::Ranged, AbilityTag::Area]));
     }
 
     #[test]

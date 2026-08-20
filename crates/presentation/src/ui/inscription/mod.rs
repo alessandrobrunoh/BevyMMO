@@ -14,6 +14,13 @@ use crate::game_state::{not_typing, GameScreen, Screen};
 #[derive(Resource, Default)]
 pub struct InscriptionUiState {
     pub is_open: bool,
+    /// Vertical offset of the window's scroll view. Restored when the panel
+    /// is rebuilt after an equipment replica, so clicking a toggle does not
+    /// yank the user back to the top.
+    scroll: f32,
+    /// Last equipment drawn into the open window. Identical replicas skip
+    /// a rebuild (the stdb mirror re-inserts equipment on unrelated row events).
+    shown_equipment: Option<bevymmo_gameplay::items::components::Equipment>,
 }
 
 pub struct InscriptionUiPlugin;

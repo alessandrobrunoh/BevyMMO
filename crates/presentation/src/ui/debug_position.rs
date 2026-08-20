@@ -6,7 +6,7 @@ use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::network::types::ClientConnectionConfig;
 use bevymmo_network::network::protocol::{PlayerId, Position};
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::Screen;
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 
@@ -52,7 +52,7 @@ fn setup_debug_position(mut commands: Commands, theme: Res<UiTheme>) {
 }
 
 fn update_debug_position(
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     client_config: Option<Res<ClientConnectionConfig>>,
     players: Query<(&Position, Option<&PlayerId>, Has<LocalPlayer>)>,
     mut roots: Query<&mut Node, With<DebugPositionUi>>,
@@ -63,7 +63,7 @@ fn update_debug_position(
         return;
     };
 
-    if !matches!(screen.0, Screen::InGame | Screen::Paused) {
+    if *screen.get() != Screen::InGame {
         root.display = Display::None;
         return;
     }
@@ -113,7 +113,7 @@ mod tests {
     fn test_app() -> App {
         let mut app = App::new();
         app.init_resource::<UiTheme>();
-        app.init_resource::<GameScreen>();
+        crate::game_state::init_screen_states(&mut app);
         app.add_plugins(DebugPositionPlugin);
         app
     }
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn shows_controlled_player_position_during_gameplay() {
         let mut app = test_app();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         app.world_mut()
             .spawn((LocalPlayer, Position(Vec3::new(3.0, 1.5, -4.25))));
 

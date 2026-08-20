@@ -13,7 +13,6 @@ use bevymmo_props_macro::base_ability;
     cast_time = 0.5,
     cooldown = 10.0,
     energy_cost = 18.0,
-    statuses = [Root],
     animation = "cuirass_iron_wave",
     impact_vfx = "iron_wave_impact",
 )]

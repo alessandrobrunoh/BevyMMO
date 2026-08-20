@@ -24,7 +24,7 @@ impl Plugin for PlayerStatsPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_state::{GameScreen, Screen};
+    use crate::game_state::{init_screen_states, Screen};
     use crate::ui::theme::UiTheme;
     use bevymmo_client::local_player::LocalPlayer;
     use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
@@ -32,9 +32,9 @@ mod tests {
     fn test_app() -> App {
         let mut app = App::new();
         app.init_resource::<UiTheme>();
-        app.init_resource::<GameScreen>();
+        init_screen_states(&mut app);
         app.add_plugins(PlayerStatsPlugin);
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         app
     }
 
@@ -65,6 +65,7 @@ mod tests {
             VitalStats {
                 current_health: 100.0,
                 max_health: 100.0,
+                current_mana: 80.0,
                 max_mana: 80.0,
                 mana_regeneration: 4.0,
             },
@@ -82,7 +83,7 @@ mod tests {
         assert_eq!(root.top, Val::Px(16.0));
         assert_eq!(
             panel_text(&mut app),
-            "HP: 100/100\nMax Mana: 80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)\nAttack Power: 10\nMove Speed: 0.15"
+            "HP: 100/100\nMana: 80/80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)\nAttack Power: 10\nMove Speed: 0.15"
         );
     }
 
@@ -101,6 +102,7 @@ mod tests {
                 VitalStats {
                     current_health: 100.0,
                     max_health: 100.0,
+                    current_mana: 80.0,
                     max_mana: 80.0,
                     mana_regeneration: 4.0,
                 },
@@ -113,7 +115,7 @@ mod tests {
             .get_mut::<VitalStats>()
             .unwrap()
             .max_mana = 120.0;
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::MainMenu;
+        app.insert_state(Screen::MainMenu);
         app.update();
 
         let root = app
@@ -123,11 +125,11 @@ mod tests {
             .expect("stats root");
         assert_eq!(root.display, Display::None);
 
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         app.update();
         assert_eq!(
             panel_text(&mut app),
-            "HP: 100/100\nMax Mana: 120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15"
+            "HP: 100/100\nMana: 80/120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15"
         );
     }
 }

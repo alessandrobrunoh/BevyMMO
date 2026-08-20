@@ -9,7 +9,8 @@ use bevymmo_gameplay::entity::components::EntityState;
 use bevymmo_gameplay::stats::components::VitalStats;
 use bevymmo_network::network::protocol::PlayerId;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::Screen;
+use crate::ui::button::{apply_button_image, spawn_bar_button, UiButtonImages};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 
@@ -58,43 +59,15 @@ pub fn setup_death_screen(mut commands: Commands, theme: Res<UiTheme>) {
         theme.muted_text_color,
     );
 
-    // Bottone custom (non usa `UiButton` centrale: la sua azione è
-    // l'invio di un messaggio network, non una `UiButtonAction`). I visual
-    // (hover/press) sono gestiti da `update_respawn_button_visuals`.
-    let button = commands
-        .spawn((
-            Button,
-            Node {
-                width: Val::Px(220.0),
-                height: Val::Px(44.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
-                ..default()
-            },
-            BackgroundColor(theme.button_bg),
-            DeathScreenButton,
-            Interaction::None,
-        ))
-        .id();
-    commands.entity(panel).add_child(button);
-
-    let label = commands
-        .spawn((
-            Text::new("Respawn".to_string()),
-            TextFont {
-                font_size: FontSize::Px(theme.button_font_size),
-                ..default()
-            },
-            TextColor(theme.button_text_color),
-        ))
-        .id();
-    commands.entity(button).add_child(label);
+    // Custom button: the action is a network message, not a `UiButtonAction`.
+    // Visuals (hover/press) still go through `UiButtonImages` /
+    // `update_respawn_button_visuals`.
+    spawn_bar_button(&mut commands, panel, "Respawn", &theme, DeathScreenButton);
 }
 
 /// Mostra l'overlay solo quando il player locale è `Dead` e siamo in gameplay.
 pub fn update_death_screen_visibility(
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     client_config: Option<Res<ClientConnectionConfig>>,
     players: Query<(
         &EntityState,
@@ -108,7 +81,7 @@ pub fn update_death_screen_visibility(
     let is_local_dead = local_player_state(&players, local_client_id)
         .map(|(state, vital)| state.is_dead() || vital.is_some_and(VitalStats::is_dead))
         .unwrap_or(false);
-    let visible = matches!(screen.0, Screen::InGame | Screen::Paused) && is_local_dead;
+    let visible = *screen.get() == Screen::InGame && is_local_dead;
 
     let display = if visible {
         Display::Flex
@@ -147,19 +120,13 @@ pub fn handle_respawn_button(
 /// Visual feedback (hover/press) per il pulsante Respawn, separato dal
 /// `UiButton` centrale perché l'azione non è una `UiButtonAction`.
 pub fn update_respawn_button_visuals(
-    theme: Res<UiTheme>,
     mut query: Query<
-        (&Interaction, &mut BackgroundColor),
+        (&Interaction, &mut ImageNode, &UiButtonImages),
         (With<DeathScreenButton>, Changed<Interaction>),
     >,
 ) {
-    for (interaction, mut bg) in query.iter_mut() {
-        let color = match interaction {
-            Interaction::Hovered => theme.button_hovered_bg,
-            Interaction::Pressed => theme.button_pressed_bg,
-            Interaction::None => theme.button_bg,
-        };
-        *bg = BackgroundColor(color);
+    for (interaction, mut image, button_images) in query.iter_mut() {
+        apply_button_image(*interaction, &mut image, button_images);
     }
 }
 
@@ -190,7 +157,7 @@ fn local_player_state<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_state::{GameScreen, Screen};
+    use crate::game_state::{init_screen_states, Screen};
     use crate::ui::theme::UiTheme;
     use bevymmo_client::local_player::LocalPlayer;
     use bevymmo_gameplay::entity::components::EntityState;
@@ -198,7 +165,7 @@ mod tests {
     fn test_app() -> App {
         let mut app = App::new();
         app.init_resource::<UiTheme>();
-        app.init_resource::<GameScreen>();
+        init_screen_states(&mut app);
         app.add_systems(Startup, setup_death_screen);
         app.add_systems(Update, update_death_screen_visibility);
         app
@@ -219,9 +186,21 @@ mod tests {
     }
 
     #[test]
+    fn respawn_button_uses_sliced_bar_art() {
+        let mut app = test_app();
+        app.update();
+
+        let mut query = app
+            .world_mut()
+            .query_filtered::<&ImageNode, With<DeathScreenButton>>();
+        let image = query.single(app.world()).expect("respawn button");
+        assert!(matches!(image.image_mode, NodeImageMode::Sliced(_)));
+    }
+
+    #[test]
     fn overlay_shows_when_local_player_is_dead_in_game() {
         let mut app = test_app();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         app.world_mut().spawn((LocalPlayer, EntityState::Dead));
         app.update();
 
@@ -231,7 +210,7 @@ mod tests {
     #[test]
     fn overlay_hides_when_player_respawns() {
         let mut app = test_app();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         let player = app.world_mut().spawn((LocalPlayer, EntityState::Dead)).id();
         app.update();
         assert_eq!(root_visibility(&mut app), Display::Flex);
@@ -247,12 +226,12 @@ mod tests {
     #[test]
     fn overlay_hides_when_leaving_gameplay() {
         let mut app = test_app();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         app.world_mut().spawn((LocalPlayer, EntityState::Dead));
         app.update();
         assert_eq!(root_visibility(&mut app), Display::Flex);
 
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::MainMenu;
+        app.insert_state(Screen::MainMenu);
         app.update();
         assert_eq!(root_visibility(&mut app), Display::None);
     }
@@ -260,7 +239,7 @@ mod tests {
     #[test]
     fn overlay_stays_hidden_when_local_player_is_alive() {
         let mut app = test_app();
-        app.world_mut().resource_mut::<GameScreen>().0 = Screen::InGame;
+        app.insert_state(Screen::InGame);
         app.world_mut().spawn((LocalPlayer, EntityState::Idle));
         app.update();
         assert_eq!(root_visibility(&mut app), Display::None);

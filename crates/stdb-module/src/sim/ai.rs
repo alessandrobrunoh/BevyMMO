@@ -40,16 +40,20 @@
 //! there is no index on `kind`, so the mobs have to be found by looking. It is
 //! one pass for the whole tick rather than one per mob.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use bevymmo_domain::content::spells::fireball::FireballSpell;
 use bevymmo_domain::entity::boss::components::{Boss, BossPhase, BossRotationState, BossSpellbook};
 use bevymmo_domain::entity::enemy::components::AggroRange;
 use bevymmo_domain::movement;
-use bevymmo_domain::content::spells::fireball::FireballSpell;
-use bevymmo_domain::spells::{CastKind, Spell, SpellId};
 use bevymmo_domain::spells::context::ChannelMovementPolicy as SpellChannelMovementPolicy;
+use bevymmo_domain::spells::{CastKind, Spell, SpellId};
 use glam::Vec3;
 use spacetimedb::{ReducerContext, Table};
 
 use crate::rows::Vec3Row;
+use crate::sim::targets;
 use crate::sim::{crowd_control, spells};
 use crate::tables::{
     boss_state, cast_state, entity_stats, game_entity, grid_cell, threat, BossPhaseRow, BossState,
@@ -97,12 +101,13 @@ struct PlayerRef {
 }
 
 pub fn step(ctx: &ReducerContext, dt: f32) {
+    let online = targets::online_character_ids(ctx);
     let actors = collect_actors(ctx);
     for enemy in actors.enemies {
-        step_enemy(ctx, enemy);
+        step_enemy(ctx, &online, enemy);
     }
     for boss in actors.bosses {
-        step_boss(ctx, boss, dt);
+        step_boss(ctx, &online, boss, dt);
     }
 }
 
@@ -124,7 +129,10 @@ fn collect_actors(ctx: &ReducerContext) -> Actors {
             EntityKindRow::Enemy => enemies.push(entity),
             EntityKindRow::Boss => bosses.push(entity),
             // Players drive themselves; dummies and NPCs have no AI.
-            EntityKindRow::Player | EntityKindRow::Dummy | EntityKindRow::Npc => {}
+            EntityKindRow::Player
+            | EntityKindRow::Dummy
+            | EntityKindRow::AllyDummy
+            | EntityKindRow::Npc => {}
         }
     }
 
@@ -135,13 +143,42 @@ fn collect_actors(ctx: &ReducerContext) -> Actors {
 // Enemies
 // ---------------------------------------------------------------------------
 
-/// Aggro range shared by every enemy.
-///
-/// The Bevy server carried it per-entity in an `AggroRange` component;
-/// `game_entity` has no column for it, so the domain default stands in for all
-/// of them. See the port report: a per-mob range needs a schema field.
-fn enemy_aggro_range() -> f32 {
-    AggroRange::default().0
+#[derive(Clone)]
+struct EnemyProfile {
+    aggro_range: f32,
+    attack_spell: SpellId,
+}
+
+static ENEMY_PROFILES: Mutex<Option<HashMap<u64, EnemyProfile>>> = Mutex::new(None);
+
+fn enemy_profiles() -> std::sync::MutexGuard<'static, Option<HashMap<u64, EnemyProfile>>> {
+    ENEMY_PROFILES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Records the placeable's aggro radius and Q-slot attack for this spawn.
+pub fn remember_enemy(entity_id: u64, aggro_range: f32, attack_spell: SpellId) {
+    enemy_profiles()
+        .get_or_insert_with(HashMap::new)
+        .insert(
+            entity_id,
+            EnemyProfile {
+                aggro_range,
+                attack_spell,
+            },
+        );
+}
+
+fn profile_for(entity_id: u64) -> EnemyProfile {
+    enemy_profiles()
+        .as_ref()
+        .and_then(|map| map.get(&entity_id))
+        .cloned()
+        .unwrap_or_else(|| EnemyProfile {
+            aggro_range: AggroRange::default().0,
+            attack_spell: SpellId::new(FireballSpell::ID),
+        })
 }
 
 /// One enemy's turn: pick a target, close to melee, swing, or walk home.
@@ -157,10 +194,15 @@ fn enemy_aggro_range() -> f32 {
 ///   stood, which over a session drags every mob out of its camp. This one
 ///   walks back to its `spawn_point`, the field the schema already carries for
 ///   exactly that.
-fn step_enemy(ctx: &ReducerContext, enemy: GameEntity) {
+fn step_enemy(
+    ctx: &ReducerContext,
+    online: &std::collections::HashSet<spacetimedb::Uuid>,
+    enemy: GameEntity,
+) {
     let entity_id = enemy.entity_id;
     let position = Vec3::from(enemy.position);
-    let target = nearest_living_player(ctx, position, enemy_aggro_range());
+    let profile = profile_for(entity_id);
+    let target = nearest_living_player(ctx, online, position, profile.aggro_range);
 
     let (look, move_target) = match &target {
         Some(target) => {
@@ -198,7 +240,7 @@ fn step_enemy(ctx: &ReducerContext, enemy: GameEntity) {
     let enemy = write_pose(ctx, enemy, look, move_target);
 
     if let Some(target) = target {
-        try_attack(ctx, &enemy, &target);
+        try_attack(ctx, &enemy, &target, &profile);
     }
 }
 
@@ -208,21 +250,35 @@ fn step_enemy(ctx: &ReducerContext, enemy: GameEntity) {
 /// `attack` only lands within its three-unit radius, so every enemy in the zone
 /// burned its cooldown swinging at air the whole way in. The gate here is the
 /// spell's own radius.
-fn try_attack(ctx: &ReducerContext, enemy: &GameEntity, target: &PlayerRef) {
+fn try_attack(
+    ctx: &ReducerContext,
+    enemy: &GameEntity,
+    target: &PlayerRef,
+    profile: &EnemyProfile,
+) {
+    let spell_id = if spells::spells().get(&profile.attack_spell).is_some() {
+        profile.attack_spell.clone()
+    } else {
+        SpellId::new(FireballSpell::ID)
+    };
+    let range = spells::spells()
+        .get(&spell_id)
+        .map(|spell| spell.config().cast_range)
+        .unwrap_or_else(|| FireballSpell.config().cast_range);
     let position = Vec3::from(enemy.position);
-    if position.distance(target.position) > FireballSpell.config().cast_range {
+    if crate::sim::spells::flat_distance(position, target.position) > range {
         return;
     }
     if !can_start_cast(ctx, enemy.entity_id) {
         return;
     }
-    if spells::is_on_cooldown(ctx, enemy.entity_id, FireballSpell::ID) {
+    if spells::is_on_cooldown(ctx, enemy.entity_id, spell_id.as_str()) {
         return;
     }
     request_cast(
         ctx,
         enemy,
-        &SpellId::new(FireballSpell::ID),
+        &spell_id,
         Some(target.entity),
         Some(target.position),
     );
@@ -333,7 +389,12 @@ fn priority_list_for(phase: BossPhase) -> &'static [RotationEntry] {
 /// Here they are four steps over one `boss_state` row, written back once at the
 /// end — four round trips through the same row would be four times the work for
 /// the same answer.
-fn step_boss(ctx: &ReducerContext, boss: GameEntity, dt: f32) {
+fn step_boss(
+    ctx: &ReducerContext,
+    online: &std::collections::HashSet<spacetimedb::Uuid>,
+    boss: GameEntity,
+    dt: f32,
+) {
     let entity_id = boss.entity_id;
     let Some(state) = ctx.db.boss_state().entity_id().find(entity_id) else {
         // A boss entity with no arena row is content that has not been seeded
@@ -355,7 +416,7 @@ fn step_boss(ctx: &ReducerContext, boss: GameEntity, dt: f32) {
     // free here — and a player who has left the ring has left the fight, so the
     // narrower set is also the more correct one. It is what makes the whole
     // encounter cost a 3×3 cell scan per tick.
-    let living = living_players_near(ctx, arena_center, arena_radius);
+    let living = living_players_near(ctx, online, arena_center, arena_radius);
 
     let mut phase = phase_from_row(state.phase);
     let mut is_engaged = state.is_engaged;
@@ -748,8 +809,13 @@ fn max_pairwise_distance(combo: &[usize], players: &[PlayerRef]) -> f32 {
 // ---------------------------------------------------------------------------
 
 /// The nearest living player within `radius` of `origin`.
-fn nearest_living_player(ctx: &ReducerContext, origin: Vec3, radius: f32) -> Option<PlayerRef> {
-    let candidates = living_players_near(ctx, origin, radius);
+fn nearest_living_player(
+    ctx: &ReducerContext,
+    online: &std::collections::HashSet<spacetimedb::Uuid>,
+    origin: Vec3,
+    radius: f32,
+) -> Option<PlayerRef> {
+    let candidates = living_players_near(ctx, online, origin, radius);
     let nearest = nearest_target(&candidates, origin)?;
     Some(PlayerRef {
         entity: nearest.entity,
@@ -769,7 +835,12 @@ fn nearest_living_player(ctx: &ReducerContext, origin: Vec3, radius: f32) -> Opt
 /// `state` is what aliveness is read from, not `entity_stats`, because
 /// `sim::combat::reap_the_dead` settled the two one step ago — which saves a
 /// point lookup per candidate.
-fn living_players_near(ctx: &ReducerContext, center: Vec3, radius: f32) -> Vec<PlayerRef> {
+fn living_players_near(
+    ctx: &ReducerContext,
+    online: &std::collections::HashSet<spacetimedb::Uuid>,
+    center: Vec3,
+    radius: f32,
+) -> Vec<PlayerRef> {
     let mut found = Vec::new();
     if radius.is_nan() || radius <= 0.0 {
         return found;
@@ -782,11 +853,14 @@ fn living_players_near(ctx: &ReducerContext, center: Vec3, radius: f32) -> Vec<P
 
     for cell_x in min_x..=max_x {
         for entity in ctx.db.game_entity().cell().filter((cell_x, min_z..=max_z)) {
-            if entity.kind != EntityKindRow::Player || entity.state == EntityStateRow::Dead {
+            let online_flag = entity.owner_character_id.map(|id| online.contains(&id));
+            if !targets::is_online_living_player(entity.kind, entity.state, online_flag) {
                 continue;
             }
             let position = Vec3::from(entity.position);
-            if position.distance_squared(center) > radius_squared {
+            let dx = position.x - center.x;
+            let dz = position.z - center.z;
+            if dx * dx + dz * dz > radius_squared {
                 continue;
             }
             found.push(PlayerRef {

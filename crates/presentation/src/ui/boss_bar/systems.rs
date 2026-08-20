@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
 use bevymmo_gameplay::stats::components::VitalStats;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::Screen;
 use crate::ui::theme::UiTheme;
 
 use super::components::{BossBanner, BossBannerState, BossBarFill, BossBarRoot};
@@ -233,10 +233,10 @@ pub fn update_boss_banner(
 /// Decrements the banner timer each frame (only while in gameplay).
 pub fn tick_boss_banner(
     time: Res<Time>,
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     mut banner_state: ResMut<BossBannerState>,
 ) {
-    if !matches!(screen.0, Screen::InGame | Screen::Paused) {
+    if *screen.get() != Screen::InGame {
         return;
     }
     banner_state.remaining_seconds = (banner_state.remaining_seconds - time.delta_secs()).max(0.0);

@@ -20,7 +20,7 @@ pub mod widgets;
 
 use bevy::prelude::*;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::Screen;
 use crate::ui::theme::UiTheme;
 
 use layout::ActiveSettingsTab;
@@ -44,8 +44,8 @@ impl Plugin for SettingsPlugin {
             .add_systems(
                 Update,
                 (
-                    update_settings_visibility,
-                    systems::update_panel_visibility,
+                    update_settings_visibility.run_if(state_changed::<Screen>),
+                    systems::update_panel_visibility.run_if(resource_changed::<ActiveSettingsTab>),
                     systems::update_tab_button_visuals,
                     systems::switch_tab_on_click,
                     systems::cycle_dropdown,
@@ -103,10 +103,10 @@ fn setup_settings(
 
 /// Toggles the whole settings screen on/off based on `Screen::Settings`.
 pub fn update_settings_visibility(
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     mut query: Query<&mut Node, With<SettingsUi>>,
 ) {
-    let display = if matches!(screen.0, Screen::Settings) {
+    let display = if *screen.get() == Screen::Settings {
         Display::Flex
     } else {
         Display::None

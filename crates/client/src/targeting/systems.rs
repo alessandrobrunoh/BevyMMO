@@ -3,13 +3,18 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
+use crate::local_player::LocalPlayer;
 use crate::movement::cursor_ray;
+use crate::pointer::{hud_wants_pointer, PointerOnHud};
 use crate::targeting::CurrentTarget;
+use bevymmo_gameplay::entity::boss::components::Boss;
 use bevymmo_gameplay::entity::components::GameEntity;
 use bevymmo_gameplay::stats::components::VitalStats;
 use bevymmo_network::network::protocol::Position;
 
 const TARGETING_RADIUS: f32 = 1.2;
+const BOSS_TARGETING_RADIUS: f32 = 3.5;
+const TORSO_HEIGHT: f32 = 1.2;
 
 /// Ray-sphere intersection test.
 ///
@@ -69,14 +74,27 @@ fn ray_sphere_intersection(
 /// 6. Selects closest entity along ray
 pub fn select_target_with_left_click(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
+    pointer_on_hud: Res<PointerOnHud>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: Query<(&Camera, &Transform), With<Camera3d>>,
     mut current_target: ResMut<CurrentTarget>,
-    targetable_entities: Query<(Entity, &Position, &VitalStats), With<GameEntity>>,
+    targetable_entities: Query<
+        (
+            Entity,
+            &Position,
+            Option<&Transform>,
+            &VitalStats,
+            Option<&Boss>,
+        ),
+        (With<GameEntity>, Without<LocalPlayer>),
+    >,
 ) {
     let Some(mouse_buttons) = mouse_buttons else {
         return;
     };
+    if hud_wants_pointer(&pointer_on_hud) {
+        return;
+    }
 
     // Left click only, do not affect right-click movement
     if !mouse_buttons.just_pressed(MouseButton::Left) {
@@ -89,14 +107,20 @@ pub fn select_target_with_left_click(
 
     let mut closest_hit: Option<(Entity, f32)> = None;
 
-    for (entity, position, vital_stats) in targetable_entities.iter() {
-        // Ignore dead entities
+    for (entity, position, transform, vital_stats, boss) in targetable_entities.iter() {
         if vital_stats.is_dead() {
             continue;
         }
 
-        if let Some(distance) =
-            ray_sphere_intersection(ray.origin, *ray.direction, position.0, TARGETING_RADIUS)
+        let feet = transform.map(|t| t.translation).unwrap_or(position.0);
+        let center = feet + Vec3::Y * TORSO_HEIGHT;
+        let radius = if boss.is_some() {
+            BOSS_TARGETING_RADIUS
+        } else {
+            TARGETING_RADIUS
+        };
+
+        if let Some(distance) = ray_sphere_intersection(ray.origin, *ray.direction, center, radius)
         {
             match closest_hit {
                 None => {

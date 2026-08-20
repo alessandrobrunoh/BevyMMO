@@ -37,19 +37,27 @@ pub fn resolve_effect(ctx: &ReducerContext, effect: QueuedEffect) -> EffectOutco
             EffectOutcome::Applied
         }
         EffectSpec::Heal(heal) => {
-            crate::sim::combat::apply_healing(ctx, target, heal.amount);
-            EffectOutcome::Applied
+            if crate::sim::combat::heal_allowed_for(ctx, target, source) {
+                crate::sim::combat::apply_healing(ctx, target, heal.amount);
+                EffectOutcome::Applied
+            } else {
+                EffectOutcome::Ignored
+            }
         }
         EffectSpec::ApplyStatus(status) => {
-            crate::sim::status::apply(
-                ctx,
-                target,
-                source,
-                &status.status_id,
-                status.duration_override_seconds,
-                status.potency,
-            );
-            EffectOutcome::Applied
+            if crate::sim::combat::hostile_effect_blocked(ctx, target, source) {
+                EffectOutcome::Ignored
+            } else {
+                crate::sim::status::apply(
+                    ctx,
+                    target,
+                    source,
+                    &status.status_id,
+                    status.duration_override_seconds,
+                    status.potency,
+                );
+                EffectOutcome::Applied
+            }
         }
         EffectSpec::Cleanse(cleanse) => {
             crate::sim::status::cleanse(ctx, target, cleanse);

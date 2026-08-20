@@ -51,7 +51,10 @@ pub fn update_target_ring(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     current_target: Res<CurrentTarget>,
-    target_query: Query<(&Position, Option<&EntityKind>)>,
+    target_query: Query<
+        (&Position, Option<&Transform>, Option<&EntityKind>),
+        Without<TargetRingTarget>,
+    >,
     mut ring_query: Query<(Entity, &TargetRingTarget, &mut Transform)>,
 ) {
     let current_target_entity = current_target.entity;
@@ -69,16 +72,16 @@ pub fn update_target_ring(
     };
 
     // Try to get the target's position
-    let (target_position, _entity_kind) = match target_query.get(target_entity) {
-        Ok((pos, kind)) => (pos, kind),
+    let (target_position, rendered, _entity_kind) = match target_query.get(target_entity) {
+        Ok((pos, transform, kind)) => (pos, transform, kind),
         Err(_) => {
-            // Target doesn't exist or doesn't have Position: remove any existing ring
             for (ring_entity, ..) in ring_query.iter() {
                 commands.entity(ring_entity).despawn();
             }
             return;
         }
     };
+    let feet = rendered.map(|t| t.translation).unwrap_or(target_position.0);
 
     // Check if we already have a ring for this target
     let mut existing_ring_for_target = None;
@@ -93,7 +96,7 @@ pub fn update_target_ring(
         Some(ring_entity) => {
             // Ring exists: update its position
             if let Ok((_, _, mut transform)) = ring_query.get_mut(ring_entity) {
-                let new_position = target_position.0 + Vec3::Y * 0.04;
+                let new_position = feet + Vec3::Y * 0.04;
                 transform.translation = new_position;
             }
         }
@@ -107,7 +110,7 @@ pub fn update_target_ring(
                 &mut meshes,
                 &mut materials,
                 target_entity,
-                target_position.0,
+                feet,
             );
         }
     }

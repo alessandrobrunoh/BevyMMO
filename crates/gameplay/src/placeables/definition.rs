@@ -131,6 +131,18 @@ pub trait PropPlaceable: PlaceableDefinition {}
 /// per connected client and instantiates the local player there.
 pub trait PlayerSpawnPlaceable: PlaceableDefinition {}
 
+/// Static training dummy: hittable, no AI, no spells.
+pub trait DummyPlaceable: PlaceableDefinition {
+    /// Stat profile (HP, armor). Movement and attack should be zero.
+    fn dummy_stats(&self) -> crate::stats::components::StatsBundleData;
+
+    /// Whether this dummy counts as an ally for healing (Life) and UI.
+    /// The default dummy is a hostile sack of HP.
+    fn is_ally(&self) -> bool {
+        false
+    }
+}
+
 /// Hostile or neutral AI creature (goblin, wolf, skeleton, ...).
 ///
 /// The server binding calls `enemy_config()` to read the stats / spells /

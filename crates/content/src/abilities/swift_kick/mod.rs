@@ -13,7 +13,6 @@ use bevymmo_props_macro::base_ability;
     cast_time = 0.0,
     cooldown = 4.0,
     energy_cost = 7.0,
-    statuses = [Slow],
     animation = "boots_swift_kick",
     impact_vfx = "swift_kick_impact",
 )]

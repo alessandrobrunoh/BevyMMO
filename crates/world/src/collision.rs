@@ -8,6 +8,8 @@
 //! All math is identical on server/client to ensure movement prediction matches
 //! authoritative server validation.
 
+use std::collections::HashMap;
+
 use super::manifest::{HeightfieldData, MapManifest, SurfaceKind, WalkableSurface};
 use super::shapes::{aabb_for_shape, CollisionShape};
 
@@ -29,9 +31,14 @@ struct Obstacle {
     max: [f32; 3],
 }
 
+/// Side of one spatial hash cell, in world units.
+const COLLISION_CELL_SIZE: f32 = 8.0;
+
 #[derive(Clone, Debug, Default)]
 pub struct CollisionGrid {
     obstacles: Vec<Obstacle>,
+    /// Obstacle indices overlapping each XZ cell.
+    cells: HashMap<(i32, i32), Vec<u32>>,
 }
 
 /// Axis-aligned bounding box of `shape` at `translation`, scaled about its
@@ -53,11 +60,25 @@ fn scaled_aabb(translation: [f32; 3], scale: [f32; 3], shape: CollisionShape) ->
     Obstacle { min, max }
 }
 
+fn collision_cell(value: f32) -> i32 {
+    (value / COLLISION_CELL_SIZE).floor() as i32
+}
+
+fn circle_hits_aabb(point: [f32; 3], radius: f32, obstacle: &Obstacle) -> bool {
+    if point[1] > obstacle.max[1] + OBSTACLE_Y_TOLERANCE {
+        return false;
+    }
+    let closest_x = point[0].clamp(obstacle.min[0], obstacle.max[0]);
+    let closest_z = point[2].clamp(obstacle.min[2], obstacle.max[2]);
+    let dx = point[0] - closest_x;
+    let dz = point[2] - closest_z;
+    dx * dx + dz * dz <= radius * radius
+}
+
 impl CollisionGrid {
     pub fn build(manifest: &MapManifest) -> Self {
-        let mut obstacles = Vec::new();
+        let mut grid = Self::default();
 
-        // Process blocking props
         for prop in &manifest.props {
             let Some(shape) = prop.collision else {
                 continue;
@@ -65,15 +86,13 @@ impl CollisionGrid {
             if !prop.blocks_movement {
                 continue;
             }
-
-            obstacles.push(scaled_aabb(
+            grid.push_obstacle(scaled_aabb(
                 prop.transform.translation,
                 prop.transform.scale,
                 shape,
             ));
         }
 
-        // Process blocking blockers
         for blocker in &manifest.blockers {
             let Some(transform) = &blocker.transform else {
                 continue;
@@ -84,11 +103,24 @@ impl CollisionGrid {
             if !blocker.blocks_movement {
                 continue;
             }
-
-            obstacles.push(scaled_aabb(transform.translation, transform.scale, shape));
+            grid.push_obstacle(scaled_aabb(transform.translation, transform.scale, shape));
         }
 
-        Self { obstacles }
+        grid
+    }
+
+    fn push_obstacle(&mut self, obstacle: Obstacle) {
+        let index = self.obstacles.len() as u32;
+        let min_x = collision_cell(obstacle.min[0]);
+        let max_x = collision_cell(obstacle.max[0]);
+        let min_z = collision_cell(obstacle.min[2]);
+        let max_z = collision_cell(obstacle.max[2]);
+        for cell_x in min_x..=max_x {
+            for cell_z in min_z..=max_z {
+                self.cells.entry((cell_x, cell_z)).or_default().push(index);
+            }
+        }
+        self.obstacles.push(obstacle);
     }
 
     /// Returns true when a player circle in the X/Z plane intersects a
@@ -104,19 +136,27 @@ impl CollisionGrid {
     /// on the same floor) are still blocked as before, so existing flat-map
     /// behaviour is preserved.
     pub fn is_blocked(&self, point: [f32; 3], radius: f32) -> bool {
-        self.obstacles.iter().any(|obstacle| {
-            // Vertical reject: skip obstacles clearly below the query point.
-            // The tolerance absorbs minor snap drift while still separating
-            // vertically stacked gameplay layers (rock vs bridge).
-            if point[1] > obstacle.max[1] + OBSTACLE_Y_TOLERANCE {
-                return false;
+        if self.obstacles.is_empty() {
+            return false;
+        }
+        let radius = radius.max(0.0);
+        let min_x = collision_cell(point[0] - radius);
+        let max_x = collision_cell(point[0] + radius);
+        let min_z = collision_cell(point[2] - radius);
+        let max_z = collision_cell(point[2] + radius);
+        for cell_x in min_x..=max_x {
+            for cell_z in min_z..=max_z {
+                let Some(indices) = self.cells.get(&(cell_x, cell_z)) else {
+                    continue;
+                };
+                for &index in indices {
+                    if circle_hits_aabb(point, radius, &self.obstacles[index as usize]) {
+                        return true;
+                    }
+                }
             }
-            let closest_x = point[0].clamp(obstacle.min[0], obstacle.max[0]);
-            let closest_z = point[2].clamp(obstacle.min[2], obstacle.max[2]);
-            let dx = point[0] - closest_x;
-            let dz = point[2] - closest_z;
-            dx * dx + dz * dz <= radius * radius
-        })
+        }
+        false
     }
 
     pub fn obstacle_count(&self) -> usize {
@@ -1621,6 +1661,58 @@ mod tests {
             !grid.is_blocked([8.0, 0.0, 5.0], 0.5),
             "Point just outside blocker should not be blocked"
         );
+    }
+
+    #[test]
+    fn a_distant_blocker_does_not_block_the_origin() {
+        use super::super::shapes::CollisionShape;
+        use crate::manifest::{BlockerData, BlockerKind, TransformData};
+
+        let near = BlockerData {
+            id: "near".to_string(),
+            kind: BlockerKind::Box,
+            object: None,
+            transform: Some(TransformData::at(0.0, 1.0, 0.0)),
+            shape: Some(CollisionShape::Box {
+                half_extents: [0.5, 1.0, 0.5],
+            }),
+            blocks_movement: true,
+        };
+        let far = BlockerData {
+            id: "far".to_string(),
+            kind: BlockerKind::Box,
+            object: None,
+            transform: Some(TransformData::at(80.0, 1.0, 80.0)),
+            shape: Some(CollisionShape::Box {
+                half_extents: [0.5, 1.0, 0.5],
+            }),
+            blocks_movement: true,
+        };
+        let manifest = MapManifest {
+            version: 2,
+            map_id: "hash".to_string(),
+            display_name: "Hash".to_string(),
+            bounds: MapBounds {
+                min_x: -10.0,
+                max_x: 90.0,
+                min_z: -10.0,
+                max_z: 90.0,
+            },
+            terrain: Default::default(),
+            props: vec![],
+            world_metrics: Some(WorldMetrics::default()),
+            surfaces: vec![],
+            traversals: vec![],
+            blockers: vec![near, far],
+            test_route: vec![],
+            test_checklist: vec![],
+            mountain_switchback_test: None,
+            distant_plateau_test: None,
+        };
+        let grid = CollisionGrid::build(&manifest);
+        assert!(grid.is_blocked([0.0, 0.0, 0.0], 0.4));
+        assert!(!grid.is_blocked([40.0, 0.0, 40.0], 0.4));
+        assert!(grid.is_blocked([80.0, 0.0, 80.0], 0.4));
     }
 
     /// Regression for the Y-aware `is_blocked` fix.

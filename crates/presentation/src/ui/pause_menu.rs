@@ -1,12 +1,12 @@
 //! Pause overlay: Resume and Return to Main Menu.
 //!
-//! Pure UI overlay: does not mutate `Time`, `FixedUpdate`, or network. The
-//! `InGame <-> Paused` transition is managed by [`crate::ui::systems::toggle_pause`]
-//! (the key configured in `KeyBindings`) and by the buttons themselves.
+//! Pure UI overlay: does not mutate `Time`, `FixedUpdate`, or network. Pause
+//! is a [`PauseOverlay`] sub-state of InGame, managed by
+//! [`crate::ui::systems::toggle_pause`] and by the buttons themselves.
 
 use bevy::prelude::*;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{PauseOverlay, Screen};
 use crate::ui::button::{spawn_button, UiButtonAction};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
@@ -20,7 +20,11 @@ pub struct PauseMenuPlugin;
 impl Plugin for PauseMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_pause_menu);
-        app.add_systems(Update, update_pause_menu_visibility);
+        app.add_systems(
+            Update,
+            update_pause_menu_visibility
+                .run_if(state_changed::<Screen>.or_eager(state_changed::<PauseOverlay>)),
+        );
     }
 }
 
@@ -86,10 +90,10 @@ fn setup_pause_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: R
 }
 
 fn update_pause_menu_visibility(
-    screen: Res<GameScreen>,
+    pause: Option<Res<State<PauseOverlay>>>,
     mut query: Query<&mut Node, With<PauseMenuUi>>,
 ) {
-    let display = if matches!(screen.0, Screen::Paused) {
+    let display = if pause.is_some_and(|pause| *pause.get() == PauseOverlay::On) {
         Display::Flex
     } else {
         Display::None

@@ -39,7 +39,7 @@ impl EnemyPlaceable for GoblinDefinition {
         stats.vital.max_health = 30.0;
 
         let mut spell_hotbar = SpellHotbar::default();
-        spell_hotbar.assign(HotbarSlot::Q, Some(SpellId::new("attack")));
+        spell_hotbar.assign(HotbarSlot::Q, Some(SpellId::new("fireball")));
 
         EnemyConfig {
             stats,

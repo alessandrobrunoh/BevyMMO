@@ -88,7 +88,11 @@ pub struct NotOccludable;
 #[derive(Component, Reflect, Clone)]
 #[reflect(Component)]
 pub struct OccluderFade {
-    /// Clone of the node's material, owned by this entity alone.
+    /// Shared glTF material. Restored when the node is fully opaque so
+    /// identical rocks can instance again.
+    pub shared: Handle<StandardMaterial>,
+    /// Material currently written: `shared` while opaque, a private clone
+    /// while fading.
     pub material: Handle<StandardMaterial>,
     /// Alpha the occluder is heading toward: [`OCCLUDED_ALPHA`] or its
     /// authored opacity.
@@ -155,7 +159,7 @@ pub fn tag_occludables(
     parents: Query<&ChildOf>,
     map_roots: Query<Entity, With<MapSceneVisual>>,
     prop_visuals: Query<Entity, With<MapPropVisual>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    materials: Res<Assets<StandardMaterial>>,
 ) {
     for (entity, name, material) in &unexamined {
         let belongs_to_map = prop_visuals.contains(entity)
@@ -178,15 +182,13 @@ pub fn tag_occludables(
         };
 
         let opaque_alpha = source.base_color.alpha();
-        let clone = materials.add(source);
-
-        info!("Occlusion: tagged {name:?} ({entity:?}) as Occludable (alpha={opaque_alpha})");
+        debug!("Occlusion: tagged {name:?} ({entity:?}) as Occludable (alpha={opaque_alpha})");
 
         commands.entity(entity).insert((
             Occludable,
-            MeshMaterial3d(clone.clone()),
             OccluderFade {
-                material: clone,
+                shared: material.0.clone(),
+                material: material.0.clone(),
                 target: opaque_alpha,
                 current: opaque_alpha,
                 opaque_alpha,
@@ -309,8 +311,9 @@ fn axis_margin(scale: f32) -> f32 {
 /// translucent: leaving every prop in the transparency pass would cost sorting
 /// work for the ~300 props that are opaque on any given frame.
 pub fn animate_occluder_fade(
+    mut commands: Commands,
     time: Res<Time>,
-    mut occluders: Query<&mut OccluderFade>,
+    mut occluders: Query<(Entity, &MeshMaterial3d<StandardMaterial>, &mut OccluderFade)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let step = FADE_RATE_PER_SEC * time.delta_secs();
@@ -318,15 +321,22 @@ pub fn animate_occluder_fade(
         return;
     }
 
-    for mut fade in occluders.iter_mut() {
+    for (entity, handle, mut fade) in occluders.iter_mut() {
         if fade.current == fade.target {
             continue;
         }
 
+        let fading = fade.target < fade.opaque_alpha - f32::EPSILON;
+        if fading && fade.material == fade.shared {
+            if let Some(source) = materials.get(&fade.shared).cloned() {
+                let clone = materials.add(source);
+                fade.material = clone.clone();
+                commands.entity(entity).insert(MeshMaterial3d(clone));
+            }
+        }
+
         let delta = (fade.target - fade.current).clamp(-step, step);
         let next = fade.current + delta;
-        // Snap once within half a step so the equality check above can retire
-        // this entity instead of creeping toward the target forever.
         fade.current = if (fade.target - next).abs() < step * 0.5 {
             fade.target
         } else {
@@ -343,6 +353,15 @@ pub fn animate_occluder_fade(
         } else {
             AlphaMode::Blend
         };
+
+        if current >= fade.opaque_alpha && fade.material != fade.shared {
+            fade.material = fade.shared.clone();
+            if handle.0 != fade.shared {
+                commands
+                    .entity(entity)
+                    .insert(MeshMaterial3d(fade.shared.clone()));
+            }
+        }
     }
 }
 
@@ -369,9 +388,11 @@ mod tests {
                 Transform::from_translation(translation),
                 GlobalTransform::from_translation(translation),
                 Visibility::Inherited,
+                MeshMaterial3d(material.clone()),
                 Occludable,
                 OccluderFade {
-                    material,
+                    shared: material.clone(),
+                    material: material.clone(),
                     target: 1.0,
                     current: 1.0,
                     opaque_alpha: 1.0,

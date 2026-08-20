@@ -14,7 +14,9 @@ pub fn step(ctx: &ReducerContext, dt: f32) {
         log::error!("default map is unavailable; skipping movement step");
         return;
     };
-    let max_step_height = map.manifest.get_world_metrics().max_step_height;
+    let metrics = map.manifest.get_world_metrics();
+    let max_step_height = metrics.max_step_height;
+    let collision_radius = metrics.player_radius;
 
     // A reducer must not mutate a table while iterating it. Snapshotting also
     // makes every entity's step observe the same pre-movement world state.
@@ -42,6 +44,7 @@ pub fn step(ctx: &ReducerContext, dt: f32) {
             &map.surfaces,
             &map.collision,
             max_step_height,
+            collision_radius,
         ) {
             TerrainStep::Moved(position) => (position, Some(target), EntityStateRow::Moving),
             // Clearing the target is what tells the client to stop predicting.

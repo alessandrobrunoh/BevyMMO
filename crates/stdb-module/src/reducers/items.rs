@@ -42,31 +42,29 @@ use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use bevymmo_domain::abilities::inscription::{
-    validate_weapon_inscriptions, ArmorInscription, Inscription, SecondaryWord, SlotInscription,
-    WeaponInscription,
+    ArmorInscription, SecondaryWord, SlotInscription, WeaponInscription,
 };
 use bevymmo_domain::abilities::{
     resolve_active_ability, AbilityId, AbilitySlot, AncientWordId, AncientWordRegistry,
-    BaseAbilityRegistry, EssenceId,
-    EssenceRegistry, ModifierId, ModifierRegistry, RootWordId, RootWordRegistry,
+    BaseAbilityRegistry, RootWordId, RootWordRegistry,
 };
 use bevymmo_domain::items::components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY};
 use bevymmo_domain::items::definition::EquipRequirement;
-use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId};
+use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId, STARTER_WEAPON_ITEM_ID};
 use bevymmo_domain::items::registry::{ItemId, ItemRegistry};
 use bevymmo_domain::items::{compute_available_choices, AvailableSpellChoices};
 use bevymmo_domain::spells::components::{HotbarSlot, SpellHotbar};
 use bevymmo_domain::spells::registry::SpellId;
 use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
+use crate::reducers::lifecycle::caller_character;
 use crate::rows::{
     equipment_from_rows, equipment_to_rows, inventory_from_rows, inventory_to_rows,
-    known_ancient_language_from_rows, known_glyphs_from_rows, HotbarRow,
+    known_ancient_language_from_rows, HotbarRow,
 };
-use crate::reducers::lifecycle::caller_character;
 use crate::tables::{
-    equipment, game_entity, hotbar, inventory, known_ancient_language, known_glyphs, player,
-    EntityKindRow, EquipmentTable, Hotbar, InventoryTable,
+    equipment, game_entity, hotbar, inventory, known_ancient_language, player, EntityKindRow,
+    EquipmentTable, Hotbar, InventoryTable,
 };
 
 // ---------------------------------------------------------------------------
@@ -93,16 +91,6 @@ fn item_registry() -> &'static ItemRegistry {
 fn ability_registry() -> &'static BaseAbilityRegistry {
     static REGISTRY: OnceLock<BaseAbilityRegistry> = OnceLock::new();
     REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
-}
-
-fn essence_registry() -> &'static EssenceRegistry {
-    static REGISTRY: OnceLock<EssenceRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::content::essences::default_essences)
-}
-
-fn modifier_registry() -> &'static ModifierRegistry {
-    static REGISTRY: OnceLock<ModifierRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::content::modifiers::default_modifiers)
 }
 
 fn ancient_word_registry() -> &'static AncientWordRegistry {
@@ -278,6 +266,10 @@ pub fn claim_npc_item(
         return Err("you are too far from that NPC".to_string());
     }
 
+    if !is_greeter_stock(&item_id) {
+        return Err(format!("unknown item {item_id:?}"));
+    }
+
     grant_item(ctx, character.character_id, &item_id)?;
     Ok(())
 }
@@ -296,11 +288,10 @@ pub fn destroy_item(ctx: &ReducerContext, instance_id: u64) -> Result<(), String
     let character_id = caller_character(ctx)?.character_id;
     let mut inventory = load_inventory(ctx, character_id)?;
     let instance_id = ItemInstanceId(instance_id);
-    let Some(slot) = inventory
-        .slots
-        .iter()
-        .position(|item| item.as_ref().is_some_and(|item| item.instance_id == instance_id))
-    else {
+    let Some(slot) = inventory.slots.iter().position(|item| {
+        item.as_ref()
+            .is_some_and(|item| item.instance_id == instance_id)
+    }) else {
         return Err("item instance is not in your inventory".to_string());
     };
 
@@ -377,82 +368,6 @@ pub fn assign_hotbar_spell(
     Ok(())
 }
 
-/// Inscribes one slot (`"primary"`, `"secondary"`, `"ultimate"`) of the equipped
-/// Eidolon weapon.
-///
-/// Rejects wholesale — never partially — when there is no Eidolon weapon
-/// equipped, when the character does not know one of the requested Glifi, when a
-/// Modificatore or Parola Antica does not match the *selected* gesture's tags,
-/// or when the whole Incisione would exceed the weapon's Capacità Runica. This
-/// is `validate_weapon_inscriptions` doing the work, exactly as in
-/// `handle_update_inscription_requests`; the only thing that moved is where the
-/// registries come from.
-#[reducer]
-pub fn set_inscription(
-    ctx: &ReducerContext,
-    slot: String,
-    essence: Option<String>,
-    modifiers: Vec<String>,
-    ancient_word: Option<String>,
-) -> Result<(), String> {
-    let character_id = caller_character(ctx)?.character_id;
-    let target = parse_ability_slot(&slot)?;
-    let mut equipment = load_equipment(ctx, character_id)?;
-
-    let weapon = equipment
-        .get(EquipSlot::Weapon)
-        .clone()
-        .ok_or_else(|| "no weapon equipped".to_string())?;
-    let item = item_registry()
-        .get(&weapon.item_id)
-        .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let (Some(abilities), Some(profile)) = (crate::sim::spells::ability_loadout_for_item(item.as_ref()), item.rune_profile()) else {
-        return Err(format!(
-            "{:?} is not an Eidolon weapon and cannot be inscribed",
-            weapon.item_id.as_str()
-        ));
-    };
-
-    let candidate_slot = Inscription {
-        essence: essence.map(EssenceId::new),
-        modifiers: modifiers.into_iter().map(ModifierId::new).collect(),
-        ancient_word: ancient_word.map(AncientWordId::new),
-    };
-
-    // The Vocabolario is per character and survives losing the weapon, so it is
-    // checked against `known_glyphs`, not against anything on the item.
-    let known = load_known_glyphs(ctx, character_id)?;
-    if !known.fully_knows(&candidate_slot) {
-        return Err("that Incisione uses a Glifo you do not know".to_string());
-    }
-
-    let mut inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-    *inscriptions.get_mut(target) = candidate_slot;
-
-    // Capacità Runica is shared across the three slots, so the whole set has to
-    // be validated even though only one slot changed.
-    validate_weapon_inscriptions(
-        &inscriptions,
-        abilities,
-        &weapon.ability_selection,
-        profile,
-        ability_registry(),
-        essence_registry(),
-        modifier_registry(),
-        ancient_word_registry(),
-    )
-    .map_err(|reason| format!("Incisione rejected: {reason:?}"))?;
-
-    let mut updated = weapon;
-    updated.inscriptions = Some(inscriptions);
-    *equipment.get_mut(EquipSlot::Weapon) = Some(updated);
-    store_equipment(ctx, character_id, &equipment);
-
-    // Nothing derived changes: an Incisione alters what a gesture manifests, not
-    // the item's passive stat bonuses nor which spells it offers.
-    Ok(())
-}
-
 /// Writes the new RootWord-based inscription for the equipped weapon.
 ///
 /// This reducer is additive to [`set_inscription`]. It persists only the new
@@ -486,8 +401,16 @@ pub fn set_root_inscription(
         .known_ancient_language()
         .character_id()
         .find(&character_id)
-        .map(|row| known_ancient_language_from_rows(&row.root_words, &row.ancient_words, &row.base_abilities))
-        .ok_or_else(|| "ancient language has not been initialized for this character".to_string())?;
+        .map(|row| {
+            known_ancient_language_from_rows(
+                &row.root_words,
+                &row.ancient_words,
+                &row.base_abilities,
+            )
+        })
+        .ok_or_else(|| {
+            "ancient language has not been initialized for this character".to_string()
+        })?;
 
     let root_id = root_word.map(RootWordId::new);
     let root_cost = match &root_id {
@@ -510,11 +433,17 @@ pub fn set_root_inscription(
         (AbilitySlot::Ultimate, ultimate_words, 1usize),
     ];
     let mut total_cost = root_cost;
-    let mut slots = [SlotInscription::default(), SlotInscription::default(), SlotInscription::default()];
+    let mut slots = [
+        SlotInscription::default(),
+        SlotInscription::default(),
+        SlotInscription::default(),
+    ];
 
     for (index, (slot, word_ids, max_words)) in slot_inputs.into_iter().enumerate() {
         if word_ids.len() > max_words {
-            return Err(format!("{slot:?} accepts at most {max_words} Ancient Words"));
+            return Err(format!(
+                "{slot:?} accepts at most {max_words} Ancient Words"
+            ));
         }
         let ability_id = resolve_active_ability(slot, abilities, &weapon.ability_selection)
             .ok_or_else(|| format!("no ability offered for {slot:?}"))?;
@@ -538,7 +467,10 @@ pub fn set_root_inscription(
                 .ok_or_else(|| format!("unknown Ancient Word {:?}", id.as_str()))?;
             let metadata = word.metadata();
             if !metadata.is_compatible_with(ability.tags()) {
-                return Err(format!("Ancient Word {:?} is incompatible with {slot:?}", id.as_str()));
+                return Err(format!(
+                    "Ancient Word {:?} is incompatible with {slot:?}",
+                    id.as_str()
+                ));
             }
             if let Some(group) = metadata.exclusive_group {
                 if !groups.insert(group) {
@@ -548,11 +480,16 @@ pub fn set_root_inscription(
             total_cost += metadata.rune_cost;
             words.push(SecondaryWord::new(id));
         }
-        slots[index] = SlotInscription { secondary_words: words };
+        slots[index] = SlotInscription {
+            secondary_words: words,
+        };
     }
 
     if total_cost > profile.capacity {
-        return Err(format!("rune capacity exceeded: {total_cost} / {}", profile.capacity));
+        return Err(format!(
+            "rune capacity exceeded: {total_cost} / {}",
+            profile.capacity
+        ));
     }
 
     let mut updated = weapon;
@@ -581,7 +518,10 @@ pub fn set_armor_inscription(
 ) -> Result<(), String> {
     let character_id = caller_character(ctx)?.character_id;
     let target = parse_equip_slot(&slot)?;
-    if !matches!(target, EquipSlot::Helmet | EquipSlot::Armor | EquipSlot::Shoes) {
+    if !matches!(
+        target,
+        EquipSlot::Helmet | EquipSlot::Armor | EquipSlot::Shoes
+    ) {
         return Err("armor inscriptions are only valid for helmet, armor or shoes".to_string());
     }
 
@@ -593,8 +533,13 @@ pub fn set_armor_inscription(
     let item = item_registry()
         .get(&item_instance.item_id)
         .ok_or_else(|| format!("unknown item {:?}", item_instance.item_id.as_str()))?;
-    let abilities = crate::sim::spells::ability_loadout_for_item(item.as_ref())
-        .ok_or_else(|| format!("{:?} has no armor abilities", item_instance.item_id.as_str()))?;
+    let abilities =
+        crate::sim::spells::ability_loadout_for_item(item.as_ref()).ok_or_else(|| {
+            format!(
+                "{:?} has no armor abilities",
+                item_instance.item_id.as_str()
+            )
+        })?;
     let profile = item
         .rune_profile()
         .ok_or_else(|| format!("{:?} has no rune profile", item_instance.item_id.as_str()))?;
@@ -651,14 +596,20 @@ pub fn set_armor_inscription(
             .ok_or_else(|| format!("unknown Ancient Word {:?}", id.as_str()))?;
         let metadata = word.metadata();
         if !metadata.is_compatible_with(ability.tags()) {
-            return Err(format!("Ancient Word {:?} is incompatible with armor", id.as_str()));
+            return Err(format!(
+                "Ancient Word {:?} is incompatible with armor",
+                id.as_str()
+            ));
         }
         total_cost += metadata.rune_cost;
         words.push(SecondaryWord::new(id));
     }
 
     if total_cost > profile.capacity {
-        return Err(format!("rune capacity exceeded: {total_cost} / {}", profile.capacity));
+        return Err(format!(
+            "rune capacity exceeded: {total_cost} / {}",
+            profile.capacity
+        ));
     }
 
     let mut updated = item_instance;
@@ -695,7 +646,7 @@ pub fn set_ability_selection(
     let item = item_registry()
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
-    let (Some(abilities), Some(profile)) = (crate::sim::spells::ability_loadout_for_item(item.as_ref()), item.rune_profile()) else {
+    let Some(abilities) = crate::sim::spells::ability_loadout_for_item(item.as_ref()) else {
         return Err(format!(
             "{:?} offers no gestures to choose from",
             weapon.item_id.as_str()
@@ -713,25 +664,8 @@ pub fn set_ability_selection(
     let mut selection = weapon.ability_selection.clone();
     selection.assign(target, Some(requested));
 
-    let mut inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-    if validate_weapon_inscriptions(
-        &inscriptions,
-        abilities,
-        &selection,
-        profile,
-        ability_registry(),
-        essence_registry(),
-        modifier_registry(),
-        ancient_word_registry(),
-    )
-    .is_err()
-    {
-        *inscriptions.get_mut(target) = Inscription::default();
-    }
-
     let mut updated = weapon;
     updated.ability_selection = selection;
-    updated.inscriptions = Some(inscriptions);
     *equipment.get_mut(EquipSlot::Weapon) = Some(updated);
     store_equipment(ctx, character_id, &equipment);
     Ok(())
@@ -822,6 +756,12 @@ fn available_choices(equipment: &Equipment) -> AvailableSpellChoices {
 // Shared API: minting items
 // ---------------------------------------------------------------------------
 
+fn is_greeter_stock(item_id: &str) -> bool {
+    bevymmo_domain::content::items::greeter_stock()
+        .iter()
+        .any(|id| *id == item_id)
+}
+
 /// Puts a freshly minted esemplare of `item_id` into the first free inventory
 /// slot, returning the slot it landed in.
 ///
@@ -850,6 +790,36 @@ pub fn grant_item(ctx: &ReducerContext, character_id: Uuid, item_id: &str) -> Re
     inventory.slots[free] = Some(instance);
     store_inventory(ctx, character_id, &inventory);
     Ok(free as u8)
+}
+
+/// Moves the granted starter staff from inventory onto the weapon slot and
+/// inscribes the default Root Word. Called from `join` after both tables exist.
+pub(crate) fn equip_granted_starter_staff(
+    ctx: &ReducerContext,
+    character_id: Uuid,
+    entity_id: u64,
+) -> Result<(), String> {
+    let mut inventory = load_inventory(ctx, character_id)?;
+    let slot = inventory
+        .slots
+        .iter()
+        .position(|entry| {
+            entry
+                .as_ref()
+                .is_some_and(|item| item.item_id.as_str() == STARTER_WEAPON_ITEM_ID)
+        })
+        .ok_or_else(|| "starter weapon was not granted".to_string())?;
+    let mut instance = inventory.slots[slot]
+        .take()
+        .expect("slot was just found occupied");
+    instance.inscribe_starter_root_word();
+
+    let mut equipment = load_equipment(ctx, character_id)?;
+    *equipment.get_mut(EquipSlot::Weapon) = Some(instance);
+    store_inventory(ctx, character_id, &inventory);
+    store_equipment(ctx, character_id, &equipment);
+    crate::sim::combat::recalculate_effective_stats(ctx, entity_id);
+    Ok(())
 }
 
 /// The next free `ItemInstanceId`: one past the highest one stored anywhere.
@@ -941,18 +911,6 @@ fn store_equipment(ctx: &ReducerContext, character_id: Uuid, equipment: &Equipme
     });
 }
 
-fn load_known_glyphs(
-    ctx: &ReducerContext,
-    character_id: Uuid,
-) -> Result<bevymmo_domain::abilities::KnownGlyphs, String> {
-    ctx.db
-        .known_glyphs()
-        .character_id()
-        .find(&character_id)
-        .map(|row| known_glyphs_from_rows(&row.essences, &row.modifiers, &row.ancient_words))
-        .ok_or_else(|| "no character for this identity; call `join` first".to_string())
-}
-
 // ---------------------------------------------------------------------------
 // Parsing the string parameters
 // ---------------------------------------------------------------------------
@@ -995,5 +953,29 @@ fn parse_ability_slot(name: &str) -> Result<AbilitySlot, String> {
         other => Err(format!(
             "unknown ability slot {other:?}; expected primary, secondary or ultimate"
         )),
+    }
+}
+
+#[cfg(test)]
+mod greeter_stock_tests {
+    use super::*;
+
+    #[test]
+    fn greeter_accepts_the_four_alpha_weapons() {
+        assert!(is_greeter_stock("bow"));
+        assert!(is_greeter_stock("sword"));
+        assert!(is_greeter_stock("hammer"));
+        assert!(is_greeter_stock("mage_staff"));
+        assert!(is_greeter_stock("simple_helm"));
+        assert!(is_greeter_stock("simple_cuirass"));
+        assert!(is_greeter_stock("simple_buckler"));
+    }
+
+    #[test]
+    fn greeter_rejects_retired_and_unknown_ids() {
+        assert!(!is_greeter_stock("longbow"));
+        assert!(!is_greeter_stock("conduit_staff_t4"));
+        assert!(!is_greeter_stock("arcane_focus"));
+        assert!(!is_greeter_stock("not_an_item"));
     }
 }

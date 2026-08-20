@@ -29,6 +29,17 @@ pub enum TargetingMode {
     GroundAoe,
 }
 
+impl TargetingMode {
+    /// Whether a leftover selected unit is range-checked before the cast.
+    ///
+    /// The HUD always has a current target. Only a homing / single-entity
+    /// spell consumes it; an AoE cone must not fail because a dummy 20 m
+    /// away is still selected.
+    pub fn range_checks_selected_entity(self) -> bool {
+        matches!(self, Self::SingleEntity)
+    }
+}
+
 /// Classifies the timing model of a spell for the cast pipeline.
 ///
 /// The value is derived in [`Spell::cast_kind`] from [`SpellConfig`], but can
@@ -321,6 +332,15 @@ pub struct SpellCastContext<'a> {
     pub pending_visuals: Vec<SpellVisualEffect>,
 }
 
+fn scale_effect_spec(effect: &mut EffectSpec, fraction: f32) {
+    match effect {
+        EffectSpec::Damage(damage) => damage.amount *= fraction,
+        EffectSpec::Heal(heal) => heal.amount *= fraction,
+        EffectSpec::ApplyStatus(status) => status.potency *= fraction,
+        EffectSpec::Cleanse(_) | EffectSpec::Purge(_) => {}
+    }
+}
+
 impl<'a> SpellCastContext<'a> {
     /// Create a new spell cast context.
     pub fn new(
@@ -357,11 +377,36 @@ impl<'a> SpellCastContext<'a> {
         self.emit_effect(target, EffectSpec::Purge(effect));
     }
 
-    fn emit_effect(&mut self, target: EntityId, effect: EffectSpec) {
+    pub fn emit_effect(&mut self, target: EntityId, effect: EffectSpec) {
         let mut context = EffectContext::new(target);
         context.source = Some(self.caster);
         self.pending_effects
             .push(EffectBundle::single(context, effect));
+    }
+
+    /// Scales damage, healing and status potency already queued for this cast.
+    ///
+    /// Used by hold-to-charge abilities so a tap is weaker than a full charge.
+    pub fn scale_outgoing_potency(&mut self, fraction: f32) {
+        let fraction = fraction.clamp(0.0, 1.0);
+        if (fraction - 1.0).abs() <= f32::EPSILON {
+            return;
+        }
+        for bundle in &mut self.pending_effects {
+            for effect in &mut bundle.effects {
+                scale_effect_spec(effect, fraction);
+            }
+        }
+        for projectile in &mut self.pending_projectiles {
+            for effect in &mut projectile.effects {
+                scale_effect_spec(effect, fraction);
+            }
+        }
+        for region in &mut self.pending_aoes {
+            for effect in &mut region.effects {
+                scale_effect_spec(effect, fraction);
+            }
+        }
     }
 
     /// Emit a unified status application request.
@@ -417,6 +462,54 @@ impl<'a> SpellCastContext<'a> {
         spell_id: impl Into<String>,
         effects: Vec<EffectSpec>,
     ) {
+        self.emit_aoe_with_targeting(
+            center,
+            radius,
+            shape,
+            duration_seconds,
+            initial_delay_seconds,
+            spell_id,
+            effects,
+            AoeTargeting::default(),
+        );
+    }
+
+    /// Emit an offensive AoE that never applies its effects to the caster.
+    #[allow(clippy::too_many_arguments)]
+    pub fn emit_aoe_excluding_caster(
+        &mut self,
+        center: Vec3,
+        radius: f32,
+        shape: AoeShape,
+        duration_seconds: f32,
+        initial_delay_seconds: f32,
+        spell_id: impl Into<String>,
+        effects: Vec<EffectSpec>,
+    ) {
+        self.emit_aoe_with_targeting(
+            center,
+            radius,
+            shape,
+            duration_seconds,
+            initial_delay_seconds,
+            spell_id,
+            effects,
+            AoeTargeting::ExcludeCaster,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit_aoe_with_targeting(
+        &mut self,
+        center: Vec3,
+        radius: f32,
+        shape: AoeShape,
+        duration_seconds: f32,
+        initial_delay_seconds: f32,
+        spell_id: impl Into<String>,
+        effects: Vec<EffectSpec>,
+        targeting: AoeTargeting,
+    ) {
         self.pending_aoes.push(AoeSpawnRequest {
             center,
             radius,
@@ -425,7 +518,7 @@ impl<'a> SpellCastContext<'a> {
             initial_delay_seconds,
             spell_id: spell_id.into(),
             effects,
-            targeting: AoeTargeting::default(),
+            targeting,
         });
     }
 
@@ -663,8 +756,17 @@ mod tests {
         let mut ctx = SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
 
         ctx.emit_status(target, StatusId::new("stun"));
+        ctx.emit_effect(
+            target,
+            EffectSpec::Damage(crate::effects::DamageEffect { amount: 100.0 }),
+        );
+        ctx.scale_outgoing_potency(0.5);
+        match ctx.pending_effects[1].effects[0] {
+            EffectSpec::Damage(damage) => assert!((damage.amount - 50.0).abs() < f32::EPSILON),
+            _ => panic!("expected damage"),
+        }
 
-        assert_eq!(ctx.pending_effects.len(), 1);
+        assert_eq!(ctx.pending_effects.len(), 2);
         assert!(matches!(
             ctx.pending_effects[0].effects[0],
             EffectSpec::ApplyStatus(_)
@@ -750,5 +852,41 @@ mod tests {
         );
 
         assert_eq!(ctx.pending_aoes[0].shape, AoeShape::Circle);
+    }
+
+    #[test]
+    fn offensive_aoe_excludes_the_caster() {
+        use crate::effects::EffectSpec;
+        use crate::stats::components::CombatStats;
+
+        let combat = CombatStats {
+            attack_power: 0.0,
+            armor: 0.0,
+        };
+        let caster = EntityId::new(1);
+        let mut ctx = SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
+
+        ctx.emit_aoe_excluding_caster(
+            Vec3::ZERO,
+            3.0,
+            AoeShape::Circle,
+            0.0,
+            0.0,
+            "offensive_test",
+            vec![EffectSpec::Damage(crate::effects::DamageEffect {
+                amount: 1.0,
+            })],
+        );
+
+        assert_eq!(ctx.pending_aoes[0].targeting, AoeTargeting::ExcludeCaster);
+        assert!(!ctx.pending_aoes[0].targeting.allows(caster, caster));
+    }
+
+    #[test]
+    fn only_single_entity_spells_range_check_a_selected_unit() {
+        assert!(TargetingMode::SingleEntity.range_checks_selected_entity());
+        assert!(!TargetingMode::SelfCentered.range_checks_selected_entity());
+        assert!(!TargetingMode::GroundAoe.range_checks_selected_entity());
+        assert!(!TargetingMode::DirectionalLine.range_checks_selected_entity());
     }
 }

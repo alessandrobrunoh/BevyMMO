@@ -85,7 +85,6 @@ pub fn spawn_for_ability(
     ability: &ArcBaseAbility,
 ) {
     let color = ability_color(effect.spell_id.as_str());
-    let params = ability.base_params();
     let delay = ability.impact_delay();
 
     match ability.geometry() {
@@ -104,16 +103,12 @@ pub fn spawn_for_ability(
             );
         }
         AbilityGeometry::Cone { .. } | AbilityGeometry::Circle { .. } => {
-            let radius = ability.impact_radius(&params).max(0.5);
-            spawn_ground_ring(
-                commands,
-                meshes,
-                materials,
-                effect.start,
-                radius,
-                color,
-                delay,
+            let spec =
+                crate::spells::ability_vfx::AbilityVfxSpec::from_ability(effect, ability.as_ref());
+            crate::spells::ability_vfx::spawn_matching_footprint(
+                commands, meshes, materials, &spec, color,
             );
+            let radius = spec.radius.max(0.5);
             if delay <= 0.0 {
                 spawn_burst(
                     commands,
@@ -198,6 +193,7 @@ fn spawn_burst(
     ));
 }
 
+#[allow(dead_code)]
 fn spawn_ground_ring(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,

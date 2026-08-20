@@ -704,20 +704,18 @@ impl AbilitiesDef {
     }
 }
 
-/// Parsed `rune_profile(capacity = ..., stability = ..., affinity = ...)`.
+/// Parsed `rune_profile(capacity = ..., stability = ...)`.
 /// Required alongside `abilities(...)` — un'arma "Eidolon" senza profilo
 /// runico non potrebbe mai essere incisa.
 struct RuneProfileDef {
     capacity: LitInt,
     stability: LitFloat,
-    affinity: Option<Ident>,
 }
 
 impl RuneProfileDef {
     fn parse_from(content: ParseStream) -> syn::Result<Self> {
         let mut capacity = None;
         let mut stability = None;
-        let mut affinity = None;
 
         while !content.is_empty() {
             let key: Ident = content.parse()?;
@@ -725,11 +723,13 @@ impl RuneProfileDef {
             match key.to_string().as_str() {
                 "capacity" => capacity = Some(content.parse::<LitInt>()?),
                 "stability" => stability = Some(content.parse::<LitFloat>()?),
-                "affinity" => affinity = Some(content.parse::<Ident>()?),
+
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in rune_profile(...) (expected capacity, stability, affinity)"),
+                        format!(
+                        "unknown key `{other}` in rune_profile(...) (expected capacity, stability)"
+                    ),
                     ))
                 }
             }
@@ -745,7 +745,6 @@ impl RuneProfileDef {
                 .ok_or_else(|| content.error("rune_profile(...) requires `capacity = ...`"))?,
             stability: stability
                 .ok_or_else(|| content.error("rune_profile(...) requires `stability = ...`"))?,
-            affinity,
         })
     }
 }
@@ -966,20 +965,12 @@ impl ItemDef {
         let rune_profile_method = self.rune_profile.as_ref().map(|profile| {
             let capacity = &profile.capacity;
             let stability = &profile.stability;
-            let affinity_tokens = match &profile.affinity {
-                Some(essence_ident) => {
-                    let essence_id_lit = essence_ident.to_string();
-                    quote! { Some(crate::abilities::EssenceId::new(#essence_id_lit)) }
-                }
-                None => quote! { None },
-            };
             quote! {
                 fn rune_profile(&self) -> Option<&crate::abilities::RuneProfile> {
                     static PROFILE: std::sync::OnceLock<crate::abilities::RuneProfile> = std::sync::OnceLock::new();
                     Some(PROFILE.get_or_init(|| crate::abilities::RuneProfile {
                         capacity: #capacity,
                         stability: #stability,
-                        affinity: #affinity_tokens,
                     }))
                 }
             }
@@ -2152,6 +2143,8 @@ struct AncientWordDef {
     id: LitStr,
     name: LitStr,
     tag: Ident,
+    /// Full required-tag list when `tags = [...]` is set; otherwise just `tag`.
+    required_tags: Vec<Ident>,
     rune_cost: LitInt,
 }
 
@@ -2160,6 +2153,7 @@ impl Parse for AncientWordDef {
         let mut id = None;
         let mut name = None;
         let mut tag = None;
+        let mut required_tags = Vec::new();
         let mut rune_cost = None;
 
         while !input.is_empty() {
@@ -2169,11 +2163,17 @@ impl Parse for AncientWordDef {
                 "id" => id = Some(input.parse::<LitStr>()?),
                 "name" => name = Some(input.parse::<LitStr>()?),
                 "tag" => tag = Some(input.parse::<Ident>()?),
+                "tags" => {
+                    let content;
+                    bracketed!(content in input);
+                    let list: Punctuated<Ident, Token![,]> = Punctuated::parse_terminated(&content)?;
+                    required_tags = list.into_iter().collect();
+                }
                 "rune_cost" => rune_cost = Some(input.parse::<LitInt>()?),
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in #[ancient_word(...)] (expected id, name, tag, rune_cost)"),
+                        format!("unknown key `{other}` in #[ancient_word(...)] (expected id, name, tag, tags, rune_cost)"),
                     ))
                 }
             }
@@ -2191,6 +2191,7 @@ impl Parse for AncientWordDef {
             tag: tag.ok_or_else(|| {
                 input.error("#[ancient_word(...)] requires `tag = ...` (an AbilityTag)")
             })?,
+            required_tags,
             rune_cost: rune_cost
                 .ok_or_else(|| input.error("#[ancient_word(...)] requires `rune_cost = ...`"))?,
         })
@@ -2210,6 +2211,11 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name_lit = &def.name;
     let tag = &def.tag;
     let rune_cost = &def.rune_cost;
+    let required_tags = if def.required_tags.is_empty() {
+        vec![tag.clone()]
+    } else {
+        def.required_tags.clone()
+    };
 
     let expanded = quote! {
         #input
@@ -2230,6 +2236,17 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             fn rune_cost(&self) -> u32 {
                 #rune_cost
+            }
+            fn metadata(&self) -> crate::abilities::AncientWordMetadata {
+                crate::abilities::AncientWordMetadata {
+                    display_name: #name_lit,
+                    required_tags: vec![#(crate::abilities::AbilityTag::#required_tags),*],
+                    forbidden_tags: Vec::new(),
+                    exclusive_group: None,
+                    phase: 0,
+                    visual_priority: 0,
+                    rune_cost: #rune_cost,
+                }
             }
             fn post_process(
                 &self,

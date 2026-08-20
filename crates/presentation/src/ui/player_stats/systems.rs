@@ -7,7 +7,7 @@ use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats
 use bevymmo_gameplay::stats::modifiers::ActiveStatModifiers;
 use bevymmo_network::network::protocol::PlayerId;
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::Screen;
 
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
@@ -42,7 +42,7 @@ pub fn setup_player_stats(mut commands: Commands, theme: Res<UiTheme>) {
 }
 
 pub fn update_player_stats(
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     client_config: Option<Res<ClientConnectionConfig>>,
 
     player_query: Query<(
@@ -61,7 +61,7 @@ pub fn update_player_stats(
         return;
     };
 
-    if !matches!(screen.0, Screen::InGame | Screen::Paused) {
+    if *screen.get() != Screen::InGame {
         root.display = Display::None;
         return;
     }
@@ -100,9 +100,10 @@ fn format_stats(
 ) -> String {
     let move_speed = displayed_movement_speed(movement.speed, modifiers);
     format!(
-        "HP: {}/{}\nMax Mana: {}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)\nAttack Power: {}\nMove Speed: {:.2}",
+        "HP: {}/{}\nMana: {}/{}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)\nAttack Power: {}\nMove Speed: {:.2}",
         format_value(vital.current_health),
         format_value(vital.max_health),
+        format_value(vital.current_mana),
         format_value(vital.max_mana),
         vital.mana_regeneration,
         format_value(combat.armor),

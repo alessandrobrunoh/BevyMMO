@@ -14,20 +14,19 @@
 //! could not see inside them. These are real columns, so `spacetime sql` can.
 
 use bevymmo_domain::abilities::inscription::{
-    AbilityInscription, ArmorInscription, Inscription, SecondaryWord, SlotInscription,
-    WeaponInscription, WeaponInscriptions,
+    AbilityInscription, ArmorInscription, SecondaryWord, SlotInscription, WeaponInscription,
 };
-use bevymmo_domain::abilities::known_glyphs::{KnownAncientLanguage, KnownGlyphs};
+use bevymmo_domain::abilities::known_glyphs::KnownAncientLanguage;
 use bevymmo_domain::abilities::root_word::RootWordId;
 use bevymmo_domain::abilities::weapon_abilities::AbilitySelection;
-use bevymmo_domain::abilities::{AbilityId, AncientWordId, EssenceId, ModifierId};
+use bevymmo_domain::abilities::{AbilityId, AncientWordId};
+use bevymmo_domain::effects::{ApplyStatusEffect, EffectSpec};
 use bevymmo_domain::items::components::{Equipment, Inventory};
 use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId};
 use bevymmo_domain::items::registry::ItemId;
 use bevymmo_domain::items::EquipSlot;
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
-use bevymmo_domain::effects::{ApplyStatusEffect, EffectSpec};
 use bevymmo_domain::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
 use glam::Vec3;
 use spacetimedb::SpacetimeType;
@@ -200,6 +199,7 @@ impl From<StatsRow> for StatsBundleData {
             vital: VitalStats {
                 current_health: s.current_health,
                 max_health: s.max_health,
+                current_mana: s.max_mana,
                 max_mana: s.max_mana,
                 mana_regeneration: s.mana_regeneration,
             },
@@ -210,60 +210,6 @@ impl From<StatsRow> for StatsBundleData {
             movement: MovementStats {
                 speed: s.movement_speed,
             },
-        }
-    }
-}
-
-#[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
-pub struct InscriptionRow {
-    pub essence: Option<String>,
-    pub modifiers: Vec<String>,
-    pub ancient_word: Option<String>,
-}
-
-impl From<&Inscription> for InscriptionRow {
-    fn from(i: &Inscription) -> Self {
-        Self {
-            essence: i.essence.as_ref().map(|e| e.as_str().to_string()),
-            modifiers: i.modifiers.iter().map(|m| m.as_str().to_string()).collect(),
-            ancient_word: i.ancient_word.as_ref().map(|w| w.as_str().to_string()),
-        }
-    }
-}
-
-impl From<&InscriptionRow> for Inscription {
-    fn from(i: &InscriptionRow) -> Self {
-        Inscription {
-            essence: i.essence.clone().map(EssenceId::new),
-            modifiers: i.modifiers.iter().cloned().map(ModifierId::new).collect(),
-            ancient_word: i.ancient_word.clone().map(AncientWordId::new),
-        }
-    }
-}
-
-#[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
-pub struct WeaponInscriptionsRow {
-    pub primary: InscriptionRow,
-    pub secondary: InscriptionRow,
-    pub ultimate: InscriptionRow,
-}
-
-impl From<&WeaponInscriptions> for WeaponInscriptionsRow {
-    fn from(w: &WeaponInscriptions) -> Self {
-        Self {
-            primary: (&w.primary).into(),
-            secondary: (&w.secondary).into(),
-            ultimate: (&w.ultimate).into(),
-        }
-    }
-}
-
-impl From<&WeaponInscriptionsRow> for WeaponInscriptions {
-    fn from(w: &WeaponInscriptionsRow) -> Self {
-        WeaponInscriptions {
-            primary: (&w.primary).into(),
-            secondary: (&w.secondary).into(),
-            ultimate: (&w.ultimate).into(),
         }
     }
 }
@@ -430,7 +376,6 @@ pub struct ItemInstanceRow {
     /// Zero means "not stored yet"; see [`ItemInstanceId`].
     pub instance_id: u64,
     pub item_id: String,
-    pub inscriptions: Option<WeaponInscriptionsRow>,
     pub ability_selection: AbilitySelectionRow,
     /// New RootWord-based weapon inscription model.
     pub root_inscription: Option<WeaponInscriptionRow>,
@@ -443,7 +388,6 @@ impl From<&ItemInstance> for ItemInstanceRow {
         Self {
             instance_id: i.instance_id.0,
             item_id: i.item_id.as_str().to_string(),
-            inscriptions: i.inscriptions.as_ref().map(Into::into),
             ability_selection: (&i.ability_selection).into(),
             root_inscription: i.root_inscription.as_ref().map(Into::into),
             armor_inscription: i.armor_inscription.as_ref().map(Into::into),
@@ -456,7 +400,6 @@ impl From<&ItemInstanceRow> for ItemInstance {
         ItemInstance {
             instance_id: ItemInstanceId(i.instance_id),
             item_id: ItemId::new(i.item_id.clone()),
-            inscriptions: i.inscriptions.as_ref().map(Into::into),
             ability_selection: (&i.ability_selection).into(),
             root_inscription: i.root_inscription.as_ref().map(Into::into),
             armor_inscription: i.armor_inscription.as_ref().map(Into::into),
@@ -555,27 +498,7 @@ pub fn known_ancient_language_from_rows(
             .cloned()
             .map(AncientWordId::new)
             .collect(),
-        base_abilities: base_abilities
-            .iter()
-            .cloned()
-            .map(AbilityId::new)
-            .collect(),
-    }
-}
-
-pub fn known_glyphs_from_rows(
-    essences: &[String],
-    modifiers: &[String],
-    ancient_words: &[String],
-) -> KnownGlyphs {
-    KnownGlyphs {
-        essences: essences.iter().cloned().map(EssenceId::new).collect(),
-        modifiers: modifiers.iter().cloned().map(ModifierId::new).collect(),
-        ancient_words: ancient_words
-            .iter()
-            .cloned()
-            .map(AncientWordId::new)
-            .collect(),
+        base_abilities: base_abilities.iter().cloned().map(AbilityId::new).collect(),
     }
 }
 

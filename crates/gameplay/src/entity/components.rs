@@ -77,6 +77,8 @@ pub enum EntityKind {
     Player,
     /// Friendly NPCs (e.g. merchants, quest givers).
     Friendly,
+    /// Combat ally that is not an NPC (party-heal dummy, future pets).
+    Ally,
     /// Neutral creatures that do not attack first.
     Neutral,
     /// Hostile enemies (enemy, boss, aggressive creatures).

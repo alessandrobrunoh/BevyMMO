@@ -1,12 +1,24 @@
 //! Ancient-word content and its registry.
 //!
-pub mod amplia;
+
+pub mod anchor;
+pub mod echo;
+pub mod hunger;
+pub mod return_dir;
+pub mod reversal;
+pub mod twin;
 
 use crate::abilities::AncientWordRegistry;
 
 /// Builds the registry containing every ancient word shipped by this game build.
 pub fn default_ancient_words() -> AncientWordRegistry {
     let mut registry = AncientWordRegistry::default();
-    amplia::Amplia::register(&mut registry);
+
+    echo::Echo::register(&mut registry);
+    twin::Twin::register(&mut registry);
+    return_dir::ReturnWord::register(&mut registry);
+    hunger::Hunger::register(&mut registry);
+    anchor::Anchor::register(&mut registry);
+    reversal::Reversal::register(&mut registry);
     registry
 }

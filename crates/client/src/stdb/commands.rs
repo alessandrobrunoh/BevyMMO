@@ -28,7 +28,6 @@
 use bevy::prelude::Vec3;
 use bevymmo_domain::abilities::AbilitySlot;
 use bevymmo_domain::items::EquipSlot;
-use bevymmo_domain::spells::components::HotbarSlot;
 
 use super::module_bindings::armor_cast_reducer::armor_cast as armor_cast_reducer;
 use super::module_bindings::claim_npc_item_reducer::claim_npc_item as claim_npc_item_reducer;
@@ -45,8 +44,9 @@ use super::module_bindings::release_cast_reducer::release_cast as release_cast_r
 use super::module_bindings::respawn_reducer::respawn as respawn_reducer;
 use super::module_bindings::send_chat_message_reducer::send_chat_message as send_chat_message_reducer;
 use super::module_bindings::set_ability_selection_reducer::set_ability_selection as set_ability_selection_reducer;
-use super::module_bindings::set_hotbar_spell_reducer::set_hotbar_spell as set_hotbar_spell_reducer;
-use super::module_bindings::set_inscription_reducer::set_inscription as set_inscription_reducer;
+use super::module_bindings::set_armor_inscription_reducer::set_armor_inscription as set_armor_inscription_reducer;
+
+use super::module_bindings::set_root_inscription_reducer::set_root_inscription as set_root_inscription_reducer;
 use super::module_bindings::unequip_item_reducer::unequip_item as unequip_item_reducer;
 use super::module_bindings::Vec3Row;
 use super::plugin::StdbConnection;
@@ -100,30 +100,35 @@ pub fn move_item(conn: &StdbConnection, from: u8, to: u8) -> Sent {
         .move_item_then(from, to, conn.report_rejection("could not move that item"))
 }
 
-/// Binds a spell to a hotbar key, or clears it with `None`.
-pub fn set_hotbar_spell(conn: &StdbConnection, slot: HotbarSlot, spell_id: Option<String>) -> Sent {
-    conn.reducers().set_hotbar_spell_then(
-        hotbar_label(slot).to_string(),
-        spell_id,
-        conn.report_rejection("could not bind that spell"),
+/// Writes the equipped weapon's shared Root Word and per-slot Ancient Words.
+pub fn set_root_inscription(
+    conn: &StdbConnection,
+    root_word: Option<String>,
+    primary_words: Vec<String>,
+    secondary_words: Vec<String>,
+    ultimate_words: Vec<String>,
+) -> Sent {
+    conn.reducers().set_root_inscription_then(
+        root_word,
+        primary_words,
+        secondary_words,
+        ultimate_words,
+        conn.report_rejection("could not write that Root Word inscription"),
     )
 }
 
-/// Rewrites one ability slot's inscription: an essence, some modifiers, and an
-/// optional ancient word.
-pub fn set_inscription(
+/// Writes an armor item's independent Root Word inscription.
+pub fn set_armor_inscription(
     conn: &StdbConnection,
-    slot: AbilitySlot,
-    essence: Option<String>,
-    modifiers: Vec<String>,
-    ancient_word: Option<String>,
+    slot: EquipSlot,
+    root_word: Option<String>,
+    secondary_words: Vec<String>,
 ) -> Sent {
-    conn.reducers().set_inscription_then(
-        ability_label(slot).to_string(),
-        essence,
-        modifiers,
-        ancient_word,
-        conn.report_rejection("could not write that inscription"),
+    conn.reducers().set_armor_inscription_then(
+        slot.label().to_string(),
+        root_word,
+        secondary_words,
+        conn.report_rejection("could not write that armor inscription"),
     )
 }
 
@@ -136,11 +141,23 @@ pub fn set_ability_selection(conn: &StdbConnection, slot: AbilitySlot, ability_i
     )
 }
 
-/// Ends a channelled cast. Naming the spell stops a stale release from
-/// cancelling a cast that started after it.
-pub fn release_cast(conn: &StdbConnection, spell_id: String) -> Sent {
-    conn.reducers()
-        .release_cast_then(spell_id, conn.report_rejection("could not end that cast"))
+/// Ends a channelled or charged cast. Naming the spell stops a stale release
+/// from cancelling a cast that started after it.
+///
+/// Charge uses `target_position` / `target_entity` as the aim at release;
+/// Channeling ignores them.
+pub fn release_cast(
+    conn: &StdbConnection,
+    spell_id: String,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3>,
+) -> Sent {
+    conn.reducers().release_cast_then(
+        spell_id,
+        target_entity,
+        target_position.map(to_row),
+        conn.report_rejection("could not end that cast"),
+    )
 }
 
 /// Casts the weapon's Eidolon gesture bound to an ability slot.
@@ -221,14 +238,6 @@ pub fn party_leave(conn: &StdbConnection) -> Sent {
 pub fn respawn(conn: &StdbConnection) -> Sent {
     conn.reducers()
         .respawn_then(conn.report_rejection("could not respawn"))
-}
-
-fn hotbar_label(slot: HotbarSlot) -> &'static str {
-    match slot {
-        HotbarSlot::Q => "q",
-        HotbarSlot::W => "w",
-        HotbarSlot::E => "e",
-    }
 }
 
 fn ability_label(slot: AbilitySlot) -> &'static str {

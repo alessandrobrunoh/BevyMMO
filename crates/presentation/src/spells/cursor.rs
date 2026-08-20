@@ -15,21 +15,17 @@ use bevymmo_client::movement::{resolve_ray_to_ground, ClientSurfaceQuery};
 /// o raggio che non interseca il terreno.
 pub fn cursor_ground_point(
     windows: &Query<&Window, With<PrimaryWindow>>,
-    cameras: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: &Query<(&Camera, &Transform), With<Camera3d>>,
     surface_query: Option<&ClientSurfaceQuery>,
 ) -> Option<Vec3> {
     let cursor_position = windows.single().ok()?.cursor_position()?;
     let (camera, camera_transform) = cameras.iter().next()?;
-    let ray = camera
-        .viewport_to_world(camera_transform, cursor_position)
-        .ok()?;
+    let view = crate::renderer::camera_view(camera_transform);
+    let ray = camera.viewport_to_world(&view, cursor_position).ok()?;
     surface_query
         .and_then(|sq| sq.0.as_ref())
         .and_then(|sq| resolve_ray_to_ground(ray.origin, *ray.direction, sq, 300.0, 0.5))
-        .or_else(|| {
-            let t = -ray.origin.y / ray.direction.y;
-            t.is_finite().then(|| ray.origin + *ray.direction * t)
-        })
+        .or_else(|| bevymmo_client::movement::intersect_y0_plane(ray.origin, *ray.direction, 300.0))
 }
 
 /// Direzione orizzontale normalizzata da `origin` verso `target`, o `None` se

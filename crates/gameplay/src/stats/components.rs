@@ -59,6 +59,7 @@ impl CombatStats {
 pub struct VitalStats {
     pub current_health: f32,
     pub max_health: f32,
+    pub current_mana: f32,
     pub max_mana: f32,
     pub mana_regeneration: f32,
 }
@@ -73,6 +74,30 @@ impl VitalStats {
     /// below zero. Useful after modifications to `max_health` or loading from DB.
     pub fn clamp_health(&mut self) {
         self.current_health = self.current_health.clamp(0.0, self.max_health);
+    }
+
+    /// Adjusts `current_mana` not to exceed `max_mana` and not to drop below
+    /// zero. Useful after modifications to `max_mana` or loading from DB.
+    pub fn clamp_mana(&mut self) {
+        self.current_mana = self.current_mana.clamp(0.0, self.max_mana.max(0.0));
+    }
+
+    /// Spends `cost` current mana, or refuses if the pool cannot cover it.
+    ///
+    /// A non-positive cost is a no-op. See [`super::formulas::spend_mana`].
+    pub fn try_spend_mana(&mut self, cost: f32) -> Result<(), super::formulas::InsufficientMana> {
+        self.current_mana = super::formulas::spend_mana(self.current_mana, cost)?;
+        Ok(())
+    }
+
+    /// Applies [`super::formulas::regenerated_mana`] for `dt` seconds.
+    pub fn regenerate_mana(&mut self, dt: f32) {
+        self.current_mana = super::formulas::regenerated_mana(
+            self.current_mana,
+            self.max_mana,
+            self.mana_regeneration,
+            dt,
+        );
     }
 }
 
@@ -145,6 +170,7 @@ mod tests {
         let mut vital = VitalStats {
             current_health: 150.0,
             max_health: 100.0,
+            current_mana: 50.0,
             max_mana: 50.0,
             mana_regeneration: 5.0,
         };
@@ -166,6 +192,7 @@ mod tests {
         let vital = VitalStats {
             current_health: 80.0,
             max_health: 100.0,
+            current_mana: 40.0,
             max_mana: 50.0,
             mana_regeneration: 5.0,
         };
@@ -175,5 +202,49 @@ mod tests {
         assert_eq!(m, movement);
         assert_eq!(c, combat);
         assert_eq!(v, vital);
+    }
+
+    fn sample_vital() -> VitalStats {
+        VitalStats {
+            current_health: 80.0,
+            max_health: 100.0,
+            current_mana: 40.0,
+            max_mana: 50.0,
+            mana_regeneration: 5.0,
+        }
+    }
+
+    #[test]
+    fn clamp_mana_respects_max_mana_not_max_health() {
+        let mut vital = sample_vital();
+        vital.current_mana = 80.0;
+        vital.clamp_mana();
+        assert_eq!(vital.current_mana, 50.0);
+
+        vital.current_mana = -10.0;
+        vital.clamp_mana();
+        assert_eq!(vital.current_mana, 0.0);
+    }
+
+    #[test]
+    fn try_spend_mana_scales_the_pool_or_refuses() {
+        let mut vital = sample_vital();
+        assert!(vital.try_spend_mana(15.0).is_ok());
+        assert_eq!(vital.current_mana, 25.0);
+        assert!(vital.try_spend_mana(25.0).is_ok());
+        assert_eq!(vital.current_mana, 0.0);
+        assert!(vital.try_spend_mana(1.0).is_err());
+        assert_eq!(vital.current_mana, 0.0);
+        assert!(vital.try_spend_mana(0.0).is_ok());
+        assert_eq!(vital.current_mana, 0.0);
+    }
+
+    #[test]
+    fn regenerate_mana_uses_rate_and_dt() {
+        let mut vital = sample_vital();
+        vital.regenerate_mana(1.0);
+        assert_eq!(vital.current_mana, 45.0);
+        vital.regenerate_mana(2.0);
+        assert_eq!(vital.current_mana, 50.0);
     }
 }

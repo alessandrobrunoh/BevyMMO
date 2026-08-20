@@ -199,15 +199,12 @@ pub enum KeyAction {
 
 impl KeyAction {
     /// All rebindable actions in display order.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 16] = [
         Self::TogglePause,
         Self::ShowScoreboard,
         Self::ToggleInventory,
         Self::ToggleSpellbook,
         Self::ClearTarget,
-        Self::CastSpellQ,
-        Self::CastSpellW,
-        Self::CastSpellE,
         Self::CastPrimary,
         Self::CastSecondary,
         Self::CastUltimate,

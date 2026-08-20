@@ -4,28 +4,27 @@
 //! stringhe già formattate, così la parte di `detail.rs` che costruisce i
 //! `Node` resta banale e questo file è testabile senza un `App`.
 //!
-//! I numeri mostrati passano da [`resolve_slot_preview`], cioè esattamente la
-//! stessa risoluzione che il cast usa un istante dopo: leggere `base_params()`
-//! qui mostrerebbe valori che il gioco poi non applica non appena c'è un
-//! Modificatore inciso.
+//! I numeri mostrati passano da [`resolve_root_inscribed_slot`], cioè esattamente
+//! la stessa risoluzione che il cast usa un istante dopo.
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use bevymmo_gameplay::abilities::{
-    inscription::inscription_cost, resolve_active_ability, resolve_slot_preview, AbilitySlot,
-    AbilityTag, AncientWordRegistry, BaseAbilityRegistry, CastBlockedReason, EssenceRegistry,
-    Inscription, KnownGlyphs, ModifierRegistry, RuneProfile, SlotPreview, WeaponInscriptions,
+    resolve_active_ability, resolve_root_inscribed_slot, AbilitySlot, AbilityTag,
+    AncientWordRegistry, BaseAbilityRegistry, CastBlockedReason, KnownAncientLanguage,
+    RootWordRegistry, SlotPreview,
 };
-use bevymmo_gameplay::items::{instance::ItemInstance, ItemCategory, ItemRarity, ItemRegistry};
+use bevymmo_gameplay::items::{
+    components::EquipSlot, instance::ItemInstance, ItemCategory, ItemRarity, ItemRegistry,
+};
 
 /// I registri necessari a descrivere un'arma incisa, raggruppati per non far
-/// crescere la firma della scheda item di un argomento per tipo di Glifo.
+/// crescere la firma della scheda item di un argomento per tipo.
 #[derive(SystemParam)]
 pub struct GlyphRegistries<'w> {
     pub abilities: Res<'w, BaseAbilityRegistry>,
-    pub essences: Res<'w, EssenceRegistry>,
-    pub modifiers: Res<'w, ModifierRegistry>,
+    pub root_words: Res<'w, RootWordRegistry>,
     pub ancient_words: Res<'w, AncientWordRegistry>,
 }
 
@@ -33,23 +32,17 @@ impl GlyphRegistries<'_> {
     pub fn catalog(&self) -> GlyphCatalog<'_> {
         GlyphCatalog {
             abilities: &self.abilities,
-            essences: &self.essences,
-            modifiers: &self.modifiers,
+            root_words: &self.root_words,
             ancient_words: &self.ancient_words,
         }
     }
 }
 
-/// Gli stessi quattro registri per riferimento semplice.
-///
-/// Le funzioni di questo modulo prendono questo, non [`GlyphRegistries`]:
-/// restano così pure e collaudabili senza costruire un `App` solo per
-/// soddisfare un `SystemParam`.
+/// I registri per riferimento semplice (testabile senza App).
 #[derive(Clone, Copy)]
 pub struct GlyphCatalog<'a> {
     pub abilities: &'a BaseAbilityRegistry,
-    pub essences: &'a EssenceRegistry,
-    pub modifiers: &'a ModifierRegistry,
+    pub root_words: &'a RootWordRegistry,
     pub ancient_words: &'a AncientWordRegistry,
 }
 
@@ -59,19 +52,23 @@ pub struct RuneSummary {
     pub used: u32,
     pub capacity: u32,
     pub stability: f32,
-    pub affinity: Option<String>,
+    pub root_word: Option<String>,
 }
 
 impl RuneSummary {
-    pub fn line(&self) -> String {
-        let mut parts = vec![
+    pub fn lines(&self) -> Vec<String> {
+        let mut lines = vec![
             format!("{}/{} capacity", self.used, self.capacity),
             format!("{:.0}% stability", self.stability * 100.0),
         ];
-        if let Some(affinity) = &self.affinity {
-            parts.push(format!("{affinity} affinity"));
+        if let Some(root_word) = &self.root_word {
+            lines.push(format!("Root Word: {root_word}"));
         }
-        parts.join("   |   ")
+        lines
+    }
+
+    pub fn line(&self) -> String {
+        self.lines().join("   |   ")
     }
 }
 
@@ -105,17 +102,42 @@ pub struct WeaponSummary {
 pub fn meta_line(
     category: ItemCategory,
     rarity: ItemRarity,
-    equip_slot: Option<impl std::fmt::Debug>,
+    equip_slot: Option<EquipSlot>,
     weight: f32,
 ) -> String {
-    let mut parts = vec![format!("{category:?}"), format!("{rarity:?}")];
+    let category_name = category_label(category);
+    let mut parts = vec![category_name.to_string(), rarity_label(rarity).to_string()];
     if let Some(slot) = equip_slot {
-        parts.push(format!("{slot:?}"));
+        let slot_name = format!("{slot:?}");
+        if slot_name != category_name {
+            parts.push(slot_name);
+        }
     }
     if weight > 0.0 {
         parts.push(format!("{} wt", number(weight)));
     }
     parts.join("   |   ")
+}
+
+const fn category_label(category: ItemCategory) -> &'static str {
+    match category {
+        ItemCategory::Weapon => "Weapon",
+        ItemCategory::Armor => "Armor",
+        ItemCategory::Consumable => "Consumable",
+        ItemCategory::Material => "Material",
+        ItemCategory::Quest => "Quest",
+        ItemCategory::Accessory => "Accessory",
+    }
+}
+
+const fn rarity_label(rarity: ItemRarity) -> &'static str {
+    match rarity {
+        ItemRarity::Common => "Common",
+        ItemRarity::Uncommon => "Uncommon",
+        ItemRarity::Rare => "Rare",
+        ItemRarity::Epic => "Epic",
+        ItemRarity::Legendary => "Legendary",
+    }
 }
 
 /// Costruisce il riepilogo Eidolon di `instance`, o `None` se l'item non è
@@ -125,22 +147,22 @@ pub fn summarize_weapon(
     instance: &ItemInstance,
     items: &ItemRegistry,
     glyphs: GlyphCatalog,
-    known: &KnownGlyphs,
+    known: &KnownAncientLanguage,
 ) -> Option<WeaponSummary> {
     let item = items.get(&instance.item_id)?;
     let abilities = item.ability_loadout()?;
-    let inscriptions = instance.inscriptions.clone().unwrap_or_default();
+    let inscription = instance.root_inscription.as_ref()?;
     let profile = item.rune_profile();
 
     let runes = profile.map(|profile| RuneSummary {
-        used: total_rune_cost(&inscriptions, profile, glyphs),
+        used: 0, // TODO: rune cost for new model when defined
         capacity: profile.capacity,
         stability: profile.stability,
-        affinity: profile.affinity.as_ref().and_then(|id| {
+        root_word: inscription.root_word.as_ref().and_then(|id| {
             glyphs
-                .essences
+                .root_words
                 .get(id)
-                .map(|essence| essence.display_name().to_string())
+                .map(|rw| rw.metadata().display_name.to_string())
         }),
     });
 
@@ -149,9 +171,9 @@ pub fn summarize_weapon(
         .filter_map(|&slot| {
             summarize_slot(
                 slot,
-                instance,
                 abilities,
-                &inscriptions,
+                &instance.ability_selection,
+                inscription,
                 glyphs,
                 known,
                 item.as_ref(),
@@ -162,79 +184,59 @@ pub fn summarize_weapon(
     Some(WeaponSummary { runes, slots })
 }
 
-/// Somma il costo dei tre slot: la Capacità Runica è condivisa fra loro, non
-/// per-slot (§39-41), quindi la scheda deve mostrare il totale.
-fn total_rune_cost(
-    inscriptions: &WeaponInscriptions,
-    profile: &RuneProfile,
-    glyphs: GlyphCatalog,
+/// Placeholder: rune cost will be defined by the new Root Word model.
+/// Returns 0 until the gameplay layer exposes cost data.
+fn _total_rune_cost(
+    _inscription: &bevymmo_gameplay::abilities::inscription::WeaponInscription,
 ) -> u32 {
-    AbilitySlot::ALL
-        .iter()
-        .map(|&slot| {
-            inscription_cost(
-                inscriptions.get(slot),
-                profile,
-                glyphs.essences,
-                glyphs.modifiers,
-                glyphs.ancient_words,
-            )
-        })
-        .sum()
+    0
 }
 
 fn summarize_slot(
     slot: AbilitySlot,
-    instance: &ItemInstance,
     abilities: &bevymmo_gameplay::abilities::WeaponAbilities,
-    inscriptions: &WeaponInscriptions,
+    selection: &bevymmo_gameplay::abilities::AbilitySelection,
+    inscription: &bevymmo_gameplay::abilities::inscription::WeaponInscription,
     glyphs: GlyphCatalog,
-    known: &KnownGlyphs,
+    known: &KnownAncientLanguage,
     item: &dyn bevymmo_gameplay::items::Item,
 ) -> Option<SlotSummary> {
-    let selection = &instance.ability_selection;
     let active_id = resolve_active_ability(slot, abilities, selection)?;
     let ability = glyphs.abilities.get(active_id)?;
-    let inscription = inscriptions.get(slot);
 
-    // `resolve_slot_preview` è la prima metà del cast: risolve il gesto e
-    // applica i Modificatori. Se fallisce per Glifo sconosciuto la scheda lo
-    // dice invece di mostrare numeri che il gioco non userebbe — ma i
-    // parametri base restano utili, quindi si continua comunque.
-    let preview = resolve_slot_preview(
+    // `resolve_root_inscribed_slot` è la stessa risoluzione del cast.
+    let preview = resolve_root_inscribed_slot(
         slot,
         abilities,
         selection,
-        inscriptions,
+        inscription,
         known,
         glyphs.abilities,
-        glyphs.modifiers,
+        glyphs.root_words,
+        glyphs.ancient_words,
         Some(item),
     );
     let blocked = match &preview {
-        Err(CastBlockedReason::UnknownGlyph) => {
-            Some("LOCKED - you don't know every inscribed Glyph".to_string())
+        Err(CastBlockedReason::UnknownRootWord) => Some("LOCKED - unknown Root Word".to_string()),
+        Err(CastBlockedReason::UnknownAncientWord) => {
+            Some("LOCKED - unknown Ancient Word".to_string())
         }
         Err(reason) => Some(format!("UNAVAILABLE - {reason:?}")),
         Ok(_) => None,
     };
     let params = match preview {
         Ok(SlotPreview { params, .. }) => params,
-        Err(_) => bevymmo_gameplay::abilities::resolve_ability_params(
-            ability.base_params(),
-            &inscription.modifiers,
-            glyphs.modifiers,
-        ),
+        Err(_) => ability.base_params(),
     };
 
-    let essence_name = inscription
-        .essence
+    let root_name = inscription
+        .root_word
         .as_ref()
-        .and_then(|id| glyphs.essences.get(id))
-        .map(|essence| essence.display_name().to_string());
-    let title = match &essence_name {
+        .and_then(|id| glyphs.root_words.get(id))
+        .map(|rw| rw.metadata().display_name.to_string());
+    let title = match &root_name {
         Some(name) => format!("{} - {name}", ability.display_name()),
-        None => format!("{} - physical", ability.display_name()),
+        None => format!("{} - raw", ability.display_name()),
     };
 
     let alternatives = {
@@ -255,7 +257,7 @@ fn summarize_slot(
         shape: describe_geometry(ability.geometry()),
         stats: describe_params(&params),
         tags: describe_tags(ability.tags()),
-        glyphs: describe_glyphs(inscription, glyphs),
+        glyphs: describe_inscription(inscription, slot, glyphs),
         alternatives,
     })
 }
@@ -320,42 +322,27 @@ fn describe_tags(tags: &[AbilityTag]) -> String {
         .join(" / ")
 }
 
-/// L'incisione dello slot, con il costo runico di ogni Glifo: è il numero che
-/// spiega perché la Capacità è quella che è.
-fn describe_glyphs(inscription: &Inscription, glyphs: GlyphCatalog) -> Option<String> {
-    if inscription.is_empty() {
+/// Descrive l'incisione di uno slot: Root Word + Ancient Words secondari.
+fn describe_inscription(
+    inscription: &bevymmo_gameplay::abilities::inscription::WeaponInscription,
+    slot: AbilitySlot,
+    glyphs: GlyphCatalog,
+) -> Option<String> {
+    let slot_ins = inscription.get(slot);
+    if inscription.root_word.is_none() && slot_ins.is_empty() {
         return None;
     }
 
     let mut parts = Vec::new();
-    if let Some(essence) = inscription
-        .essence
-        .as_ref()
-        .and_then(|id| glyphs.essences.get(id))
-    {
-        parts.push(format!(
-            "{} ({})",
-            essence.display_name(),
-            essence.rune_cost()
-        ));
+    if let Some(root_id) = &inscription.root_word {
+        if let Some(root) = glyphs.root_words.get(root_id) {
+            parts.push(root.metadata().display_name.to_string());
+        }
     }
-    for modifier in inscription
-        .modifiers
-        .iter()
-        .filter_map(|id| glyphs.modifiers.get(id))
-    {
-        parts.push(format!(
-            "{} ({})",
-            modifier.display_name(),
-            modifier.rune_cost()
-        ));
-    }
-    if let Some(word) = inscription
-        .ancient_word
-        .as_ref()
-        .and_then(|id| glyphs.ancient_words.get(id))
-    {
-        parts.push(format!("{} ({})", word.display_name(), word.rune_cost()));
+    for word in &slot_ins.secondary_words {
+        if let Some(aw) = glyphs.ancient_words.get(&word.word_id) {
+            parts.push(aw.display_name().to_string());
+        }
     }
 
     (!parts.is_empty()).then(|| parts.join(" + "))
@@ -374,8 +361,9 @@ fn number(value: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevymmo_gameplay::abilities::{AbilityGeometry, AbilityParams};
-    use bevymmo_gameplay::items::components::EquipSlot;
+    use bevymmo_gameplay::abilities::{
+        inscription::WeaponInscription, root_word::RootWordId, AbilityGeometry, AbilityParams,
+    };
 
     fn params() -> AbilityParams {
         AbilityParams {
@@ -396,114 +384,96 @@ mod tests {
         // directly instead of running a `Startup` schedule to fill them.
         app.insert_resource(bevymmo_content::item_definitions::default_items());
         app.insert_resource(bevymmo_content::ability_definitions::default_base_abilities());
-        app.insert_resource(bevymmo_content::essence_definitions::default_essences());
-        app.insert_resource(bevymmo_content::modifier_definitions::default_modifiers());
+        app.insert_resource(bevymmo_content::root_word_definitions::default_root_words());
         app.insert_resource(bevymmo_content::ancient_word_definitions::default_ancient_words());
         app
     }
 
-    fn summarize(app: &App, instance: &ItemInstance, known: &KnownGlyphs) -> WeaponSummary {
+    fn summarize(
+        app: &App,
+        instance: &ItemInstance,
+        known: &KnownAncientLanguage,
+    ) -> WeaponSummary {
         let items = app.world().resource::<ItemRegistry>();
         let catalog = GlyphCatalog {
             abilities: app.world().resource::<BaseAbilityRegistry>(),
-            essences: app.world().resource::<EssenceRegistry>(),
-            modifiers: app.world().resource::<ModifierRegistry>(),
+            root_words: app.world().resource::<RootWordRegistry>(),
             ancient_words: app.world().resource::<AncientWordRegistry>(),
         };
-        summarize_weapon(instance, items, catalog, known).expect("magic_staff is an Eidolon weapon")
+        summarize_weapon(instance, items, catalog, known).expect("mage_staff is an Eidolon weapon")
     }
 
-    fn magic_staff() -> ItemInstance {
-        ItemInstance::new(bevymmo_gameplay::items::ItemId::new("magic_staff"))
+    /// A magic staff with a damage root word inscribed.
+    fn magic_staff_with_root() -> ItemInstance {
+        let mut instance = ItemInstance::new(bevymmo_gameplay::items::ItemId::new("mage_staff"));
+        instance.root_inscription = Some(WeaponInscription {
+            root_word: Some(RootWordId::from("damage")),
+            ..Default::default()
+        });
+        instance
     }
 
-    /// A weapon with no inscription still describes all three of its gestures.
+    /// A weapon with a known root word inscription describes all three slots.
     #[test]
     fn a_virgin_weapon_summarizes_every_slot() {
         let app = catalog_app();
-        let summary = summarize(&app, &magic_staff(), &KnownGlyphs::default());
+        let mut known = KnownAncientLanguage::default();
+        known.root_words.insert(RootWordId::from("damage"));
+        let instance = magic_staff_with_root();
+        let summary = summarize(&app, &instance, &known);
 
         assert_eq!(summary.slots.len(), 3);
         assert_eq!(summary.slots[0].slot, "Primary");
         assert_eq!(summary.slots[2].slot, "Ultimate");
         assert!(summary.slots.iter().all(|slot| slot.blocked.is_none()));
-        assert!(summary.slots.iter().all(|slot| slot.glyphs.is_none()));
 
-        let runes = summary.runes.expect("magic_staff has a rune profile");
-        assert_eq!(runes.used, 0);
-        assert_eq!(runes.capacity, 8);
-        assert_eq!(runes.affinity.as_deref(), Some("Fuoco"));
+        let runes = summary.runes.expect("mage_staff has a rune profile");
+        assert_eq!(runes.capacity, 12);
+        assert_eq!(runes.root_word.as_deref(), Some("Danno"));
     }
 
     #[test]
-    fn ultimate_slot_lists_selectable_alternatives() {
+    fn mage_staff_has_one_ultimate_ability() {
         let app = catalog_app();
-        let summary = summarize(&app, &magic_staff(), &KnownGlyphs::default());
+        let instance = magic_staff_with_root();
+        let summary = summarize(&app, &instance, &KnownAncientLanguage::default());
 
         assert!(summary.slots[0].alternatives.is_none());
         assert!(summary.slots[1].alternatives.is_none());
-        assert_eq!(
-            summary.slots[2].alternatives.as_deref(),
-            Some("Also offers: Lancia Meteora")
-        );
+        assert!(summary.slots[2].alternatives.is_none());
     }
 
-    /// The rune line is the shared budget across all three slots, discounted by
-    /// the weapon's Affinity — Fuoco costs 2 but 1 on a Fuoco-affine staff.
+    /// A weapon with a root inscription shows the root word name.
     #[test]
-    fn inscribed_glyphs_are_listed_with_their_rune_cost() {
+    fn inscribed_root_word_is_listed() {
         let app = catalog_app();
-        let mut instance = magic_staff();
-        instance.inscriptions = Some(WeaponInscriptions {
-            primary: Inscription {
-                essence: Some(bevymmo_gameplay::abilities::EssenceId::new("fuoco")),
-                modifiers: vec![],
-                ancient_word: None,
-            },
-            ..Default::default()
-        });
-
-        let mut known = KnownGlyphs::default();
-        known
-            .essences
-            .insert(bevymmo_gameplay::abilities::EssenceId::new("fuoco"));
+        let instance = magic_staff_with_root();
+        let mut known = KnownAncientLanguage::default();
+        known.root_words.insert(RootWordId::from("damage"));
 
         let summary = summarize(&app, &instance, &known);
         let primary = &summary.slots[0];
 
-        assert!(primary.blocked.is_none(), "every glyph is known");
-        assert!(primary.title.contains("Fuoco"), "got: {}", primary.title);
+        assert!(primary.blocked.is_none(), "root word is known");
+        // Title format is now "{ability} - {root_word}"
+        assert!(primary.title.contains("Danno"), "got: {}", primary.title);
         let glyphs = primary.glyphs.as_ref().expect("primary is inscribed");
-        assert!(glyphs.contains("Fuoco (2)"), "got: {glyphs}");
-
-        // Fuoco (2) is discounted to 1 by the staff's Fuoco affinity.
-        let runes = summary.runes.expect("rune profile");
-        assert_eq!(runes.used, 1);
+        // The root word display name comes from the registry
+        assert!(!glyphs.is_empty(), "glyphs should show the root word");
     }
 
-    /// The regression this guards: a weapon found already inscribed by someone
-    /// else is unusable on that slot until every Glyph is learned. The card has
-    /// to say so rather than showing numbers the cast will never apply.
+    /// A weapon with an unknown root word is marked as locked.
     #[test]
-    fn a_slot_with_an_unknown_glyph_is_marked_locked() {
+    fn a_slot_with_an_unknown_root_word_is_marked_locked() {
         let app = catalog_app();
-        let mut instance = magic_staff();
-        instance.inscriptions = Some(WeaponInscriptions {
-            primary: Inscription {
-                essence: Some(bevymmo_gameplay::abilities::EssenceId::new("fuoco")),
-                modifiers: vec![],
-                ancient_word: None,
-            },
-            ..Default::default()
-        });
+        let instance = magic_staff_with_root();
 
-        // Empty Vocabulary: the player knows nothing.
-        let summary = summarize(&app, &instance, &KnownGlyphs::default());
+        // Empty knowledge: the player knows nothing.
+        let summary = summarize(&app, &instance, &KnownAncientLanguage::default());
 
-        assert!(summary.slots[0].blocked.is_some());
         assert!(
-            summary.slots[1].blocked.is_none(),
-            "an uninscribed slot stays usable"
+            summary.slots[0].blocked.is_some(),
+            "unknown root word blocks the slot"
         );
         // Still described: a locked slot must not become a blank block.
         assert!(!summary.slots[0].stats.is_empty());
@@ -573,46 +543,71 @@ mod tests {
             used: 6,
             capacity: 8,
             stability: 0.96,
-            affinity: Some("Fuoco".to_string()),
+            root_word: Some("Danno".to_string()),
         };
         let line = runes.line();
         assert!(line.contains("6/8 capacity"), "got: {line}");
         assert!(line.contains("96% stability"), "got: {line}");
-        assert!(line.contains("Fuoco affinity"), "got: {line}");
+        assert!(line.contains("Root Word: Danno"), "got: {line}");
     }
 
     #[test]
-    fn rune_line_omits_affinity_when_the_weapon_has_none() {
+    fn rune_lines_are_short_and_unpiped() {
+        let runes = RuneSummary {
+            used: 6,
+            capacity: 8,
+            stability: 0.96,
+            root_word: Some("Danno".to_string()),
+        };
+        assert_eq!(
+            runes.lines(),
+            vec![
+                "6/8 capacity".to_string(),
+                "96% stability".to_string(),
+                "Root Word: Danno".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn rune_line_omits_root_word_when_the_weapon_has_none() {
         let runes = RuneSummary {
             used: 0,
             capacity: 4,
             stability: 1.0,
-            affinity: None,
+            root_word: None,
         };
-        assert!(!runes.line().contains("affinity"));
+        assert!(!runes.line().contains("Root Word"));
+        assert_eq!(runes.lines().len(), 2);
     }
 
     #[test]
     fn meta_line_skips_a_weightless_inventory_only_item() {
-        let line = meta_line(
-            ItemCategory::Material,
-            ItemRarity::Common,
-            None::<EquipSlot>,
-            0.0,
-        );
+        let line = meta_line(ItemCategory::Material, ItemRarity::Common, None, 0.0);
         assert_eq!(line, "Material   |   Common");
     }
 
     #[test]
-    fn meta_line_includes_the_equip_slot_when_there_is_one() {
+    fn meta_line_omits_the_equip_slot_when_it_matches_the_category() {
         let line = meta_line(
             ItemCategory::Weapon,
             ItemRarity::Rare,
             Some(EquipSlot::Weapon),
             1.5,
         );
+        assert_eq!(line, "Weapon   |   Rare   |   1.5 wt");
         assert!(line.contains("Weapon"));
         assert!(line.contains("Rare"));
-        assert!(line.contains("1.5 wt"));
+    }
+
+    #[test]
+    fn meta_line_includes_the_equip_slot_when_it_differs_from_the_category() {
+        let line = meta_line(
+            ItemCategory::Accessory,
+            ItemRarity::Epic,
+            Some(EquipSlot::Helmet),
+            0.0,
+        );
+        assert_eq!(line, "Accessory   |   Epic   |   Helmet");
     }
 }

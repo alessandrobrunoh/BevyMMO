@@ -4,16 +4,22 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::vec_3_row_type::Vec3Row;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ReleaseCastArgs {
     pub spell_id: String,
+    pub target_entity: Option<u64>,
+    pub target_position: Option<Vec3Row>,
 }
 
 impl From<ReleaseCastArgs> for super::Reducer {
     fn from(args: ReleaseCastArgs) -> Self {
         Self::ReleaseCast {
             spell_id: args.spell_id,
+            target_entity: args.target_entity,
+            target_position: args.target_position,
         }
     }
 }
@@ -33,8 +39,13 @@ pub trait release_cast {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`release_cast:release_cast_then`] to run a callback after the reducer completes.
-    fn release_cast(&self, spell_id: String) -> __sdk::Result<()> {
-        self.release_cast_then(spell_id, |_, _| {})
+    fn release_cast(
+        &self,
+        spell_id: String,
+        target_entity: Option<u64>,
+        target_position: Option<Vec3Row>,
+    ) -> __sdk::Result<()> {
+        self.release_cast_then(spell_id, target_entity, target_position, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `release_cast` to run as soon as possible,
@@ -46,6 +57,8 @@ pub trait release_cast {
     fn release_cast_then(
         &self,
         spell_id: String,
+        target_entity: Option<u64>,
+        target_position: Option<Vec3Row>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -57,12 +70,20 @@ impl release_cast for super::RemoteReducers {
     fn release_cast_then(
         &self,
         spell_id: String,
+        target_entity: Option<u64>,
+        target_position: Option<Vec3Row>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(ReleaseCastArgs { spell_id }, callback)
+        self.imp.invoke_reducer_with_callback(
+            ReleaseCastArgs {
+                spell_id,
+                target_entity,
+                target_position,
+            },
+            callback,
+        )
     }
 }

@@ -13,6 +13,7 @@ pub enum StatField {
     Armor,
     AttackPower,
     MaxHealth,
+    MaxMana,
     ManaRegeneration,
 }
 

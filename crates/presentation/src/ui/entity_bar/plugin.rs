@@ -5,8 +5,8 @@ use super::systems;
 
 use bevy::prelude::*;
 
+use crate::game_state::{not_in_gameplay, Screen};
 use crate::renderer::RenderSync;
-use crate::ui::systems::in_gameplay;
 use crate::ui::{bar::spawn_bar, text::spawn_text, theme::UiTheme};
 
 /// Larghezza della barra HP (px). Usata sia dallo spawn sia dal centraggio
@@ -64,14 +64,14 @@ impl Plugin for EntityBarPlugin {
                     .chain(),
             )
                 .chain()
-                .run_if(in_gameplay),
+                .run_if(in_state(Screen::InGame)),
         )
         // Fuori dal gameplay la UI flottante viene smontata (root + figli) e il
         // marker `FloatingUiAttached` resettato, così un nuovo match parte
         // pulito.
         .add_systems(
             Update,
-            systems::cleanup_floating_ui_root.run_if(systems::not_in_gameplay),
+            systems::cleanup_floating_ui_root.run_if(not_in_gameplay),
         );
     }
 }

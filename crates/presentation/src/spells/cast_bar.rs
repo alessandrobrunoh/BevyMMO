@@ -10,12 +10,11 @@ use std::collections::HashMap;
 
 use bevymmo_client::network::types::ConnectedClient;
 use bevymmo_gameplay::abilities::{AbilityId, BaseAbilityRegistry};
-use bevymmo_network::network::mode::has_client;
 use bevymmo_network::network::protocol::{
     NetworkEntityId, Position, SpellCastEnded, SpellCastProgress,
 };
 
-use crate::game_state::{GameScreen, Screen};
+use crate::game_state::{in_gameplay, not_in_gameplay};
 use crate::spells::ui::{HudCooldownKey, SpellHudCooldownStarted};
 use crate::ui::bar::spawn_bar;
 use crate::ui::theme::UiTheme;
@@ -76,6 +75,8 @@ struct CastBarParts {
 /// Plugin hook used by the spells plugin.
 pub fn cast_bar_systems(app: &mut App) {
     app.init_resource::<ObservedCasts>();
+    app.add_message::<SpellCastProgress>();
+    app.add_message::<SpellCastEnded>();
     app.add_systems(
         Update,
         (
@@ -87,23 +88,9 @@ pub fn cast_bar_systems(app: &mut App) {
             update_screen_cast_bars.in_set(crate::renderer::RenderSync::Project),
         )
             .chain()
-            .run_if(has_client)
-            .run_if(in_gameplay_or_paused),
+            .run_if(in_gameplay),
     );
-    app.add_systems(
-        Update,
-        cleanup_screen_cast_bars
-            .run_if(has_client)
-            .run_if(not_in_gameplay_or_paused),
-    );
-}
-
-fn in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
-    matches!(screen.0, Screen::InGame | Screen::Paused)
-}
-
-fn not_in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
-    !in_gameplay_or_paused(screen)
+    app.add_systems(Update, cleanup_screen_cast_bars.run_if(not_in_gameplay));
 }
 
 /// Reads cast/channel snapshots from both host-client local messages and remote network receivers.

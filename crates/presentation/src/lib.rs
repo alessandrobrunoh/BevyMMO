@@ -4,14 +4,13 @@ pub mod assets;
 pub mod entity;
 pub mod game_state;
 pub mod map_loader;
-pub mod player_movement;
 pub mod renderer;
 pub mod scenes;
 pub mod spells;
 pub mod ui;
 pub mod world;
 
-use assets::{BossDragonAssets, MapAssets, PlayerAssets};
+use assets::{BossDragonAssets, CreatureAssets, MapAssets, PlayerAssets};
 use bevy::prelude::*;
 use bevy_asset_loader::prelude::*;
 
@@ -29,11 +28,17 @@ impl Plugin for PresentationCorePlugin {
         app.init_state::<PresentationState>()
             .init_resource::<bevymmo_gameplay::placeables::PlaceableRegistry>()
             .insert_resource(bevymmo_content::status_definitions::default_statuses())
+            .insert_resource(bevymmo_content::spell_definitions::default_spells())
+            .insert_resource(bevymmo_content::item_definitions::default_items())
+            .insert_resource(bevymmo_content::ability_definitions::default_base_abilities())
+            .insert_resource(bevymmo_content::ancient_word_definitions::default_ancient_words())
+            .insert_resource(bevymmo_content::root_word_definitions::default_root_words())
             .add_loading_state(
                 LoadingState::new(PresentationState::Loading)
                     .continue_to_state(PresentationState::Ready)
                     .load_collection::<PlayerAssets>()
                     .load_collection::<BossDragonAssets>()
+                    .load_collection::<CreatureAssets>()
                     .load_collection::<MapAssets>(),
             )
             .add_systems(Startup, register_presentation_placeables);
@@ -48,9 +53,7 @@ impl Plugin for PresentationPlugin {
             crate::ui::UiPlugin,
             crate::scenes::ScenesPlugin,
             crate::renderer::RendererPlugin,
-            crate::entity::EntityVisualsPlugin,
             crate::spells::SpellsHudPlugin,
-            crate::player_movement::PlayerMovementPredictionPlugin,
             crate::world::WorldMapPlugin,
         ));
     }
@@ -63,12 +66,10 @@ fn register_presentation_placeables(
 }
 
 pub mod prelude {
-    pub use crate::entity::EntityVisualsPlugin;
     pub use crate::game_state::{
-        validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen,
-        GameStatePlugin, PlayerNameError, Screen,
+        validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest,
+        GameStatePlugin, PauseOverlay, PlayerNameError, Screen,
     };
-    pub use crate::player_movement::PlayerMovementPredictionPlugin;
     pub use crate::renderer::RendererPlugin;
     pub use crate::scenes::ScenesPlugin;
     pub use crate::spells::SpellsHudPlugin;

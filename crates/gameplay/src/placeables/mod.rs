@@ -38,7 +38,7 @@ pub use config::{
     TriggerShape,
 };
 pub use definition::{
-    AssetHint, BossPlaceable, EnemyPlaceable, InteractablePlaceable, NpcPlaceable,
+    AssetHint, BossPlaceable, DummyPlaceable, EnemyPlaceable, InteractablePlaceable, NpcPlaceable,
     PlaceableDefaults, PlaceableDefinition, PlayerSpawnPlaceable, PropPlaceable,
     ResourceNodePlaceable, TriggerPlaceable,
 };

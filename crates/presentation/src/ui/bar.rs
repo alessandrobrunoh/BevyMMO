@@ -11,6 +11,7 @@ pub fn get_hp_fill_color(entity_kind: Option<&EntityKind>, theme: &UiTheme) -> C
     match entity_kind {
         Some(EntityKind::Player) => Color::srgb(0.3, 0.8, 0.5),
         Some(EntityKind::Friendly) => Color::srgb(0.2, 0.9, 0.3),
+        Some(EntityKind::Ally) => Color::srgb(0.2, 0.9, 0.3),
         Some(EntityKind::Neutral) => Color::srgb(0.9, 0.9, 0.2),
         Some(EntityKind::Hostile) => Color::srgb(0.9, 0.1, 0.1),
         None => theme.hp_fill,

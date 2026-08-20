@@ -1,19 +1,9 @@
-//! Shared computation of which spells a player's equipped items currently
-//! offer for Q/W/E.
+//! Shared computation of which spells equipped items currently offer.
 //!
-//! The type and the pure function live here (not in `bevymmo_server`)
-//! because both sides need the identical result:
-//! - the server uses it to validate `UpdateHotbarSlotRequest` and to clear a
-//!   `SpellHotbar` selection an unequip just invalidated (see
-//!   `bevymmo_server::items::available_spells::recompute_available_spells`);
-//! - the client uses it to render the spell-selection UI (see
-//!   `bevymmo_presentation::spells::available_choices`).
-//!
-//! `Equipment` is already replicated and `ItemRegistry` is populated
-//! identically on both sides (`register_default_items`, run at `Startup` on
-//! client and server alike), so `AvailableSpellChoices` itself is **not**
-//! replicated — both sides derive the same value locally instead of paying
-//! network cost for it.
+//! The module uses this to validate `set_hotbar_spell` and to clear a
+//! `SpellHotbar` slot an unequip just invalidated. `Equipment` is already
+//! replicated and `ItemRegistry` is the same catalogue on both sides, so the
+//! derived [`AvailableSpellChoices`] is not itself a table.
 
 use super::components::{EquipSlot, Equipment};
 use super::registry::ItemRegistry;

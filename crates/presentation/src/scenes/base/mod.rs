@@ -1,9 +1,9 @@
 //! Base scene: camera, directional light, and ground plane.
 //!
-//! The lifecycle is driven by [`GameScreen`]: the scene is spawned only
-//! once when entering `InGame`/`Paused` and despawned (root + children)
-//! when returning to `MainMenu`/`Settings`/`Connecting`. The [`GameSceneRoot`]
-//! marker makes the spawn idempotent.
+//! The lifecycle is driven by [`Screen`]: the scene is spawned on
+//! `OnEnter(Screen::InGame)` and despawned on `OnExit`. Pause is a client
+//! overlay and does not despawn the scene. The [`GameSceneRoot`] marker is a
+//! safety check against a duplicate spawn.
 //!
 //! The [`occlusion`] submodule hides the canopy/roof of props (any glTF node
 //! whose name ends with `_Top`) when it blocks the line of sight between the
@@ -14,7 +14,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
-use crate::game_state::{not_typing, GameScreen, Screen};
+use crate::game_state::{not_typing, Screen};
 use crate::renderer::RenderSync;
 
 pub struct BaseScenePlugin;
@@ -22,20 +22,21 @@ pub struct BaseScenePlugin;
 impl Plugin for BaseScenePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<systems::CameraZoom>()
+            .add_systems(OnEnter(Screen::InGame), systems::spawn_game_scene)
+            .add_systems(OnExit(Screen::InGame), systems::despawn_game_scene)
             .add_systems(
                 Update,
                 (
-                    systems::update_game_scene_lifecycle,
                     // Previously ungated entirely — not even by screen — so
                     // PageUp/PageDown zoomed the (invisible, not-yet-spawned)
                     // camera from the main menu, and would also have fired
                     // while typing.
                     systems::handle_camera_zoom
-                        .run_if(in_game_or_paused)
+                        .run_if(in_state(Screen::InGame))
                         .run_if(not_typing),
                     occlusion::tag_occludables,
-                    occlusion::update_camera_occlusion.run_if(in_game_or_paused),
-                    occlusion::animate_occluder_fade.run_if(in_game_or_paused),
+                    occlusion::update_camera_occlusion.run_if(in_state(Screen::InGame)),
+                    occlusion::animate_occluder_fade.run_if(in_state(Screen::InGame)),
                 ),
             )
             // The follow must observe the transform written by
@@ -50,8 +51,4 @@ impl Plugin for BaseScenePlugin {
                 systems::follow_controlled_player.in_set(RenderSync::Camera),
             );
     }
-}
-
-fn in_game_or_paused(screen: Res<GameScreen>) -> bool {
-    matches!(screen.0, Screen::InGame | Screen::Paused)
 }

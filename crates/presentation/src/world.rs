@@ -4,13 +4,10 @@
 //! primitives. A future asset registry will replace these meshes with GLB
 //! scenes without changing the map manifest contract.
 
-use crate::game_state::{GameScreen, Screen};
-use bevy::asset::RenderAssetUsages;
-use bevy::mesh::Indices;
+use crate::game_state::Screen;
 use bevy::prelude::*;
-use bevy::render::render_resource::PrimitiveTopology;
 use bevymmo_app_support::paths;
-use bevymmo_client::movement::ClientSurfaceQuery;
+use bevymmo_client::movement::{ClientCollision, ClientSurfaceQuery};
 use bevymmo_gameplay::placeables::{AssetHint, PlaceableRegistry};
 use bevymmo_world::{CollisionGrid, MapManifest, Prop, SurfaceQuery, Terrain};
 
@@ -82,6 +79,7 @@ impl Plugin for WorldMapPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ClientWorldMap>()
             .init_resource::<ClientSurfaceQuery>()
+            .init_resource::<ClientCollision>()
             .init_resource::<ClientPropMeshRegistry>()
             .init_resource::<SteepSlopeDebug>()
             .add_systems(
@@ -89,7 +87,7 @@ impl Plugin for WorldMapPlugin {
                 (
                     load_map_when_in_game,
                     cleanup_map_when_not_in_game,
-                    sync_surface_query,
+                    sync_world_queries,
                     draw_steep_slopes.run_if(|debug: Res<SteepSlopeDebug>| debug.0),
                 )
                     .chain(),
@@ -99,7 +97,7 @@ impl Plugin for WorldMapPlugin {
 
 fn load_map_when_in_game(
     mut commands: Commands,
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     mut world_map: ResMut<ClientWorldMap>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -107,7 +105,7 @@ fn load_map_when_in_game(
     placeables: Res<PlaceableRegistry>,
     asset_server: Res<AssetServer>,
 ) {
-    if world_map.load_attempted || !matches!(screen.0, Screen::InGame | Screen::Paused) {
+    if world_map.load_attempted || *screen.get() != Screen::InGame {
         return;
     }
     world_map.load_attempted = true;
@@ -128,7 +126,6 @@ fn load_map_when_in_game(
     );
 
     if should_load_map_scene(&manifest) {
-        spawn_heightfield_visual(&mut commands, &mut meshes, &mut materials, &manifest);
         spawn_map_scene_visual(&mut commands, &asset_server, &manifest);
     } else {
         spawn_terrain_visual(
@@ -157,13 +154,13 @@ fn load_map_when_in_game(
 
 fn cleanup_map_when_not_in_game(
     mut commands: Commands,
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     mut world_map: ResMut<ClientWorldMap>,
     props: Query<Entity, With<MapPropVisual>>,
     terrain: Query<Entity, With<MapTerrainVisual>>,
     scenes: Query<Entity, With<MapSceneVisual>>,
 ) {
-    if world_map.load_attempted && !matches!(screen.0, Screen::InGame | Screen::Paused) {
+    if world_map.load_attempted && *screen.get() != Screen::InGame {
         for entity in props.iter().chain(terrain.iter()).chain(scenes.iter()) {
             commands.entity(entity).despawn();
         }
@@ -174,20 +171,32 @@ fn cleanup_map_when_not_in_game(
     }
 }
 
-/// Synchronizes the shared `ClientSurfaceQuery` resource with the local `ClientWorldMap`.
+/// Publishes the loaded map's terrain and blocker data to the resources
+/// `bevymmo_client` owns.
 ///
-/// This bridges the presentation layer (which owns `ClientWorldMap`) with the client
-/// layer (which needs surface data for click-to-move) by copying the surface query
-/// data to a shared resource that both crates can access without cross-dependencies.
-fn sync_surface_query(
+/// Both halves have to travel together: the SpacetimeDB prediction system
+/// needs the surfaces *and* the collision grid to run the same
+/// `step_on_terrain` the module runs, and a client holding one without the
+/// other would silently fall back to collisionless stepping.
+fn sync_world_queries(
     world_map: Res<ClientWorldMap>,
     mut shared_surface_query: ResMut<ClientSurfaceQuery>,
+    mut shared_collision: ResMut<ClientCollision>,
 ) {
     if !world_map.is_changed() {
         return;
     }
 
     shared_surface_query.0.clone_from(&world_map.surface_query);
+    shared_collision.grid.clone_from(&world_map.collision);
+    let metrics = world_map
+        .manifest
+        .as_ref()
+        .map(|manifest| manifest.get_world_metrics());
+    shared_collision.max_step_height = metrics.map(|m| m.max_step_height).unwrap_or_default();
+    shared_collision.collision_radius = metrics
+        .map(|m| m.player_radius)
+        .unwrap_or(bevymmo_gameplay::movement::DEFAULT_STEP_RADIUS);
 }
 
 fn should_load_map_scene(manifest: &MapManifest) -> bool {
@@ -219,87 +228,6 @@ fn spawn_map_scene_visual(
         Transform::default(),
         WorldAssetRoot(handle),
         MapSceneVisual,
-    ));
-}
-
-/// Renders the authored ground cube (unit mesh, so `scale` is the full size).
-/// Mirrors the editor's terrain visual so maps look the same in-game.
-fn spawn_heightfield_visual(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    manifest: &MapManifest,
-) {
-    let Some(heightfield) = manifest
-        .surfaces
-        .iter()
-        .find_map(|surface| surface.heightfield.as_ref())
-    else {
-        return;
-    };
-
-    let resolution = heightfield.resolution as usize;
-    let side = resolution + 1;
-    if resolution == 0 || heightfield.heights.len() != side * side {
-        warn!("Skipping invalid heightfield for map {:?}", manifest.map_id);
-        return;
-    }
-
-    let bounds = heightfield.bounds;
-    let mut positions = Vec::with_capacity(side * side);
-    let mut normals = Vec::with_capacity(side * side);
-    for row in 0..side {
-        let z = bounds.min_z + (bounds.max_z - bounds.min_z) * row as f32 / resolution as f32;
-        for column in 0..side {
-            let x =
-                bounds.min_x + (bounds.max_x - bounds.min_x) * column as f32 / resolution as f32;
-            // Heightfields are stored X-major with Z varying fastest:
-            // `index = x * stride + z` (see `HeightfieldData::sample_height`).
-            // `row` walks Z and `column` walks X, so the index is
-            // `column * side + row`. The transposed `row * side + column`
-            // form built a mirrored copy of the terrain that punched through
-            // the GLB surface across 41% of the map, by up to 22 m.
-            positions.push([x, heightfield.heights[column * side + row] - 0.02, z]);
-            normals.push([0.0, 1.0, 0.0]);
-        }
-    }
-
-    let mut indices = Vec::with_capacity(resolution * resolution * 6);
-    for row in 0..resolution {
-        for column in 0..resolution {
-            let top_left = (row * side + column) as u32;
-            let top_right = top_left + 1;
-            let bottom_left = top_left + side as u32;
-            let bottom_right = bottom_left + 1;
-            indices.extend_from_slice(&[
-                top_left,
-                bottom_left,
-                top_right,
-                top_right,
-                bottom_left,
-                bottom_right,
-            ]);
-        }
-    }
-
-    let mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-    .with_inserted_indices(Indices::U32(indices));
-    let material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.16, 0.30, 0.10),
-        perceptual_roughness: 1.0,
-        ..default()
-    });
-
-    commands.spawn((
-        Name::new(format!("Map Heightfield {}", manifest.map_id)),
-        Mesh3d(meshes.add(mesh)),
-        MeshMaterial3d(material),
-        MapTerrainVisual,
     ));
 }
 
@@ -509,11 +437,12 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<ClientWorldMap>()
             .init_resource::<ClientSurfaceQuery>()
+            .init_resource::<ClientCollision>()
             .init_resource::<SurfaceQueryChangeCount>()
             .add_systems(
                 Update,
                 (
-                    sync_surface_query,
+                    sync_world_queries,
                     count_surface_query_changes.run_if(resource_changed::<ClientSurfaceQuery>),
                 )
                     .chain(),

@@ -36,8 +36,8 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use bevymmo_domain::placeables::PlaceableRegistry;
 use bevymmo_domain::content::placeables::register_all;
+use bevymmo_domain::placeables::PlaceableRegistry;
 use bevymmo_domain::world::{CollisionGrid, GroundContact, MapManifest, Prop, SurfaceQuery};
 use spacetimedb::{reducer, ReducerContext, Table};
 
@@ -233,15 +233,34 @@ pub fn seed(ctx: &ReducerContext) {
     let (mut enemies, mut bosses, mut npcs, mut unbound) = (0u32, 0u32, 0u32, 0u32);
 
     for prop in &props {
-        if let Some(definition) = registry.enemies.get(&prop.kind) {
-            let config = definition.enemy_config();
+        if let Some(definition) = registry.dummies.get(&prop.kind) {
+            let kind = if definition.is_ally() {
+                EntityKindRow::AllyDummy
+            } else {
+                EntityKindRow::Dummy
+            };
             spawn_creature(
+                ctx,
+                prop,
+                kind,
+                definition.display_name(),
+                StatsRow::from(&definition.dummy_stats()),
+            );
+        } else if let Some(definition) = registry.enemies.get(&prop.kind) {
+            let config = definition.enemy_config();
+            let entity = spawn_creature(
                 ctx,
                 prop,
                 EntityKindRow::Enemy,
                 definition.display_name(),
                 StatsRow::from(&config.stats),
             );
+            let attack = config
+                .spell_hotbar
+                .q_spell
+                .clone()
+                .unwrap_or_else(|| bevymmo_domain::spells::SpellId::new("fireball"));
+            crate::sim::ai::remember_enemy(entity.entity_id, config.aggro_range, attack);
             enemies += 1;
         } else if let Some(definition) = registry.bosses.get(&prop.kind) {
             let config = definition.boss_config();
@@ -377,6 +396,44 @@ fn apply_prop_overrides(ctx: &ReducerContext, map_id: &str, props: &mut Vec<Prop
     }
 }
 
+/// Spawns the allied training dummy if this database was seeded before that
+/// placement existed. `seed` only runs on empty DBs and GM reseed, so a live
+/// world would otherwise keep the old dummy-only roster after publish.
+pub fn ensure_ally_dummy(ctx: &ReducerContext) -> bool {
+    if ctx
+        .db
+        .game_entity()
+        .iter()
+        .any(|entity| entity.kind == EntityKindRow::AllyDummy)
+    {
+        return true;
+    }
+    let Some(map) = default_map() else {
+        return false;
+    };
+    let registry = placeables();
+    let Some(definition) = registry.dummies.values().find(|dummy| dummy.is_ally()) else {
+        return false;
+    };
+    let wanted = definition.id();
+    let Some(prop) = map
+        .manifest
+        .props
+        .iter()
+        .find(|prop| prop.kind.as_str() == wanted.as_str())
+    else {
+        return false;
+    };
+    spawn_creature(
+        ctx,
+        prop,
+        EntityKindRow::AllyDummy,
+        definition.display_name(),
+        StatsRow::from(&definition.dummy_stats()),
+    );
+    true
+}
+
 /// Inserts a `game_entity` for a placement, and its `entity_stats`.
 fn spawn_creature(
     ctx: &ReducerContext,
@@ -397,6 +454,7 @@ fn spawn_creature(
         stats,
         current_mana: stats.max_mana,
     });
+    crate::sim::combat::record_base_stats(entity.entity_id, stats);
     entity
 }
 

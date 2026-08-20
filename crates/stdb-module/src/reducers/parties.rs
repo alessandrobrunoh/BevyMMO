@@ -28,8 +28,8 @@ use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
 use crate::reducers::lifecycle::caller_character;
 use crate::tables::{
-    party, party_member, party_request, player, player_message, session, PartyMemberRow, PartyRequestKind,
-    PartyRequestRow, PartyRow, Player, PlayerMessageEvent,
+    party, party_member, party_request, player, player_message, session, PartyMemberRow,
+    PartyRequestKind, PartyRequestRow, PartyRow, Player, PlayerMessageEvent,
 };
 
 // ---------------------------------------------------------------------------
@@ -325,13 +325,19 @@ pub fn party_accept(ctx: &ReducerContext, name: String) -> Result<(), String> {
     // Re-validated here, not trusted from when the request was created:
     // the party's roster and existence can both have changed since.
     let Some(party_row) = ctx.db.party().party_id().find(&request.party_id) else {
-        ctx.db.party_request().request_id().delete(&request.request_id);
+        ctx.db
+            .party_request()
+            .request_id()
+            .delete(&request.request_id);
         return Err("that party no longer exists".to_string());
     };
 
     let new_member = new_member_on_accept(request.kind, actor.character_id, request.initiator);
     if member_of(ctx, new_member).is_some() {
-        ctx.db.party_request().request_id().delete(&request.request_id);
+        ctx.db
+            .party_request()
+            .request_id()
+            .delete(&request.request_id);
         return Err("that player is already in a party".to_string());
     }
     if party_is_full(party_size(ctx, party_row.party_id)) {
@@ -343,7 +349,10 @@ pub fn party_accept(ctx: &ReducerContext, name: String) -> Result<(), String> {
         party_id: party_row.party_id,
         joined_at: ctx.timestamp,
     });
-    ctx.db.party_request().request_id().delete(&request.request_id);
+    ctx.db
+        .party_request()
+        .request_id()
+        .delete(&request.request_id);
 
     notify_character(
         ctx,
@@ -363,7 +372,10 @@ pub fn party_decline(ctx: &ReducerContext, name: String) -> Result<(), String> {
     let request = find_actionable_request(ctx, actor.character_id, target.character_id)
         .ok_or_else(|| format!("no pending party request from {}", target.display_name))?;
 
-    ctx.db.party_request().request_id().delete(&request.request_id);
+    ctx.db
+        .party_request()
+        .request_id()
+        .delete(&request.request_id);
 
     notify_character(
         ctx,
@@ -383,7 +395,10 @@ pub fn party_leave(ctx: &ReducerContext) -> Result<(), String> {
         member_of(ctx, actor.character_id).ok_or_else(|| "you are not in a party".to_string())?;
     let party_id = membership.party_id;
 
-    ctx.db.party_member().character_id().delete(&actor.character_id);
+    ctx.db
+        .party_member()
+        .character_id()
+        .delete(&actor.character_id);
 
     let Some(party_row) = ctx.db.party().party_id().find(&party_id) else {
         // Defensive: a member row should never outlive its party, but if it
@@ -391,7 +406,8 @@ pub fn party_leave(ctx: &ReducerContext) -> Result<(), String> {
         return Ok(());
     };
 
-    let remaining: Vec<PartyMemberRow> = ctx.db.party_member().by_party().filter(&party_id).collect();
+    let remaining: Vec<PartyMemberRow> =
+        ctx.db.party_member().by_party().filter(&party_id).collect();
 
     if remaining.is_empty() {
         ctx.db.party().party_id().delete(&party_id);
@@ -431,6 +447,51 @@ pub fn party_leave(ctx: &ReducerContext) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Drops party membership, leadership and pending requests for a character
+/// that is being deleted. Shared with `delete_character` so a removed leader
+/// cannot leave a `PartyRow.leader` unique key pointing at a ghost.
+pub(crate) fn forget_deleted_character(ctx: &ReducerContext, actor: &Player) {
+    let character_id = actor.character_id;
+    let request_ids: Vec<u64> = ctx
+        .db
+        .party_request()
+        .iter()
+        .filter(|row| row.initiator == character_id || row.recipient == character_id)
+        .map(|row| row.request_id)
+        .collect();
+    for request_id in request_ids {
+        ctx.db.party_request().request_id().delete(&request_id);
+    }
+
+    let Some(membership) = member_of(ctx, character_id) else {
+        return;
+    };
+    let party_id = membership.party_id;
+    ctx.db.party_member().character_id().delete(&character_id);
+
+    let Some(party_row) = ctx.db.party().party_id().find(&party_id) else {
+        return;
+    };
+    let remaining: Vec<PartyMemberRow> =
+        ctx.db.party_member().by_party().filter(&party_id).collect();
+    if remaining.is_empty() {
+        ctx.db.party().party_id().delete(&party_id);
+        return;
+    }
+    if party_row.leader == character_id {
+        let candidates: Vec<(Uuid, i64)> = remaining
+            .iter()
+            .map(|row| (row.character_id, row.joined_at.to_micros_since_unix_epoch()))
+            .collect();
+        if let Some(new_leader) = promote_leader(&candidates) {
+            ctx.db.party().party_id().update(PartyRow {
+                leader: new_leader,
+                ..party_row
+            });
+        }
+    }
 }
 
 #[cfg(test)]

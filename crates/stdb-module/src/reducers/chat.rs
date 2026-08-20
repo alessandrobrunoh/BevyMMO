@@ -32,8 +32,8 @@ fn validate_chat_message(text: &str) -> Result<&str, String> {
 pub fn send_chat_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
     let message = validate_chat_message(&text)?;
 
-    let character = caller_character(ctx)
-        .map_err(|_| "you must join the world before chatting".to_string())?;
+    let character =
+        caller_character(ctx).map_err(|_| "you must join the world before chatting".to_string())?;
 
     ctx.db.player_message().insert(PlayerMessageEvent {
         target: None,

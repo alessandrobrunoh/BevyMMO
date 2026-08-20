@@ -17,6 +17,7 @@ pub fn player_defaults() -> StatsBundleData {
         vital: VitalStats {
             current_health: 100.0,
             max_health: 100.0,
+            current_mana: 100.0,
             max_mana: 100.0,
             mana_regeneration: 5.0,
         },
@@ -34,6 +35,7 @@ pub fn enemy_defaults() -> StatsBundleData {
         vital: VitalStats {
             current_health: 50.0,
             max_health: 50.0,
+            current_mana: 40.0,
             max_mana: 40.0,
             mana_regeneration: 2.0,
         },
@@ -54,6 +56,7 @@ pub fn boss_defaults() -> StatsBundleData {
         vital: VitalStats {
             current_health: 6000.0,
             max_health: 6000.0,
+            current_mana: 0.0,
             max_mana: 0.0,
             mana_regeneration: 0.0,
         },
@@ -72,8 +75,9 @@ pub fn dummy_defaults() -> StatsBundleData {
             armor: 0.0,
         },
         vital: VitalStats {
-            current_health: 1_000_000_000.0,
-            max_health: 1_000_000_000.0,
+            current_health: 10_000.0,
+            max_health: 10_000.0,
+            current_mana: 0.0,
             max_mana: 0.0,
             mana_regeneration: 0.0,
         },
@@ -88,6 +92,9 @@ mod tests {
     fn player_defaults_start_at_full_health() {
         let stats = player_defaults();
         assert_eq!(stats.vital.current_health, stats.vital.max_health);
+        assert_eq!(stats.vital.current_mana, stats.vital.max_mana);
+        assert_eq!(stats.vital.max_mana, 100.0);
+        assert_eq!(stats.vital.mana_regeneration, 5.0);
     }
 
     #[test]
@@ -123,6 +130,6 @@ mod tests {
     #[test]
     fn dummy_defaults_have_huge_hp() {
         let stats = dummy_defaults();
-        assert_eq!(stats.vital.max_health, 1_000_000_000.0);
+        assert_eq!(stats.vital.max_health, 10_000.0);
     }
 }

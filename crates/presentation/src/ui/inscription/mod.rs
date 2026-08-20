@@ -1,22 +1,25 @@
-//! Inscription UI — the Eidolon counterpart of `crate::ui::spell_selector`.
+//! Inscription UI for Eidolon Root Words and Ancient Words.
 //!
-//! Shown instead of the spell selector when the equipped weapon has Eidolon
-//! gestures (`Item::ability_loadout()`); the two share the same toggle key,
-//! each independently checking the equipped weapon before opening (mirrors
-//! `crate::spells::input`/`crate::spells::eidolon_input` splitting Q/W/E the
-//! same way).
+//! Opens on the spellbook key when the equipped weapon or inscribed armor
+//! exposes an ability loadout.
 
 mod components;
-mod systems;
+pub(crate) mod systems;
 
 use bevy::prelude::*;
-use bevymmo_network::network::mode::has_client;
 
-use crate::game_state::{not_typing, GameScreen, Screen};
+use crate::game_state::{in_gameplay, not_typing};
 
 #[derive(Resource, Default)]
 pub struct InscriptionUiState {
     pub is_open: bool,
+    /// Vertical offset of the window's scroll view. Restored when the panel
+    /// is rebuilt after an equipment replica, so clicking a toggle does not
+    /// yank the user back to the top.
+    scroll: f32,
+    /// Last equipment drawn into the open window. Identical replicas skip
+    /// a rebuild (the stdb mirror re-inserts equipment on unrelated row events).
+    shown_equipment: Option<bevymmo_gameplay::items::components::Equipment>,
 }
 
 pub struct InscriptionUiPlugin;
@@ -34,12 +37,7 @@ impl Plugin for InscriptionUiPlugin {
                 systems::handle_inscription_interactions,
             )
                 .chain()
-                .run_if(has_client)
-                .run_if(in_gameplay_or_paused),
+                .run_if(in_gameplay),
         );
     }
-}
-
-fn in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
-    matches!(screen.0, Screen::InGame | Screen::Paused)
 }

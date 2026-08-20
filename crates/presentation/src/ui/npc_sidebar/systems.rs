@@ -3,14 +3,18 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevymmo_client::pointer::{hud_wants_pointer, PointerOnHud};
 use bevymmo_client::stdb::{commands, StdbConnection};
+use bevymmo_content::item_definitions::greeter_stock;
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
 use bevymmo_gameplay::items::registry::ItemRegistry;
 use bevymmo_network::network::protocol::Position;
 use bevymmo_network::world_components::NetworkEntityId;
 
 use crate::ui::card::components::CardPositioning;
-use crate::ui::card::{CardBuilder, CardKind};
+use crate::ui::card::{
+    ornate_bar_image, CardBuilder, CardFrameAssets, CardKind, ORNATE_BAR_NEUTRAL_PATH,
+};
 use crate::ui::npc_sidebar::components::{NpcSidebar, VendorItemButton};
 use crate::ui::theme::UiTheme;
 
@@ -55,8 +59,9 @@ pub fn closest_friendly_hit(hits: &[EntityHit]) -> Option<Entity> {
 pub fn npc_sidebar_on_click(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
+    pointer_on_hud: Res<PointerOnHud>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: Query<(&Camera, &Transform), With<Camera3d>>,
     theme: Res<UiTheme>,
     item_registry: Res<ItemRegistry>,
     // Query per le entità game (NPC = GameEntity + Position + EntityKind::Friendly)
@@ -64,9 +69,13 @@ pub fn npc_sidebar_on_click(
     name_query: Query<&PlayerName>,
     // Query per le sidebar esistenti
     existing_sidebar: Query<Entity, With<NpcSidebar>>,
+    asset_server: Res<AssetServer>,
 ) {
     // Solo al frame del click sinistro
     if !mouse.just_pressed(MouseButton::Left) {
+        return;
+    }
+    if hud_wants_pointer(&pointer_on_hud) {
         return;
     }
 
@@ -114,6 +123,7 @@ pub fn npc_sidebar_on_click(
         target_entity,
         &npc_name,
         &item_registry,
+        &asset_server,
     );
 }
 
@@ -131,12 +141,13 @@ fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> 
 /// Ottiene il raggio dalla Camera3d attraverso il cursore nella PrimaryWindow.
 fn cursor_ray(
     windows: &Query<&Window, With<PrimaryWindow>>,
-    cameras: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: &Query<(&Camera, &Transform), With<Camera3d>>,
 ) -> Option<Ray3d> {
     let window = windows.single().ok()?;
     let cursor_pos = window.cursor_position()?;
     let (camera, transform) = cameras.iter().next()?;
-    camera.viewport_to_world(transform, cursor_pos).ok()
+    let view = crate::renderer::camera_view(transform);
+    camera.viewport_to_world(&view, cursor_pos).ok()
 }
 
 /// Spawna una Card UI per la sidebar NPC.
@@ -146,14 +157,18 @@ fn spawn_npc_sidebar(
     target_entity: Entity,
     npc_name: &str,
     item_registry: &ItemRegistry,
+    asset_server: &AssetServer,
 ) {
+    let vendor_bar = asset_server.load(ORNATE_BAR_NEUTRAL_PATH);
     let card_entity = CardBuilder::new(CardKind::Generic, npc_name)
+        .frame(CardFrameAssets::load(asset_server))
         .width(Val::Px(320.0))
         .height(Val::Px(360.0))
         .positioning(CardPositioning::Left)
         .closeable()
         .exclusive()
-        .with_body(|body| {
+        .scrollable()
+        .with_body(move |body| {
             body.spawn((
                 Text::new("Ciao! Scegli un oggetto:"),
                 TextFont {
@@ -165,19 +180,19 @@ fn spawn_npc_sidebar(
             for (_, item) in item_registry
                 .sorted_items()
                 .into_iter()
-                .filter(|(_, item)| item.config().equippable_into.is_some())
+                .filter(|(_, item)| greeter_stock().iter().any(|id| item.id().as_str() == *id))
             {
                 body.spawn((
                     Button,
                     Node {
                         width: Val::Percent(100.0),
-                        min_height: Val::Px(30.0),
+                        min_height: Val::Px(32.0),
                         margin: UiRect::vertical(Val::Px(2.0)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    BackgroundColor(theme.button_bg),
+                    ornate_bar_image(vendor_bar.clone()),
                     VendorItemButton {
                         npc: target_entity,
                         item_id: item.id(),
@@ -302,5 +317,17 @@ mod tests {
         let off_axis = Vec3::new(10.0, 0.0, 5.0); // 10 unità a destra del raggio
         let distance = point_to_ray_distance(off_axis, origin, direction);
         assert!((distance - 10.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn greeter_stock_matches_registered_weapons() {
+        let registry = bevymmo_content::item_definitions::default_items();
+        for id in greeter_stock() {
+            assert!(
+                registry.contains(&bevymmo_gameplay::items::registry::ItemId::new(*id)),
+                "greeter lists {id} but the catalogue does not"
+            );
+        }
+        assert_eq!(greeter_stock().len(), 9);
     }
 }

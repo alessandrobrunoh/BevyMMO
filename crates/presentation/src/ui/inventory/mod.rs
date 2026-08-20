@@ -7,9 +7,8 @@ pub mod systems;
 pub mod weapon_detail;
 
 use bevy::prelude::*;
-use bevymmo_network::network::mode::has_client;
 
-use crate::game_state::{not_typing, GameScreen, Screen};
+use crate::game_state::{in_gameplay, not_typing};
 use components::InventorySelection;
 pub use drag::ItemDragState;
 
@@ -39,15 +38,11 @@ impl Plugin for InventoryUiPlugin {
                 drag::start_item_drag,
                 drag::update_item_drag,
                 drag::end_item_drag,
+                drag::inspect_clicked_item,
                 drag::handle_destroy_dialog,
             )
                 .chain()
-                .run_if(has_client)
-                .run_if(in_gameplay_or_paused),
+                .run_if(in_gameplay),
         );
     }
-}
-
-fn in_gameplay_or_paused(screen: Res<GameScreen>) -> bool {
-    matches!(screen.0, Screen::InGame | Screen::Paused)
 }

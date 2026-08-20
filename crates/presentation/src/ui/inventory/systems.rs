@@ -8,40 +8,45 @@ use bevymmo_gameplay::items::{
     registry::ItemRegistry,
 };
 
-use bevymmo_gameplay::abilities::KnownGlyphs;
-
-use super::weapon_detail::GlyphRegistries;
-use super::{components::*, detail::*, InventoryUiState};
+use super::{components::*, detail::despawn_detail_cards, InventoryUiState};
 use crate::ui::{
     card::{
-        builder::CardBuilder,
+        builder::{CardBuilder, CardFrameAssets},
         components::{CardKind, CardPositioning, CardWindow},
     },
     settings::state::{GameSettingsResource, KeyAction},
     theme::UiTheme,
 };
 
-// Sized to still fit the default 800x600 dev window (see
-// `ui::card::builder`'s note on why cards use viewport-relative centring):
-// header + padding + 3x3 equip grid + mount row + divider + 6x5 item grid
-// fit in the scrollable body at these dimensions.
-const INVENTORY_CARD_WIDTH: f32 = 340.0;
-const INVENTORY_CARD_HEIGHT: f32 = 560.0;
+// Width is chosen so 5 columns + gaps + the visible scrollbar still sit
+// inside the ornate frame's inner dark area. Height is `Auto`: the card
+// docks between the top edge and the hotbar (see `CardBuilder`).
+const INVENTORY_CARD_WIDTH: f32 = 448.0;
 const INVENTORY_GRID_COLUMNS: u16 = 5;
 const INVENTORY_GRID_ROWS: u16 =
     INVENTORY_CAPACITY.div_ceil(INVENTORY_GRID_COLUMNS as usize) as u16;
-const INVENTORY_SLOT_HEIGHT: f32 = 64.0;
-const EQUIP_SLOT_SIZE: f32 = 46.0;
+const INVENTORY_SLOT_WIDTH: f32 = 48.0;
+const INVENTORY_SLOT_HEIGHT: f32 = 50.0;
+const INVENTORY_SLOT_GAP: f32 = 4.0;
+const EQUIP_SLOT_SIZE: f32 = 44.0;
+/// Column track is wider than the box so captions like `OFFHAND` still fit.
+const EQUIP_CELL_WIDTH: f32 = 52.0;
+const EQUIP_GRID_GAP: f32 = 6.0;
+const MAIN_COLUMN_GAP: f32 = 4.0;
+/// Extra inset on top of `CardBuilder`'s frame padding so slots stay off the
+/// gold ornaments when that padding is tight against the 9-slice corners.
+const INNER_CONTENT_PADDING: f32 = 16.0;
+const INVENTORY_GRID_WIDTH: f32 = INVENTORY_GRID_COLUMNS as f32 * INVENTORY_SLOT_WIDTH
+    + (INVENTORY_GRID_COLUMNS - 1) as f32 * INVENTORY_SLOT_GAP;
+// 448 − ~2×64 frame inset − ~20 px scrollbar. Inner padding is extra to that.
+const _: () = assert!(INVENTORY_GRID_WIDTH <= INVENTORY_CARD_WIDTH - 128.0 - 20.0);
 /// Shown in an empty inventory / equipment cell.
 ///
 /// ASCII on purpose: Bevy's built-in font is an ASCII subset, so an em dash
 /// renders as a blank box rather than a dash.
 const EMPTY_SLOT_PLACEHOLDER: &str = "-";
-
-/// Slot border color for an empty box vs. one holding an item, approximating
-/// the rune-lined boxes of the reference design.
-const EMPTY_SLOT_BORDER: Color = Color::srgba(0.35, 0.38, 0.45, 0.5);
-const FILLED_SLOT_BORDER: Color = Color::srgba(0.35, 0.65, 0.95, 0.85);
+const SLOT_EMPTY_PATH: &str = "ui/extracted_065811/slot_empty_01.png";
+const SLOT_ACTIVE_PATH: &str = "ui/extracted_065811/slot_active.png";
 
 pub fn toggle_inventory(
     keys: Res<ButtonInput<KeyCode>>,
@@ -52,6 +57,7 @@ pub fn toggle_inventory(
     theme: Res<UiTheme>,
     registry: Res<ItemRegistry>,
     player_query: Query<(&Inventory, &Equipment), With<LocalPlayer>>,
+    asset_server: Res<AssetServer>,
 ) {
     if !settings.just_pressed(KeyAction::ToggleInventory, &keys) {
         return;
@@ -71,7 +77,14 @@ pub fn toggle_inventory(
         .map(|(i, e)| (i.clone(), e.clone()))
         .unwrap_or_default();
 
-    spawn_inventory_window(&mut commands, &theme, &registry, &inventory, &equipment);
+    spawn_inventory_window(
+        &mut commands,
+        &theme,
+        &registry,
+        &inventory,
+        &equipment,
+        &asset_server,
+    );
 }
 
 /// Resolves the display label for an equip slot's box: the equipped item's
@@ -92,14 +105,16 @@ fn spawn_equip_slot_cell(
     theme: &UiTheme,
     slot: EquipSlot,
     label: String,
+    images: &InventorySlotImages,
 ) {
     let has_item = label != EMPTY_SLOT_PLACEHOLDER;
 
     parent
         .spawn((Node {
+            width: Val::Px(EQUIP_CELL_WIDTH),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
-            row_gap: Val::Px(4.0),
+            row_gap: Val::Px(2.0),
             ..default()
         },))
         .with_children(|cell| {
@@ -119,24 +134,27 @@ fn spawn_equip_slot_cell(
                     height: Val::Px(EQUIP_SLOT_SIZE),
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
-                    padding: UiRect::all(Val::Px(3.0)),
-                    border: UiRect::all(Val::Px(1.5)),
-                    border_radius: BorderRadius::all(Val::Px(6.0)),
+                    padding: UiRect::all(Val::Px(2.0)),
+                    overflow: Overflow::clip(),
                     ..default()
                 },
-                BackgroundColor(theme.button_bg),
-                BorderColor::all(if has_item {
-                    FILLED_SLOT_BORDER
+                ImageNode::new(if has_item {
+                    images.active.clone()
                 } else {
-                    EMPTY_SLOT_BORDER
-                }),
+                    images.empty.clone()
+                })
+                .with_mode(NodeImageMode::Stretch),
+                InventorySlotImages {
+                    empty: images.empty.clone(),
+                    active: images.active.clone(),
+                },
                 EquipSlotButton { slot },
             ))
             .with_children(|btn| {
                 btn.spawn((
                     Text::new(label),
                     TextFont {
-                        font_size: FontSize::Px(theme.button_font_size * 0.55),
+                        font_size: FontSize::Px(theme.button_font_size * 0.48),
                         ..default()
                     },
                     TextColor(theme.text_color),
@@ -153,6 +171,7 @@ fn spawn_inventory_window(
     registry: &ItemRegistry,
     inventory: &Inventory,
     equipment: &Equipment,
+    asset_server: &AssetServer,
 ) {
     let equipment = equipment.clone();
     let inventory = inventory.clone();
@@ -175,23 +194,30 @@ fn spawn_inventory_window(
                 .and_then(|opt| opt.as_ref())
                 .and_then(|instance| registry_snapshot.get(&instance.item_id))
                 .map(|item| item.display_name().to_string())
-                .unwrap_or_else(|| format!("Slot {}", idx + 1))
+                .unwrap_or_default()
         })
         .collect();
-
+    let slot_images = InventorySlotImages {
+        empty: asset_server.load(SLOT_EMPTY_PATH),
+        active: asset_server.load(SLOT_ACTIVE_PATH),
+    };
     CardBuilder::new(CardKind::Inventory, "Inventory")
+        .frame(CardFrameAssets::load(asset_server))
+        .headerless()
         .width(Val::Px(INVENTORY_CARD_WIDTH))
-        .height(Val::Px(INVENTORY_CARD_HEIGHT))
+        .height(Val::Auto)
         .positioning(CardPositioning::Right)
         .scrollable()
-        .closeable()
         .exclusive()
         .with_body(move |body| {
+            // Inner spacer: extra padding so slots stay off the gold frame
+            // even when CardBuilder's inset is tight against the ornaments.
             body.spawn((Node {
                 width: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                row_gap: Val::Px(9.0),
+                padding: UiRect::all(Val::Px(INNER_CONTENT_PADDING)),
+                row_gap: Val::Px(MAIN_COLUMN_GAP),
                 ..default()
             },))
                 .with_children(|main| {
@@ -206,19 +232,23 @@ fn spawn_inventory_window(
                     // each other. `auto` sizes each row to its content
                     // instead, which works regardless of the container's
                     // height being definite or not.
-                    main.spawn((Node {
-                        display: Display::Grid,
-                        grid_template_columns: RepeatedGridTrack::flex(3, 1.0),
-                        grid_template_rows: RepeatedGridTrack::auto(3),
-                        row_gap: Val::Px(10.0),
-                        column_gap: Val::Px(10.0),
-                        ..default()
-                    },))
-                        .with_children(|grid| {
-                            for (slot, label) in grid_labels {
-                                spawn_equip_slot_cell(grid, theme, slot, label);
-                            }
-                        });
+                    main.spawn((
+                        Node {
+                            display: Display::Grid,
+                            grid_template_columns: RepeatedGridTrack::px(3, EQUIP_CELL_WIDTH),
+                            grid_template_rows: RepeatedGridTrack::auto(3),
+                            justify_content: JustifyContent::Center,
+                            row_gap: Val::Px(EQUIP_GRID_GAP),
+                            column_gap: Val::Px(EQUIP_GRID_GAP),
+                            ..default()
+                        },
+                        EquipmentPanel,
+                    ))
+                    .with_children(|grid| {
+                        for (slot, label) in grid_labels {
+                            spawn_equip_slot_cell(grid, theme, slot, label, &slot_images);
+                        }
+                    });
 
                     // Mount: standalone, centered below the 3x3 grid.
                     main.spawn((Node {
@@ -227,7 +257,13 @@ fn spawn_inventory_window(
                         ..default()
                     },))
                         .with_children(|row| {
-                            spawn_equip_slot_cell(row, theme, mount_slot, mount_label);
+                            spawn_equip_slot_cell(
+                                row,
+                                theme,
+                                mount_slot,
+                                mount_label,
+                                &slot_images,
+                            );
                         });
 
                     // Divider.
@@ -235,75 +271,76 @@ fn spawn_inventory_window(
                         Node {
                             width: Val::Percent(100.0),
                             height: Val::Px(1.0),
-                            margin: UiRect::vertical(Val::Px(4.0)),
+                            margin: UiRect::vertical(Val::Px(2.0)),
                             ..default()
                         },
                         BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.12)),
                     ));
 
-                    main.spawn((
-                        Text::new("INVENTORY".to_string()),
-                        TextFont {
-                            font_size: FontSize::Px(theme.button_font_size * 0.75),
-                            ..default()
-                        },
-                        TextColor(Color::srgba(0.6, 0.75, 0.95, 0.9)),
-                    ));
-
                     // Generic inventory grid. The card body scrolls when all
                     // rows exceed the available height.
-                    main.spawn((Node {
-                        width: Val::Percent(100.0),
-                        display: Display::Grid,
-                        grid_template_columns: RepeatedGridTrack::flex(INVENTORY_GRID_COLUMNS, 1.0),
-                        // Item names can wrap to two lines. Fixed tracks keep
-                        // each row tall enough and make the grid expand inside
-                        // the scroll view instead of compressing its contents.
-                        grid_template_rows: RepeatedGridTrack::px(
-                            INVENTORY_GRID_ROWS,
-                            INVENTORY_SLOT_HEIGHT,
-                        ),
-                        row_gap: Val::Px(8.0),
-                        column_gap: Val::Px(8.0),
-                        ..default()
-                    },))
-                        .with_children(|grid| {
-                            for (idx, item_name) in item_labels.into_iter().enumerate() {
-                                let has_item = !item_name.starts_with("Slot ");
+                    main.spawn((
+                        Node {
+                            display: Display::Grid,
+                            grid_template_columns: RepeatedGridTrack::px(
+                                INVENTORY_GRID_COLUMNS,
+                                INVENTORY_SLOT_WIDTH,
+                            ),
+                            // Item names can wrap to two lines. Fixed tracks keep
+                            // each row tall enough and make the grid expand inside
+                            // the scroll view instead of compressing its contents.
+                            grid_template_rows: RepeatedGridTrack::px(
+                                INVENTORY_GRID_ROWS,
+                                INVENTORY_SLOT_HEIGHT,
+                            ),
+                            row_gap: Val::Px(INVENTORY_SLOT_GAP),
+                            column_gap: Val::Px(INVENTORY_SLOT_GAP),
+                            justify_content: JustifyContent::Center,
+                            ..default()
+                        },
+                        InventoryPanel,
+                    ))
+                    .with_children(|grid| {
+                        for (idx, item_name) in item_labels.into_iter().enumerate() {
+                            let has_item = !item_name.is_empty();
 
-                                grid.spawn((
-                                    Button,
-                                    Node {
-                                        height: Val::Px(INVENTORY_SLOT_HEIGHT),
-                                        justify_content: JustifyContent::Center,
-                                        align_items: AlignItems::Center,
-                                        padding: UiRect::all(Val::Px(4.0)),
-                                        border: UiRect::all(Val::Px(1.5)),
-                                        border_radius: BorderRadius::all(Val::Px(6.0)),
+                            grid.spawn((
+                                Button,
+                                Node {
+                                    width: Val::Px(INVENTORY_SLOT_WIDTH),
+                                    height: Val::Px(INVENTORY_SLOT_HEIGHT),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    padding: UiRect::all(Val::Px(2.0)),
+                                    overflow: Overflow::clip(),
+                                    ..default()
+                                },
+                                ImageNode::new(if has_item {
+                                    slot_images.active.clone()
+                                } else {
+                                    slot_images.empty.clone()
+                                })
+                                .with_mode(NodeImageMode::Stretch),
+                                InventorySlotImages {
+                                    empty: slot_images.empty.clone(),
+                                    active: slot_images.active.clone(),
+                                },
+                                ItemSlotButton { index: idx as u8 },
+                            ))
+                            .with_children(|btn| {
+                                btn.spawn((
+                                    Text::new(item_name),
+                                    TextFont {
+                                        font_size: FontSize::Px(theme.button_font_size * 0.55),
                                         ..default()
                                     },
-                                    BackgroundColor(theme.button_bg),
-                                    BorderColor::all(if has_item {
-                                        FILLED_SLOT_BORDER
-                                    } else {
-                                        EMPTY_SLOT_BORDER
-                                    }),
-                                    ItemSlotButton { index: idx as u8 },
-                                ))
-                                .with_children(|btn| {
-                                    btn.spawn((
-                                        Text::new(item_name),
-                                        TextFont {
-                                            font_size: FontSize::Px(theme.button_font_size * 0.55),
-                                            ..default()
-                                        },
-                                        TextColor(theme.text_color),
-                                        TextLayout::justify(Justify::Center),
-                                        ItemSlotText { index: idx as u8 },
-                                    ));
-                                });
-                            }
-                        });
+                                    TextColor(theme.text_color),
+                                    TextLayout::justify(Justify::Center),
+                                    ItemSlotText { index: idx as u8 },
+                                ));
+                            });
+                        }
+                    });
                 });
         })
         .spawn(commands, theme);
@@ -312,12 +349,12 @@ fn spawn_inventory_window(
 pub fn update_inventory_ui(
     mut slot_texts: Query<(&ItemSlotText, &mut Text)>,
     mut equip_texts: Query<(&EquipSlotText, &mut Text), Without<ItemSlotText>>,
-    mut slot_borders: Query<
-        (&ItemSlotButton, &mut BorderColor),
+    mut slot_images: Query<
+        (&ItemSlotButton, &mut ImageNode, &InventorySlotImages),
         (Without<EquipSlotButton>, Without<ItemSlotText>),
     >,
-    mut equip_borders: Query<
-        (&EquipSlotButton, &mut BorderColor),
+    mut equip_images: Query<
+        (&EquipSlotButton, &mut ImageNode, &InventorySlotImages),
         (Without<ItemSlotButton>, Without<EquipSlotText>),
     >,
     registry: Res<ItemRegistry>,
@@ -334,49 +371,36 @@ pub fn update_inventory_ui(
             .and_then(|opt| opt.as_ref())
             .and_then(|instance| registry.get(&instance.item_id))
             .map(|item| item.display_name().to_string())
-            .unwrap_or_else(|| format!("Slot {}", slot_text.index + 1));
+            .unwrap_or_default();
 
         text.0 = name;
     }
 
-    for (btn, mut border) in slot_borders.iter_mut() {
+    for (btn, mut image, images) in slot_images.iter_mut() {
         let has_item = inventory
             .slots
             .get(btn.index as usize)
             .is_some_and(|opt| opt.is_some());
-        *border = BorderColor::all(if has_item {
-            FILLED_SLOT_BORDER
+        image.image = if has_item {
+            images.active.clone()
         } else {
-            EMPTY_SLOT_BORDER
-        });
+            images.empty.clone()
+        };
     }
 
     for (equip_text, mut text) in equip_texts.iter_mut() {
         text.0 = equip_slot_label(equipment, &registry, equip_text.slot);
     }
 
-    for (btn, mut border) in equip_borders.iter_mut() {
-        let has_item = equipment.get(btn.slot).is_some();
-        *border = BorderColor::all(if has_item {
-            FILLED_SLOT_BORDER
+    for (btn, mut image, images) in equip_images.iter_mut() {
+        image.image = if equipment.get(btn.slot).is_some() {
+            images.active.clone()
         } else {
-            EMPTY_SLOT_BORDER
-        });
+            images.empty.clone()
+        };
     }
 }
 
-type SlotClicksQuery<'w, 's> = Query<
-    'w,
-    's,
-    (&'static Interaction, &'static ItemSlotButton),
-    (Changed<Interaction>, With<Button>),
->;
-type EquipSlotClicksQuery<'w, 's> = Query<
-    'w,
-    's,
-    (&'static Interaction, &'static EquipSlotButton),
-    (Changed<Interaction>, With<Button>),
->;
 type EquipClicksQuery<'w, 's> = Query<
     'w,
     's,
@@ -390,71 +414,16 @@ type UnequipClicksQuery<'w, 's> = Query<
     (Changed<Interaction>, With<Button>),
 >;
 
-#[allow(clippy::too_many_arguments)]
+/// Equip / Unequip on the detail card. Slot inspect happens on click-release
+/// in [`super::drag::end_item_drag`], so a drag never opens the info panel.
 pub fn handle_inventory_interactions(
     mut state: ResMut<InventoryUiState>,
-    slot_clicks: SlotClicksQuery,
-    equip_slot_clicks: EquipSlotClicksQuery,
     equip_clicks: EquipClicksQuery,
     unequip_clicks: UnequipClicksQuery,
     conn: Option<Res<StdbConnection>>,
-    player_query: Query<(&Inventory, &Equipment, Option<&KnownGlyphs>), With<LocalPlayer>>,
-    registry: Res<ItemRegistry>,
-    glyphs: GlyphRegistries,
-    theme: Res<UiTheme>,
     all_cards: Query<(Entity, &CardWindow)>,
     mut commands: Commands,
 ) {
-    // `KnownGlyphs` decides whether an inscribed slot is castable at all, so
-    // the detail card needs it to mark a locked slot. It is replicated
-    // separately from `Inventory`/`Equipment` and may not have arrived yet —
-    // an empty Vocabulary is the correct stand-in until it does.
-    let (inventory, equipment, known) = player_query
-        .iter()
-        .next()
-        .map(|(i, e, k)| (i.clone(), e.clone(), k.cloned().unwrap_or_default()))
-        .unwrap_or_default();
-
-    for (interaction, slot_btn) in slot_clicks.iter() {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        state.selected = Some(InventorySelection::Slot(slot_btn.index));
-        despawn_detail_cards(&mut commands, &all_cards);
-        spawn_item_detail_card(
-            &mut commands,
-            &theme,
-            &registry,
-            &glyphs,
-            &known,
-            &inventory,
-            &equipment,
-            InventorySelection::Slot(slot_btn.index),
-        );
-    }
-
-    for (interaction, equip_btn) in equip_slot_clicks.iter() {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        if equipment.get(equip_btn.slot).is_none() {
-            // Empty equipment slot: nothing to inspect.
-            continue;
-        }
-        state.selected = Some(InventorySelection::Equipment(equip_btn.slot));
-        despawn_detail_cards(&mut commands, &all_cards);
-        spawn_item_detail_card(
-            &mut commands,
-            &theme,
-            &registry,
-            &glyphs,
-            &known,
-            &inventory,
-            &equipment,
-            InventorySelection::Equipment(equip_btn.slot),
-        );
-    }
-
     for (interaction, equip_btn) in equip_clicks.iter() {
         if *interaction != Interaction::Pressed {
             continue;

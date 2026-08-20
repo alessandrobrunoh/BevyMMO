@@ -8,8 +8,12 @@
 
 use spacetimedb::{reducer, ReducerContext, Table, Timestamp};
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use crate::sim;
 use crate::tables::{tick_stats, TickSchedule, TickStats};
+
+static ALLY_DUMMY_SEEDED: AtomicBool = AtomicBool::new(false);
 
 /// Upper bound on a single step's `dt`, in seconds.
 ///
@@ -23,6 +27,12 @@ pub fn game_tick(ctx: &ReducerContext, _schedule: TickSchedule) {
     let dt = advance_clock(ctx, ctx.timestamp);
     if dt <= 0.0 {
         return;
+    }
+
+    if !ALLY_DUMMY_SEEDED.load(Ordering::Relaxed)
+        && crate::world::ensure_ally_dummy(ctx)
+    {
+        ALLY_DUMMY_SEEDED.store(true, Ordering::Relaxed);
     }
 
     sim::status::step(ctx, dt);

@@ -1,7 +1,8 @@
 //! Plugin della death screen.
 
 use bevy::prelude::*;
-use bevymmo_network::network::mode::has_client;
+
+use crate::game_state::{in_gameplay, Screen};
 
 use super::systems::{
     handle_respawn_button, setup_death_screen, update_death_screen_visibility,
@@ -24,11 +25,11 @@ impl Plugin for DeathScreenPlugin {
         app.add_systems(
             Update,
             (
-                update_death_screen_visibility,
+                update_death_screen_visibility
+                    .run_if(in_gameplay.or_eager(state_changed::<Screen>)),
                 handle_respawn_button,
                 update_respawn_button_visuals,
-            )
-                .run_if(has_client),
+            ),
         );
     }
 }

@@ -16,9 +16,10 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::effects::{DamageEffect, EffectSpec, StatusId};
+use crate::abilities::blueprint::AbilityBlueprint;
+use crate::effects::EffectSpec;
 use crate::registry::Registry;
-use crate::spells::context::{AoeShape, SpellCastContext};
+use crate::spells::context::{AoeShape, SpellCastContext, TargetingMode};
 
 /// Raggio d'impatto di una palla lanciata da un gesto `Projectile`.
 pub const PROJECTILE_HIT_RADIUS: f32 = 1.0;
@@ -52,6 +53,30 @@ pub enum AbilityGeometry {
     Circle { radius: f32 },
     Projectile { speed: f32 },
     SelfBuff { duration_seconds: f32 },
+}
+
+impl AbilityGeometry {
+    /// How this gesture consumes the HUD's selected target and cursor point.
+    ///
+    /// The client always *has* both; only some geometries *use* them. Mapping
+    /// onto [`TargetingMode`] is what stops a leftover selected dummy from
+    /// failing a self-centered cleave as "out of range".
+    pub fn targeting_mode(self) -> TargetingMode {
+        match self {
+            Self::Cone { .. } | Self::SelfBuff { .. } => TargetingMode::SelfCentered,
+            Self::Circle { .. } => TargetingMode::GroundAoe,
+            Self::Projectile { .. } => TargetingMode::DirectionalLine,
+        }
+    }
+
+    /// Selected-unit id to send with the reducer. Cones, ground circles and
+    /// self-buffs ignore a selected entity; attaching one would range-check it.
+    pub fn selected_entity_payload(self, selected: Option<u64>) -> Option<u64> {
+        match self {
+            Self::Projectile { .. } => selected,
+            Self::Cone { .. } | Self::Circle { .. } | Self::SelfBuff { .. } => None,
+        }
+    }
 }
 
 /// How an ability executes when activated.
@@ -99,6 +124,11 @@ impl AbilityCastMode {
     /// Whether this mode requires a persisted `cast_state`.
     pub fn is_instant(&self) -> bool {
         matches!(self, AbilityCastMode::Instant)
+    }
+
+    /// Whether this mode repeats while the key is held.
+    pub fn is_channeling(&self) -> bool {
+        matches!(self, AbilityCastMode::Channeling { .. })
     }
 
     /// Total duration for the progress bar (cast_time or max channel time).
@@ -346,87 +376,83 @@ pub trait BaseAbility: Send + Sync + 'static {
         effects: Vec<EffectSpec>,
     ) {
         let delay = self.impact_delay();
-        ctx.emit_aoe(
-            self.impact_center(params, ctx),
-            self.impact_radius(params),
-            self.impact_shape(ctx),
-            delay,
-            delay,
-            self.id().as_str().to_string(),
-            effects,
-        );
+        let center = self.impact_center(params, ctx);
+        let radius = self.impact_radius(params);
+        let shape = self.impact_shape(ctx);
+        let spell_id = self.id().as_str().to_string();
+        if effects
+            .iter()
+            .any(|spec| matches!(spec, EffectSpec::Heal(_)))
+        {
+            // Authoritative heal filtering drops hostiles; include the caster
+            // so a Life wave can restore the wielder standing in their cone.
+            ctx.emit_aoe(center, radius, shape, delay, delay, spell_id, effects);
+        } else {
+            ctx.emit_aoe_excluding_caster(center, radius, shape, delay, delay, spell_id, effects);
+        }
     }
 
-    /// Piazza l'impatto ad area del gesto: danno, più lo Stun se il gesto ne
-    /// ha uno, più il visual. Entrambe le regioni condividono `impact_delay`,
-    /// così il preavviso a terra e ciò che accade quando scade coincidono.
-    fn emit_area_impact(&self, params: &AbilityParams, potency: f32, ctx: &mut SpellCastContext) {
-        let mut effects = vec![EffectSpec::Damage(DamageEffect { amount: potency })];
-
-        let stun = self.stun_seconds();
-        if stun > 0.0 {
-            effects.push(EffectSpec::ApplyStatus(crate::effects::ApplyStatusEffect {
-                status_id: StatusId::new("stun"),
-                duration_override_seconds: Some(stun),
-                potency: 1.0,
-            }));
-        }
-        effects.extend(self.additional_effects());
-
+    /// Piazza l'impatto ad area del gesto con gli effetti già risolti
+    /// (payload della Root Word). Centro, raggio e delay restano del gesto.
+    fn emit_area_impact(
+        &self,
+        params: &AbilityParams,
+        ctx: &mut SpellCastContext,
+        effects: Vec<EffectSpec>,
+    ) {
         self.emit_area_effect(params, ctx, effects);
 
         let center = self.impact_center(params, ctx);
-        ctx.emit_visual(self.id().as_str().to_string(), center, center);
+        let spell_id = self.id().as_str().to_string();
+        match self.geometry() {
+            AbilityGeometry::Cone { .. } => {
+                let direction = match self.impact_shape(ctx) {
+                    AoeShape::Cone { direction, .. } => flat_direction(direction),
+                    _ => flat_direction(ctx.caster_look_direction),
+                };
+                let end = center + direction * self.impact_radius(params);
+                ctx.emit_visual(spell_id, center, end);
+            }
+            _ => ctx.emit_visual(spell_id, ctx.caster_position, center),
+        }
     }
 
-    /// Emette danno a `potency` nella forma dettata dalla geometria di questa
-    /// abilità. Helper condiviso: qualunque Essenza offensiva lo riusa per
-    /// non duplicare il dispatch-per-geometria, cambiando solo `potency` (es.
-    /// Fuoco lo amplifica) — vedi `content/essences/fuoco/`.
-    fn emit_damage_for_geometry(
+    /// Emette il payload nella forma dettata dalla geometria di questa abilità.
+    fn emit_payload_for_geometry(
         &self,
-        potency: f32,
         params: &AbilityParams,
         ctx: &mut SpellCastContext,
+        effects: Vec<EffectSpec>,
     ) {
         match self.geometry() {
             AbilityGeometry::Cone { .. } | AbilityGeometry::Circle { .. } => {
-                self.emit_area_impact(params, potency, ctx);
+                self.emit_area_impact(params, ctx, effects);
             }
-            AbilityGeometry::Projectile { speed } => {
-                // La palla è un'entità replicata che vola davvero: il danno
-                // arriva quando arriva lei, non all'istante del lancio.
-                match self.projectile_target(params, ctx) {
-                    Some(target) => {
-                        let mut effects =
-                            vec![EffectSpec::Damage(DamageEffect { amount: potency })];
-                        effects.extend(self.additional_effects());
-                        ctx.emit_projectile(target, speed, effects, PROJECTILE_HIT_RADIUS);
-                        let target_position = ctx
-                            .potential_targets
-                            .iter()
-                            .find(|(entity, _)| *entity == target)
-                            .map(|(_, position)| *position)
-                            .unwrap_or(ctx.caster_position);
-                        ctx.emit_visual(
-                            self.id().as_str().to_string(),
-                            ctx.caster_position,
-                            target_position,
-                        );
-                    }
-                    None => {
-                        // Colpo a vuoto: nessuno davanti. Il gesto si vede
-                        // comunque, altrimenti il tasto sembra rotto.
-                        let end = ctx.caster_position
-                            + flat_direction(ctx.caster_look_direction) * params.range;
-                        ctx.emit_visual(self.id().as_str().to_string(), ctx.caster_position, end);
-                    }
+            AbilityGeometry::Projectile { speed } => match self.projectile_target(params, ctx) {
+                Some(target) => {
+                    ctx.emit_projectile(target, speed, effects, PROJECTILE_HIT_RADIUS);
+                    let target_position = ctx
+                        .potential_targets
+                        .iter()
+                        .find(|(entity, _)| *entity == target)
+                        .map(|(_, position)| *position)
+                        .unwrap_or(ctx.caster_position);
+                    ctx.emit_visual(
+                        self.id().as_str().to_string(),
+                        ctx.caster_position,
+                        target_position,
+                    );
                 }
-            }
+                None => {
+                    let end = ctx.caster_position
+                        + flat_direction(ctx.caster_look_direction) * params.range;
+                    ctx.emit_visual(self.id().as_str().to_string(), ctx.caster_position, end);
+                }
+            },
             AbilityGeometry::SelfBuff { .. } => {
-                // Nessun effetto fisico di default: un self-buff senza
-                // Essenza non fa nulla, coerente col principio che l'Essenza
-                // è ciò che "manifesta" davvero qualcosa.
+                for spec in effects {
+                    ctx.emit_effect(ctx.caster, spec);
+                }
             }
         }
     }
@@ -440,19 +466,26 @@ pub trait BaseAbility: Send + Sync + 'static {
         None
     }
 
-    /// Additional status/buff/debuff effects declared by content. They are
-    /// appended to the geometry's direct damage and resolved by the same
-    /// authoritative EffectSpec pipeline.
+    /// Extra effects declared on the gesture itself. Inscribed casts ignore
+    /// this and emit [`AbilityBlueprint::payload`] instead.
     fn additional_effects(&self) -> Vec<EffectSpec> {
         Vec::new()
     }
 
-    fn default_manifestation(&self, params: &AbilityParams, ctx: &mut SpellCastContext) {
+    /// Authoritative cast of an already-resolved blueprint: geometry from the
+    /// gesture, payload from the Root Word.
+    fn manifest_blueprint(&self, blueprint: &AbilityBlueprint, ctx: &mut SpellCastContext) {
         if let Some(cleanse) = self.cleanse_effect() {
             ctx.emit_cleanse(ctx.caster, cleanse);
             return;
         }
-        self.emit_damage_for_geometry(params.potency, params, ctx);
+        self.emit_payload_for_geometry(&blueprint.params, ctx, blueprint.payload_effects());
+    }
+
+    fn default_manifestation(&self, params: &AbilityParams, ctx: &mut SpellCastContext) {
+        let mut blueprint = self.blueprint();
+        blueprint.params = *params;
+        self.manifest_blueprint(&blueprint, ctx);
     }
 }
 
@@ -758,5 +791,119 @@ mod tests {
         let center = ability.impact_center(&ability.base_params(), &ctx);
         assert_eq!(center, target_on_mountain);
         assert_eq!(center.y, 14.0);
+    }
+
+    #[test]
+    fn a_heal_wave_includes_the_caster() {
+        use crate::abilities::blueprint::ManifestationPayload;
+        use crate::spells::context::AoeTargeting;
+        use crate::stats::components::CombatStats;
+
+        let ability = InstantAbility;
+        let mut blueprint = ability.blueprint();
+        blueprint.payload = ManifestationPayload::heal([]);
+        let combat = CombatStats {
+            attack_power: 10.0,
+            armor: 0.0,
+        };
+        let mut ctx = SpellCastContext::new(
+            EntityId::new(1),
+            Vec3::ZERO,
+            &combat,
+            Vec3::Z,
+            None,
+            None,
+            &[],
+        );
+        ability.manifest_blueprint(&blueprint, &mut ctx);
+        assert_eq!(ctx.pending_aoes.len(), 1);
+        assert_eq!(ctx.pending_aoes[0].targeting, AoeTargeting::Everyone);
+        assert!(matches!(
+            ctx.pending_aoes[0].effects[0],
+            crate::effects::EffectSpec::Heal(_)
+        ));
+    }
+
+    #[test]
+    fn a_damage_wave_excludes_the_caster() {
+        use crate::spells::context::AoeTargeting;
+        use crate::stats::components::CombatStats;
+
+        let ability = InstantAbility;
+        let combat = CombatStats {
+            attack_power: 10.0,
+            armor: 0.0,
+        };
+        let mut ctx = SpellCastContext::new(
+            EntityId::new(1),
+            Vec3::ZERO,
+            &combat,
+            Vec3::Z,
+            None,
+            None,
+            &[],
+        );
+        ability.default_manifestation(&ability.base_params(), &mut ctx);
+        assert_eq!(ctx.pending_aoes.len(), 1);
+        assert_eq!(ctx.pending_aoes[0].targeting, AoeTargeting::ExcludeCaster);
+    }
+
+    #[test]
+    fn cones_and_self_buffs_are_self_centered() {
+        assert_eq!(
+            AbilityGeometry::Cone {
+                radius: 5.0,
+                angle_deg: 85.0
+            }
+            .targeting_mode(),
+            TargetingMode::SelfCentered
+        );
+        assert_eq!(
+            AbilityGeometry::SelfBuff {
+                duration_seconds: 1.0
+            }
+            .targeting_mode(),
+            TargetingMode::SelfCentered
+        );
+    }
+
+    #[test]
+    fn circles_are_ground_aoe_and_projectiles_are_directional() {
+        assert_eq!(
+            AbilityGeometry::Circle { radius: 5.5 }.targeting_mode(),
+            TargetingMode::GroundAoe
+        );
+        assert_eq!(
+            AbilityGeometry::Projectile { speed: 24.0 }.targeting_mode(),
+            TargetingMode::DirectionalLine
+        );
+    }
+
+    #[test]
+    fn only_projectiles_send_a_selected_entity() {
+        let selected = Some(7);
+        assert_eq!(
+            AbilityGeometry::Projectile { speed: 24.0 }.selected_entity_payload(selected),
+            selected
+        );
+        assert_eq!(
+            AbilityGeometry::Cone {
+                radius: 5.0,
+                angle_deg: 85.0
+            }
+            .selected_entity_payload(selected),
+            None
+        );
+        assert_eq!(
+            AbilityGeometry::Circle { radius: 5.5 }.selected_entity_payload(selected),
+            None
+        );
+        assert_eq!(
+            AbilityGeometry::SelfBuff {
+                duration_seconds: 1.0
+            }
+            .selected_entity_payload(selected),
+            None
+        );
     }
 }

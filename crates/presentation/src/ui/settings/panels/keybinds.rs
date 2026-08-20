@@ -52,7 +52,9 @@ pub fn spawn_keybinds_panel(
 
     commands
         .entity(scroll_wrapper)
-        .insert((KeybindsRoot, SettingsPanel::Keybinds));
+        .insert((KeybindsRoot, SettingsPanel::Keybinds))
+        .entry::<Node>()
+        .and_modify(|mut node| node.display = Display::None);
 
     scroll_wrapper
 }

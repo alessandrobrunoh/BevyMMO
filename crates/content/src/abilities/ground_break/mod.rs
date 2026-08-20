@@ -13,7 +13,6 @@ use bevymmo_props_macro::base_ability;
     cast_time = 0.35,
     cooldown = 9.0,
     energy_cost = 16.0,
-    statuses = [Root],
     animation = "boots_ground_break",
     impact_vfx = "ground_break_impact",
 )]

@@ -27,9 +27,13 @@
 // How long a slain non-player entity stays a corpse. Taken from the domain
 // rather than restated, because it *was* restated — as 30 seconds, under a
 // comment claiming it matched the domain's 10.
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use bevymmo_domain::content::items::default_items;
+use bevymmo_domain::entity::dummy::components::DUMMY_RESPAWN_SECONDS;
 use bevymmo_domain::entity::enemy::components::ENEMY_RESPAWN_SECONDS;
 use bevymmo_domain::items::effects::ItemEffect;
-use bevymmo_domain::content::items::default_items;
 use bevymmo_domain::stats::components::StatsBundleData;
 use bevymmo_domain::stats::defaults;
 use bevymmo_domain::stats::events::{ModifierOp, StatField};
@@ -43,6 +47,22 @@ use crate::tables::{
     EntityKindRow, EntityStateRow, EntityStats, GameEntity, ModifierKindRow, PeriodicEffect,
     StatModifier,
 };
+
+static NON_PLAYER_BASE_STATS: Mutex<Option<HashMap<u64, StatsRow>>> = Mutex::new(None);
+
+fn base_stats_map() -> std::sync::MutexGuard<'static, Option<HashMap<u64, StatsRow>>> {
+    NON_PLAYER_BASE_STATS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Remembers the spawn profile of a non-player so later stat recomputes do
+/// not silently rewrite it to the kind-wide default.
+pub fn record_base_stats(entity_id: u64, stats: StatsRow) {
+    base_stats_map()
+        .get_or_insert_with(HashMap::new)
+        .insert(entity_id, stats);
+}
 
 // ---------------------------------------------------------------------------
 // The per-tick step
@@ -272,8 +292,12 @@ fn regenerate_mana(ctx: &ReducerContext, dt: f32) {
         if is_dead(ctx, row.entity_id) {
             continue;
         }
-        let current_mana =
-            (row.current_mana + row.stats.mana_regeneration * dt).min(row.stats.max_mana);
+        let current_mana = bevymmo_domain::stats::formulas::regenerated_mana(
+            row.current_mana,
+            row.stats.max_mana,
+            row.stats.mana_regeneration,
+            dt,
+        );
         updates.push(EntityStats {
             current_mana,
             ..row
@@ -357,12 +381,22 @@ pub fn apply_damage(ctx: &ReducerContext, target: u64, source: Option<u64>, amou
         return;
     }
 
-    if let Some(source_character_id) = party_friendly_fire_attacker(ctx, &entity, source) {
-        crate::reducers::parties::notify_character(
-            ctx,
-            source_character_id,
-            "You cannot attack a party member.".to_string(),
-        );
+    if hostile_effect_blocked(ctx, target, source) {
+        if let Some(source_character_id) = source
+            .and_then(|id| ctx.db.game_entity().entity_id().find(&id))
+            .and_then(|attacker| attacker.owner_character_id)
+        {
+            let message = if entity.kind == EntityKindRow::AllyDummy {
+                "You cannot attack an ally."
+            } else {
+                "You cannot attack a party member."
+            };
+            crate::reducers::parties::notify_character(
+                ctx,
+                source_character_id,
+                message.to_string(),
+            );
+        }
         return;
     }
 
@@ -396,64 +430,42 @@ pub fn apply_damage(ctx: &ReducerContext, target: u64, source: Option<u64>, amou
     });
 }
 
-/// Whether `source` is a *different* player currently in the same party as
-/// `target`, and if so, the attacker's `character_id` — so [`apply_damage`]
-/// can tell them why nothing happened.
+/// Whether a hostile payload from `source` must be dropped for `target`.
 ///
-/// Checks `target.kind` first and bails out for anything that is not
-/// [`EntityKindRow::Player`] without touching `party_member` at all: enemies,
-/// bosses, dummies and NPCs vastly outnumber players in a fight, none of them
-/// can ever be in a party, and this keeps the overwhelmingly common case —
-/// hurting a mob — free of any party lookup rather than merely fast at one.
-///
-/// Fails closed by construction: every early return is "not friendly fire,
-/// let the hit through as normal" (`None`), never "block this hit". A
-/// missing target owner, a missing source, a source that is not a player, or
-/// two players who simply are not in the same party all fall through to
-/// `None` the same way — ambiguous data can only ever mean *more* damage
-/// goes through unmodified, never less, per this plan's security
-/// requirement that this guard must not make a target invulnerable by
-/// accident.
-fn party_friendly_fire_attacker(
-    ctx: &ReducerContext,
-    target: &GameEntity,
-    source: Option<u64>,
-) -> Option<Uuid> {
-    if target.kind != EntityKindRow::Player {
-        return None;
-    }
+/// Same rule as [`is_friendly_fire`]: party members and the ally dummy are
+/// immune to a player's damage and debuffs. The hostile dummy is not.
+pub fn hostile_effect_blocked(ctx: &ReducerContext, target: u64, source: Option<u64>) -> bool {
+    let Some(entity) = ctx.db.game_entity().entity_id().find(&target) else {
+        return false;
+    };
     let source_entity = source.and_then(|id| ctx.db.game_entity().entity_id().find(&id));
-    let source_character_id = source_entity.as_ref().and_then(|e| e.owner_character_id);
-
-    if !is_friendly_fire(
-        target.kind,
-        target.owner_character_id,
-        source_entity.as_ref().map(|e| e.kind),
+    let source_character_id = source_entity
+        .as_ref()
+        .and_then(|attacker| attacker.owner_character_id);
+    is_friendly_fire(
+        entity.kind,
+        entity.owner_character_id,
+        source_entity.as_ref().map(|attacker| attacker.kind),
         source_character_id,
-        target
+        entity
             .owner_character_id
             .and_then(|id| ctx.db.party_member().character_id().find(&id))
             .map(|row| row.party_id),
         source_character_id
             .and_then(|id| ctx.db.party_member().character_id().find(&id))
             .map(|row| row.party_id),
-    ) {
-        return None;
-    }
-    source_character_id
+    )
 }
 
-/// The pure decision behind [`party_friendly_fire_attacker`], once every row
-/// it might need has already been looked up (or found missing). Split out so
-/// the actual boundary — same character is never friendly fire, different
-/// party is not friendly fire, only the *same* party on *two different*
-/// players is — is unit-testable without a `ReducerContext`.
+/// The pure decision behind [`hostile_effect_blocked`]. Split out so the
+/// boundary is unit-testable without a `ReducerContext`.
 ///
-/// Every "I don't know" input (a `None` anywhere in `target_character_id`,
-/// `source_kind`, `source_character_id`, or either party id) resolves to
-/// `false` — not friendly fire, let the hit through. That is the fail-closed
-/// direction this plan's security requirement demands: ambiguous data must
-/// never make a target invulnerable by accident.
+/// A player hitting the allied training dummy is always friendly fire.
+/// Two different players in the same party are friendly fire.
+///
+/// Ambiguous *party* data (`None` character or party ids) still fails open:
+/// a missing row never makes a real player invulnerable. The ally dummy does
+/// not use party ids, so that rule does not apply to it.
 fn is_friendly_fire(
     target_kind: EntityKindRow,
     target_character_id: Option<Uuid>,
@@ -462,15 +474,18 @@ fn is_friendly_fire(
     target_party_id: Option<u64>,
     source_party_id: Option<u64>,
 ) -> bool {
+    if source_kind != Some(EntityKindRow::Player) {
+        return false;
+    }
+    if target_kind == EntityKindRow::AllyDummy {
+        return true;
+    }
     if target_kind != EntityKindRow::Player {
         return false;
     }
     let Some(target_character_id) = target_character_id else {
         return false;
     };
-    if source_kind != Some(EntityKindRow::Player) {
-        return false;
-    }
     let Some(source_character_id) = source_character_id else {
         return false;
     };
@@ -483,6 +498,58 @@ fn is_friendly_fire(
         (Some(target_party_id), Some(source_party_id)) => target_party_id == source_party_id,
         _ => false,
     }
+}
+
+/// Whether a heal from `source` may land on `target`.
+///
+/// Life (and any other heal payload) restores the caster, their party, and
+/// allied training dummies. Enemies, the hostile dummy, bosses and NPCs are
+/// never healed — selecting one of them with Life is a no-op.
+pub fn can_receive_heal(
+    target_kind: EntityKindRow,
+    target_character_id: Option<Uuid>,
+    source_character_id: Option<Uuid>,
+    target_party_id: Option<u64>,
+    source_party_id: Option<u64>,
+) -> bool {
+    match target_kind {
+        EntityKindRow::AllyDummy => true,
+        EntityKindRow::Player => {
+            if target_character_id.is_some() && target_character_id == source_character_id {
+                return true;
+            }
+            match (target_party_id, source_party_id) {
+                (Some(target_party), Some(source_party)) => target_party == source_party,
+                _ => false,
+            }
+        }
+        EntityKindRow::Dummy
+        | EntityKindRow::Enemy
+        | EntityKindRow::Boss
+        | EntityKindRow::Npc => false,
+    }
+}
+
+/// Looks up party membership and asks [`can_receive_heal`]. Missing rows
+/// fail closed: the heal is dropped rather than applied to a stranger.
+pub fn heal_allowed_for(ctx: &ReducerContext, target: u64, source: Option<u64>) -> bool {
+    let Some(target_entity) = ctx.db.game_entity().entity_id().find(&target) else {
+        return false;
+    };
+    let source_entity = source.and_then(|id| ctx.db.game_entity().entity_id().find(&id));
+    let source_character_id = source_entity.as_ref().and_then(|entity| entity.owner_character_id);
+    can_receive_heal(
+        target_entity.kind,
+        target_entity.owner_character_id,
+        source_character_id,
+        target_entity
+            .owner_character_id
+            .and_then(|id| ctx.db.party_member().character_id().find(&id))
+            .map(|row| row.party_id),
+        source_character_id
+            .and_then(|id| ctx.db.party_member().character_id().find(&id))
+            .map(|row| row.party_id),
+    )
 }
 
 /// Heals `target` by `amount`, clamped to its `max_health`.
@@ -528,7 +595,7 @@ pub fn apply_healing(ctx: &ReducerContext, target: u64, amount: f32) {
 /// Applies a timed buff or debuff to one stat field of `target`.
 ///
 /// `field` is a [`StatField`] debug name — `"Speed"`, `"Armor"`,
-/// `"AttackPower"`, `"MaxHealth"`, `"ManaRegeneration"` — matching how
+/// `"AttackPower"`, `"MaxHealth"`, `"MaxMana"`, `"ManaRegeneration"` — matching how
 /// `stat_modifier.field` is stored. An unrecognised name is logged and ignored
 /// rather than panicking: the caller is gameplay code, and a typo in a spell
 /// definition should not take down the tick.
@@ -812,16 +879,21 @@ fn base_stats(ctx: &ReducerContext, entity: &GameEntity) -> Option<StatsRow> {
         return Some(stats);
     }
 
+    if let Some(spawned) = base_stats_map()
+        .as_ref()
+        .and_then(|map| map.get(&entity.entity_id))
+        .copied()
+    {
+        return Some(spawned);
+    }
+
     // Non-players have no persisted base row, so the kind's default profile is
-    // the only reconstructible one. This is exact as long as spawns use the
-    // profiles in `bevymmo_domain::stats::defaults`; a map that wants a
-    // custom-statted elite needs a base column to be added to `entity_stats`.
+    // the fallback when spawn stats were never recorded (legacy rows).
     let defaults = match entity.kind {
         EntityKindRow::Player => defaults::player_defaults(),
         EntityKindRow::Enemy => defaults::enemy_defaults(),
         EntityKindRow::Boss => defaults::boss_defaults(),
-        EntityKindRow::Dummy => defaults::dummy_defaults(),
-        // No default profile exists for NPCs; they are not meant to fight.
+        EntityKindRow::Dummy | EntityKindRow::AllyDummy => defaults::dummy_defaults(),
         EntityKindRow::Npc => return None,
     };
     Some(StatsRow::from(&defaults))
@@ -908,6 +980,7 @@ fn apply_stat_op(stats: &mut StatsRow, field: StatField, op: ModifierOp, value: 
         StatField::Armor => &mut stats.armor,
         StatField::AttackPower => &mut stats.attack_power,
         StatField::MaxHealth => &mut stats.max_health,
+        StatField::MaxMana => &mut stats.max_mana,
         StatField::ManaRegeneration => &mut stats.mana_regeneration,
     };
     match op {
@@ -924,6 +997,7 @@ fn parse_stat_field(field: &str) -> Option<StatField> {
         "Armor" => Some(StatField::Armor),
         "AttackPower" => Some(StatField::AttackPower),
         "MaxHealth" => Some(StatField::MaxHealth),
+        "MaxMana" => Some(StatField::MaxMana),
         "ManaRegeneration" => Some(StatField::ManaRegeneration),
         _ => None,
     }
@@ -936,6 +1010,7 @@ fn stat_field_name(field: StatField) -> &'static str {
         StatField::Armor => "Armor",
         StatField::AttackPower => "AttackPower",
         StatField::MaxHealth => "MaxHealth",
+        StatField::MaxMana => "MaxMana",
         StatField::ManaRegeneration => "ManaRegeneration",
     }
 }
@@ -949,15 +1024,20 @@ fn stat_field_name(field: StatField) -> &'static str {
 /// Clearing `move_target` matters even though the movement step already skips
 /// the dead: without it a corpse that respawns mid-walk would resume the walk
 /// it was on when it died.
+fn respawn_delay(kind: EntityKindRow) -> Option<f32> {
+    match kind {
+        EntityKindRow::Player => None,
+        EntityKindRow::Dummy | EntityKindRow::AllyDummy => Some(DUMMY_RESPAWN_SECONDS),
+        _ => Some(ENEMY_RESPAWN_SECONDS),
+    }
+}
+
 fn kill(ctx: &ReducerContext, entity: GameEntity) {
     // A player waits for the respawn reducer; everything else comes back on a
     // timer. Without this the world empties permanently after one sweep of the
     // map, which is what the Bevy server's despawn-and-respawn scheduling
     // avoided and the port initially lost.
-    let respawn_in_seconds = match entity.kind {
-        EntityKindRow::Player => None,
-        _ => Some(ENEMY_RESPAWN_SECONDS),
-    };
+    let respawn_in_seconds = respawn_delay(entity.kind);
     ctx.db.game_entity().entity_id().update(GameEntity {
         state: EntityStateRow::Dead,
         move_target: None,
@@ -965,7 +1045,6 @@ fn kill(ctx: &ReducerContext, entity: GameEntity) {
         ..entity
     });
 }
-
 
 /// Whether the entity is currently a corpse.
 fn is_dead(ctx: &ReducerContext, entity_id: u64) -> bool {
@@ -992,6 +1071,8 @@ mod tests {
 
     const PLAYER: EntityKindRow = EntityKindRow::Player;
     const ENEMY: EntityKindRow = EntityKindRow::Enemy;
+    const DUMMY: EntityKindRow = EntityKindRow::Dummy;
+    const ALLY_DUMMY: EntityKindRow = EntityKindRow::AllyDummy;
 
     /// A deterministic, readable stand-in for a real `ctx.new_uuid_v4()`
     /// character id — tests only care that these compare equal/unequal
@@ -1111,6 +1192,96 @@ mod tests {
             Some(cid(2)),
             Some(100),
             Some(100),
+        ));
+    }
+
+    #[test]
+    fn a_dummy_comes_back_after_ten_seconds() {
+        assert_eq!(respawn_delay(EntityKindRow::Dummy), Some(10.0));
+        assert_eq!(respawn_delay(EntityKindRow::AllyDummy), Some(10.0));
+        assert_eq!(respawn_delay(EntityKindRow::Player), None);
+    }
+
+    #[test]
+    fn life_heals_the_caster() {
+        assert!(can_receive_heal(
+            PLAYER,
+            Some(cid(1)),
+            Some(cid(1)),
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn life_heals_a_party_member() {
+        assert!(can_receive_heal(
+            PLAYER,
+            Some(cid(1)),
+            Some(cid(2)),
+            Some(100),
+            Some(100),
+        ));
+    }
+
+    #[test]
+    fn life_does_not_heal_a_stranger() {
+        assert!(!can_receive_heal(
+            PLAYER,
+            Some(cid(1)),
+            Some(cid(2)),
+            None,
+            None,
+        ));
+        assert!(!can_receive_heal(
+            PLAYER,
+            Some(cid(1)),
+            Some(cid(2)),
+            Some(100),
+            Some(200),
+        ));
+    }
+
+    #[test]
+    fn life_heals_an_ally_dummy_and_not_the_hostile_one() {
+        assert!(can_receive_heal(ALLY_DUMMY, None, Some(cid(1)), None, None));
+        assert!(!can_receive_heal(DUMMY, None, Some(cid(1)), None, None));
+        assert!(!can_receive_heal(ENEMY, None, Some(cid(1)), None, None));
+    }
+
+    #[test]
+    fn a_player_cannot_damage_the_ally_dummy() {
+        assert!(is_friendly_fire(
+            ALLY_DUMMY,
+            None,
+            Some(PLAYER),
+            Some(cid(1)),
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn a_player_can_still_damage_the_hostile_dummy() {
+        assert!(!is_friendly_fire(
+            DUMMY,
+            None,
+            Some(PLAYER),
+            Some(cid(1)),
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn an_enemy_can_still_damage_the_ally_dummy() {
+        assert!(!is_friendly_fire(
+            ALLY_DUMMY,
+            None,
+            Some(ENEMY),
+            None,
+            None,
+            None,
         ));
     }
 }

@@ -18,7 +18,7 @@ use crate::effects::StatusRegistry;
     modifier(
         stat = Speed,
         operation = Multiply,
-        value = -0.5
+        value = 0.5
     )
 )]
 pub struct Slow;
@@ -45,6 +45,6 @@ mod tests {
         assert_eq!(definition.stat_modifiers.len(), 1);
         assert_eq!(definition.stat_modifiers[0].field, StatField::Speed);
         assert_eq!(definition.stat_modifiers[0].operation, ModifierOp::Multiply);
-        assert_eq!(definition.stat_modifiers[0].value, -0.5);
+        assert_eq!(definition.stat_modifiers[0].value, 0.5);
     }
 }

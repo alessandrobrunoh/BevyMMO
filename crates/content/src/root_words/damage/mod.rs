@@ -4,7 +4,9 @@
 
 use bevymmo_props_macro::root_word;
 
-use crate::abilities::{AbilityBlueprint, AbilityParams, RootWordEffect, RootWordRegistry};
+use crate::abilities::{
+    AbilityBlueprint, AbilityParams, ManifestationPayload, RootWordEffect, RootWordRegistry,
+};
 
 #[root_word(
     id = "damage",
@@ -28,11 +30,7 @@ impl RootWordEffect for DamageRootWord {
     fn apply_to_blueprint(&self, blueprint: &mut AbilityBlueprint, _params: &AbilityParams) {
         // Tagga il blueprint come abilità di danno (usa tag esistenti)
         blueprint.tags.push(crate::abilities::AbilityTag::Melee);
-
-        // In una implementazione completa, qui si applicherebbe:
-        // - Scaling del danno basato sui parametri
-        // - Modifiche alla geometria se necessario
-        // - Setup di effect hook specifici per il danno
+        blueprint.payload = ManifestationPayload::damage([]);
     }
 }
 

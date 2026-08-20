@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use crate::movement::{resolve_click_to_ground, ClientSurfaceQuery, MoveTarget};
-use bevymmo_network::network::mode;
+use crate::pointer::{hud_wants_pointer, PointerOnHud};
 
 const INDICATOR_DURATION: f32 = 0.55;
 
@@ -27,11 +27,10 @@ struct ClickIndicator {
 impl Plugin for PlayerMovementPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MoveTarget>();
+        app.init_resource::<crate::movement::LocalMovementFreeze>();
         app.init_resource::<ClientSurfaceQuery>();
-        app.add_systems(
-            Update,
-            (select_move_target, animate_click_indicators).run_if(mode::has_client),
-        );
+        crate::pointer::PointerPlugin::ensure(app);
+        app.add_systems(Update, (select_move_target, animate_click_indicators));
     }
 }
 
@@ -43,8 +42,9 @@ impl Plugin for PlayerMovementPlugin {
 /// frame to have already happened.
 pub(crate) fn select_move_target(
     mouse_buttons: Option<Res<ButtonInput<MouseButton>>>,
+    pointer_on_hud: Res<PointerOnHud>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: Query<(&Camera, &Transform), With<Camera3d>>,
     mut move_target: ResMut<MoveTarget>,
     surface_query: Res<ClientSurfaceQuery>,
     mut commands: Commands,
@@ -54,6 +54,9 @@ pub(crate) fn select_move_target(
     let Some(mouse_buttons) = mouse_buttons else {
         return;
     };
+    if hud_wants_pointer(&pointer_on_hud) {
+        return;
+    }
 
     // We distinguish initial click (with visual indicator) from held key:
     // in the latter case we only update destination without spamming rings.

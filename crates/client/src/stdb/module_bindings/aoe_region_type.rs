@@ -19,6 +19,7 @@ pub struct AoeRegion {
     pub direction: Vec3Row,
     pub radius: f32,
     pub shape: AoeShapeRow,
+    pub angle_deg: f32,
     pub remaining_seconds: f32,
     pub pending_delay_seconds: f32,
     pub affected: Vec<u64>,
@@ -41,6 +42,7 @@ pub struct AoeRegionCols {
     pub direction: __sdk::__query_builder::Col<AoeRegion, Vec3Row>,
     pub radius: __sdk::__query_builder::Col<AoeRegion, f32>,
     pub shape: __sdk::__query_builder::Col<AoeRegion, AoeShapeRow>,
+    pub angle_deg: __sdk::__query_builder::Col<AoeRegion, f32>,
     pub remaining_seconds: __sdk::__query_builder::Col<AoeRegion, f32>,
     pub pending_delay_seconds: __sdk::__query_builder::Col<AoeRegion, f32>,
     pub affected: __sdk::__query_builder::Col<AoeRegion, Vec<u64>>,
@@ -59,6 +61,7 @@ impl __sdk::__query_builder::HasCols for AoeRegion {
             direction: __sdk::__query_builder::Col::new(table_name, "direction"),
             radius: __sdk::__query_builder::Col::new(table_name, "radius"),
             shape: __sdk::__query_builder::Col::new(table_name, "shape"),
+            angle_deg: __sdk::__query_builder::Col::new(table_name, "angle_deg"),
             remaining_seconds: __sdk::__query_builder::Col::new(table_name, "remaining_seconds"),
             pending_delay_seconds: __sdk::__query_builder::Col::new(
                 table_name,

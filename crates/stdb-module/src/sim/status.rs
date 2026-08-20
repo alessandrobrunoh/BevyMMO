@@ -52,6 +52,7 @@ pub fn apply(
         });
 
     let control_kind = definition.control.map(control_kind);
+    let mut stacks = 1_u16;
     let active_status_id = match existing {
         Some(row) => {
             let active_status_id = row.id;
@@ -80,6 +81,7 @@ pub fn apply(
                 control_kind,
                 ..row
             });
+            stacks = new_stacks;
             active_status_id
         }
         None => {
@@ -105,6 +107,7 @@ pub fn apply(
         source,
         active_status_id,
         duration,
+        stacks,
     );
     materialize_modifiers(
         ctx,
@@ -122,11 +125,25 @@ pub fn apply(
 }
 
 pub fn cleanse(ctx: &ReducerContext, target: u64, effect: CleanseEffect) {
-    remove_matching(ctx, target, effect.filter, effect.max_statuses, effect.selection, false);
+    remove_matching(
+        ctx,
+        target,
+        effect.filter,
+        effect.max_statuses,
+        effect.selection,
+        false,
+    );
 }
 
 pub fn purge(ctx: &ReducerContext, target: u64, effect: PurgeEffect) {
-    remove_matching(ctx, target, effect.filter, effect.max_statuses, effect.selection, true);
+    remove_matching(
+        ctx,
+        target,
+        effect.filter,
+        effect.max_statuses,
+        effect.selection,
+        true,
+    );
 }
 
 fn remove_matching(
@@ -219,34 +236,54 @@ fn materialize_periodic(
     source: Option<u64>,
     status_instance_id: u64,
     duration: f32,
+    stacks: u16,
 ) {
-    remove_owned_periodics(ctx, status_instance_id);
-
     let Some(periodic) = periodic else {
+        remove_owned_periodics(ctx, status_instance_id);
         return;
     };
     if periodic.interval_seconds <= 0.0 || duration <= 0.0 {
+        remove_owned_periodics(ctx, status_instance_id);
         return;
     }
 
+    let stack_mul = stacks.max(1) as f32;
     let amount_per_tick = match periodic.effect {
-        DomainPeriodicEffect::Damage { amount, .. } => -amount.abs(),
-        DomainPeriodicEffect::Heal { amount } => amount.abs(),
+        DomainPeriodicEffect::Damage { amount, .. } => -amount.abs() * stack_mul,
+        DomainPeriodicEffect::Heal { amount } => amount.abs() * stack_mul,
     };
     if amount_per_tick == 0.0 {
+        remove_owned_periodics(ctx, status_instance_id);
         return;
     }
 
-    ctx.db.periodic_effect().insert(PeriodicEffect {
-        id: 0,
-        entity_id: target,
-        source,
-        amount_per_tick,
-        tick_interval_seconds: periodic.interval_seconds,
-        origin_status_instance_id: Some(status_instance_id),
-        since_last_tick: 0.0,
-        remaining_seconds: duration,
-    });
+    let existing = ctx
+        .db
+        .periodic_effect()
+        .iter()
+        .find(|row| row.origin_status_instance_id == Some(status_instance_id));
+
+    match existing {
+        Some(row) => {
+            ctx.db.periodic_effect().id().update(PeriodicEffect {
+                amount_per_tick,
+                remaining_seconds: duration,
+                ..row
+            });
+        }
+        None => {
+            ctx.db.periodic_effect().insert(PeriodicEffect {
+                id: 0,
+                entity_id: target,
+                source,
+                amount_per_tick,
+                tick_interval_seconds: periodic.interval_seconds,
+                origin_status_instance_id: Some(status_instance_id),
+                since_last_tick: 0.0,
+                remaining_seconds: duration,
+            });
+        }
+    }
 }
 
 fn remove_owned_periodics(ctx: &ReducerContext, status_instance_id: u64) {

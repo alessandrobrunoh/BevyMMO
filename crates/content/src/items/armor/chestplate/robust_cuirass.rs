@@ -20,7 +20,7 @@ use crate::items::ItemRegistry;
         secondary = [IronWave],
         ultimate = [ArcaneOrb],
     ),
-    rune_profile(capacity = 6, stability = 0.92, affinity = fuoco),
+    rune_profile(capacity = 6, stability = 0.92),
 )]
 pub struct RobustCuirass;
 
@@ -72,16 +72,13 @@ mod tests {
     }
 
     #[test]
-    fn has_a_rune_profile_with_fire_affinity() {
+    fn has_a_rune_profile_with_stability() {
         let item = RobustCuirass;
         let profile = item
             .rune_profile()
             .expect("robust_cuirass must grant a rune profile");
         assert_eq!(profile.capacity, 6);
-        assert_eq!(
-            profile.affinity.as_ref().map(|id| id.as_str()),
-            Some("fuoco")
-        );
+        assert!((profile.stability - 0.92).abs() < f32::EPSILON);
     }
 
     #[test]

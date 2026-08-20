@@ -2,6 +2,9 @@ services:
   spacetimedb:
     image: clockworklabs/spacetime:latest
     restart: unless-stopped
+    # Docker creates named-volume roots as root-owned. The local development
+    # image runs as uid 1000, so it cannot initialise /stdb after a fresh reset.
+    user: "0:0"
     command: ["start", "--listen-addr", "0.0.0.0:3000", "--data-dir", "/stdb"]
     ports:
       - "3000:3000"

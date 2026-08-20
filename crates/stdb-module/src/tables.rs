@@ -181,15 +181,6 @@ pub struct EquipmentTable {
     pub slots: Vec<Option<ItemInstanceRow>>,
 }
 
-#[table(accessor = known_glyphs, public)]
-pub struct KnownGlyphsTable {
-    #[primary_key]
-    pub character_id: Uuid,
-    pub essences: Vec<String>,
-    pub modifiers: Vec<String>,
-    pub ancient_words: Vec<String>,
-}
-
 /// New vocabulary for Root Words and universal Ancient Words. This table is
 /// additive to `KnownGlyphsTable` so existing characters remain readable while
 /// the migration is in progress.
@@ -342,6 +333,8 @@ pub enum EntityKindRow {
     Boss,
     Dummy,
     Npc,
+    /// Training dummy that receives heals the way a party member would.
+    AllyDummy,
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
@@ -367,6 +360,7 @@ impl ColorRow {
             EntityKindRow::Enemy => Self::srgb(0.8, 0.2, 0.2),
             EntityKindRow::Boss => Self::srgb(0.55, 0.05, 0.05),
             EntityKindRow::Dummy => Self::srgb(0.7, 0.1, 0.1),
+            EntityKindRow::AllyDummy => Self::srgb(0.2, 0.75, 0.35),
             EntityKindRow::Npc => Self::srgb(0.5, 0.5, 0.5),
         }
     }
@@ -546,6 +540,8 @@ pub struct AoeRegion {
     pub direction: Vec3Row,
     pub radius: f32,
     pub shape: AoeShapeRow,
+    /// Total cone aperture in degrees. Unused for circles (`0.0`).
+    pub angle_deg: f32,
     pub remaining_seconds: f32,
     /// Time before the region starts applying its effect. Meteorite's warning
     /// circle exists during this window without doing anything.

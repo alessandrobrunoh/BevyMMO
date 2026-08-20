@@ -37,6 +37,26 @@ pub struct EntityColor(pub bevy::color::Color);
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
 pub struct NetworkEntityId(pub u64);
 
+/// Homing or ground-targeted projectile, predicted between server ticks.
+#[derive(Component, Clone, Debug)]
+pub struct ProjectileFlight {
+    pub speed: f32,
+    pub target_entity: Option<u64>,
+    pub target_position: Option<Vec3>,
+}
+
+/// Authoritative ground AoE region, drawn locally for its remaining lifetime.
+#[derive(Component, Clone, Debug)]
+pub struct AoeZone {
+    pub radius: f32,
+    pub remaining_seconds: f32,
+    pub pending_delay_seconds: f32,
+    pub spell_id: String,
+    /// `None` = circle. Degrees when the region is a frontal cone.
+    pub cone_angle_deg: Option<f32>,
+    pub direction: Vec3,
+}
+
 /// Marks a spell projectile so the renderer draws it as one rather than as a
 /// generic entity mesh.
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]

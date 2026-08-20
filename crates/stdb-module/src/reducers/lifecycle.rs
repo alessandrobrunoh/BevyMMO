@@ -6,15 +6,15 @@ use std::time::Duration;
 use crate::reducers::account::caller_session;
 use crate::rows::{equipment_to_rows, inventory_to_rows, HotbarRow, StatsRow, Vec3Row};
 use crate::tables::{
-    active_status, aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats, equipment,
-    game_entity, grid_cell, hotbar, inventory, known_ancient_language, known_glyphs, periodic_effect,
-    player, player_stats,
-    projectile, resonance, session, stat_modifier, threat, tick_schedule, tick_stats, ColorRow, EntityKindRow,
-    EntityStateRow, EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownAncientLanguageTable,
-    KnownGlyphsTable, Player,
-    PlayerStats, Session, TickSchedule,
+    active_status, aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats,
+    equipment, game_entity, grid_cell, hotbar, inventory, known_ancient_language, periodic_effect,
+    player, player_stats, projectile, resonance, session, stat_modifier, threat, tick_schedule,
+    tick_stats, ColorRow, EntityKindRow, EntityStateRow, EquipmentTable, GameEntity, Hotbar,
+    InventoryTable, KnownAncientLanguageTable, Player, PlayerStats, Session, TickSchedule,
 };
-use crate::{normalize_name, world, DEFAULT_SPEED_PER_SECOND, MAX_CHARACTERS_PER_ACCOUNT, TICK_INTERVAL_MS};
+use crate::{
+    normalize_name, world, DEFAULT_SPEED_PER_SECOND, MAX_CHARACTERS_PER_ACCOUNT, TICK_INTERVAL_MS,
+};
 
 /// Runs once, when the module is first published to an empty database.
 #[reducer(init)]
@@ -44,7 +44,7 @@ fn clear_runtime_state(ctx: &ReducerContext) {
     let projectile_ids: Vec<_> = ctx.db.projectile().iter().map(|row| row.id).collect();
     let aoe_ids: Vec<_> = ctx.db.aoe_region().iter().map(|row| row.id).collect();
     let crowd_control_ids: Vec<_> = ctx.db.crowd_control().iter().map(|row| row.id).collect();
-        let active_status_ids: Vec<_> = ctx.db.active_status().iter().map(|row| row.id).collect();
+    let active_status_ids: Vec<_> = ctx.db.active_status().iter().map(|row| row.id).collect();
     let modifier_ids: Vec<_> = ctx.db.stat_modifier().iter().map(|row| row.id).collect();
     let threat_ids: Vec<_> = ctx.db.threat().iter().map(|row| row.id).collect();
     let cast_entity_ids: Vec<_> = ctx
@@ -182,7 +182,17 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
             return Err(format!("name {display_name:?} is taken"));
         }
         // The caller's own character: reactivate it and make it this
-        // connection's active character.
+        // connection's active character — unless another live session already
+        // owns it.
+        let already_played = ctx.db.session().iter().any(|session| {
+            session.character_id == Some(existing.character_id)
+                && session.identity != ctx.sender()
+        });
+        if already_played {
+            return Err(format!(
+                "{display_name} is already in the world on another connection"
+            ));
+        }
         set_active_character(ctx, Some(existing.character_id));
         ctx.db.player().character_id().update(Player {
             online: true,
@@ -192,12 +202,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         return Ok(());
     }
 
-    let existing_count = ctx
-        .db
-        .player()
-        .account_id()
-        .filter(&account_id)
-        .count();
+    let existing_count = ctx.db.player().account_id().filter(&account_id).count();
     if existing_count >= MAX_CHARACTERS_PER_ACCOUNT {
         return Err(format!(
             "an account may have at most {MAX_CHARACTERS_PER_ACCOUNT} characters"
@@ -251,9 +256,10 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         ..entity
     });
 
-    ctx.db
-        .player_stats()
-        .insert(PlayerStats { character_id, stats });
+    ctx.db.player_stats().insert(PlayerStats {
+        character_id,
+        stats,
+    });
     ctx.db.entity_stats().insert(crate::tables::EntityStats {
         entity_id: character.entity_id,
         stats,
@@ -268,27 +274,41 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         character_id,
         slots: inventory_to_rows(&Default::default()),
     });
-    crate::reducers::items::grant_item(ctx, character_id, "magic_staff")?;
+    crate::reducers::items::grant_item(ctx, character_id, "mage_staff")?;
     ctx.db.equipment().insert(EquipmentTable {
         character_id,
         slots: equipment_to_rows(&Default::default()),
     });
-    ctx.db.known_glyphs().insert(KnownGlyphsTable {
-        character_id,
-        essences: vec!["fuoco".to_string(), "gelo".to_string(), "terra".to_string()],
-        modifiers: vec![
-            "espandere".to_string(),
-            "amplificare".to_string(),
-            "concentrare".to_string(),
-        ],
-        ancient_words: Vec::new(),
-    });
-    ctx.db.known_ancient_language().insert(KnownAncientLanguageTable {
-        character_id,
-        root_words: vec!["damage".to_string()],
-        ancient_words: vec!["amplia".to_string()],
-        base_abilities: vec!["arcane_orb".to_string()],
-    });
+
+    ctx.db
+        .known_ancient_language()
+        .insert(KnownAncientLanguageTable {
+            character_id,
+            root_words: vec![
+                "damage".to_string(),
+                "flame".to_string(),
+                "frost".to_string(),
+                "storm".to_string(),
+                "life".to_string(),
+                "void".to_string(),
+                "stone".to_string(),
+            ],
+            ancient_words: vec![
+                "echo".to_string(),
+                "twin".to_string(),
+                "return".to_string(),
+                "hunger".to_string(),
+                "anchor".to_string(),
+                "reversal".to_string(),
+            ],
+            base_abilities: vec![
+                "arcane_bolt".to_string(),
+                "arcane_wave".to_string(),
+                "great_manifestation".to_string(),
+            ],
+        });
+
+    crate::reducers::items::equip_granted_starter_staff(ctx, character_id, character.entity_id)?;
 
     set_active_character(ctx, Some(character_id));
     Ok(())
@@ -463,11 +483,17 @@ fn delete_character_rows(ctx: &ReducerContext, character: &Player) {
     ctx.db.entity_stats().entity_id().delete(&entity_id);
     ctx.db.game_entity().entity_id().delete(&entity_id);
 
-    ctx.db.known_glyphs().character_id().delete(&character_id);
     ctx.db.equipment().character_id().delete(&character_id);
     ctx.db.inventory().character_id().delete(&character_id);
     ctx.db.hotbar().character_id().delete(&character_id);
+    ctx.db
+        .known_ancient_language()
+        .character_id()
+        .delete(&character_id);
     ctx.db.player_stats().character_id().delete(&character_id);
+
+    crate::reducers::parties::forget_deleted_character(ctx, character);
+
     ctx.db.player().character_id().delete(&character_id);
 }
 
@@ -483,9 +509,8 @@ fn active_character(ctx: &ReducerContext) -> Option<Player> {
 
 /// Resolves the caller's active character, or explains why there isn't one.
 pub fn caller_character(ctx: &ReducerContext) -> Result<Player, String> {
-    active_character(ctx).ok_or_else(|| {
-        "no character selected for this connection; call `join` first".to_string()
-    })
+    active_character(ctx)
+        .ok_or_else(|| "no character selected for this connection; call `join` first".to_string())
 }
 
 /// Resolves the caller's active character's entity, or explains why there
@@ -544,6 +569,18 @@ pub fn expire_stale_presence(ctx: &ReducerContext) {
 
     for player in stale {
         log::info!("{} timed out", player.display_name);
+        if let Some(entity) = ctx.db.game_entity().entity_id().find(&player.entity_id) {
+            ctx.db.game_entity().entity_id().update(GameEntity {
+                move_target: None,
+                state: if entity.state == EntityStateRow::Dead {
+                    entity.state
+                } else {
+                    EntityStateRow::Idle
+                },
+                ..entity
+            });
+        }
+        ctx.db.cast_state().entity_id().delete(&player.entity_id);
         ctx.db.player().character_id().update(Player {
             online: false,
             ..player

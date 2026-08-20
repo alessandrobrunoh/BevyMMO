@@ -89,6 +89,20 @@ impl AbilitySelection {
 /// otherwise the first offered option. Never returns `None` for a well-formed
 /// `AbilityLoadout`, so a player who never opened the selection UI still gets
 /// a sensible default.
+pub fn resolve_armor_ability<'a>(
+    abilities: &'a AbilityLoadout,
+    selection: &'a AbilitySelection,
+) -> Option<&'a AbilityId> {
+    let options = abilities
+        .primary
+        .iter()
+        .chain(abilities.secondary.iter())
+        .chain(abilities.ultimate.iter())
+        .collect::<Vec<_>>();
+    let picked = selection.primary.as_ref().filter(|id| options.contains(id));
+    picked.or_else(|| options.first().copied())
+}
+
 pub fn resolve_active_ability<'a>(
     slot: AbilitySlot,
     abilities: &'a AbilityLoadout,
@@ -118,6 +132,28 @@ mod tests {
             vec![],
             vec![AbilityId::new("wave")],
             vec![AbilityId::new("convergence")],
+        );
+    }
+
+    #[test]
+    fn armor_resolution_flattens_all_offered_slots() {
+        let abilities = sample();
+        let selection = AbilitySelection {
+            primary: Some(AbilityId::new("nova")),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_armor_ability(&abilities, &selection),
+            Some(&AbilityId::new("nova"))
+        );
+    }
+
+    #[test]
+    fn armor_resolution_defaults_to_first_offered_ability() {
+        let abilities = sample();
+        assert_eq!(
+            resolve_armor_ability(&abilities, &AbilitySelection::default()),
+            Some(&AbilityId::new("bolt"))
         );
     }
 

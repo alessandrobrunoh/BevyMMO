@@ -4,12 +4,48 @@
 
 use crate::stats::components::CombatStats;
 
+/// The caster does not have enough current mana for this cost.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InsufficientMana;
+
 /// Effective damage after target armor reduction.
 ///
 /// `raw_damage * (1 - armor_damage_reduction)`, clamped to `>= 0`.
 /// Negative damage input never heals the target.
 pub fn damage_after_armor(raw_damage: f32, target_combat: &CombatStats) -> f32 {
     (raw_damage * (1.0 - target_combat.armor_damage_reduction())).max(0.0)
+}
+
+/// Whether `current` mana can pay `cost`.
+///
+/// A non-positive cost is always affordable (free casts, empty blueprints).
+pub fn can_afford_mana(current: f32, cost: f32) -> bool {
+    cost <= 0.0 || current >= cost
+}
+
+/// Spends `cost` from `current` mana, or refuses.
+///
+/// A non-positive cost is a no-op and returns `current` unchanged.
+pub fn spend_mana(current: f32, cost: f32) -> Result<f32, InsufficientMana> {
+    if !can_afford_mana(current, cost) {
+        return Err(InsufficientMana);
+    }
+    if cost <= 0.0 {
+        return Ok(current);
+    }
+    Ok(current - cost)
+}
+
+/// Refills mana over `dt` seconds, clamped to `[0, max]`.
+///
+/// Non-positive regeneration or `dt` leaves `current` unchanged (still
+/// clamped, in case `max` shrank).
+pub fn regenerated_mana(current: f32, max: f32, regen_per_second: f32, dt: f32) -> f32 {
+    let max = max.max(0.0);
+    if regen_per_second <= 0.0 || dt <= 0.0 {
+        return current.clamp(0.0, max);
+    }
+    (current + regen_per_second * dt).clamp(0.0, max)
 }
 
 #[cfg(test)]
@@ -42,5 +78,44 @@ mod tests {
             armor: 0.0,
         };
         assert_eq!(damage_after_armor(25.0, &target), 25.0);
+    }
+
+    #[test]
+    fn spend_refuses_when_current_is_strictly_below_cost() {
+        assert_eq!(spend_mana(9.0, 10.0), Err(InsufficientMana));
+        assert!(!can_afford_mana(9.0, 10.0));
+    }
+
+    #[test]
+    fn spend_accepts_an_exact_pool() {
+        assert_eq!(spend_mana(10.0, 10.0), Ok(0.0));
+        assert!(can_afford_mana(10.0, 10.0));
+    }
+
+    #[test]
+    fn spend_of_zero_or_negative_cost_is_a_noop() {
+        assert_eq!(spend_mana(7.0, 0.0), Ok(7.0));
+        assert_eq!(spend_mana(7.0, -3.0), Ok(7.0));
+        assert!(can_afford_mana(0.0, 0.0));
+        assert!(can_afford_mana(0.0, -1.0));
+    }
+
+    #[test]
+    fn regen_adds_rate_times_dt_and_does_not_exceed_max() {
+        assert_eq!(regenerated_mana(90.0, 100.0, 5.0, 1.0), 95.0);
+        assert_eq!(regenerated_mana(99.0, 100.0, 5.0, 1.0), 100.0);
+    }
+
+    #[test]
+    fn regen_is_a_noop_when_rate_or_dt_is_not_positive() {
+        assert_eq!(regenerated_mana(40.0, 100.0, 0.0, 1.0), 40.0);
+        assert_eq!(regenerated_mana(40.0, 100.0, 5.0, 0.0), 40.0);
+        assert_eq!(regenerated_mana(40.0, 100.0, -1.0, 1.0), 40.0);
+    }
+
+    #[test]
+    fn regen_still_clamps_when_it_does_not_add() {
+        assert_eq!(regenerated_mana(150.0, 100.0, 0.0, 1.0), 100.0);
+        assert_eq!(regenerated_mana(-4.0, 100.0, 0.0, 1.0), 0.0);
     }
 }

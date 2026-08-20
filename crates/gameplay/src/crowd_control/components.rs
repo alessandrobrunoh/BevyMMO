@@ -22,23 +22,27 @@ pub enum CrowdControlKind {
     /// Fully blocks movement and casting until expiry.
     #[default]
     Stun,
-    // Future: Root, Silence, Slow, Fear, ...
+    /// Blocks movement but not casting.
+    Root,
+    /// Blocks casting but not movement.
+    Silence,
 }
 
 impl CrowdControlKind {
     /// Returns `true` when this kind suppresses *all* actions (movement and
     /// casting).
-    ///
-    /// Used by movement and cast gating. A future `Slow` would return `false`
-    /// here and be modeled as a stat modifier instead, while still being
-    /// representable in [`CrowdControlState`] for UI/immunity purposes.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// if kind.is_blocking() { freeze_entity(target); }
-    /// ```
     pub fn is_blocking(self) -> bool {
         matches!(self, CrowdControlKind::Stun)
+    }
+
+    /// Movement is frozen (stun or root).
+    pub fn blocks_movement(self) -> bool {
+        matches!(self, CrowdControlKind::Stun | CrowdControlKind::Root)
+    }
+
+    /// Casting is gagged (stun or silence).
+    pub fn blocks_casting(self) -> bool {
+        matches!(self, CrowdControlKind::Stun | CrowdControlKind::Silence)
     }
 }
 
@@ -99,6 +103,13 @@ impl CrowdControlState {
     /// ```
     pub fn has_blocking_cc(&self) -> bool {
         self.effects.iter().any(|effect| effect.kind.is_blocking())
+    }
+
+    /// True when stun or root is currently freezing movement.
+    pub fn blocks_movement(&self) -> bool {
+        self.effects
+            .iter()
+            .any(|effect| effect.kind.blocks_movement())
     }
 
     /// Refreshes (or inserts) a CC effect of the given kind.
@@ -165,6 +176,14 @@ impl CrowdControlState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn root_blocks_movement_but_not_all_actions() {
+        let mut state = CrowdControlState::default();
+        state.apply(CrowdControlKind::Root, 2.0);
+        assert!(state.blocks_movement());
+        assert!(!state.has_blocking_cc());
+    }
 
     #[test]
     fn apply_inserts_new_effect() {

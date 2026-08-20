@@ -8,6 +8,7 @@ pub mod local_player;
 pub mod movement;
 pub mod network;
 pub mod player_movement;
+pub mod pointer;
 pub mod server_feed;
 pub mod stdb;
 pub mod targeting;
@@ -15,7 +16,7 @@ pub mod user_settings;
 
 pub mod prelude {
     pub use crate::app_state::{
-        ConnectionFailure, ConnectionIntent, ConnectionRequest, GameScreen, GameStatePlugin,
+        ConnectionFailure, ConnectionIntent, ConnectionRequest, GameStatePlugin, PauseOverlay,
         PlayerNameError, Screen,
     };
     pub use crate::local_player::LocalPlayer;

@@ -6,8 +6,15 @@ use bevy::{
     window::PrimaryWindow,
 };
 
-use crate::ui::scale::window_to_ui_px;
+use crate::ui::scale::{physical_to_ui_px, window_to_ui_px};
 use crate::ui::theme::UiTheme;
+
+const SCROLLBAR_TRACK_WIDTH: f32 = 14.0;
+const SCROLLBAR_MIN_THUMB: f32 = 24.0;
+const SCROLLBAR_TRACK_COLOR: Color = Color::srgba(0.10, 0.08, 0.05, 0.92);
+const SCROLLBAR_THUMB_COLOR: Color = Color::srgb(0.72, 0.56, 0.26);
+const SCROLLBAR_THUMB_HOVER: Color = Color::srgb(0.86, 0.70, 0.34);
+const SCROLLBAR_THUMB_ACTIVE: Color = Color::srgb(0.58, 0.44, 0.18);
 
 pub struct ScrollbarPlugin;
 
@@ -32,6 +39,7 @@ impl Plugin for ScrollbarPlugin {
 pub struct ScrollView {
     pub content_entity: Entity,
     pub scrollbar_entity: Option<Entity>,
+    pub track_entity: Option<Entity>,
     pub current_scroll: f32,
     pub max_scroll: f32,
 }
@@ -39,6 +47,10 @@ pub struct ScrollView {
 /// Aggiunto al contenuto vero e proprio.
 #[derive(Component)]
 pub struct ScrollContent;
+
+/// Marker on the scrollbar track (parent of the thumb).
+#[derive(Component)]
+pub struct ScrollbarTrack;
 
 /// Aggiunto al "thumb" della scrollbar per trascinarlo.
 #[derive(Component)]
@@ -56,6 +68,41 @@ pub fn spawn_scroll_view(
     theme: &UiTheme,
     content_builder: impl FnOnce(&mut Commands) -> Entity,
 ) -> Entity {
+    spawn_scroll_view_with_content(commands, parent, theme, content_builder).0
+}
+
+/// Like [`spawn_scroll_view`], but the viewport starts at `initial_scroll`
+/// instead of the top. Used when a panel is rebuilt and must keep its place.
+pub fn spawn_scroll_view_scrolled(
+    commands: &mut Commands,
+    parent: Entity,
+    theme: &UiTheme,
+    initial_scroll: f32,
+    content_builder: impl FnOnce(&mut Commands) -> Entity,
+) -> Entity {
+    spawn_scroll_view_configured(commands, parent, theme, initial_scroll, content_builder).0
+}
+
+/// Crea una ScrollView e ritorna sia il wrapper sia l'entity del contenuto.
+///
+/// La variante pubblica standard ritorna solo il wrapper; questa serve ai
+/// widget che devono aggiungere dinamicamente figli al contenuto scrollabile.
+pub fn spawn_scroll_view_with_content(
+    commands: &mut Commands,
+    parent: Entity,
+    theme: &UiTheme,
+    content_builder: impl FnOnce(&mut Commands) -> Entity,
+) -> (Entity, Entity) {
+    spawn_scroll_view_configured(commands, parent, theme, 0.0, content_builder)
+}
+
+fn spawn_scroll_view_configured(
+    commands: &mut Commands,
+    parent: Entity,
+    _theme: &UiTheme,
+    initial_scroll: f32,
+    content_builder: impl FnOnce(&mut Commands) -> Entity,
+) -> (Entity, Entity) {
     let wrapper = commands
         .spawn((Node {
             width: Val::Percent(100.0),
@@ -67,11 +114,15 @@ pub fn spawn_scroll_view(
 
     commands.entity(parent).add_child(wrapper);
 
-    // Il Viewport che clippa
+    // Viewport shares the row with the track. `width: 100%` plus a 12 px
+    // sibling overflowed the wrapper and the card's `overflow: clip` ate
+    // the scrollbar entirely — that is why the inventory bar was invisible.
     let viewport = commands
         .spawn((
             Node {
-                width: Val::Percent(100.0),
+                flex_grow: 1.0,
+                flex_shrink: 1.0,
+                min_width: Val::Px(0.0),
                 height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 overflow: Overflow::clip_y(),
@@ -86,25 +137,35 @@ pub fn spawn_scroll_view(
     // Il Contenuto
     let content = content_builder(commands);
     commands.entity(content).insert(ScrollContent);
-    // Assicuriamoci che il contenuto possa muoversi (Top)
+    // Width stays 100% of the viewport so grids can centre; `top` is what
+    // `apply_scroll_position` writes each frame.
     commands.entity(content).insert(Node {
+        width: Val::Percent(100.0),
         top: Val::Px(0.0),
         flex_direction: FlexDirection::Column,
+        position_type: PositionType::Relative,
         ..default()
     });
     commands.entity(viewport).add_child(content);
 
-    // Track
+    // Track. Starts collapsed: `max_scroll` is 0 until layout, and a
+    // Hidden track would still reserve 14 px.
     let track = commands
         .spawn((
             Node {
-                width: Val::Px(12.0),
+                width: Val::Px(SCROLLBAR_TRACK_WIDTH),
                 height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::FlexStart, // thumb parte da su
+                flex_shrink: 0.0,
+                margin: UiRect::left(Val::Px(6.0)),
+                position_type: PositionType::Relative,
+                border: UiRect::all(Val::Px(1.0)),
+                display: Display::None,
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.05, 0.05, 0.05, 0.5)),
+            BackgroundColor(SCROLLBAR_TRACK_COLOR),
+            BorderColor::all(Color::srgba(0.55, 0.42, 0.18, 0.7)),
+            ScrollbarTrack,
+            Visibility::Hidden,
         ))
         .id();
 
@@ -112,11 +173,15 @@ pub fn spawn_scroll_view(
     let thumb = commands
         .spawn((
             Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(40.0), // Verrà aggiornato dinamicamente
+                position_type: PositionType::Absolute,
+                left: Val::Px(1.0),
+                right: Val::Px(1.0),
+                top: Val::Px(0.0),
+                width: Val::Auto,
+                height: Val::Px(40.0),
                 ..default()
             },
-            BackgroundColor(theme.button_bg),
+            BackgroundColor(SCROLLBAR_THUMB_COLOR),
             ScrollbarThumb {
                 viewport_entity: viewport,
                 is_dragging: false,
@@ -133,11 +198,12 @@ pub fn spawn_scroll_view(
     commands.entity(viewport).insert(ScrollView {
         content_entity: content,
         scrollbar_entity: Some(thumb),
-        current_scroll: 0.0,
+        track_entity: Some(track),
+        current_scroll: initial_scroll.max(0.0),
         max_scroll: 0.0,
     });
 
-    wrapper
+    (wrapper, content)
 }
 
 fn update_scroll_max(
@@ -180,7 +246,6 @@ fn handle_scrollbar_drag(
     mouse_input: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     ui_scale: Res<UiScale>,
-    theme: Res<UiTheme>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -204,11 +269,11 @@ fn handle_scrollbar_drag(
 
         // Colori
         if thumb.is_dragging || *interaction == Interaction::Pressed {
-            *bg = BackgroundColor(theme.button_pressed_bg);
+            *bg = BackgroundColor(SCROLLBAR_THUMB_ACTIVE);
         } else if *interaction == Interaction::Hovered {
-            *bg = BackgroundColor(theme.button_hovered_bg);
+            *bg = BackgroundColor(SCROLLBAR_THUMB_HOVER);
         } else {
-            *bg = BackgroundColor(theme.button_bg);
+            *bg = BackgroundColor(SCROLLBAR_THUMB_COLOR);
         }
 
         // Calcolo spostamento
@@ -246,33 +311,107 @@ fn apply_scroll_position(
 }
 
 fn update_scrollbar_visuals(
-    mut view_q: Query<(&ScrollView, &ComputedNode)>,
-    mut thumb_q: Query<(&mut Node, &mut Visibility), With<ScrollbarThumb>>,
+    view_q: Query<(&ScrollView, &ComputedNode)>,
+    mut thumb_q: Query<&mut Node, (With<ScrollbarThumb>, Without<ScrollbarTrack>)>,
+    mut track_q: Query<
+        (&mut Node, &mut Visibility),
+        (With<ScrollbarTrack>, Without<ScrollbarThumb>),
+    >,
 ) {
-    for (view, view_node) in view_q.iter_mut() {
-        if let Some(thumb_ent) = view.scrollbar_entity {
-            if let Ok((mut thumb_node, mut vis)) = thumb_q.get_mut(thumb_ent) {
-                if view.max_scroll <= 0.0 {
-                    *vis = Visibility::Hidden;
-                } else {
-                    *vis = Visibility::Inherited;
-                    let view_h = view_node.size().y;
+    for (view, view_node) in &view_q {
+        let Some(track_ent) = view.track_entity else {
+            continue;
+        };
+        let Ok((mut track_node, mut track_visibility)) = track_q.get_mut(track_ent) else {
+            continue;
+        };
 
-                    // L'altezza del thumb è proporzionale a quanto contenuto è visibile
-                    let content_h = view_h + view.max_scroll;
-                    let proportion = view_h / content_h.max(1.0);
-                    let thumb_h = (view_h * proportion).max(20.0);
-
-                    thumb_node.height = Val::Px(thumb_h);
-
-                    // Posizione
-                    let max_thumb_travel = view_h - thumb_h;
-                    let scroll_percent = view.current_scroll / view.max_scroll;
-                    let thumb_top = scroll_percent * max_thumb_travel;
-
-                    thumb_node.top = Val::Px(thumb_top);
-                }
-            }
+        if view.max_scroll <= 0.0 {
+            track_node.display = Display::None;
+            *track_visibility = Visibility::Hidden;
+            continue;
         }
+
+        track_node.display = Display::Flex;
+        *track_visibility = Visibility::Inherited;
+
+        let Some(thumb_ent) = view.scrollbar_entity else {
+            continue;
+        };
+        let Ok(mut thumb_node) = thumb_q.get_mut(thumb_ent) else {
+            continue;
+        };
+
+        let view_h = physical_to_ui_px(view_node.size(), view_node).y;
+        let content_h = view_h + view.max_scroll;
+        let proportion = view_h / content_h.max(1.0);
+        let thumb_h = (view_h * proportion).max(SCROLLBAR_MIN_THUMB);
+
+        thumb_node.height = Val::Px(thumb_h);
+
+        let max_thumb_travel = (view_h - thumb_h).max(0.0);
+        let scroll_percent = view.current_scroll / view.max_scroll;
+        thumb_node.top = Val::Px(scroll_percent * max_thumb_travel);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn viewport_leaves_room_for_the_track() {
+        let mut app = App::new();
+        app.init_resource::<UiTheme>();
+        let theme = UiTheme::default();
+        let mut commands = app.world_mut().commands();
+        let parent = commands.spawn(Node::default()).id();
+        spawn_scroll_view(&mut commands, parent, &theme, |commands| {
+            commands.spawn(Node::default()).id()
+        });
+        app.update();
+
+        let world = app.world_mut();
+        let mut views = world.query::<(&ScrollView, &Node)>();
+        let (_, viewport) = views.iter(world).next().expect("viewport");
+        assert_eq!(
+            viewport.flex_grow, 1.0,
+            "viewport must shrink so the track is not clipped"
+        );
+        assert_eq!(viewport.min_width, Val::Px(0.0));
+        assert_ne!(viewport.width, Val::Percent(100.0));
+    }
+
+    #[test]
+    fn spawn_creates_a_track_and_thumb() {
+        let mut app = App::new();
+        app.init_resource::<UiTheme>();
+        let theme = UiTheme::default();
+        let mut commands = app.world_mut().commands();
+        let parent = commands.spawn(Node::default()).id();
+        spawn_scroll_view(&mut commands, parent, &theme, |commands| {
+            commands.spawn(Node::default()).id()
+        });
+        app.update();
+
+        let world = app.world_mut();
+        let mut thumbs = world.query::<&ScrollbarThumb>();
+        assert_eq!(thumbs.iter(world).count(), 1);
+
+        let world = app.world_mut();
+        let mut tracks = world.query::<(&ScrollbarTrack, &Node, &Visibility)>();
+        let (_, track_node, visibility) = tracks.iter(world).next().expect("track");
+        assert_eq!(
+            track_node.display,
+            Display::None,
+            "unscrollable content must not reserve track width"
+        );
+        assert_eq!(*visibility, Visibility::Hidden);
+
+        let world = app.world_mut();
+        let mut views = world.query::<&ScrollView>();
+        let view = views.iter(world).next().expect("view");
+        assert!(view.scrollbar_entity.is_some());
+        assert!(view.track_entity.is_some());
     }
 }

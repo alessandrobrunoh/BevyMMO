@@ -28,9 +28,7 @@
 
 use std::sync::OnceLock;
 
-use bevymmo_domain::abilities::{
-    AbilityLoadout, AncientWordRegistry, BaseAbilityRegistry, EssenceRegistry, ModifierRegistry,
-};
+use bevymmo_domain::abilities::{AbilityLoadout, AncientWordRegistry, BaseAbilityRegistry};
 
 use bevymmo_domain::effects::{
     ApplyStatusEffect, CleanseEffect, DamageEffect, EffectBundle, EffectContext, EffectSpec,
@@ -42,7 +40,7 @@ use bevymmo_domain::items::WeaponFamilyRegistry;
 use bevymmo_domain::spells::components::MOVEMENT_INTERRUPT_EPSILON;
 use bevymmo_domain::spells::context::{
     AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ProjectileSpawnRequest, Spell,
-    SpellCastContext,
+    SpellCastContext, TargetingMode,
 };
 use bevymmo_domain::spells::registry::{SpellId, SpellRegistry};
 use bevymmo_domain::stats::components::{CombatStats, StatsBundleData};
@@ -57,11 +55,12 @@ use crate::rows::{
     EffectPayloadFilterRow, EffectPayloadKindRow, EffectPayloadRow, EffectPayloadSelectionRow,
     Vec3Row,
 };
+use crate::sim::targets;
 use crate::tables::{
-    aoe_region, cast_ended, cast_state, cooldown, entity_stats, game_entity,
-    grid_cell, projectile, spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow,
-    CastEndedEvent, CastKindRow, CastSourceRow, CastState, Cooldown, EntityStateRow,
-    GameEntity, ModifierKindRow, Projectile, SpellVisualEffectEvent,
+    aoe_region, cast_ended, cast_state, cooldown, entity_stats, game_entity, grid_cell, projectile,
+    spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow, CastEndedEvent, CastKindRow,
+    CastSourceRow, CastState, Cooldown, EntityStateRow, GameEntity, ModifierKindRow, Projectile,
+    SpellVisualEffectEvent,
 };
 
 /// Resolves an item's ability pools, falling back to its weapon family when
@@ -118,16 +117,6 @@ pub fn spells() -> &'static SpellRegistry {
 pub fn base_abilities() -> &'static BaseAbilityRegistry {
     static REGISTRY: OnceLock<BaseAbilityRegistry> = OnceLock::new();
     REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
-}
-
-pub fn essences() -> &'static EssenceRegistry {
-    static REGISTRY: OnceLock<EssenceRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::content::essences::default_essences)
-}
-
-pub fn modifiers() -> &'static ModifierRegistry {
-    static REGISTRY: OnceLock<ModifierRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::content::modifiers::default_modifiers)
 }
 
 pub fn ancient_words() -> &'static AncientWordRegistry {
@@ -192,11 +181,16 @@ pub fn potential_targets(ctx: &ReducerContext, center: Vec3, radius: f32) -> Vec
         z: center.z + radius,
     });
 
-    let mut targets = Vec::new();
+    let mut found = Vec::new();
+    let online = targets::online_character_ids(ctx);
     for cell_x in min_x..=max_x {
         // The index is `(cell_x, cell_z)`, so the scan fixes the first column
         // and ranges over the second — one syscall per column of cells.
         for entity in ctx.db.game_entity().cell().filter((cell_x, min_z..=max_z)) {
+            let online_flag = entity.owner_character_id.map(|id| online.contains(&id));
+            if !targets::is_valid_spell_target(entity.kind, entity.state, online_flag) {
+                continue;
+            }
             if !is_alive(ctx, &entity) {
                 continue;
             }
@@ -204,16 +198,86 @@ pub fn potential_targets(ctx: &ReducerContext, center: Vec3, radius: f32) -> Vec
             if flat_distance(center, position) > radius {
                 continue;
             }
-            targets.push((EntityId::new(entity.entity_id), position));
+            found.push((EntityId::new(entity.entity_id), position));
         }
     }
-    targets
+    found
 }
 
 /// Horizontal distance. Height is discarded everywhere in this game's maths
 /// (see `AoeShape::contains`), because combat happens on a plane.
 pub fn flat_distance(from: Vec3, to: Vec3) -> f32 {
     Vec3::new(to.x - from.x, 0.0, to.z - from.z).length()
+}
+
+/// Whether `point` is inside `range`, plus the aim slack the client needs.
+pub fn point_in_cast_range(caster: Vec3, point: Vec3, range: f32) -> bool {
+    range <= 0.0 || flat_distance(caster, point) <= range + CAST_RANGE_TOLERANCE
+}
+
+/// Rejects a missing, dead, offline, or out-of-range target when the
+/// ability actually uses a selected unit.
+///
+/// The HUD always knows the current target and the cursor. The client used
+/// to attach both to every reducer call, so a self-centered cleave failed
+/// whenever a dummy selected 20 m away was still targeted — or whenever the
+/// isometric camera put the cursor on distant ground. Only
+/// [`TargetingMode::SingleEntity`] range-checks a unit: a homing spell must
+/// not lock onto someone across the map by aiming at their feet. Ground
+/// circles clamp at fire (`clamp_to_range`); cones ignore the cursor for
+/// range and use it only as facing. Projectiles treat a selected unit as a
+/// preference and fall back to the forward lane.
+pub fn validate_cast_target(
+    ctx: &ReducerContext,
+    caster: &GameEntity,
+    range: f32,
+    targeting: TargetingMode,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3>,
+) -> Result<(), String> {
+    if !targeting.range_checks_selected_entity() {
+        return Ok(());
+    }
+
+    let origin = Vec3::from(caster.position);
+    let online = targets::online_character_ids(ctx);
+    let Some(id) = target_entity else {
+        return Ok(());
+    };
+    let Some(target) = ctx.db.game_entity().entity_id().find(&id) else {
+        return Err("that target is gone".to_string());
+    };
+    let online_flag = target.owner_character_id.map(|cid| online.contains(&cid));
+    if !targets::is_valid_spell_target(target.kind, target.state, online_flag)
+        || !is_alive(ctx, &target)
+    {
+        return Err("that target cannot be hit".to_string());
+    }
+    if !point_in_cast_range(origin, Vec3::from(target.position), range) {
+        return Err("target is out of range".to_string());
+    }
+    let _ = target_position;
+    Ok(())
+}
+
+/// Spends `cost` current mana, or refuses the cast.
+pub fn spend_energy(ctx: &ReducerContext, entity_id: u64, cost: f32) -> Result<(), String> {
+    if cost <= 0.0 {
+        return Ok(());
+    }
+    let Some(row) = ctx.db.entity_stats().entity_id().find(&entity_id) else {
+        return Err("caster has no stats".to_string());
+    };
+    let current_mana = bevymmo_domain::stats::formulas::spend_mana(row.current_mana, cost)
+        .map_err(|_| "not enough mana".to_string())?;
+    ctx.db
+        .entity_stats()
+        .entity_id()
+        .update(crate::tables::EntityStats {
+            current_mana,
+            ..row
+        });
+    Ok(())
 }
 
 /// Whether a crowd control effect currently prevents this entity from casting.
@@ -333,15 +397,13 @@ pub fn fire_eidolon_ability(
     target_position: Option<Vec3>,
     target_entity: Option<u64>,
     source: CastSourceRow,
+    charge_fraction: f32,
 ) -> Option<f32> {
+    use crate::rows::{equipment_from_rows, known_ancient_language_from_rows};
+    use crate::tables::{equipment, known_ancient_language};
     use bevymmo_domain::abilities::{
-        cast_inscribed_slot, cast_root_inscribed_slot, resolve_active_ability,
-        resolve_root_inscribed_slot, resolve_slot_preview, AbilitySlot,
+        cast_root_inscribed_slot, resolve_active_ability, resolve_root_inscribed_slot, AbilitySlot,
     };
-    use crate::rows::{
-        equipment_from_rows, known_ancient_language_from_rows, known_glyphs_from_rows,
-    };
-    use crate::tables::{equipment, known_ancient_language, known_glyphs};
 
     let combat = combat_stats(ctx, caster.entity_id)?;
     let caster_position = Vec3::from(caster.position);
@@ -366,47 +428,39 @@ pub fn fire_eidolon_ability(
             let weapon = equipment.weapon.as_ref()?;
             let item = items().get(&weapon.item_id)?;
             let weapon_abilities = ability_loadout_for_item(item.as_ref())?;
-            let slot = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate]
-                .into_iter()
-                .find(|&s| {
-                    resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
-                        .map_or(false, |id| id.as_str() == ability_id.as_str())
-                })?;
-            let known_row = ctx.db.known_glyphs().character_id().find(&character_id);
-            let known = known_row
-                .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
-                .unwrap_or_default();
-            let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-            let preview = if let Some(root_inscription) = weapon.root_inscription.as_ref() {
-                let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
-                let language = known_ancient_language_from_rows(
-                    &language_row.root_words,
-                    &language_row.ancient_words,
-                    &language_row.base_abilities,
-                );
-                resolve_root_inscribed_slot(
-                    slot,
-                    weapon_abilities,
-                    &weapon.ability_selection,
-                    root_inscription,
-                    &language,
-                    base_abilities(),
-                    root_words(),
-                    ancient_words(),
-                    Some(item.as_ref()),
-                ).ok()?
-            } else {
-                resolve_slot_preview(
-                    slot,
-                    weapon_abilities,
-                    &weapon.ability_selection,
-                    &inscriptions,
-                    &known,
-                    base_abilities(),
-                    modifiers(),
-                    Some(item.as_ref()),
-                ).ok()?
-            };
+            let slot = [
+                AbilitySlot::Primary,
+                AbilitySlot::Secondary,
+                AbilitySlot::Ultimate,
+            ]
+            .into_iter()
+            .find(|&s| {
+                resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
+                    .map_or(false, |id| id.as_str() == ability_id.as_str())
+            })?;
+            let language_row = ctx
+                .db
+                .known_ancient_language()
+                .character_id()
+                .find(&character_id)?;
+            let language = known_ancient_language_from_rows(
+                &language_row.root_words,
+                &language_row.ancient_words,
+                &language_row.base_abilities,
+            );
+            let root_inscription = weapon.root_inscription.as_ref()?;
+            let preview = resolve_root_inscribed_slot(
+                slot,
+                weapon_abilities,
+                &weapon.ability_selection,
+                root_inscription,
+                &language,
+                base_abilities(),
+                root_words(),
+                ancient_words(),
+                Some(item.as_ref()),
+            )
+            .ok()?;
             (item, preview, None)
         }
         armor_source @ (CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes) => {
@@ -419,8 +473,15 @@ pub fn fire_eidolon_ability(
             };
             let armor = equipment.get(slot).as_ref()?;
             let item = items().get(&armor.item_id)?;
-            ability_loadout_for_item(item.as_ref())?.primary.iter().find(|id| id.as_str() == ability_id.as_str())?;
-            let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
+            ability_loadout_for_item(item.as_ref())?
+                .primary
+                .iter()
+                .find(|id| id.as_str() == ability_id.as_str())?;
+            let language_row = ctx
+                .db
+                .known_ancient_language()
+                .character_id()
+                .find(&character_id)?;
             let language = known_ancient_language_from_rows(
                 &language_row.root_words,
                 &language_row.ancient_words,
@@ -434,12 +495,12 @@ pub fn fire_eidolon_ability(
                 root_words(),
                 ancient_words(),
                 Some(item.as_ref()),
-            ).ok()?;
+            )
+            .ok()?;
             (item, preview, armor.armor_inscription.clone())
         }
         CastSourceRow::Spell => return None,
     };
-
 
     let targets = potential_targets(
         ctx,
@@ -463,53 +524,77 @@ pub fn fire_eidolon_ability(
             let equipment = equipment_from_rows(&equip_row.slots);
             let weapon = equipment.weapon.as_ref()?;
             let weapon_abilities = ability_loadout_for_item(item.as_ref())?;
-            let slot = [AbilitySlot::Primary, AbilitySlot::Secondary, AbilitySlot::Ultimate]
-                .into_iter()
-                .find(|&s| {
-                    resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
-                        .map_or(false, |id| id.as_str() == ability_id.as_str())
-                })?;
-            let known = ctx.db.known_glyphs().character_id().find(&character_id)
-                .map(|r| known_glyphs_from_rows(&r.essences, &r.modifiers, &r.ancient_words))
-                .unwrap_or_default();
-            let inscriptions = weapon.inscriptions.clone().unwrap_or_default();
-            if let Some(root_inscription) = weapon.root_inscription.as_ref() {
-                let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
-                let language = known_ancient_language_from_rows(
-                    &language_row.root_words,
-                    &language_row.ancient_words,
-                    &language_row.base_abilities,
-                );
-                cast_root_inscribed_slot(
-                    slot, weapon_abilities, &weapon.ability_selection, root_inscription,
-                    &language, base_abilities(), root_words(), ancient_words(),
-                    &mut cast_ctx, Some(item.as_ref()),
-                ).ok()?;
-            } else {
-                cast_inscribed_slot(
-                    slot, weapon_abilities, &weapon.ability_selection, &inscriptions, &known,
-                    base_abilities(), essences(), modifiers(), ancient_words(), &mut cast_ctx,
-                    Some(item.as_ref()),
-                ).ok()?;
-            }
+            let slot = [
+                AbilitySlot::Primary,
+                AbilitySlot::Secondary,
+                AbilitySlot::Ultimate,
+            ]
+            .into_iter()
+            .find(|&s| {
+                resolve_active_ability(s, weapon_abilities, &weapon.ability_selection)
+                    .map_or(false, |id| id.as_str() == ability_id.as_str())
+            })?;
+            let language_row = ctx
+                .db
+                .known_ancient_language()
+                .character_id()
+                .find(&character_id)?;
+            let language = known_ancient_language_from_rows(
+                &language_row.root_words,
+                &language_row.ancient_words,
+                &language_row.base_abilities,
+            );
+            let root_inscription = weapon.root_inscription.as_ref()?;
+            cast_root_inscribed_slot(
+                slot,
+                weapon_abilities,
+                &weapon.ability_selection,
+                root_inscription,
+                &language,
+                base_abilities(),
+                root_words(),
+                ancient_words(),
+                &mut cast_ctx,
+                Some(item.as_ref()),
+            )
+            .ok()?;
         }
         CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes => {
             let inscription = armor_inscription.as_ref();
-            let language_row = ctx.db.known_ancient_language().character_id().find(&character_id)?;
+            let language_row = ctx
+                .db
+                .known_ancient_language()
+                .character_id()
+                .find(&character_id)?;
             let language = known_ancient_language_from_rows(
                 &language_row.root_words,
                 &language_row.ancient_words,
                 &language_row.base_abilities,
             );
             bevymmo_domain::abilities::cast_armor_inscribed_ability(
-                &ability_id, inscription, &language, base_abilities(), root_words(),
-                ancient_words(), &mut cast_ctx, Some(item.as_ref()),
-            ).ok()?;
+                &ability_id,
+                inscription,
+                &language,
+                base_abilities(),
+                root_words(),
+                ancient_words(),
+                &mut cast_ctx,
+                Some(item.as_ref()),
+            )
+            .ok()?;
         }
         CastSourceRow::Spell => return None,
     }
 
-    apply_pending(ctx, caster.entity_id, caster_position, ability_id_str, &mut cast_ctx);
+    cast_ctx.scale_outgoing_potency(charge_fraction);
+
+    apply_pending(
+        ctx,
+        caster.entity_id,
+        caster_position,
+        ability_id_str,
+        &mut cast_ctx,
+    );
     Some(preview.ability.base_params().cooldown)
 }
 
@@ -639,7 +724,6 @@ fn apply_modifier_event(ctx: &ReducerContext, event: &ApplyStatModifierEvent) {
     }
 }
 
-
 /// Carries the caster's own buff/debuff label into the row.
 ///
 /// Inferring it from the sign would get `-0.3 Armor` right and a reduced
@@ -657,18 +741,9 @@ fn modifier_row_kind(kind: ModifierKind) -> ModifierKindRow {
 
 /// Spawns a requested AoE region, or applies it on the spot.
 ///
-/// `aoe_region` can carry a burst of damage or healing over a circle, and
-/// nothing else: there is no column for a cone's aperture, for `AoeTargeting`,
-/// for a crowd control payload or for a stat modifier payload. A request the
-/// table cannot hold faithfully is therefore resolved *now*, against whoever is
-/// inside the shape at cast time, using the domain's own `AoeShape::contains`
-/// and `AoeTargeting::allows`.
-///
-/// That trade is deliberate. The alternative — dropping what does not fit —
-/// turns Stun Field, Binding Seal, Wing Buffet and Healing Circle into no-ops,
-/// which is further from the Bevy server than losing a wind-up. What is lost is
-/// the telegraph delay and the "someone walks in later" case; see the report on
-/// the columns `aoe_region` still needs.
+/// Circles and cones with a lifetime persist so their `pending_delay_seconds`
+/// telegraph can play out. Zero-duration requests (melee swings) still resolve
+/// immediately — they would be applied and despawned on the next tick anyway.
 fn spawn_aoe_region(ctx: &ReducerContext, caster: u64, request: AoeSpawnRequest) {
     let Some(row) = persistable_region(caster, &request) else {
         apply_aoe_now(ctx, caster, &request);
@@ -677,7 +752,7 @@ fn spawn_aoe_region(ctx: &ReducerContext, caster: u64, request: AoeSpawnRequest)
     ctx.db.aoe_region().insert(row);
 }
 
-/// The row for `request`, or `None` when the table would misrepresent it.
+/// The row for `request`, or `None` when it should resolve immediately.
 fn persistable_region(caster: u64, request: &AoeSpawnRequest) -> Option<AoeRegion> {
     // A region with no lifetime would be applied and despawned on the tick
     // after it spawned, so resolving it at cast time is the same thing one tick
@@ -685,15 +760,17 @@ fn persistable_region(caster: u64, request: &AoeSpawnRequest) -> Option<AoeRegio
     if request.duration_seconds <= 0.0 {
         return None;
     }
-    // Only a circle survives storage: `AoeShapeRow::Cone` has a `direction` but
-    // no aperture, and guessing one would silently resize the hitbox.
-    let AoeShape::Circle = request.shape else {
-        return None;
-    };
     if request.effects.is_empty() {
         // No effects to persist — take the immediate path.
         return None;
     }
+    let (shape, direction, angle_deg) = match request.shape {
+        AoeShape::Circle => (AoeShapeRow::Circle, Vec3Row::default(), 0.0),
+        AoeShape::Cone {
+            direction,
+            angle_deg,
+        } => (AoeShapeRow::Cone, direction.into(), angle_deg),
+    };
     // `affected` seeds the caster for ExcludeCaster so the row alone enforces
     // the policy without a separate targeting column read at tick time.
     let affected = match request.targeting {
@@ -707,15 +784,32 @@ fn persistable_region(caster: u64, request: &AoeSpawnRequest) -> Option<AoeRegio
         caster,
         spell_id: request.spell_id.clone(),
         center: request.center.into(),
-        direction: Vec3Row::default(),
+        direction,
         radius: request.radius,
-        shape: AoeShapeRow::Circle,
+        shape,
+        angle_deg,
         remaining_seconds: request.duration_seconds,
         pending_delay_seconds: request.initial_delay_seconds.max(0.0),
         affected,
         targeting: targeting_row(request.targeting),
         effects: request.effects.iter().map(EffectPayloadRow::from).collect(),
     })
+}
+
+/// Reconstructs the domain shape stored on a region row.
+fn region_shape(region: &AoeRegion) -> AoeShape {
+    match region.shape {
+        AoeShapeRow::Circle => AoeShape::Circle,
+        AoeShapeRow::Cone => AoeShape::Cone {
+            direction: Vec3::from(region.direction),
+            angle_deg: region.angle_deg,
+        },
+    }
+}
+
+/// `true` once the telegraph has elapsed and the region may apply its payload.
+fn region_applies_this_tick(pending_delay_seconds: f32) -> bool {
+    pending_delay_seconds <= 0.0
 }
 
 /// Applies an AoE request immediately to everything currently inside it.
@@ -734,11 +828,7 @@ fn apply_aoe_now(ctx: &ReducerContext, caster: u64, request: &AoeSpawnRequest) {
         .collect();
 
     for target in inside {
-        let payloads: Vec<_> = request
-            .effects
-            .iter()
-            .map(EffectPayloadRow::from)
-            .collect();
+        let payloads: Vec<_> = request.effects.iter().map(EffectPayloadRow::from).collect();
         if !payloads.is_empty() {
             resolve_payloads(ctx, &payloads, target.get(), Some(caster));
         }
@@ -829,13 +919,26 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
             // --- Legacy Spell paths (unchanged behaviour) ---
             (CastSourceRow::Spell, CastKindRow::CastTime) => {
                 let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
-                    log::warn!("cast in progress for unknown spell {:?}; cancelling", cast.spell_id);
-                    ended.push(EndedCast { entity_id: cast.entity_id, spell_id: cast.spell_id, interrupted: true });
+                    log::warn!(
+                        "cast in progress for unknown spell {:?}; cancelling",
+                        cast.spell_id
+                    );
+                    ended.push(EndedCast {
+                        entity_id: cast.entity_id,
+                        spell_id: cast.spell_id,
+                        interrupted: true,
+                    });
                     continue;
                 };
                 let due = elapsed_seconds >= cast.required_seconds;
                 if due {
-                    if let Some(cd) = fire_spell(ctx, &caster, spell.as_ref(), target_position, cast.target_entity) {
+                    if let Some(cd) = fire_spell(
+                        ctx,
+                        &caster,
+                        spell.as_ref(),
+                        target_position,
+                        cast.target_entity,
+                    ) {
                         start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
                     }
                 }
@@ -844,32 +947,64 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
             (CastSourceRow::Spell, CastKindRow::Charge) => {
                 // Charge is an Eidolon-only execution. A legacy spell carrying
                 // this state is invalid, so close it without firing.
-                log::warn!("legacy spell {:?} entered charge state; cancelling", cast.spell_id);
+                log::warn!(
+                    "legacy spell {:?} entered charge state; cancelling",
+                    cast.spell_id
+                );
                 true
             }
             (CastSourceRow::Spell, CastKindRow::Channeling) => {
                 let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
-                    log::warn!("cast in progress for unknown spell {:?}; cancelling", cast.spell_id);
-                    ended.push(EndedCast { entity_id: cast.entity_id, spell_id: cast.spell_id, interrupted: true });
+                    log::warn!(
+                        "cast in progress for unknown spell {:?}; cancelling",
+                        cast.spell_id
+                    );
+                    ended.push(EndedCast {
+                        entity_id: cast.entity_id,
+                        spell_id: cast.spell_id,
+                        interrupted: true,
+                    });
                     continue;
                 };
                 channel_tick_accumulator += dt;
-                let interval = if cast.tick_interval_seconds > 0.0 { cast.tick_interval_seconds } else { dt.max(f32::EPSILON) };
+                let interval = if cast.tick_interval_seconds > 0.0 {
+                    cast.tick_interval_seconds
+                } else {
+                    dt.max(f32::EPSILON)
+                };
                 while channel_tick_accumulator >= interval {
                     channel_tick_accumulator -= interval;
-                    fire_spell(ctx, &caster, spell.as_ref(), target_position, cast.target_entity);
+                    fire_spell(
+                        ctx,
+                        &caster,
+                        spell.as_ref(),
+                        target_position,
+                        cast.target_entity,
+                    );
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
 
             // --- Eidolon ability paths ---
-            (source @ (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes), CastKindRow::CastTime) => {
+            (
+                source @ (CastSourceRow::Eidolon
+                | CastSourceRow::Helmet
+                | CastSourceRow::Armor
+                | CastSourceRow::Shoes),
+                CastKindRow::CastTime,
+            ) => {
                 let due = elapsed_seconds >= cast.required_seconds;
                 if due {
                     // Resolution may fail if equipment/selection changed during wind-up.
                     // Treat as interrupted: no effect, no cooldown (client shows cancelled bar).
                     match fire_eidolon_ability(
-                        ctx, &caster, &cast.spell_id, target_position, cast.target_entity, source,
+                        ctx,
+                        &caster,
+                        &cast.spell_id,
+                        target_position,
+                        cast.target_entity,
+                        source,
+                        1.0,
                     ) {
                         Some(cd) => {
                             start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
@@ -889,25 +1024,52 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                     false
                 }
             }
-            (source @ (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes), CastKindRow::Channeling) => {
+            (
+                source @ (CastSourceRow::Eidolon
+                | CastSourceRow::Helmet
+                | CastSourceRow::Armor
+                | CastSourceRow::Shoes),
+                CastKindRow::Channeling,
+            ) => {
                 channel_tick_accumulator += dt;
-                let interval = if cast.tick_interval_seconds > 0.0 { cast.tick_interval_seconds } else { dt.max(f32::EPSILON) };
+                let interval = if cast.tick_interval_seconds > 0.0 {
+                    cast.tick_interval_seconds
+                } else {
+                    dt.max(f32::EPSILON)
+                };
                 while channel_tick_accumulator >= interval {
                     channel_tick_accumulator -= interval;
                     // Re-fire each tick (same as legacy channeling).
                     // Tick failures are logged but don't interrupt the channel:
                     // the player may have moved out of range or the target died,
                     // but the channel itself is still valid.
-                    if fire_eidolon_ability(ctx, &caster, &cast.spell_id, target_position, cast.target_entity, source).is_none() {
+                    if fire_eidolon_ability(
+                        ctx,
+                        &caster,
+                        &cast.spell_id,
+                        target_position,
+                        cast.target_entity,
+                        source,
+                        1.0,
+                    )
+                    .is_none()
+                    {
                         log::debug!(
                             "Eidolon channel tick {:?} for entity {} failed to resolve",
-                            cast.spell_id, cast.entity_id
+                            cast.spell_id,
+                            cast.entity_id
                         );
                     }
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
-            (CastSourceRow::Eidolon | CastSourceRow::Helmet | CastSourceRow::Armor | CastSourceRow::Shoes, CastKindRow::Charge) => {
+            (
+                CastSourceRow::Eidolon
+                | CastSourceRow::Helmet
+                | CastSourceRow::Armor
+                | CastSourceRow::Shoes,
+                CastKindRow::Charge,
+            ) => {
                 // Charge accumulates while held but does NOT auto-fire.
                 // The ability fires when the player releases (release_cast reducer).
                 // If elapsed exceeds required_seconds, the charge is "full" but
@@ -923,8 +1085,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
             // Determine if this was a true completion or an interruption.
             // Instant casts are never interruptions. Eidolon CastTime that failed
             // resolution is interrupted. Everything else depends on kind.
-            let interrupted = matches!(cast.kind, CastKindRow::Instant)
-                || eidolon_cast_failed;
+            let interrupted = matches!(cast.kind, CastKindRow::Instant) || eidolon_cast_failed;
 
             ended.push(EndedCast {
                 entity_id: cast.entity_id,
@@ -954,12 +1115,12 @@ fn resolve_payloads(
     let effects = payloads
         .iter()
         .filter_map(|payload| match payload.kind {
-            EffectPayloadKindRow::Damage => {
-                Some(EffectSpec::Damage(DamageEffect { amount: payload.amount }))
-            }
-            EffectPayloadKindRow::Heal => {
-                Some(EffectSpec::Heal(HealEffect { amount: payload.amount }))
-            }
+            EffectPayloadKindRow::Damage => Some(EffectSpec::Damage(DamageEffect {
+                amount: payload.amount,
+            })),
+            EffectPayloadKindRow::Heal => Some(EffectSpec::Heal(HealEffect {
+                amount: payload.amount,
+            })),
             EffectPayloadKindRow::ApplyStatus => {
                 let status_id = payload.status_id.as_deref()?.to_string();
                 Some(EffectSpec::ApplyStatus(ApplyStatusEffect {
@@ -969,7 +1130,10 @@ fn resolve_payloads(
                 }))
             }
             EffectPayloadKindRow::Cleanse => Some(EffectSpec::Cleanse(CleanseEffect {
-                filter: payload.status_filter.map(status_filter).unwrap_or(StatusFilter::All),
+                filter: payload
+                    .status_filter
+                    .map(status_filter)
+                    .unwrap_or(StatusFilter::All),
                 max_statuses: payload.max_statuses,
                 selection: payload
                     .selection
@@ -977,7 +1141,10 @@ fn resolve_payloads(
                     .unwrap_or(StatusSelection::Oldest),
             })),
             EffectPayloadKindRow::Purge => Some(EffectSpec::Purge(PurgeEffect {
-                filter: payload.status_filter.map(status_filter).unwrap_or(StatusFilter::All),
+                filter: payload
+                    .status_filter
+                    .map(status_filter)
+                    .unwrap_or(StatusFilter::All),
                 max_statuses: payload.max_statuses,
                 selection: payload
                     .selection
@@ -1058,12 +1225,7 @@ fn update_projectiles(ctx: &ReducerContext, dt: f32) {
                 None => {
                     for (target, _) in potential_targets(ctx, destination, proj.hit_radius) {
                         if target.get() != proj.caster {
-                            resolve_payloads(
-                                ctx,
-                                &proj.effects,
-                                target.get(),
-                                Some(proj.caster),
-                            );
+                            resolve_payloads(ctx, &proj.effects, target.get(), Some(proj.caster));
                         }
                     }
                 }
@@ -1095,19 +1257,8 @@ fn update_aoe_regions(ctx: &ReducerContext, dt: f32) {
         // The order matters and is the original's: the delay is ticked first,
         // so a region whose lifetime equals its delay (Meteorite) still gets its
         // one impact on the tick it expires.
-        if region.pending_delay_seconds <= 0.0 {
-            let shape = match region.shape {
-                AoeShapeRow::Circle => AoeShape::Circle,
-                AoeShapeRow::Cone => {
-                    // Unreachable with the rows this module writes — cones take
-                    // the immediate path, because the aperture has no column.
-                    log::warn!(
-                        "aoe_region {} is a cone with no aperture; skipping its effect",
-                        region.id
-                    );
-                    continue;
-                }
-            };
+        if region_applies_this_tick(region.pending_delay_seconds) {
+            let shape = region_shape(&region);
             let center = Vec3::from(region.center);
             let targeting = targeting_from_row(region.targeting);
             let caster_id = EntityId::new(region.caster);
@@ -1181,5 +1332,94 @@ fn targeting_from_row(row: AoeTargetingRow) -> AoeTargeting {
         AoeTargetingRow::Everyone => AoeTargeting::Everyone,
         AoeTargetingRow::CasterOnly => AoeTargeting::CasterOnly,
         AoeTargetingRow::ExcludeCaster => AoeTargeting::ExcludeCaster,
+    }
+}
+
+#[cfg(test)]
+mod persistable_region_tests {
+    use super::*;
+
+    fn damage_request(shape: AoeShape, duration: f32, delay: f32) -> AoeSpawnRequest {
+        AoeSpawnRequest {
+            center: Vec3::ZERO,
+            radius: 8.0,
+            shape,
+            duration_seconds: duration,
+            initial_delay_seconds: delay,
+            spell_id: "arcane_wave".into(),
+            effects: vec![EffectSpec::Damage(DamageEffect { amount: 10.0 })],
+            targeting: AoeTargeting::Everyone,
+        }
+    }
+
+    #[test]
+    fn delayed_cone_persists_with_its_aperture() {
+        let request = damage_request(
+            AoeShape::Cone {
+                direction: Vec3::Z,
+                angle_deg: 70.0,
+            },
+            0.15,
+            0.15,
+        );
+        let row = persistable_region(1, &request).expect("delayed cone");
+        assert_eq!(row.shape, AoeShapeRow::Cone);
+        assert_eq!(row.angle_deg, 70.0);
+        assert!(row.pending_delay_seconds > 0.0);
+        assert!(!region_applies_this_tick(row.pending_delay_seconds));
+        match region_shape(&row) {
+            AoeShape::Cone { angle_deg, .. } => assert_eq!(angle_deg, 70.0),
+            other => panic!("expected cone, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn zero_duration_cone_resolves_immediately() {
+        let request = damage_request(
+            AoeShape::Cone {
+                direction: Vec3::Z,
+                angle_deg: 70.0,
+            },
+            0.0,
+            0.0,
+        );
+        assert!(persistable_region(1, &request).is_none());
+    }
+
+    #[test]
+    fn delayed_circle_still_persists() {
+        let request = damage_request(AoeShape::Circle, 1.0, 0.4);
+        let row = persistable_region(1, &request).expect("delayed circle");
+        assert_eq!(row.shape, AoeShapeRow::Circle);
+        assert_eq!(region_shape(&row), AoeShape::Circle);
+    }
+
+    #[test]
+    fn persisted_cone_does_not_zero_the_aperture() {
+        let request = damage_request(
+            AoeShape::Cone {
+                direction: Vec3::X,
+                angle_deg: 50.0,
+            },
+            0.2,
+            0.2,
+        );
+        let row = persistable_region(7, &request).expect("cone");
+        assert_ne!(row.angle_deg, 0.0);
+        assert_eq!(row.angle_deg, 50.0);
+    }
+
+    #[test]
+    fn windup_does_not_apply_before_delay_elapses() {
+        assert!(!region_applies_this_tick(0.15));
+        assert!(region_applies_this_tick(0.0));
+    }
+
+    #[test]
+    fn exclude_caster_still_seeds_affected() {
+        let mut request = damage_request(AoeShape::Circle, 1.0, 0.0);
+        request.targeting = AoeTargeting::ExcludeCaster;
+        let row = persistable_region(42, &request).expect("circle");
+        assert_eq!(row.affected, vec![42]);
     }
 }

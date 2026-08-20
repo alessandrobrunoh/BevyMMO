@@ -13,7 +13,6 @@ use bevymmo_props_macro::base_ability;
     cast_time = 0.25,
     cooldown = 6.0,
     energy_cost = 10.0,
-    statuses = [Stun],
     animation = "cuirass_bulwark_strike",
     impact_vfx = "bulwark_strike_impact",
 )]

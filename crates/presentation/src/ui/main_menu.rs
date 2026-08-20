@@ -1,45 +1,28 @@
-//! Character-select screen: title, character roster, "create a new
-//! character" field, and Play / Settings / Exit buttons.
-//!
-//! Shown at [`Screen::MainMenu`] only once the connection is authenticated
-//! ([`AuthStatus::Authenticated`]); `crate::ui::login::LoginUi` is the other
-//! full-screen panel for that same [`Screen`] and occupies the screen
-//! beforehand — the two are mutually exclusive, never both `Display::Flex`
-//! at once. Spawning happens once in `Startup`; visibility is governed by
-//! [`update_main_menu_visibility`] and [`update_create_character_visibility`],
-//! which change only [`Display`].
+//! Character selection screen shown after account authentication.
 
 use bevy::prelude::*;
 
 use bevymmo_client::stdb::CharacterRoster;
 
-use crate::game_state::{AuthState, AuthStatus, GameScreen, Screen, MAX_CHARACTERS_PER_ACCOUNT};
+use crate::game_state::{AuthState, AuthStatus, Screen, MAX_CHARACTERS_PER_ACCOUNT};
 use crate::ui::button::{spawn_button, UiButtonAction};
-use crate::ui::character_roster::spawn_roster_list;
-use crate::ui::text::spawn_text;
-use crate::ui::text_input::spawn_text_input;
-use crate::ui::theme::UiTheme;
+use crate::ui::character_roster::{spawn_roster_list, SelectedRosterEntry};
 
-/// Marker: main menu root.
+use crate::ui::text_input::spawn_text_input;
+use crate::ui::theme::{
+    menu_screen_root_node, ornate_menu_panel_content_node, spawn_menu_screen_background,
+    spawn_ornate_menu_panel, UiTheme,
+};
+
 #[derive(Component)]
 pub struct MainMenuUi;
 
-/// Marker: the character-name field. Distinguishes it from the login form's
-/// email/password fields now that more than one [`crate::ui::text_input::TextInput`]
-/// can exist at once.
 #[derive(Component)]
 pub struct PlayerNameInput;
 
-/// Marker: the "create a new character" subtree (name field, its failure
-/// text, and the create button). Hidden once the account already owns
-/// [`MAX_CHARACTERS_PER_ACCOUNT`] characters — the roster above is full, and
-/// the server would reject a new one anyway (see `reducers::lifecycle::join`).
 #[derive(Component)]
 struct CreateCharacterUi;
 
-/// Marker: text displaying any [`crate::game_state::ConnectionFailure`]
-/// under the name field. It is separate from the validation error of
-/// [`crate::ui::text_input::TextInput`] and does not overwrite it.
 #[derive(Component)]
 pub struct MainMenuConnectionFailure;
 
@@ -51,58 +34,66 @@ impl Plugin for MainMenuPlugin {
         app.add_systems(
             Update,
             (
-                update_main_menu_visibility,
-                update_create_character_visibility,
+                update_main_menu_visibility
+                    .run_if(state_changed::<Screen>.or_eager(resource_changed::<AuthState>)),
+                update_create_character_visibility.run_if(
+                    resource_changed::<CharacterRoster>
+                        .or_eager(resource_changed::<SelectedRosterEntry>),
+                ),
             ),
         );
     }
 }
 
 fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Res<AssetServer>) {
+    // Hidden until authenticated. Do not put this on `menu_screen_root_node`
+    // (login shares it and must spawn visible).
+    let mut root_node = menu_screen_root_node();
+    root_node.display = Display::None;
     let root = commands
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                row_gap: Val::Px(16.0),
-                ..default()
-            },
-            BackgroundColor(theme.screen_bg),
-            MainMenuUi,
-        ))
+        .spawn((root_node, BackgroundColor(theme.screen_bg), MainMenuUi))
         .id();
 
-    spawn_text(
-        &mut commands,
-        root,
-        "Bevy Lightyear",
-        theme.title_font_size,
-        theme.text_color,
-    );
+    spawn_menu_screen_background(&mut commands, root, &asset_server);
 
-    spawn_roster_list(&mut commands, root);
+    let panel = spawn_ornate_menu_panel(&mut commands, root, &asset_server);
+
+    let content = commands
+        .spawn(Node {
+            align_items: AlignItems::Stretch,
+            row_gap: Val::Px(12.0),
+            ..ornate_menu_panel_content_node()
+        })
+        .id();
+    commands.entity(panel).add_child(content);
+
+    spawn_roster_list(&mut commands, content);
 
     let create_character = commands
         .spawn((
             Node {
+                width: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                row_gap: Val::Px(16.0),
+                row_gap: Val::Px(6.0),
+                flex_shrink: 0.0,
                 ..default()
             },
             CreateCharacterUi,
         ))
         .id();
-    commands.entity(root).add_child(create_character);
+    commands.entity(content).add_child(create_character);
 
-    let name_field = spawn_text_input(&mut commands, create_character, "Player name", 16, &theme);
+    let name_field = spawn_text_input(
+        &mut commands,
+        create_character,
+        "New character name",
+        16,
+        &theme,
+        &asset_server,
+    );
     commands.entity(name_field).insert(PlayerNameInput);
 
-    // Slot for connection failure message (separate from the validation error
-    // of the name field). Updated by `update_connection_failure`.
     let failure_text = commands
         .spawn((
             Text::new(String::new()),
@@ -114,20 +105,30 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Re
             MainMenuConnectionFailure,
         ))
         .id();
-    commands.entity(create_character).add_child(failure_text);
+    commands.entity(content).add_child(failure_text);
 
+    let actions = commands
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Center,
+            row_gap: Val::Px(6.0),
+            flex_shrink: 0.0,
+            ..default()
+        })
+        .id();
+    commands.entity(content).add_child(actions);
     spawn_button(
         &mut commands,
-        create_character,
-        "Create",
+        actions,
+        "ENTER WORLD",
         UiButtonAction::Play,
         &theme,
         &asset_server,
     );
-
     spawn_button(
         &mut commands,
-        root,
+        actions,
         "Settings",
         UiButtonAction::OpenSettings,
         &theme,
@@ -135,48 +136,75 @@ fn setup_main_menu(mut commands: Commands, theme: Res<UiTheme>, asset_server: Re
     );
     spawn_button(
         &mut commands,
-        root,
+        actions,
         "Logout",
         UiButtonAction::LogoutAccount,
-        &theme,
-        &asset_server,
-    );
-    spawn_button(
-        &mut commands,
-        root,
-        "Exit",
-        UiButtonAction::Exit,
         &theme,
         &asset_server,
     );
 }
 
 fn update_main_menu_visibility(
-    screen: Res<GameScreen>,
+    screen: Res<State<Screen>>,
     auth: Res<AuthState>,
     mut query: Query<&mut Node, With<MainMenuUi>>,
 ) {
-    let display = if matches!(screen.0, Screen::MainMenu) && auth.0 == AuthStatus::Authenticated {
+    let display = if *screen.get() == Screen::MainMenu && auth.0 == AuthStatus::Authenticated {
         Display::Flex
     } else {
         Display::None
     };
-    for mut node in query.iter_mut() {
+    for mut node in &mut query {
         node.display = display;
     }
 }
 
-/// Hides the "create a new character" field once the roster is full.
-fn update_create_character_visibility(
-    roster: Res<CharacterRoster>,
-    mut query: Query<&mut Node, With<CreateCharacterUi>>,
-) {
-    let display = if roster.len() < MAX_CHARACTERS_PER_ACCOUNT {
+fn create_name_field_display(roster_len: usize, selected: &SelectedRosterEntry) -> Display {
+    if roster_len < MAX_CHARACTERS_PER_ACCOUNT
+        && !matches!(selected, SelectedRosterEntry::Existing(_))
+    {
         Display::Flex
     } else {
         Display::None
-    };
-    for mut node in query.iter_mut() {
+    }
+}
+
+fn update_create_character_visibility(
+    roster: Res<CharacterRoster>,
+    selected: Res<SelectedRosterEntry>,
+    mut query: Query<&mut Node, With<CreateCharacterUi>>,
+) {
+    let display = create_name_field_display(roster.len(), &selected);
+    for mut node in &mut query {
         node.display = display;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn name_field_shows_for_create_or_nothing_when_there_is_room() {
+        assert_eq!(
+            create_name_field_display(0, &SelectedRosterEntry::None),
+            Display::Flex
+        );
+        assert_eq!(
+            create_name_field_display(1, &SelectedRosterEntry::Create),
+            Display::Flex
+        );
+        assert_eq!(
+            create_name_field_display(1, &SelectedRosterEntry::Existing("Galvdon".into())),
+            Display::None
+        );
+        assert_eq!(
+            create_name_field_display(MAX_CHARACTERS_PER_ACCOUNT, &SelectedRosterEntry::None),
+            Display::None
+        );
+        assert_eq!(
+            create_name_field_display(MAX_CHARACTERS_PER_ACCOUNT, &SelectedRosterEntry::Create),
+            Display::None
+        );
     }
 }

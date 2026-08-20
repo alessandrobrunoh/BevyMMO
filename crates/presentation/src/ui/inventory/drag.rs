@@ -1,22 +1,15 @@
 //! Drag-and-drop for inventory/equipment slots.
 //!
-//! Mirrors the press/hold/release pattern already used by `ui::card::systems::handle_card_drag`,
-//! applied to individual item slots instead of whole card windows:
-//!
-//! 1. [`start_item_drag`]: mouse-down on an occupied slot immediately spawns a
-//!    square "ghost" icon centered on the cursor — the item visually leaves
-//!    its slot (which dims) and follows the pointer from that first frame.
-//! 2. [`update_item_drag`]: while the mouse stays held, the ghost is glued to
-//!    the cursor every frame, so it can be carried anywhere on screen.
-//! 3. [`end_item_drag`]: on mouse-up, whichever slot is currently `Hovered`
-//!    is the drop target. The (origin, target) pair decides which network
-//!    command to send — the server is always the final authority; an
-//!    inconsistent drop (e.g. wrong equip slot type, empty space) simply
-//!    restores the origin slot with no command sent.
+//! Press on a slot records the origin. A ghost appears only after the pointer
+//! travels [`DRAG_THRESHOLD_PX`]. Release then resolves through
+//! [`drag_outcome`]: a click inspects, a drop on another slot moves, a drop
+//! outside the inventory window asks to destroy, and a drop on inventory
+//! chrome puts the item back.
 
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
+use bevymmo_gameplay::abilities::KnownAncientLanguage;
 use bevymmo_gameplay::items::{
     components::{Equipment, Inventory},
     instance::ItemInstanceId,
@@ -24,39 +17,90 @@ use bevymmo_gameplay::items::{
 };
 
 use super::components::{
-    CancelDestroyButton, ConfirmDestroyButton, DestroyItemDialog, EquipSlotButton, ItemDragGhost,
-    ItemSlotButton, ItemSlotOrigin,
+    CancelDestroyButton, ConfirmDestroyButton, DestroyItemDialog, EquipSlotButton,
+    InventorySelection, ItemDragGhost, ItemSlotButton, ItemSlotOrigin,
 };
+use super::detail::{despawn_detail_cards, spawn_item_detail_card};
+use super::weapon_detail::GlyphRegistries;
+use super::InventoryUiState;
 use crate::ui::{
-    card::components::CardWindow, inventory::detail::despawn_detail_cards, scale::window_to_ui_px,
+    card::components::{CardKind, CardWindow},
+    scale::{physical_to_ui_px, window_to_ui_px},
     theme::UiTheme,
 };
 
 /// Size of the floating item icon that follows the cursor while dragging.
 const DRAG_GHOST_SIZE: f32 = 48.0;
 
+/// Pixels the pointer must travel before a press becomes a drag.
+pub const DRAG_THRESHOLD_PX: f32 = 6.0;
+
+/// What happens when the pointer is released after picking a slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DragOutcome {
+    /// Movement stayed under the threshold and no ghost spawned: inspect.
+    ClickInspect,
+    /// Drag ended over another slot: move or equip.
+    MoveItem,
+    /// Drag ended over inventory chrome (not a slot): put the item back.
+    Cancel,
+    /// Drag ended outside the inventory window: confirm destroy.
+    RequestDestroy,
+}
+
+/// Resolves a slot press/release into inspect, move, cancel, or destroy.
+///
+/// A click (never crossed the drag threshold) is always inspect, even if the
+/// pointer is no longer over a slot. Once the pointer has actually travelled,
+/// releasing outside the inventory window destroys; releasing on inventory
+/// chrome that is not a slot puts the item back.
+pub fn drag_outcome(
+    start: Vec2,
+    end: Vec2,
+    over_slot: bool,
+    over_inventory: bool,
+    did_drag: bool,
+    threshold: f32,
+) -> DragOutcome {
+    if !did_drag && start.distance(end) < threshold {
+        return DragOutcome::ClickInspect;
+    }
+    if over_slot {
+        return DragOutcome::MoveItem;
+    }
+    if over_inventory {
+        return DragOutcome::Cancel;
+    }
+    DragOutcome::RequestDestroy
+}
+
 /// Background alpha applied to the origin slot while its item is being
 /// carried, so it visibly reads as "picked up" rather than duplicated.
 const DRAGGED_FROM_ALPHA: f32 = 0.25;
 
 /// A drag in progress: the slot it was picked up from, the item being
-/// carried, and the floating ghost entity following the cursor.
+/// carried, and the floating ghost entity following the cursor (spawned
+/// only after the pointer travels [`DRAG_THRESHOLD_PX`]).
 struct PendingDrag {
     origin: ItemSlotOrigin,
     origin_entity: Entity,
     item_id: ItemId,
     instance_id: ItemInstanceId,
-    ghost: Entity,
+    start: Vec2,
+    label: String,
+    ghost: Option<Entity>,
 }
 
 /// Tracks the currently in-progress item drag, if any.
 #[derive(Resource, Default)]
 pub struct ItemDragState {
     pending: Option<PendingDrag>,
+    /// Filled on a click-release (no drag). Consumed by [`inspect_clicked_item`].
+    inspect: Option<ItemSlotOrigin>,
 }
 
-/// Mouse-down on an occupied slot: picks the item up immediately — spawns the
-/// cursor-following ghost and dims the origin slot in the same frame.
+/// Mouse-down on an occupied slot: records the origin. The ghost is spawned
+/// later, once the pointer has moved past [`DRAG_THRESHOLD_PX`].
 pub fn start_item_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
@@ -65,10 +109,7 @@ pub fn start_item_drag(
     equip_presses: Query<(Entity, &Interaction, &EquipSlotButton), Changed<Interaction>>,
     player_query: Query<(&Inventory, &Equipment), With<LocalPlayer>>,
     registry: Res<ItemRegistry>,
-    theme: Res<UiTheme>,
-    mut backgrounds: Query<&mut BackgroundColor>,
     mut drag_state: ResMut<ItemDragState>,
-    mut commands: Commands,
 ) {
     if !mouse.just_pressed(MouseButton::Left) || drag_state.pending.is_some() {
         return;
@@ -122,16 +163,275 @@ pub fn start_item_drag(
         return;
     };
 
-    if let Ok(mut bg) = backgrounds.get_mut(origin_entity) {
-        bg.0.set_alpha(DRAGGED_FROM_ALPHA);
-    }
-
     let label = registry
         .get(&item_id)
         .map(|item| item.display_name().to_string())
         .unwrap_or_else(|| item_id.as_str().to_string());
 
-    let ghost = commands
+    drag_state.pending = Some(PendingDrag {
+        origin,
+        origin_entity,
+        item_id,
+        instance_id,
+        start: cursor,
+        label,
+        ghost: None,
+    });
+}
+
+/// While the mouse stays held, keeps the ghost glued to the cursor anywhere
+/// on screen. Loses the item and cancels the drag if the cursor leaves the
+/// window entirely.
+pub fn update_item_drag(
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    ui_scale: Res<UiScale>,
+    mut drag_state: ResMut<ItemDragState>,
+    mut ghost_nodes: Query<&mut Node, With<ItemDragGhost>>,
+    theme: Res<UiTheme>,
+    mut backgrounds: Query<&mut BackgroundColor>,
+    all_cards: Query<(Entity, &CardWindow)>,
+    mut state: ResMut<InventoryUiState>,
+    mut commands: Commands,
+) {
+    if !mouse.pressed(MouseButton::Left) {
+        return;
+    }
+    let Some(cursor) = windows
+        .iter()
+        .next()
+        .and_then(Window::cursor_position)
+        .map(|cursor| window_to_ui_px(cursor, &ui_scale))
+    else {
+        cancel_pending_drag(&mut drag_state, &theme, &mut backgrounds, &mut commands);
+        return;
+    };
+    let Some(pending) = drag_state.pending.as_mut() else {
+        return;
+    };
+
+    if pending.ghost.is_none() && pending.start.distance(cursor) >= DRAG_THRESHOLD_PX {
+        if let Ok(mut bg) = backgrounds.get_mut(pending.origin_entity) {
+            bg.0.set_alpha(DRAGGED_FROM_ALPHA);
+        }
+        despawn_detail_cards(&mut commands, &all_cards);
+        state.selected = None;
+        pending.ghost = Some(spawn_drag_ghost(
+            &mut commands,
+            &theme,
+            cursor,
+            &pending.label,
+        ));
+    }
+
+    if let Some(ghost) = pending.ghost {
+        if let Ok(mut node) = ghost_nodes.get_mut(ghost) {
+            node.left = Val::Px(cursor.x - DRAG_GHOST_SIZE * 0.5);
+            node.top = Val::Px(cursor.y - DRAG_GHOST_SIZE * 0.5);
+        }
+    }
+}
+
+/// On mouse-up, resolves the hovered slot as the drop target and sends the
+/// matching network command. The server re-validates everything; an
+/// inconsistent drop (wrong equip slot, dropping on empty space, ...) is
+/// simply ignored client-side and the origin slot regains its item once
+/// replication confirms nothing changed (it never actually left, visually).
+#[allow(clippy::too_many_arguments)]
+pub fn end_item_drag(
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    ui_scale: Res<UiScale>,
+    mut drag_state: ResMut<ItemDragState>,
+    slot_hover: Query<(&Interaction, &ItemSlotButton)>,
+    equip_hover: Query<(&Interaction, &EquipSlotButton)>,
+    inventory_cards: Query<(&CardWindow, &ComputedNode, &UiGlobalTransform)>,
+    registry: Res<ItemRegistry>,
+    theme: Res<UiTheme>,
+    mut backgrounds: Query<&mut BackgroundColor>,
+    conn: Option<Res<StdbConnection>>,
+    all_cards: Query<(Entity, &CardWindow)>,
+    mut commands: Commands,
+) {
+    if !mouse.just_released(MouseButton::Left) {
+        return;
+    }
+    let Some(pending) = drag_state.pending.take() else {
+        return;
+    };
+
+    let did_drag = pending.ghost.is_some();
+    if let Some(ghost) = pending.ghost {
+        commands.entity(ghost).despawn();
+    }
+    if let Ok(mut bg) = backgrounds.get_mut(pending.origin_entity) {
+        bg.0 = theme.button_bg;
+    }
+
+    let end = windows
+        .iter()
+        .next()
+        .and_then(Window::cursor_position)
+        .map(|cursor| window_to_ui_px(cursor, &ui_scale))
+        .unwrap_or(pending.start);
+
+    let target = slot_hover
+        .iter()
+        .find(|(i, _)| matches!(**i, Interaction::Hovered | Interaction::Pressed))
+        .map(|(_, b)| ItemSlotOrigin::Inventory(b.index))
+        .or_else(|| {
+            equip_hover
+                .iter()
+                .find(|(i, _)| matches!(**i, Interaction::Hovered | Interaction::Pressed))
+                .map(|(_, b)| ItemSlotOrigin::Equipment(b.slot))
+        });
+    let over_inventory = cursor_over_inventory_card(end, &inventory_cards);
+
+    match drag_outcome(
+        pending.start,
+        end,
+        target.is_some(),
+        over_inventory,
+        did_drag,
+        DRAG_THRESHOLD_PX,
+    ) {
+        DragOutcome::Cancel => {}
+        DragOutcome::ClickInspect => {
+            drag_state.inspect = Some(pending.origin);
+        }
+        DragOutcome::RequestDestroy => {
+            if matches!(pending.origin, ItemSlotOrigin::Inventory(_)) {
+                spawn_destroy_dialog(&mut commands, &theme, pending.instance_id.0, &pending.label);
+            }
+        }
+        DragOutcome::MoveItem => {
+            let Some(target) = target else {
+                return;
+            };
+            if target == pending.origin {
+                return;
+            }
+            apply_slot_drop(
+                &pending,
+                target,
+                &registry,
+                conn.as_deref(),
+                &all_cards,
+                &mut commands,
+            );
+        }
+    }
+}
+
+/// Opens the item-info card for a click that never became a drag.
+#[allow(clippy::too_many_arguments)]
+pub fn inspect_clicked_item(
+    mut drag_state: ResMut<ItemDragState>,
+    mut state: ResMut<InventoryUiState>,
+    player_query: Query<(&Inventory, &Equipment, Option<&KnownAncientLanguage>), With<LocalPlayer>>,
+    registry: Res<ItemRegistry>,
+    glyphs: GlyphRegistries,
+    theme: Res<UiTheme>,
+    all_cards: Query<(Entity, &CardWindow)>,
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+) {
+    let Some(origin) = drag_state.inspect.take() else {
+        return;
+    };
+    let Some((inventory, equipment, known)) = player_query.iter().next() else {
+        return;
+    };
+    // `KnownGlyphs` decides whether an inscribed slot is castable at all, so
+    // the detail card needs it to mark a locked slot. It is replicated
+    // separately from `Inventory`/`Equipment` and may not have arrived yet —
+    // an empty Vocabulary is the correct stand-in until it does.
+    let known = known.cloned().unwrap_or_default();
+    let selection = match origin {
+        ItemSlotOrigin::Inventory(idx) => InventorySelection::Slot(idx),
+        ItemSlotOrigin::Equipment(slot) => InventorySelection::Equipment(slot),
+    };
+    state.selected = Some(selection);
+    despawn_detail_cards(&mut commands, &all_cards);
+    spawn_item_detail_card(
+        &mut commands,
+        &theme,
+        &registry,
+        &glyphs,
+        &known,
+        inventory,
+        equipment,
+        selection,
+        &asset_server,
+    );
+}
+
+fn cursor_over_inventory_card(
+    cursor: Vec2,
+    cards: &Query<(&CardWindow, &ComputedNode, &UiGlobalTransform)>,
+) -> bool {
+    cards.iter().any(|(window, computed, transform)| {
+        if window.kind != CardKind::Inventory {
+            return false;
+        }
+        let top_left = physical_to_ui_px(transform.translation - computed.size() * 0.5, computed);
+        let size = physical_to_ui_px(computed.size(), computed);
+        Rect::from_corners(top_left, top_left + size).contains(cursor)
+    })
+}
+
+fn apply_slot_drop(
+    pending: &PendingDrag,
+    target: ItemSlotOrigin,
+    registry: &ItemRegistry,
+    conn: Option<&StdbConnection>,
+    all_cards: &Query<(Entity, &CardWindow)>,
+    commands: &mut Commands,
+) {
+    let sent = match (pending.origin, target) {
+        (ItemSlotOrigin::Inventory(from), ItemSlotOrigin::Inventory(to)) => {
+            if let Some(conn) = conn {
+                if let Err(err) = stdb_commands::move_item(conn, from, to) {
+                    error!("could not move item: {err}");
+                }
+            }
+            true
+        }
+        (ItemSlotOrigin::Inventory(idx), ItemSlotOrigin::Equipment(slot)) => {
+            let matches_slot = registry
+                .get(&pending.item_id)
+                .and_then(|item| item.config().equippable_into)
+                == Some(slot);
+            if matches_slot {
+                if let Some(conn) = conn {
+                    if let Err(err) = stdb_commands::equip_item(conn, idx) {
+                        error!("could not equip item: {err}");
+                    }
+                }
+            }
+            matches_slot
+        }
+        (ItemSlotOrigin::Equipment(slot), ItemSlotOrigin::Inventory(_)) => {
+            if let Some(conn) = conn {
+                if let Err(err) = stdb_commands::unequip_item(conn, slot) {
+                    error!("could not unequip item: {err}");
+                }
+            }
+            true
+        }
+        // Equipment-to-equipment swaps aren't a supported command yet.
+        (ItemSlotOrigin::Equipment(_), ItemSlotOrigin::Equipment(_)) => false,
+    };
+
+    if sent {
+        // The open detail card (if any) still shows the pre-drag state;
+        // close it rather than leave a stale Equip/Unequip button behind.
+        despawn_detail_cards(commands, all_cards);
+    }
+}
+
+fn spawn_drag_ghost(commands: &mut Commands, theme: &UiTheme, cursor: Vec2, label: &str) -> Entity {
+    commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
@@ -157,7 +457,7 @@ pub fn start_item_drag(
         ))
         .with_children(|ghost| {
             ghost.spawn((
-                Text::new(label),
+                Text::new(label.to_string()),
                 TextFont {
                     font_size: FontSize::Px(theme.button_font_size * 0.55),
                     ..default()
@@ -167,153 +467,9 @@ pub fn start_item_drag(
                 Pickable::IGNORE,
             ));
         })
-        .id();
-
-    drag_state.pending = Some(PendingDrag {
-        origin,
-        origin_entity,
-        item_id,
-        instance_id,
-        ghost,
-    });
+        .id()
 }
 
-/// While the mouse stays held, keeps the ghost glued to the cursor anywhere
-/// on screen. Loses the item and cancels the drag if the cursor leaves the
-/// window entirely.
-pub fn update_item_drag(
-    mouse: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window>,
-    ui_scale: Res<UiScale>,
-    mut drag_state: ResMut<ItemDragState>,
-    mut ghost_nodes: Query<&mut Node, With<ItemDragGhost>>,
-    theme: Res<UiTheme>,
-    mut backgrounds: Query<&mut BackgroundColor>,
-    mut commands: Commands,
-) {
-    if !mouse.pressed(MouseButton::Left) {
-        return;
-    }
-    let Some(cursor) = windows
-        .iter()
-        .next()
-        .and_then(Window::cursor_position)
-        .map(|cursor| window_to_ui_px(cursor, &ui_scale))
-    else {
-        cancel_pending_drag(&mut drag_state, &theme, &mut backgrounds, &mut commands);
-        return;
-    };
-    let Some(pending) = drag_state.pending.as_ref() else {
-        return;
-    };
-
-    if let Ok(mut node) = ghost_nodes.get_mut(pending.ghost) {
-        node.left = Val::Px(cursor.x - DRAG_GHOST_SIZE * 0.5);
-        node.top = Val::Px(cursor.y - DRAG_GHOST_SIZE * 0.5);
-    }
-}
-
-/// On mouse-up, resolves the hovered slot as the drop target and sends the
-/// matching network command. The server re-validates everything; an
-/// inconsistent drop (wrong equip slot, dropping on empty space, ...) is
-/// simply ignored client-side and the origin slot regains its item once
-/// replication confirms nothing changed (it never actually left, visually).
-#[allow(clippy::too_many_arguments)]
-pub fn end_item_drag(
-    mouse: Res<ButtonInput<MouseButton>>,
-    mut drag_state: ResMut<ItemDragState>,
-    slot_hover: Query<(&Interaction, &ItemSlotButton)>,
-    equip_hover: Query<(&Interaction, &EquipSlotButton)>,
-    registry: Res<ItemRegistry>,
-    theme: Res<UiTheme>,
-    mut backgrounds: Query<&mut BackgroundColor>,
-    conn: Option<Res<StdbConnection>>,
-    all_cards: Query<(Entity, &CardWindow)>,
-    mut commands: Commands,
-) {
-    if !mouse.just_released(MouseButton::Left) {
-        return;
-    }
-    let Some(pending) = drag_state.pending.take() else {
-        return;
-    };
-
-    commands.entity(pending.ghost).despawn();
-    if let Ok(mut bg) = backgrounds.get_mut(pending.origin_entity) {
-        bg.0 = theme.button_bg;
-    }
-
-    let target = slot_hover
-        .iter()
-        .find(|(i, _)| **i == Interaction::Hovered)
-        .map(|(_, b)| ItemSlotOrigin::Inventory(b.index))
-        .or_else(|| {
-            equip_hover
-                .iter()
-                .find(|(i, _)| **i == Interaction::Hovered)
-                .map(|(_, b)| ItemSlotOrigin::Equipment(b.slot))
-        });
-
-    let Some(target) = target else {
-        // Dropping an inventory item outside every slot opens an explicit,
-        // destructive confirmation instead of silently discarding it.
-        if matches!(pending.origin, ItemSlotOrigin::Inventory(_)) {
-            let label = registry
-                .get(&pending.item_id)
-                .map(|item| item.display_name().to_string())
-                .unwrap_or_else(|| pending.item_id.as_str().to_string());
-            spawn_destroy_dialog(&mut commands, &theme, pending.instance_id.0, &label);
-        }
-        return;
-    };
-    if target == pending.origin {
-        return;
-    }
-
-    let sent = match (pending.origin, target) {
-        (ItemSlotOrigin::Inventory(from), ItemSlotOrigin::Inventory(to)) => {
-            if let Some(conn) = conn.as_deref() {
-                if let Err(err) = stdb_commands::move_item(conn, from, to) {
-                    error!("could not move item: {err}");
-                }
-            }
-            true
-        }
-        (ItemSlotOrigin::Inventory(idx), ItemSlotOrigin::Equipment(slot)) => {
-            let matches_slot = registry
-                .get(&pending.item_id)
-                .and_then(|item| item.config().equippable_into)
-                == Some(slot);
-            if matches_slot {
-                if let Some(conn) = conn.as_deref() {
-                    if let Err(err) = stdb_commands::equip_item(conn, idx) {
-                        error!("could not equip item: {err}");
-                    }
-                }
-            }
-            matches_slot
-        }
-        (ItemSlotOrigin::Equipment(slot), ItemSlotOrigin::Inventory(_)) => {
-            if let Some(conn) = conn.as_deref() {
-                if let Err(err) = stdb_commands::unequip_item(conn, slot) {
-                    error!("could not unequip item: {err}");
-                }
-            }
-            true
-        }
-        // Equipment-to-equipment swaps aren't a supported command yet.
-        (ItemSlotOrigin::Equipment(_), ItemSlotOrigin::Equipment(_)) => false,
-    };
-
-    if sent {
-        // The open detail card (if any) still shows the pre-drag state;
-        // close it rather than leave a stale Equip/Unequip button behind.
-        despawn_detail_cards(&mut commands, &all_cards);
-    }
-}
-
-/// Cancels an in-progress drag (e.g. the cursor left the window), despawning
-/// its ghost and restoring the origin slot's normal background.
 fn spawn_destroy_dialog(
     commands: &mut Commands,
     theme: &UiTheme,
@@ -448,9 +604,163 @@ fn cancel_pending_drag(
     commands: &mut Commands,
 ) {
     if let Some(pending) = drag_state.pending.take() {
-        commands.entity(pending.ghost).despawn();
+        if let Some(ghost) = pending.ghost {
+            commands.entity(ghost).despawn();
+        }
         if let Ok(mut bg) = backgrounds.get_mut(pending.origin_entity) {
             bg.0 = theme.button_bg;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pt(x: f32, y: f32) -> Vec2 {
+        Vec2::new(x, y)
+    }
+
+    #[test]
+    fn click_on_slot_inspects_and_never_destroys() {
+        assert_eq!(
+            drag_outcome(
+                pt(10.0, 10.0),
+                pt(12.0, 11.0),
+                true,
+                true,
+                false,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::ClickInspect
+        );
+        assert_eq!(
+            drag_outcome(
+                pt(10.0, 10.0),
+                pt(12.0, 11.0),
+                false,
+                false,
+                false,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::ClickInspect
+        );
+        assert_eq!(
+            drag_outcome(
+                pt(10.0, 10.0),
+                pt(10.0, 10.0),
+                false,
+                false,
+                false,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::ClickInspect
+        );
+    }
+
+    #[test]
+    fn drag_onto_another_slot_moves() {
+        assert_eq!(
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(20.0, 0.0),
+                true,
+                true,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::MoveItem
+        );
+    }
+
+    #[test]
+    fn drag_onto_slot_wins_over_outside_inventory() {
+        assert_eq!(
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(20.0, 0.0),
+                true,
+                false,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::MoveItem
+        );
+    }
+
+    #[test]
+    fn drag_outside_inventory_requests_destroy() {
+        assert_eq!(
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(20.0, 0.0),
+                false,
+                false,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::RequestDestroy
+        );
+    }
+
+    #[test]
+    fn drag_onto_inventory_chrome_cancels() {
+        assert_eq!(
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(20.0, 0.0),
+                false,
+                true,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::Cancel
+        );
+    }
+
+    #[test]
+    fn returning_near_the_start_after_a_drag_does_not_inspect() {
+        assert_eq!(
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(2.0, 0.0),
+                true,
+                true,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::MoveItem
+        );
+        assert_eq!(
+            drag_outcome(
+                pt(0.0, 0.0),
+                pt(2.0, 0.0),
+                false,
+                false,
+                true,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::RequestDestroy
+        );
+    }
+
+    #[test]
+    fn threshold_must_be_positive_so_clicks_are_not_drags() {
+        // A zero threshold would classify a stationary click as a drag.
+        assert_eq!(
+            drag_outcome(
+                pt(4.0, 4.0),
+                pt(4.0, 4.0),
+                false,
+                false,
+                false,
+                DRAG_THRESHOLD_PX
+            ),
+            DragOutcome::ClickInspect
+        );
+        assert_ne!(
+            drag_outcome(pt(4.0, 4.0), pt(4.0, 4.0), false, false, false, 0.0),
+            DragOutcome::ClickInspect
+        );
     }
 }

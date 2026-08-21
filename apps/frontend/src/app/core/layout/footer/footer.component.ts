@@ -66,7 +66,7 @@ import { RouterModule } from '@angular/router';
                 <h2>Game</h2>
                 <a routerLink="/" fragment="world">Overview</a>
                 <a routerLink="/" fragment="pillars">Features</a>
-                <a routerLink="/wiki/weapons/channeling-staff">Classes</a>
+                <a routerLink="/wiki/weapons/sword">Weapons</a>
                 <a routerLink="/wiki">World</a>
                 <a routerLink="/wiki">FAQ</a>
               </div>
@@ -84,7 +84,7 @@ import { RouterModule } from '@angular/router';
                 <a routerLink="/wiki">Getting Started</a>
                 <a routerLink="/wiki">Guides</a>
                 <a routerLink="/wiki">Lore</a>
-                <a routerLink="/wiki/weapons/channeling-staff">Items</a>
+                <a routerLink="/wiki/weapons/sword">Items</a>
                 <a routerLink="/wiki">Monsters</a>
               </div>
 

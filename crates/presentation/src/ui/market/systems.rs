@@ -3,20 +3,20 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevymmo_client::local_player::LocalPlayer;
-use bevymmo_client::pointer::{PointerOnHud, hud_wants_pointer};
+use bevymmo_client::pointer::{hud_wants_pointer, PointerOnHud};
 use bevymmo_client::stdb::module_bindings::{MarketBuyOrder, MarketSellOrder};
 use bevymmo_client::stdb::{
-    LocalGold, MarketBuyBook, MarketOrderBook, NpcMarket, StdbConnection, commands,
+    commands, LocalGold, MarketBuyBook, MarketOrderBook, NpcMarket, StdbConnection,
 };
 use bevymmo_gameplay::economy::{
-    BPS_DENOMINATOR, DEFAULT_ACCOUNT_FEE_BPS, FeeQuote, GoldError, quote_fee,
+    quote_fee, FeeQuote, GoldError, BPS_DENOMINATOR, DEFAULT_ACCOUNT_FEE_BPS,
 };
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity};
 use bevymmo_gameplay::items::components::Inventory;
 use bevymmo_gameplay::items::registry::{ItemId, ItemRegistry};
 use bevymmo_gameplay::markets::{
-    MARKET_1_FEE_BPS, MARKET_1_ID, MARKET_2_FEE_BPS, MARKET_2_ID, MarketError, MarketRegistry,
-    assert_item_marketable,
+    assert_item_marketable, MarketError, MarketRegistry, MARKET_1_FEE_BPS, MARKET_1_ID,
+    MARKET_2_FEE_BPS, MARKET_2_ID,
 };
 use bevymmo_network::network::protocol::Position;
 use bevymmo_network::world_components::NetworkEntityId;
@@ -30,14 +30,14 @@ use super::{
     MarketUiState,
 };
 use crate::renderer;
-use crate::ui::button::{BarButtonKind, UiButtonImages, spawn_bar_child};
+use crate::ui::button::{spawn_bar_child, BarButtonKind, UiButtonImages};
 use crate::ui::card::{
     builder::{CardBuilder, CardFrameAssets},
     components::{CardKind, CardPositioning},
 };
-use crate::ui::inventory::InventoryUiState;
 use crate::ui::inventory::components::InventorySelection;
-use crate::ui::npc_sidebar::systems::{EntityHit, closest_friendly_hit};
+use crate::ui::inventory::InventoryUiState;
+use crate::ui::npc_sidebar::systems::{closest_friendly_hit, EntityHit};
 use crate::ui::theme::UiTheme;
 
 const NPC_SELECT_RADIUS: f32 = 1.2;

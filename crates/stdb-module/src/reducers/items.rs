@@ -1,4 +1,4 @@
-//! Inventory, equipment, hotbar selection and Eidolon inscriptions.
+//! Inventory, equipment, hotbar selection and weapon inscriptions.
 //!
 //! Ported from `crates/server/src/items` (`systems.rs`, `bonuses.rs`,
 //! `available_spells.rs`) and the three request handlers that lived in
@@ -53,7 +53,7 @@ use bevymmo_domain::items::definition::{EquipRequirement, ItemCategory};
 use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId, STARTER_WEAPON_ITEM_ID};
 use bevymmo_domain::items::registry::{ItemId, ItemRegistry};
 use bevymmo_domain::items::{compute_available_choices, AvailableSpellChoices};
-use bevymmo_domain::spells::components::{HotbarSlot, SpellHotbar};
+use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
 use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
@@ -87,7 +87,7 @@ fn item_registry() -> &'static ItemRegistry {
     REGISTRY.get_or_init(bevymmo_domain::content::items::default_items)
 }
 
-/// The Eidolon gestures (`BaseAbility`) items can offer.
+/// The weapon abilities (`BaseAbility`) items can offer.
 fn ability_registry() -> &'static BaseAbilityRegistry {
     static REGISTRY: OnceLock<BaseAbilityRegistry> = OnceLock::new();
     REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
@@ -302,7 +302,7 @@ pub fn destroy_item(ctx: &ReducerContext, instance_id: u64) -> Result<(), String
 
 /// Binds a spell to a hotbar key, or clears the key when `spell_id` is `None`.
 ///
-/// `slot` is `"q"`, `"w"` or `"e"`, case-insensitive.
+/// `slot` is `"primary"`, `"secondary"` or `"ultimate"`, case-insensitive.
 ///
 /// # Why not `set_hotbar_slot`
 ///
@@ -338,7 +338,7 @@ pub fn assign_hotbar_spell(
     slot: &str,
     spell_id: Option<String>,
 ) -> Result<(), String> {
-    let key = parse_hotbar_slot(slot)?;
+    let key = parse_ability_slot(slot)?;
     let equipment = load_equipment(ctx, character_id)?;
 
     let row = ctx
@@ -728,7 +728,7 @@ fn prune_hotbar_to_available(ctx: &ReducerContext, character_id: Uuid, equipment
     let mut bar = SpellHotbar::from(&row.slots);
 
     let mut changed = false;
-    for key in [HotbarSlot::Q, HotbarSlot::W, HotbarSlot::E] {
+    for key in AbilitySlot::ALL {
         let stale = bar
             .spell_for_slot(key)
             .is_some_and(|selected| !choices.contains(key, selected));
@@ -747,7 +747,7 @@ fn prune_hotbar_to_available(ctx: &ReducerContext, character_id: Uuid, equipment
     }
 }
 
-/// Which spells the equipped items currently offer for Q/W/E.
+/// Which spells the equipped items currently offer for Primary/Secondary/Ultimate.
 fn available_choices(equipment: &Equipment) -> AvailableSpellChoices {
     compute_available_choices(equipment, item_registry())
 }
@@ -975,16 +975,6 @@ fn parse_equip_slot(name: &str) -> Result<EquipSlot, String> {
                  armor, offhand, potion, shoes, food, mount"
             )
         })
-}
-
-/// Parses a hotbar key name, case-insensitively.
-fn parse_hotbar_slot(name: &str) -> Result<HotbarSlot, String> {
-    match name.trim().to_ascii_lowercase().as_str() {
-        "q" => Ok(HotbarSlot::Q),
-        "w" => Ok(HotbarSlot::W),
-        "e" => Ok(HotbarSlot::E),
-        other => Err(format!("unknown hotbar slot {other:?}; expected q, w or e")),
-    }
 }
 
 /// Parses an ability slot name, case-insensitively.

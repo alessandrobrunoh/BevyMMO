@@ -5,4 +5,4 @@ mod plugin;
 pub mod systems;
 
 pub use components::{EntityBarParts, FloatingUi, HpBarFill, HpBarText, NameText};
-pub use plugin::{EntityBarPlugin, spawn_entity_bar};
+pub use plugin::{spawn_entity_bar, EntityBarPlugin};

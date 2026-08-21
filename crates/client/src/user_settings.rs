@@ -180,9 +180,6 @@ pub enum KeyAction {
     ShowScoreboard,
     ToggleInventory,
     ClearTarget,
-    CastSpellQ,
-    CastSpellW,
-    CastSpellE,
     CastPrimary,
     CastSecondary,
     CastUltimate,
@@ -223,9 +220,6 @@ impl KeyAction {
             Self::ShowScoreboard => "Show Scoreboard",
             Self::ToggleInventory => "Toggle Inventory",
             Self::ClearTarget => "Clear Target",
-            Self::CastSpellQ => "Cast Spell (Q slot)",
-            Self::CastSpellW => "Cast Spell (W slot)",
-            Self::CastSpellE => "Cast Spell (E slot)",
             Self::CastPrimary => "Cast Weapon Primary",
             Self::CastSecondary => "Cast Weapon Secondary",
             Self::CastUltimate => "Cast Weapon Ultimate",
@@ -247,9 +241,6 @@ impl KeyAction {
             Self::ShowScoreboard => KeyCode::Tab,
             Self::ToggleInventory => KeyCode::KeyI,
             Self::ClearTarget => KeyCode::Escape,
-            Self::CastSpellQ => KeyCode::KeyQ,
-            Self::CastSpellW => KeyCode::KeyW,
-            Self::CastSpellE => KeyCode::KeyE,
             Self::CastPrimary => KeyCode::Digit1,
             Self::CastSecondary => KeyCode::Digit2,
             Self::CastUltimate => KeyCode::Digit3,
@@ -422,6 +413,9 @@ fn parse_settings(contents: &str) -> Result<GameSettings, serde_json::Error> {
         .and_then(serde_json::Value::as_object_mut)
     {
         bindings.remove("toggle_spellbook");
+        bindings.remove("cast_spell_q");
+        bindings.remove("cast_spell_w");
+        bindings.remove("cast_spell_e");
     }
     serde_json::from_value(value)
 }
@@ -490,7 +484,7 @@ mod tests {
     fn matches_checks_key_and_modifiers() {
         let mut kb = KeybindSettings::default();
         kb.bindings.insert(
-            KeyAction::CastSpellQ,
+            KeyAction::CastPrimary,
             KeyBinding {
                 key: KeyCode::KeyQ,
                 modifiers: KeyModifiers {
@@ -500,12 +494,12 @@ mod tests {
             },
         );
         assert!(!kb.matches(
-            KeyAction::CastSpellQ,
+            KeyAction::CastPrimary,
             KeyCode::KeyQ,
             KeyModifiers::default()
         ));
         assert!(kb.matches(
-            KeyAction::CastSpellQ,
+            KeyAction::CastPrimary,
             KeyCode::KeyQ,
             KeyModifiers {
                 shift: true,
@@ -588,6 +582,15 @@ mod tests {
                             "alt": false,
                             "super_key": false
                         }
+                    },
+                    "cast_spell_q": {
+                        "key": "KeyQ",
+                        "modifiers": {
+                            "shift": false,
+                            "ctrl": false,
+                            "alt": false,
+                            "super_key": false
+                        }
                     }
                 }
             }
@@ -620,7 +623,7 @@ mod tests {
         use bevy::input::ButtonInput;
         let mut settings = GameSettings::default();
         settings.keybinds.bindings.insert(
-            KeyAction::CastSpellQ,
+            KeyAction::CastPrimary,
             KeyBinding {
                 key: KeyCode::KeyQ,
                 modifiers: KeyModifiers {
@@ -632,8 +635,8 @@ mod tests {
         let res = GameSettingsResource(settings);
         let mut keys = ButtonInput::<KeyCode>::default();
         keys.press(KeyCode::KeyQ);
-        assert!(!res.pressed(KeyAction::CastSpellQ, &keys));
+        assert!(!res.pressed(KeyAction::CastPrimary, &keys));
         keys.press(KeyCode::ControlLeft);
-        assert!(res.pressed(KeyAction::CastSpellQ, &keys));
+        assert!(res.pressed(KeyAction::CastPrimary, &keys));
     }
 }

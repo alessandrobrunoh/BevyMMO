@@ -3,8 +3,8 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevymmo_client::pointer::{PointerOnHud, hud_wants_pointer};
-use bevymmo_client::stdb::{StdbConnection, commands};
+use bevymmo_client::pointer::{hud_wants_pointer, PointerOnHud};
+use bevymmo_client::stdb::{commands, StdbConnection};
 use bevymmo_content::item_definitions::greeter_stock;
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -13,7 +13,7 @@ use bevymmo_network::world_components::NetworkEntityId;
 
 use crate::ui::card::components::CardPositioning;
 use crate::ui::card::{
-    CardBuilder, CardFrameAssets, CardKind, ORNATE_BAR_NEUTRAL_PATH, ornate_bar_image,
+    ornate_bar_image, CardBuilder, CardFrameAssets, CardKind, ORNATE_BAR_NEUTRAL_PATH,
 };
 use crate::ui::npc_sidebar::components::{NpcSidebar, VendorItemButton};
 use crate::ui::theme::UiTheme;

@@ -1,5 +1,7 @@
 //! Concrete game content built on the generic gameplay and world frameworks.
 
+pub mod catalog;
+
 #[path = "abilities/mod.rs"]
 pub mod ability_definitions;
 #[path = "ancient_words/mod.rs"]

@@ -24,7 +24,7 @@ use crate::game_state::Screen;
 use crate::ui::theme::UiTheme;
 
 use layout::ActiveSettingsTab;
-use state::{GameSettingsResource, load_settings};
+use state::{load_settings, GameSettingsResource};
 
 /// Marker: root of the whole settings screen (carries visibility).
 #[derive(Component)]

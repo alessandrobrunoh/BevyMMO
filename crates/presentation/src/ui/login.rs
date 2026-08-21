@@ -3,12 +3,12 @@
 use bevy::prelude::*;
 
 use crate::game_state::{AuthState, AuthStatus, Screen};
-use crate::ui::button::{UiButtonAction, spawn_button};
+use crate::ui::button::{spawn_button, UiButtonAction};
 
 use crate::ui::text_input::{spawn_password_input, spawn_text_input};
 use crate::ui::theme::{
-    UiTheme, menu_screen_root_node, ornate_menu_panel_content_node, spawn_menu_screen_background,
-    spawn_ornate_menu_panel,
+    menu_screen_root_node, ornate_menu_panel_content_node, spawn_menu_screen_background,
+    spawn_ornate_menu_panel, UiTheme,
 };
 
 #[derive(Resource, Clone, Copy, PartialEq, Eq)]

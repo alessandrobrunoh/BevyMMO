@@ -7,9 +7,9 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct HotbarRow {
-    pub q: Option<String>,
-    pub w: Option<String>,
-    pub e: Option<String>,
+    pub primary: Option<String>,
+    pub secondary: Option<String>,
+    pub ultimate: Option<String>,
 }
 
 impl __sdk::InModule for HotbarRow {

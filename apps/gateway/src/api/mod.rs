@@ -2,8 +2,8 @@
 //!
 //! - [`auth`]: `/v1/auth/*` and `/v1/profile`, session-cookie based.
 //! - [`characters`]: `/v1/characters/:id/wallet`, session-cookie based.
-//! - [`public`]: `/v1/public/*`, no session required — reads only data the
-//!   module already replicates publicly.
+//! - [`public`]: `/v1/public/*`, no session required — live module rows
+//!   (markets, accounts) and the compiled game catalog.
 //! - [`docs`]: the Scalar API reference at `/docs`.
 //! - [`error`]: [`AppError`], the single error type every handler returns.
 //!

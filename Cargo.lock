@@ -2366,6 +2366,9 @@ dependencies = [
  "bevymmo_gameplay",
  "bevymmo_world",
  "glam",
+ "serde",
+ "serde_json",
+ "utoipa",
 ]
 
 [[package]]
@@ -2413,6 +2416,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "bevymmo_app_support",
+ "bevymmo_content",
  "serde",
  "serde_json",
  "spacetimedb-sdk",

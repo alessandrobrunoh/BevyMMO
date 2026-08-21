@@ -1,7 +1,7 @@
 //! What a client may ask the spell system to do.
 //!
 //! The port of Bevy's `process_cast_requests`, `handle_cast_release` and
-//! `process_eidolon_cast_requests`. Everything past validation lives in
+//! `process_cast_weapon_requests`. Everything past validation lives in
 //! [`crate::sim::spells`]; these three reducers only decide whether the caller
 //! is allowed to do what it asked, and open (or close) a `cast_state`.
 //!
@@ -24,7 +24,7 @@ use bevymmo_domain::abilities::{
     cast_armor_inscribed_ability, cast_root_inscribed_slot, movement_lock_for_ability,
     resolve_active_ability, resolve_armor_ability, resolve_armor_inscribed_ability,
     resolve_root_inscribed_slot, AbilityCastMode, AbilitySlot, CastBlockedReason,
-    ChannelMovementPolicy as EidolonChannelMovementPolicy,
+    ChannelMovementPolicy as AbilityChannelMovementPolicy,
 };
 use bevymmo_domain::movement::{should_face_cast_target, MovementLock};
 // Legacy spell channeling uses spells::context::ChannelMovementPolicy.
@@ -206,7 +206,7 @@ pub fn release_cast(
     Ok(())
 }
 
-/// Casts the Eidolon gesture inscribed on the caller's equipped weapon.
+/// Casts the weapon ability inscribed on the caller's equipped weapon.
 ///
 /// `slot` is `"primary"`, `"secondary"` or `"ultimate"` — the gameplay role, not
 /// a keyboard key (see `bevymmo_domain::abilities::AbilitySlot`).
@@ -216,7 +216,7 @@ pub fn release_cast(
 /// `cast_state` row that [`crate::sim::spells::step`] advances, the same way
 /// the legacy spell path does.
 #[reducer]
-pub fn eidolon_cast(
+pub fn cast_weapon(
     ctx: &ReducerContext,
     slot: String,
     target_entity: Option<u64>,
@@ -244,7 +244,7 @@ pub fn eidolon_cast(
         .get(&weapon.item_id)
         .ok_or_else(|| format!("unknown item {:?}", weapon.item_id.as_str()))?;
     let weapon_abilities = ability_loadout_for_item(item.as_ref())
-        .ok_or_else(|| format!("{} has no Eidolon gestures", item.display_name()))?;
+        .ok_or_else(|| format!("{} has no weapon abilities", item.display_name()))?;
 
     let ability_id = resolve_active_ability(slot, weapon_abilities, &weapon.ability_selection)
         .cloned()
@@ -378,7 +378,7 @@ pub fn eidolon_cast(
                 entity_id: caster.entity_id,
                 spell_id: ability_id.as_str().to_string(),
                 kind: CastKindRow::CastTime,
-                source: CastSourceRow::Eidolon,
+                source: CastSourceRow::Weapon,
                 elapsed_seconds: 0.0,
                 required_seconds,
                 start_position: caster.position,
@@ -409,7 +409,7 @@ pub fn eidolon_cast(
             // can honor it without re-resolving the ability.
             let movement_interrupts = matches!(
                 movement_policy,
-                EidolonChannelMovementPolicy::InterruptOnMove
+                AbilityChannelMovementPolicy::InterruptOnMove
             );
 
             // Channel starts armed so first tick lands on next tick.
@@ -417,7 +417,7 @@ pub fn eidolon_cast(
                 entity_id: caster.entity_id,
                 spell_id: ability_id.as_str().to_string(),
                 kind: CastKindRow::Channeling,
-                source: CastSourceRow::Eidolon,
+                source: CastSourceRow::Weapon,
                 elapsed_seconds: 0.0,
                 required_seconds,
                 start_position: caster.position,
@@ -434,7 +434,7 @@ pub fn eidolon_cast(
 
 /// Casts the first Primary ability supplied by an equipped armor item.
 ///
-/// Armor abilities intentionally use a separate API from weapon Eidolon slots.
+/// Armor abilities intentionally use a separate API from weapon weapon slots.
 /// This initial reducer handles instant armor abilities; timed armor casts will
 /// reuse the same source-aware resolver in the scheduler.
 #[reducer]
@@ -561,7 +561,7 @@ pub fn armor_cast(
                 tick_interval_seconds,
                 matches!(
                     movement_policy,
-                    EidolonChannelMovementPolicy::InterruptOnMove
+                    AbilityChannelMovementPolicy::InterruptOnMove
                 ),
             ),
             AbilityCastMode::Instant => unreachable!(),

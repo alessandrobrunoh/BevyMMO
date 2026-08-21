@@ -474,17 +474,17 @@ pub fn equipment_from_rows(rows: &[Option<ItemInstanceRow>]) -> Equipment {
 /// The three hotbar slots as stored.
 #[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
 pub struct HotbarRow {
-    pub q: Option<String>,
-    pub w: Option<String>,
-    pub e: Option<String>,
+    pub primary: Option<String>,
+    pub secondary: Option<String>,
+    pub ultimate: Option<String>,
 }
 
 impl From<&SpellHotbar> for HotbarRow {
     fn from(h: &SpellHotbar) -> Self {
         Self {
-            q: h.q_spell.as_ref().map(|s| s.as_str().to_string()),
-            w: h.w_spell.as_ref().map(|s| s.as_str().to_string()),
-            e: h.e_spell.as_ref().map(|s| s.as_str().to_string()),
+            primary: h.primary.as_ref().map(|s| s.as_str().to_string()),
+            secondary: h.secondary.as_ref().map(|s| s.as_str().to_string()),
+            ultimate: h.ultimate.as_ref().map(|s| s.as_str().to_string()),
         }
     }
 }
@@ -492,9 +492,9 @@ impl From<&SpellHotbar> for HotbarRow {
 impl From<&HotbarRow> for SpellHotbar {
     fn from(h: &HotbarRow) -> Self {
         SpellHotbar {
-            q_spell: h.q.clone().map(SpellId::new),
-            w_spell: h.w.clone().map(SpellId::new),
-            e_spell: h.e.clone().map(SpellId::new),
+            primary: h.primary.clone().map(SpellId::new),
+            secondary: h.secondary.clone().map(SpellId::new),
+            ultimate: h.ultimate.clone().map(SpellId::new),
         }
     }
 }

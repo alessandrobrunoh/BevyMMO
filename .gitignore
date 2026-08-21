@@ -25,4 +25,5 @@ __pycache__/
 .DS_Store
 Thumbs.db
 .claude/
+.playwright-mcp/
 

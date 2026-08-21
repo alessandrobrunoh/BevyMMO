@@ -4,11 +4,12 @@
 
 use std::sync::Arc;
 
+use crate::abilities::AbilitySlot;
 use crate::placeables::{
     AssetHint, EnemyConfig, EnemyPlaceable, KindId, PlaceableDefaults, PlaceableDefinition,
     PlaceableRegistry,
 };
-use crate::spells::{HotbarSlot, SpellHotbar, SpellId};
+use crate::spells::{SpellHotbar, SpellId};
 use crate::stats::defaults::enemy_defaults;
 
 pub struct GoblinDefinition;
@@ -39,7 +40,7 @@ impl EnemyPlaceable for GoblinDefinition {
         stats.vital.max_health = 30.0;
 
         let mut spell_hotbar = SpellHotbar::default();
-        spell_hotbar.assign(HotbarSlot::Q, Some(SpellId::new("fireball")));
+        spell_hotbar.assign(AbilitySlot::Primary, Some(SpellId::new("fireball")));
 
         EnemyConfig {
             stats,

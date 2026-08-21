@@ -116,14 +116,26 @@
       letter-spacing: 0.12em;
       text-transform: uppercase;
 
+      &.common {
+        color: #d9c9aa;
+      }
+      &.uncommon {
+        color: #8fd18f;
+      }
+      &.rare {
+        color: var(--sky);
+      }
+      &.epic {
+        color: #c9a0ff;
+      }
+      &.legendary {
+        color: var(--gold-light);
+      }
       &.ancient {
         color: var(--gold-light);
       }
       &.mythic {
         color: var(--cyan-light);
-      }
-      &.rare {
-        color: var(--sky);
       }
     }
   }

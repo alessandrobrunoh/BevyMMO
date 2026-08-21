@@ -7,31 +7,31 @@
 
 use super::components::{EquipSlot, Equipment};
 use super::registry::ItemRegistry;
-use crate::spells::components::HotbarSlot;
+use crate::abilities::AbilitySlot;
 use crate::spells::registry::SpellId;
 
-/// Spells currently selectable for each hotbar key, derived from equipped
+/// Spells currently selectable for each ability slot, derived from equipped
 /// items. Nothing should write to this except the recompute systems.
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::component::Component))]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AvailableSpellChoices {
-    pub q: Vec<SpellId>,
-    pub w: Vec<SpellId>,
-    pub e: Vec<SpellId>,
+    pub primary: Vec<SpellId>,
+    pub secondary: Vec<SpellId>,
+    pub ultimate: Vec<SpellId>,
 }
 
 impl AvailableSpellChoices {
     /// Candidates currently offered for `slot`.
-    pub fn for_slot(&self, slot: HotbarSlot) -> &[SpellId] {
+    pub fn for_slot(&self, slot: AbilitySlot) -> &[SpellId] {
         match slot {
-            HotbarSlot::Q => &self.q,
-            HotbarSlot::W => &self.w,
-            HotbarSlot::E => &self.e,
+            AbilitySlot::Primary => &self.primary,
+            AbilitySlot::Secondary => &self.secondary,
+            AbilitySlot::Ultimate => &self.ultimate,
         }
     }
 
     /// `true` if `spell_id` is currently a legal pick for `slot`.
-    pub fn contains(&self, slot: HotbarSlot, spell_id: &SpellId) -> bool {
+    pub fn contains(&self, slot: AbilitySlot, spell_id: &SpellId) -> bool {
         self.for_slot(slot).contains(spell_id)
     }
 }
@@ -61,18 +61,18 @@ pub fn compute_available_choices(
             continue;
         };
 
-        for id in &kit.q {
-            if !choices.q.contains(id) {
-                choices.q.push(id.clone());
+        for id in &kit.primary {
+            if !choices.primary.contains(id) {
+                choices.primary.push(id.clone());
             }
         }
-        for id in &kit.w {
-            if !choices.w.contains(id) {
-                choices.w.push(id.clone());
+        for id in &kit.secondary {
+            if !choices.secondary.contains(id) {
+                choices.secondary.push(id.clone());
             }
         }
-        if !choices.e.contains(&kit.e) {
-            choices.e.push(kit.e.clone());
+        if !choices.ultimate.contains(&kit.ultimate) {
+            choices.ultimate.push(kit.ultimate.clone());
         }
     }
 
@@ -93,19 +93,19 @@ mod tests {
         };
         let registry = ItemRegistry::default(); // item not even registered — must not panic
         let choices = compute_available_choices(&equipment, &registry);
-        assert!(choices.q.is_empty());
-        assert!(choices.w.is_empty());
-        assert!(choices.e.is_empty());
+        assert!(choices.primary.is_empty());
+        assert!(choices.secondary.is_empty());
+        assert!(choices.ultimate.is_empty());
     }
 
     #[test]
     fn contains_checks_the_right_slot_only() {
         let choices = AvailableSpellChoices {
-            q: vec![SpellId::new("fireball")],
-            w: vec![],
-            e: vec![],
+            primary: vec![SpellId::new("fireball")],
+            secondary: vec![],
+            ultimate: vec![],
         };
-        assert!(choices.contains(HotbarSlot::Q, &SpellId::new("fireball")));
-        assert!(!choices.contains(HotbarSlot::W, &SpellId::new("fireball")));
+        assert!(choices.contains(AbilitySlot::Primary, &SpellId::new("fireball")));
+        assert!(!choices.contains(AbilitySlot::Secondary, &SpellId::new("fireball")));
     }
 }

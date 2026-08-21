@@ -3,14 +3,14 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 
-use crate::app_state::{PauseOverlay, Screen, in_gameplay, in_unpaused_gameplay};
+use crate::app_state::{in_gameplay, in_unpaused_gameplay, PauseOverlay, Screen};
 use crate::local_player::LocalPlayer;
 use crate::movement::cursor_ray;
-use crate::pointer::{PointerOnHud, hud_wants_pointer};
+use crate::pointer::{hud_wants_pointer, PointerOnHud};
 use crate::server_feed::ServerNotice;
-use crate::stdb::{StdbConnection, commands};
+use crate::stdb::{commands, StdbConnection};
 use bevymmo_gameplay::entity::components::GameEntity;
-use bevymmo_gameplay::gathering::{ActiveGather, Harvestable, in_interact_range};
+use bevymmo_gameplay::gathering::{in_interact_range, ActiveGather, Harvestable};
 use bevymmo_gameplay::placeables::{KindId, PlaceableRegistry};
 use bevymmo_network::world_components::{NetworkEntityId, Position};
 

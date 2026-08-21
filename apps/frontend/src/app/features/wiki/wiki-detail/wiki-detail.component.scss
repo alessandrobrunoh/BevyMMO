@@ -1,5 +1,11 @@
 @use '../../../../styles/variables' as *;
 
+.wiki-missing {
+  font-family: var(--font-serif);
+  color: var(--text-dark);
+  margin-bottom: 1.25rem;
+}
+
 .wiki-detail-wrapper {
   background: linear-gradient(
     180deg,

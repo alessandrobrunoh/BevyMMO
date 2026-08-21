@@ -19,7 +19,7 @@ import { SearchService, SearchResultItem } from '../../../core/services/search.s
               #searchInput
               type="text"
               class="search-input"
-              placeholder="Search the Archives, News, Patch Notes (e.g. 'staff', 'alpha', 'essence')..."
+              placeholder="Search the Archives, News, Patch Notes (e.g. 'spada', 'alpha', 'wood')..."
               [value]="searchService.query()"
               (input)="onInputChange($event)"
               (keydown.escape)="searchService.close()"
@@ -32,9 +32,9 @@ import { SearchService, SearchResultItem } from '../../../core/services/search.s
           <!-- Quick category pills -->
           <div class="quick-tags">
             <span class="tag-label">QUICK JUMP:</span>
-            <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('staff')">Channeling Staff</app-eivar-button>
-            <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('essence')">Essences</app-eivar-button>
-            <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('echo')">Ancient Word: Echo</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('spada')">Spada</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('wood')">Wood</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('combat')">Combat</app-eivar-button>
             <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('alpha')">Alpha 0.2.1</app-eivar-button>
           </div>
 

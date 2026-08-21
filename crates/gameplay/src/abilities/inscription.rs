@@ -142,7 +142,7 @@ impl AbilityInscription {
 pub enum ItemInscription {
     /// New RootWord-based weapon inscription.
     Weapon(WeaponInscription),
-    /// New independent armor inscription. Armor does not use fake Q/W/E slots.
+    /// New independent armor inscription. Armor does not reuse weapon slots.
     Armor(ArmorInscription),
 }
 

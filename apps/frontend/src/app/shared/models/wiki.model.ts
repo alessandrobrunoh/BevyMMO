@@ -13,12 +13,14 @@ export interface WikiStatRow {
   highlight?: boolean;
 }
 
+export type WikiRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' | 'Ancient' | 'Mythic';
+
 export interface WikiInfoBox {
   title: string;
   image?: string;
   type: string;
   stats: WikiStatRow[];
-  rarity?: 'Common' | 'Rare' | 'Ancient' | 'Mythic';
+  rarity?: WikiRarity;
 }
 
 export interface AbilityDefinition {

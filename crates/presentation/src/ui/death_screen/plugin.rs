@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use crate::game_state::{Screen, in_gameplay};
+use crate::game_state::{in_gameplay, Screen};
 
 use super::systems::{
     handle_respawn_button, setup_death_screen, update_death_screen_visibility,

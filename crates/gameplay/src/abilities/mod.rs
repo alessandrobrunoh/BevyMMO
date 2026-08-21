@@ -1,4 +1,4 @@
-//! Sistema Eidolon: gesti fissi dell'equipaggiamento (`BaseAbility`) +
+//! Weapon ability system: gesti fissi dell'equipaggiamento (`BaseAbility`) +
 //! Glifi incisi dal giocatore (`Essence`/`Modifier`/`AncientWord`) = spell
 //! finale. Mirrors `crate::spells`/`crate::items` nello stile (trait +
 //! registry + id), con quattro macro gemelle in `bevymmo-props-macro` per
@@ -36,7 +36,7 @@ pub use cast_intent::{
 };
 pub use cooldowns::AbilityCooldowns;
 
-pub use events::EidolonCastRequest;
+pub use events::WeaponCastRequest;
 pub use inscription::{
     AbilityInscription, ItemInscription, RuneProfile, SecondaryWord, SlotInscription,
     WeaponInscription,

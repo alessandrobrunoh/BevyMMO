@@ -219,4 +219,30 @@
       </div>
     </div>
   </div>
+} @else if (!catalogLoaded()) {
+  <app-page-header
+    title="The Eivar Archives"
+    subtitle="Inscribing the record…"
+    badge="Wiki"
+    [breadcrumbs]="[{ label: 'Wiki', route: '/wiki' }]"
+  ></app-page-header>
+} @else {
+  <app-page-header
+    title="Record missing"
+    subtitle="This archive entry is not in the catalog."
+    badge="Wiki"
+    [breadcrumbs]="[
+      { label: 'Wiki', route: '/wiki' }
+    ]"
+  ></app-page-header>
+  <div class="wiki-detail-wrapper section-padding">
+    <div class="container">
+      @if (catalogError(); as err) {
+        <p class="wiki-missing">{{ err }}</p>
+      } @else {
+        <p class="wiki-missing">No article is inscribed in this category yet.</p>
+      }
+      <a routerLink="/wiki">← Archives Landing</a>
+    </div>
+  </div>
 }

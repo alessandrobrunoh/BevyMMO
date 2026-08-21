@@ -544,21 +544,22 @@ fn parse_triple_f32(s: &str) -> Option<(f32, f32, f32)> {
 // Same spirit as `#[props(...)]` above (a unit struct + a small DSL generates
 // the whole trait impl), but parsed with `syn::parse::Parse` instead of the
 // manual string splitter, because the DSL here nests (`effects = [...]`,
-// `spells(q = [...], w = [...], e = ...)`) and hand-rolled comma-splitting
+// `spells(primary = [...], secondary = [...], ultimate = ...)`) and hand-rolled comma-splitting
 // does not compose well past one level of nesting.
 //
-// Optionally declares the Q/W/E spell kit an item grants while equipped
-// (`bevymmo_shared::items::SpellKit`, see `crates/shared/src/items/spell_kit.rs`):
+// Optionally declares the Primary/Secondary/Ultimate spell kit an item grants
+// while equipped (`bevymmo_shared::items::SpellKit`):
 // if the `spells(...)` clause is present, the macro rejects at compile time
-// any shape that isn't "at least one Q, at least one W, exactly one E" — the
-// contract required by the hotbar (`crate::spells::components::SpellHotbar`)
-// — instead of only catching it at startup.
+// any shape that isn't "at least one Primary, at least one Secondary, exactly
+// one Ultimate" — the contract required by the hotbar
+// (`crate::spells::components::SpellHotbar`) — instead of only catching it at
+// startup.
 //
 // # Example
 // ```ignore
 // use bevymmo_props_macro::item;
 //
-// // A weapon that grants two Q options, one W option, one E spell.
+// // A weapon that grants two Primary options, one Secondary option, one Ultimate.
 // #[item(
 //     id = "magic_staff",
 //     name = "Flame Staff",
@@ -569,9 +570,9 @@ fn parse_triple_f32(s: &str) -> Option<(f32, f32, f32)> {
 //     tradable = true,
 //     effects = [stat_bonus(field = AttackPower, op = Add, value = 25.0)],
 //     spells(
-//         q = [AttackSpell, FireballSpell],
-//         w = [StunFieldSpell],
-//         e = MeteoriteSpell,
+//         primary = [AttackSpell, FireballSpell],
+//         secondary = [StunFieldSpell],
+//         ultimate = MeteoriteSpell,
 //     ),
 // )]
 // pub struct MagicStaff;
@@ -739,45 +740,40 @@ impl Parse for EffectDef {
     }
 }
 
-/// Parsed `spells(q = [...], w = [...], e = ...)` clause.
-///
-/// This is where the Q(1+) / W(1+) / E(1) contract is enforced: parsing
-/// fails with a `syn::Error` (surfaced as a normal compile error at the
-/// macro call site) unless `q` and `w` each have at least one entry and `e`
-/// has exactly one.
+/// Parsed `spells(primary = [...], secondary = [...], ultimate = ...)` clause.
 struct SpellsDef {
-    q: Vec<Path>,
-    w: Vec<Path>,
-    e: Path,
+    primary: Vec<Path>,
+    secondary: Vec<Path>,
+    ultimate: Path,
 }
 
 impl SpellsDef {
     fn parse_from(content: ParseStream) -> syn::Result<Self> {
-        let mut q: Option<Vec<Path>> = None;
-        let mut w: Option<Vec<Path>> = None;
-        let mut e: Option<Path> = None;
+        let mut primary: Option<Vec<Path>> = None;
+        let mut secondary: Option<Vec<Path>> = None;
+        let mut ultimate: Option<Path> = None;
 
         while !content.is_empty() {
             let key: Ident = content.parse()?;
             content.parse::<Token![=]>()?;
             match key.to_string().as_str() {
-                "q" => {
+                "primary" => {
                     let inner;
                     bracketed!(inner in content);
                     let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
-                    q = Some(list.into_iter().collect());
+                    primary = Some(list.into_iter().collect());
                 }
-                "w" => {
+                "secondary" => {
                     let inner;
                     bracketed!(inner in content);
                     let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
-                    w = Some(list.into_iter().collect());
+                    secondary = Some(list.into_iter().collect());
                 }
-                "e" => e = Some(content.parse::<Path>()?),
+                "ultimate" => ultimate = Some(content.parse::<Path>()?),
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in spells(...) (expected q, w, e)"),
+                        format!("unknown key `{other}` in spells(...) (expected primary, secondary, ultimate)"),
                     ))
                 }
             }
@@ -788,30 +784,33 @@ impl SpellsDef {
             }
         }
 
-        let q = q.unwrap_or_default();
-        let w = w.unwrap_or_default();
+        let primary = primary.unwrap_or_default();
+        let secondary = secondary.unwrap_or_default();
 
-        if q.is_empty() {
+        if primary.is_empty() {
             return Err(syn::Error::new(
                 content.span(),
-                "spells(...) requires at least one spell in `q = [...]` — every item that grants \
-                 spells must offer at least one Q option",
+                "spells(...) requires at least one spell in `primary = [...]`",
             ));
         }
-        if w.is_empty() {
+        if secondary.is_empty() {
             return Err(syn::Error::new(
                 content.span(),
-                "spells(...) requires at least one spell in `w = [...]`",
+                "spells(...) requires at least one spell in `secondary = [...]`",
             ));
         }
-        let e = e.ok_or_else(|| {
+        let ultimate = ultimate.ok_or_else(|| {
             syn::Error::new(
                 content.span(),
-                "spells(...) requires exactly one spell in `e = ...` (found none)",
+                "spells(...) requires exactly one spell in `ultimate = ...` (found none)",
             )
         })?;
 
-        Ok(Self { q, w, e })
+        Ok(Self {
+            primary,
+            secondary,
+            ultimate,
+        })
     }
 }
 
@@ -898,7 +897,7 @@ impl AbilitiesDef {
 }
 
 /// Parsed `rune_profile(capacity = ..., stability = ...)`.
-/// Required alongside `abilities(...)` — un'arma "Eidolon" senza profilo
+/// Required alongside `abilities(...)` — a weapon senza profilo
 /// runico non potrebbe mai essere incisa.
 struct RuneProfileDef {
     capacity: LitInt,
@@ -1102,16 +1101,16 @@ impl ItemDef {
         // `crates/shared/src/items/definition.rs`) applies, exactly like a
         // hand-written item that never mentions spells.
         let spell_kit_method = self.spells.as_ref().map(|spells| {
-            let q_paths = &spells.q;
-            let w_paths = &spells.w;
-            let e_path = &spells.e;
+            let primary_paths = &spells.primary;
+            let secondary_paths = &spells.secondary;
+            let ultimate_path = &spells.ultimate;
             quote! {
                 fn spell_kit(&self) -> Option<&crate::items::SpellKit> {
                     static KIT: std::sync::OnceLock<crate::items::SpellKit> = std::sync::OnceLock::new();
                     Some(KIT.get_or_init(|| crate::items::SpellKit::new(
-                        vec![#(crate::spells::SpellId::new(#q_paths::ID)),*],
-                        vec![#(crate::spells::SpellId::new(#w_paths::ID)),*],
-                        crate::spells::SpellId::new(#e_path::ID),
+                        vec![#(crate::spells::SpellId::new(#primary_paths::ID)),*],
+                        vec![#(crate::spells::SpellId::new(#secondary_paths::ID)),*],
+                        crate::spells::SpellId::new(#ultimate_path::ID),
                     )))
                 }
             }

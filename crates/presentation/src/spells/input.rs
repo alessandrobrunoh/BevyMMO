@@ -1,4 +1,4 @@
-//! Player ability input for the Eidolon cast pipeline.
+//! Player ability input for the weapon cast pipeline.
 //!
 //! Routes the weapon HUD keys (default 1/2/3) to the press/aim/release path
 //! for every equipped weapon that exposes `Item::ability_loadout()`. There is
@@ -7,7 +7,7 @@
 //! # Cast behavior by [`AbilityCastMode`]
 //!
 //! Instant, CastTime and Channeling share the same input: press opens an aim
-//! window ([`AbilityAim`]); release sends `eidolon_cast`. Instant fires on
+//! window ([`AbilityAim`]); release sends `cast_weapon`. Instant fires on
 //! that call. CastTime winds up and auto-fires. Channeling ticks until
 //! `cast_time` or a movement interrupt.
 
@@ -15,12 +15,12 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::movement::{ClientSurfaceQuery, LocalMovementFreeze};
-use bevymmo_client::stdb::{StdbConnection, commands as stdb_commands};
+use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_client::targeting::CurrentTarget;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::{
-    AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility, BaseAbilityRegistry,
-    movement_lock_for_ability, resolve_active_ability, weapon_cast_intent,
+    movement_lock_for_ability, resolve_active_ability, weapon_cast_intent, AbilityAim, AbilityId,
+    AbilitySlot, ArcBaseAbility, BaseAbilityRegistry,
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -29,7 +29,7 @@ use bevymmo_gameplay::stats::components::VitalStats;
 use bevymmo_gameplay::stats::formulas::can_afford_mana;
 use bevymmo_network::network::protocol::{LookDirection, NetworkEntityId, Position};
 
-use crate::game_state::{Screen, in_gameplay};
+use crate::game_state::{in_gameplay, Screen};
 use crate::spells::cast_bar::ObservedCasts;
 use crate::spells::cursor::{cursor_ground_point, flat_direction_towards};
 use crate::spells::ui::{HudCooldownKey, SpellHudCooldownStarted, SpellHudState};
@@ -53,7 +53,7 @@ pub fn weapon_slot_bindings() -> impl Iterator<Item = (KeyAction, AbilitySlot)> 
 ///
 /// The first `release_cast` still goes out immediately (same-client reducers
 /// stay ordered). This retry covers the case where that send raced ahead of
-/// `eidolon_cast` and no-op'd, which would otherwise leave the charge bar up
+/// `cast_weapon` and no-op'd, which would otherwise leave the charge bar up
 /// until the player held the key again.
 #[derive(Resource, Default)]
 pub struct PendingCastRelease(Option<QueuedCastRelease>);
@@ -147,7 +147,7 @@ pub fn cast_abilities_on_key(
         return;
     };
 
-    // Only weapons with Eidolon gestures drive Q/W/E.
+    // Only weapons with a loadout drive Primary/Secondary/Ultimate.
     let Some(weapon) = &equipment.weapon else {
         aim.clear();
         pending_release.clear();
@@ -217,7 +217,7 @@ pub fn cast_abilities_on_key(
         }
     }
 
-    // ── Release handling: one `eidolon_cast` ─────────────────────────
+    // ── Release handling: one `cast_weapon` ─────────────────────────
     for (_action, slot) in weapon_slot_bindings() {
         if !settings.just_released(_action, &keys) {
             continue;
@@ -263,13 +263,13 @@ pub fn cast_abilities_on_key(
         );
 
         if let Some(conn) = conn.as_deref() {
-            if let Err(err) = stdb_commands::eidolon_cast(
+            if let Err(err) = stdb_commands::cast_weapon(
                 conn,
                 slot,
                 ability.geometry().selected_entity_payload(selected_id),
                 target_position,
             ) {
-                error!("could not cast Eidolon ability: {err}");
+                error!("could not cast weapon ability: {err}");
             }
         }
 

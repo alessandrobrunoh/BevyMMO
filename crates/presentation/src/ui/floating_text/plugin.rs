@@ -4,7 +4,7 @@ use super::systems;
 use bevy::prelude::*;
 use bevymmo_client::server_feed::WorldTextCue;
 
-use crate::game_state::{Screen, not_in_gameplay};
+use crate::game_state::{not_in_gameplay, Screen};
 use crate::renderer::RenderSync;
 
 const DEFAULT_LIFETIME_SECONDS: f32 = 1.5;

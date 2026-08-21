@@ -9,6 +9,7 @@ repository.workspace = true
 # Shared app helpers: layered `config/*.toml` + path resolution. Keeps the
 # gateway consistent with `bins/game` on how settings are loaded.
 bevymmo_app_support = { path = "../../crates/app-support" }
+bevymmo_content = { path = "../../crates/content", features = ["openapi"] }
 
 axum = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }

@@ -7,7 +7,7 @@ use bevy::prelude::*;
 
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxLifetime};
 use crate::spells::ability_vfx::{
-    AbilityVfxSpec, palette, spawn_capsule, spawn_matching_footprint, spawn_sphere,
+    palette, spawn_capsule, spawn_matching_footprint, spawn_sphere, AbilityVfxSpec,
 };
 
 const LUNGE_RADIUS: f32 = 0.1;

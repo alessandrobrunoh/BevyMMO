@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevymmo_client::movement::{ClientSurfaceQuery, resolve_ray_to_ground};
+use bevymmo_client::movement::{resolve_ray_to_ground, ClientSurfaceQuery};
 
 /// Punto in cui il raggio della camera sotto il cursore incontra la superficie
 /// del terreno (o il piano `y = 0` se non ci sono superfici caricate).

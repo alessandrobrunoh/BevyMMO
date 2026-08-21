@@ -13,13 +13,13 @@ use bevymmo_gameplay::{
 };
 
 use super::{
-    InventoryUiState, ItemDetailUiState,
     components::*,
-    inscription_editor::{ItemEditorContext, ItemEditorRegistries, spawn_item_editor},
-    weapon_detail::{GlyphRegistries, meta_line, summarize_weapon},
+    inscription_editor::{spawn_item_editor, ItemEditorContext, ItemEditorRegistries},
+    weapon_detail::{meta_line, summarize_weapon, GlyphRegistries},
+    InventoryUiState, ItemDetailUiState,
 };
 use crate::ui::{
-    button::{BarButtonKind, spawn_bar_child},
+    button::{spawn_bar_child, BarButtonKind},
     card::{CardBuilder, CardFrameAssets, CardKind, CardWindow},
     scrollbar::ScrollView,
     theme::UiTheme,

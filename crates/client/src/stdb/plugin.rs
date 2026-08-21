@@ -27,27 +27,26 @@
 //! long as they hold the button.
 
 use crate::app_state::{
-    AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus, ConnectionFailure,
-    ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, Screen,
-    screen_after_connection_loss,
+    screen_after_connection_loss, AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus,
+    ConnectionFailure, ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, Screen,
 };
 use crate::local_player::LocalPlayer;
 use crate::movement::{
-    ClientCollision, ClientSurfaceQuery, LocalMovementFreeze, MoveTarget, TerrainStep,
-    snap_to_ground, step_on_terrain,
+    snap_to_ground, step_on_terrain, ClientCollision, ClientSurfaceQuery, LocalMovementFreeze,
+    MoveTarget, TerrainStep,
 };
 use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState, WorldTextCue};
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
-use bevymmo_domain::EntityId;
-use bevymmo_domain::movement::{self, Reconcile, Step, predicted_move_dest, reconcile_offset};
-use bevymmo_domain::movement::{MovementLock, movement_intent_allowed};
+use bevymmo_domain::movement::{self, predicted_move_dest, reconcile_offset, Reconcile, Step};
+use bevymmo_domain::movement::{movement_intent_allowed, MovementLock};
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
 use bevymmo_domain::stats::events::{ModifierKind, ModifierOp, StatField};
 use bevymmo_domain::stats::modifiers::{
     ActiveStatModifiers, ModifierEffectInstance, ModifierId as StatModifierId, StatModifierInstance,
 };
+use bevymmo_domain::EntityId;
 use bevymmo_gameplay::abilities::{AbilityAim, AncientWordId, KnownAncientLanguage};
 use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
 use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
@@ -63,9 +62,9 @@ use bevymmo_network::world_components::{
     ProjectileVisual,
 };
 use bevymmo_world::{CollisionGrid, SurfaceQuery};
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use spacetimedb_sdk::{
-    DbContext, EventTable, Identity, Table, TableWithPrimaryKey, Uuid, credentials,
+    credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey, Uuid,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -1507,9 +1506,9 @@ fn vital_from_entity_stats(row: &EntityStats) -> VitalStats {
 
 fn hotbar_from(row: &Hotbar) -> SpellHotbar {
     SpellHotbar {
-        q_spell: row.slots.q.clone().map(SpellId::new),
-        w_spell: row.slots.w.clone().map(SpellId::new),
-        e_spell: row.slots.e.clone().map(SpellId::new),
+        primary: row.slots.primary.clone().map(SpellId::new),
+        secondary: row.slots.secondary.clone().map(SpellId::new),
+        ultimate: row.slots.ultimate.clone().map(SpellId::new),
     }
 }
 
@@ -2801,17 +2800,13 @@ mod tests {
 
         let language = known_ancient_language_from(&row);
 
-        assert!(
-            language
-                .root_words
-                .contains(&bevymmo_gameplay::abilities::RootWordId::new("damage"))
-        );
+        assert!(language
+            .root_words
+            .contains(&bevymmo_gameplay::abilities::RootWordId::new("damage")));
         assert!(language.ancient_words.contains(&AncientWordId::new("echo")));
-        assert!(
-            language
-                .base_abilities
-                .contains(&bevymmo_gameplay::abilities::AbilityId::new("arcane_orb"))
-        );
+        assert!(language
+            .base_abilities
+            .contains(&bevymmo_gameplay::abilities::AbilityId::new("arcane_orb")));
     }
 
     #[test]
@@ -2887,18 +2882,14 @@ mod tests {
         let state = crowd_control_state_for(7, &pending);
 
         assert_eq!(state.effects.len(), 2);
-        assert!(
-            state
-                .effects
-                .iter()
-                .any(|e| e.kind == CrowdControlKind::Stun)
-        );
-        assert!(
-            state
-                .effects
-                .iter()
-                .any(|e| e.kind == CrowdControlKind::Root)
-        );
+        assert!(state
+            .effects
+            .iter()
+            .any(|e| e.kind == CrowdControlKind::Stun));
+        assert!(state
+            .effects
+            .iter()
+            .any(|e| e.kind == CrowdControlKind::Root));
         let stun = state
             .effects
             .iter()

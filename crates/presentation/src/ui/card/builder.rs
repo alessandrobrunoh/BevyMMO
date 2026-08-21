@@ -13,9 +13,9 @@ use super::components::{
     CardBody, CardExclusivityPolicy, CardFooter, CardHeader, CardHeaderDragHandle, CardKind,
     CardPositioning, CardWindow, CloseCardButton, DraggableCard,
 };
-use crate::ui::button::{BarButtonKind, spawn_bar_child};
+use crate::ui::button::{spawn_bar_child, BarButtonKind};
 use crate::ui::scrollbar::spawn_scroll_view;
-use crate::ui::theme::{UiTheme, ornate_panel_image};
+use crate::ui::theme::{ornate_panel_image, UiTheme};
 
 const CARD_FRAME_PANEL_PATH: &str = "ui/extracted_065811/panel_large_left.png";
 /// Neutral bar used for Close / Unequip / vendor rows.

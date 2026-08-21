@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 use bevymmo_gameplay::items::{
-    components::{INVENTORY_CAPACITY, Inventory},
+    components::{Inventory, INVENTORY_CAPACITY},
     registry::ItemRegistry,
 };
 

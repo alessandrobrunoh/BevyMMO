@@ -15,8 +15,8 @@ use thiserror::Error;
 
 use bevymmo_gameplay::placeables::{KindId, PlaceableRegistry};
 use bevymmo_world::{
-    CURRENT_VERSION, CollisionShape, HeightfieldData, MapBounds, MapManifest, Prop, SurfaceBounds,
-    SurfaceKind, Terrain, TransformData, WalkableMeshData, WalkableSurface, validate_id,
+    validate_id, CollisionShape, HeightfieldData, MapBounds, MapManifest, Prop, SurfaceBounds,
+    SurfaceKind, Terrain, TransformData, WalkableMeshData, WalkableSurface, CURRENT_VERSION,
 };
 
 // ---------------------------------------------------------------------------
@@ -1091,11 +1091,9 @@ mod tests {
             blocks_movement: true,
         });
         let issues = validate_structure(&m);
-        assert!(
-            issues
-                .iter()
-                .any(|i| i.message.contains("duplicate prop id"))
-        );
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("duplicate prop id")));
     }
 
     #[test]
@@ -1103,11 +1101,9 @@ mod tests {
         let mut m = empty_manifest();
         m.version = 99;
         let issues = validate_structure(&m);
-        assert!(
-            issues
-                .iter()
-                .any(|i| i.message.contains("unknown manifest version"))
-        );
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("unknown manifest version")));
     }
 
     #[test]
@@ -1225,11 +1221,9 @@ mod tests {
             blocks_movement: true,
         });
         let issues = validate_structure(&m);
-        assert!(
-            issues
-                .iter()
-                .any(|i| i.message.contains("outside map bounds"))
-        );
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("outside map bounds")));
     }
 
     #[test]
@@ -1263,20 +1257,16 @@ mod tests {
         assert_eq!(manifest.map_id, "map_01");
         assert_eq!(manifest.version, 2);
         assert!(manifest.world_metrics.is_some());
-        assert!(
-            manifest
-                .surfaces
-                .iter()
-                .any(|surface| surface.id == "surface_map_01")
-        );
-        assert!(
-            manifest
-                .test_checklist
-                .iter()
-                // Wording taken verbatim from map_01.world.json: the point is to
-                // prove the sidecar was read, not the GLB extras.
-                .any(|item| item.contains("center hill"))
-        );
+        assert!(manifest
+            .surfaces
+            .iter()
+            .any(|surface| surface.id == "surface_map_01"));
+        assert!(manifest
+            .test_checklist
+            .iter()
+            // Wording taken verbatim from map_01.world.json: the point is to
+            // prove the sidecar was read, not the GLB extras.
+            .any(|item| item.contains("center hill")));
 
         let issues = validate_structure(&manifest);
         assert!(issues.is_empty(), "validation failed: {issues:?}");

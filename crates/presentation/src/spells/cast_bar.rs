@@ -28,7 +28,7 @@ const STALE_AFTER_SECONDS: f32 = 1.0;
 /// Local mirror of an authoritative cast/channel snapshot.
 #[derive(Debug, Clone)]
 pub struct ObservedCast {
-    /// The ability or spell id — carries an `AbilityId` for Eidolon casts and a
+    /// The ability or spell id — carries an `AbilityId` for weapon casts and a
     /// `SpellId` string for legacy NPC/boss casts.
     pub spell_id: String,
     pub kind: u8,
@@ -122,7 +122,7 @@ fn read_cast_progress(
 }
 
 /// Reads cast-end events and starts HUD cooldowns for completed **player**
-/// (Eidolon) casts.
+/// (weapon) casts.
 ///
 /// Legacy NPC/boss casts are still observed visually (the bar disappears) but
 /// do **not** create local player HUD cooldowns — only `AbilityId` keys that
@@ -149,7 +149,7 @@ fn read_cast_ended(
 
 /// Starts a HUD cooldown when a server-authoritative cast/channel ends successfully.
 ///
-/// Only emits a cooldown for **Eidolon abilities** found in the registry (the
+/// Only emits a cooldown for **weapon abilities** found in the registry (the
 /// player's weapon gestures). Legacy spell ids from NPCs/bosses are silently
 /// skipped so they never pollute the player's HUD state.
 fn start_cooldown_from_cast_end(
@@ -161,7 +161,7 @@ fn start_cooldown_from_cast_end(
         return;
     }
 
-    // Try Eidolon ability first — this is the player path.
+    // Try weapon ability first — this is the player path.
     let ability_id = AbilityId::new(message.spell_id.clone());
     if let Some(ability) = ability_registry.get(&ability_id) {
         let cooldown_seconds = ability.base_params().cooldown;

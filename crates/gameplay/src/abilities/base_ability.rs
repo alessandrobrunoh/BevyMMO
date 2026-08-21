@@ -83,7 +83,7 @@ impl AbilityGeometry {
 ///
 /// Determines whether the ability fires immediately, has a wind-up period during
 /// which movement cancels it, or channels repeated effects while held.
-/// This is the Eidolon equivalent of [`crate::spells::context::CastKind`],
+/// This is the weapon equivalent of [`crate::spells::context::CastKind`],
 /// but lives on the ability definition rather than a separate spell config.
 // No `Eq`: `Channeling` carries an `f32`, which has none.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -142,7 +142,7 @@ impl AbilityCastMode {
     }
 }
 
-/// Channeling movement interrupt policy for Eidolon abilities.
+/// Channeling movement interrupt policy for weapon abilities.
 /// Mirrors [`crate::spells::context::ChannelMovementPolicy`] so the unified
 /// cast state can carry either source's policy without conversion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

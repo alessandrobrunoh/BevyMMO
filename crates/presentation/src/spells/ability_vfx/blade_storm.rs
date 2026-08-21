@@ -6,7 +6,7 @@
 use bevy::prelude::*;
 
 use crate::spells::ability_vfx::lifecycle::VfxSpinExpand;
-use crate::spells::ability_vfx::{AbilityVfxSpec, palette, spawn_matching_footprint};
+use crate::spells::ability_vfx::{palette, spawn_matching_footprint, AbilityVfxSpec};
 
 const BLADE_COUNT: usize = 6;
 const BLADE_SIZE: Vec3 = Vec3::new(0.08, 0.7, 0.25);

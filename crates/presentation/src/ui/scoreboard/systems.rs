@@ -118,7 +118,7 @@ pub fn update_scoreboard(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_state::{Screen, init_screen_states};
+    use crate::game_state::{init_screen_states, Screen};
     use crate::ui::scoreboard::ScoreboardPlugin;
     use bevy::input::InputPlugin;
 

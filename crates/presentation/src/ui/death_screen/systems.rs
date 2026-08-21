@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
-use bevymmo_client::stdb::{StdbConnection, commands};
+use bevymmo_client::stdb::{commands, StdbConnection};
 
 use bevymmo_client::network::types::ClientConnectionConfig;
 use bevymmo_gameplay::entity::components::EntityState;
@@ -10,7 +10,7 @@ use bevymmo_gameplay::stats::components::VitalStats;
 use bevymmo_network::network::protocol::PlayerId;
 
 use crate::game_state::Screen;
-use crate::ui::button::{UiButtonImages, apply_button_image, spawn_bar_button};
+use crate::ui::button::{apply_button_image, spawn_bar_button, UiButtonImages};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 
@@ -157,7 +157,7 @@ fn local_player_state<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_state::{Screen, init_screen_states};
+    use crate::game_state::{init_screen_states, Screen};
     use crate::ui::theme::UiTheme;
     use bevymmo_client::local_player::LocalPlayer;
     use bevymmo_gameplay::entity::components::EntityState;

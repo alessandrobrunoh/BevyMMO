@@ -4,7 +4,7 @@
 //! that produces a **distinct geometric manifestation** using Bevy primitive
 //! meshes/materials. The registry maps `AbilityId` → spawn fn; the dispatcher
 //! in `mod.rs` consults it before falling back to the legacy geometry-based
-//! selector in `eidolon_effects`.
+//! selector in `ability_effects`.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::color::Color;

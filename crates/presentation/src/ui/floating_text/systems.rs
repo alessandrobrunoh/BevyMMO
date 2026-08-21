@@ -137,7 +137,7 @@ pub fn cleanup_floating_text_root(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_state::{Screen, init_screen_states};
+    use crate::game_state::{init_screen_states, Screen};
     use crate::ui::floating_text::FloatingTextPlugin;
     use crate::ui::theme::UiTheme;
     use bevy::time::TimeUpdateStrategy;

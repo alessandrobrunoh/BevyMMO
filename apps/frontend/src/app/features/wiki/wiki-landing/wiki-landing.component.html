@@ -1,13 +1,20 @@
 <app-page-header
   title="The Eivar Archives"
-  subtitle="The comprehensive official codex of weapons, primal essences, modifiers, ancient words, and territorial laws."
+  subtitle="The official codex of weapons, equipment, materials, and the lore of Eivar."
   badge="Official Knowledge Base"
-  bgImage="assets/images/channeling-staff.jpg"
+  bgImage="assets/images/world-exploration.jpg"
   [breadcrumbs]="[{ label: 'Wiki' }]"
 ></app-page-header>
 
 <div class="wiki-landing-section section-padding">
   <div class="container">
+    @if (catalogError(); as err) {
+      <div class="catalog-error stone-panel chamfer-box" role="status">
+        <span class="catalog-error-rune">ᛉ</span>
+        <p>{{ err }}</p>
+      </div>
+    }
+
     <!-- Archives Search Bar -->
     <div class="archives-search-card stone-panel chamfer-box">
       <div class="search-inner">
@@ -15,7 +22,7 @@
         <input
           type="text"
           class="archives-input"
-          placeholder="Search the Archives (e.g. 'Channeling Staff', 'Essences', 'Echo', 'Combat')..."
+          placeholder="Search the Archives (e.g. 'Spada', 'Wood', 'Combat')..."
           [value]="searchFilter()"
           (input)="onSearch($event)"
         />
@@ -23,6 +30,7 @@
     </div>
 
     <!-- Featured Codex Spotlight -->
+    @if (popularArticles().length > 0) {
     <div class="spotlight-section">
       <h3 class="section-label">RECOMMENDED STUDY</h3>
       <div class="spotlight-grid">
@@ -41,6 +49,7 @@
         }
       </div>
     </div>
+    }
 
     <app-rune-divider styleVariant="cyan"></app-rune-divider>
 

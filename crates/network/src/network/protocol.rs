@@ -19,7 +19,6 @@ pub use crate::world_components::{
 use serde::{Deserialize, Serialize};
 
 use crate::abilities::AbilitySlot;
-use crate::spells::HotbarSlot;
 
 // Components
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -108,7 +107,7 @@ pub struct SpellVisualEffect {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UpdateHotbarSlotRequest {
-    pub slot: HotbarSlot,
+    pub slot: AbilitySlot,
     pub spell_id: Option<String>,
 }
 

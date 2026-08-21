@@ -1,7 +1,7 @@
-//! Pure press/release policy for weapon (Eidolon) casts.
+//! Pure press/release policy for weapon (weapon) casts.
 //!
 //! Instant, CastTime and Channeling share the same input: press opens aim,
-//! release sends `eidolon_cast`. The server then Instant-fires, winds up, or
+//! release sends `cast_weapon`. The server then Instant-fires, winds up, or
 //! channels from that single command.
 
 use super::base_ability::AbilityCastMode;
@@ -12,7 +12,7 @@ use crate::movement::MovementLock;
 pub struct WeaponCastIntent {
     /// Open (or keep) the client aim preview for this slot.
     pub open_aim: bool,
-    /// Call `eidolon_cast` this frame.
+    /// Call `cast_weapon` this frame.
     pub start_cast: bool,
 }
 

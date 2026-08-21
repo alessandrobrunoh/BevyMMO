@@ -12,7 +12,7 @@ use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::server_feed::SpellCooldownState;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::{
-    AbilityId, AbilitySlot, BaseAbilityRegistry, resolve_active_ability,
+    resolve_active_ability, AbilityId, AbilitySlot, BaseAbilityRegistry,
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;

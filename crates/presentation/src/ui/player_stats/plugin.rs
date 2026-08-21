@@ -24,7 +24,7 @@ impl Plugin for PlayerStatsPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_state::{Screen, init_screen_states};
+    use crate::game_state::{init_screen_states, Screen};
     use crate::ui::theme::UiTheme;
     use bevymmo_client::local_player::LocalPlayer;
     use bevymmo_client::stdb::LocalGold;

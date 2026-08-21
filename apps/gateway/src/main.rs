@@ -47,6 +47,8 @@ struct AppState {
     /// Whether the session cookie is marked `Secure`. See
     /// `GatewaySettings::cookie_secure`'s doc comment.
     cookie_secure: bool,
+    /// Compiled game catalog (`bevymmo_content`), served on `/v1/public/catalog/*`.
+    catalog: Arc<bevymmo_content::catalog::Catalog>,
 }
 
 #[tokio::main]
@@ -79,6 +81,7 @@ async fn main() {
         sessions,
         directory,
         cookie_secure: settings.gateway.cookie_secure,
+        catalog: Arc::new(bevymmo_content::catalog::snapshot()),
     };
     let app = api::router(state).layer(cors_layer(cors_origin));
 

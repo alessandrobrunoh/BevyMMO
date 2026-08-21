@@ -69,8 +69,8 @@ fn register_presentation_placeables(
 
 pub mod prelude {
     pub use crate::game_state::{
-        ConnectionFailure, ConnectionIntent, ConnectionRequest, GameStatePlugin, PauseOverlay,
-        PlayerNameError, Screen, validate_player_name,
+        validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest,
+        GameStatePlugin, PauseOverlay, PlayerNameError, Screen,
     };
     pub use crate::renderer::RendererPlugin;
     pub use crate::scenes::ScenesPlugin;

@@ -19,7 +19,7 @@ use crate::ui::bar::{get_hp_fill_color, get_or_spawn_root};
 use crate::ui::theme::UiTheme;
 use bevy::prelude::*;
 
-use super::{EntityBarParts, FloatingUi, spawn_entity_bar};
+use super::{spawn_entity_bar, EntityBarParts, FloatingUi};
 
 /// Root UI Node per tutta la UI flottante.
 #[derive(Component, Default)]
@@ -507,12 +507,11 @@ mod tests {
             ))
             .id();
         app.update();
-        assert!(
-            app.world()
-                .entity(target)
-                .get::<FloatingUiAttached>()
-                .is_some()
-        );
+        assert!(app
+            .world()
+            .entity(target)
+            .get::<FloatingUiAttached>()
+            .is_some());
 
         // Leave + cleanup: marker rimosso.
         app.insert_state(Screen::MainMenu);

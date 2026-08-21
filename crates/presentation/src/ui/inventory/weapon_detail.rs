@@ -11,12 +11,12 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use bevymmo_gameplay::abilities::{
-    AbilitySlot, AbilityTag, AncientWordRegistry, BaseAbilityRegistry, CastBlockedReason,
-    KnownAncientLanguage, RootWordRegistry, SlotPreview, resolve_active_ability,
-    resolve_root_inscribed_slot,
+    resolve_active_ability, resolve_root_inscribed_slot, AbilitySlot, AbilityTag,
+    AncientWordRegistry, BaseAbilityRegistry, CastBlockedReason, KnownAncientLanguage,
+    RootWordRegistry, SlotPreview,
 };
 use bevymmo_gameplay::items::{
-    ItemCategory, ItemRarity, ItemRegistry, components::EquipSlot, instance::ItemInstance,
+    components::EquipSlot, instance::ItemInstance, ItemCategory, ItemRarity, ItemRegistry,
 };
 
 /// I registri necessari a descrivere un'arma incisa, raggruppati per non far
@@ -91,7 +91,7 @@ pub struct SlotSummary {
     pub alternatives: Option<String>,
 }
 
-/// Tutto ciò che la scheda mostra in più per un'arma Eidolon.
+/// Tutto ciò che la scheda mostra in più per un'weapon.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WeaponSummary {
     pub runes: Option<RuneSummary>,
@@ -140,7 +140,7 @@ const fn rarity_label(rarity: ItemRarity) -> &'static str {
     }
 }
 
-/// Costruisce il riepilogo Eidolon di `instance`, o `None` se l'item non è
+/// Costruisce il riepilogo weapon di `instance`, o `None` se l'item non è
 /// un'arma con gesti propri (armor, pozioni, armi sul vecchio modello
 /// `spell_kit`).
 pub fn summarize_weapon(
@@ -362,7 +362,7 @@ fn number(value: f32) -> String {
 mod tests {
     use super::*;
     use bevymmo_gameplay::abilities::{
-        AbilityGeometry, AbilityParams, inscription::WeaponInscription, root_word::RootWordId,
+        inscription::WeaponInscription, root_word::RootWordId, AbilityGeometry, AbilityParams,
     };
 
     fn params() -> AbilityParams {
@@ -400,7 +400,7 @@ mod tests {
             root_words: app.world().resource::<RootWordRegistry>(),
             ancient_words: app.world().resource::<AncientWordRegistry>(),
         };
-        summarize_weapon(instance, items, catalog, known).expect("sword is an Eidolon weapon")
+        summarize_weapon(instance, items, catalog, known).expect("sword is a weapon weapon")
     }
 
     fn sword_with_flame() -> ItemInstance {

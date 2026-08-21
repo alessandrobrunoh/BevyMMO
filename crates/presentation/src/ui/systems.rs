@@ -4,25 +4,25 @@
 //! [`Display`] sul nodo root, non con respawn: lo spawn avviene una volta in
 //! `Startup`.
 
+use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::ButtonInput;
 use bevy::input::ButtonState;
-use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
 
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 
 use crate::game_state::{
-    AuthIntent, AuthRequest, ConnectionFailure, ConnectionIntent, ConnectionRequest, EmailError,
-    PasswordError, PauseOverlay, PlayerNameError, Screen, TypingFocus, validate_email,
-    validate_password, validate_player_name,
+    validate_email, validate_password, validate_player_name, AuthIntent, AuthRequest,
+    ConnectionFailure, ConnectionIntent, ConnectionRequest, EmailError, PasswordError,
+    PauseOverlay, PlayerNameError, Screen, TypingFocus,
 };
-use crate::ui::button::{UiButton, UiButtonAction, UiButtonImages, apply_button_image};
+use crate::ui::button::{apply_button_image, UiButton, UiButtonAction, UiButtonImages};
 use crate::ui::character_roster::SelectedRosterEntry;
 use crate::ui::chat::ChatInput;
 use crate::ui::login::{AuthPage, EmailInput, PasswordInput};
 use crate::ui::main_menu::PlayerNameInput;
 use crate::ui::text_input::{
-    TextInput, TextInputErrorText, TextInputImages, TextInputValueText, unfocus_all,
+    unfocus_all, TextInput, TextInputErrorText, TextInputImages, TextInputValueText,
 };
 use crate::ui::theme::UiTheme;
 
@@ -664,12 +664,11 @@ mod tests {
 
         assert_eq!(current_screen(&app), Screen::MainMenu);
         assert!(app.world().resource::<ConnectionRequest>().0.is_none());
-        assert!(
-            app.world()
-                .entity(name)
-                .get::<TextInput>()
-                .is_some_and(|input| input.error.is_some())
-        );
+        assert!(app
+            .world()
+            .entity(name)
+            .get::<TextInput>()
+            .is_some_and(|input| input.error.is_some()));
     }
 
     #[test]
@@ -825,12 +824,11 @@ mod tests {
         app.insert_state(Screen::Connecting);
         app.update();
 
-        assert!(
-            app.world()
-                .entity(input)
-                .get::<TextInput>()
-                .is_some_and(|input| !input.focused)
-        );
+        assert!(app
+            .world()
+            .entity(input)
+            .get::<TextInput>()
+            .is_some_and(|input| !input.focused));
         assert!(!app.world().resource::<TypingFocus>().0);
 
         app.world_mut()
@@ -842,12 +840,11 @@ mod tests {
         app.insert_state(Screen::InGame);
         app.update();
 
-        assert!(
-            app.world()
-                .entity(input)
-                .get::<TextInput>()
-                .is_some_and(|input| !input.focused)
-        );
+        assert!(app
+            .world()
+            .entity(input)
+            .get::<TextInput>()
+            .is_some_and(|input| !input.focused));
         assert!(!app.world().resource::<TypingFocus>().0);
     }
 }

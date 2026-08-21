@@ -7,7 +7,7 @@ use bevy::prelude::*;
 
 use crate::spells::ability_vfx::lifecycle::{VfxExpandFade, VfxLifetime};
 use crate::spells::ability_vfx::{
-    AbilityVfxSpec, palette, spawn_box, spawn_matching_footprint, spawn_sphere,
+    palette, spawn_box, spawn_matching_footprint, spawn_sphere, AbilityVfxSpec,
 };
 
 const BLADE_THICKNESS: f32 = 0.06;

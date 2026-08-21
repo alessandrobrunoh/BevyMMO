@@ -10,7 +10,7 @@ use super::slot::AbilitySlot;
 
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::message::Message))]
 #[derive(Debug, Clone, PartialEq)]
-pub struct EidolonCastRequest {
+pub struct WeaponCastRequest {
     pub caster: EntityId,
     pub slot: AbilitySlot,
     pub target_position: Option<Vec3>,

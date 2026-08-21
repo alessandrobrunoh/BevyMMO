@@ -525,8 +525,8 @@ pub enum CastKindRow {
 pub enum CastSourceRow {
     /// Legacy spell from the hotbar (`cast_spell` reducer).
     Spell,
-    /// Eidolon weapon ability (`eidolon_cast` reducer).
-    Eidolon,
+    /// Weapon ability (`cast_weapon` reducer).
+    Weapon,
     /// Primary ability from the equipped helmet.
     Helmet,
     /// Primary ability from the equipped chestplate.
@@ -555,7 +555,7 @@ pub struct CastState {
     pub tick_interval_seconds: f32,
     /// For Channeling casts only: whether movement cancels the channel.
     /// True for legacy spells with InterruptOnMove; reflects AbilityCastMode
-    /// for Eidolon abilities. Ignored for Instant/CastTime (movement always
+    /// for weapon abilities. Ignored for Instant/CastTime (movement always
     /// interrupts CastTime).
     pub channel_movement_interrupts: bool,
 }

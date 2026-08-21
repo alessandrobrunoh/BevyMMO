@@ -260,7 +260,7 @@ pub fn seed(ctx: &ReducerContext) {
             );
             let attack = config
                 .spell_hotbar
-                .q_spell
+                .primary
                 .clone()
                 .unwrap_or_else(|| bevymmo_domain::spells::SpellId::new("fireball"));
             crate::sim::ai::remember_enemy(entity.entity_id, config.aggro_range, attack);

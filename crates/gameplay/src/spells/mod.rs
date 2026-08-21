@@ -11,9 +11,7 @@ pub mod events;
 pub mod registry;
 pub mod visuals;
 
-pub use components::{
-    default_player_hotbar, CastProgress, HotbarSlot, SpellCooldowns, SpellHotbar,
-};
+pub use components::{default_player_hotbar, CastProgress, SpellCooldowns, SpellHotbar};
 pub use context::{
     AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ChannelMovementPolicy,
     ProjectileSpawnRequest, Spell, SpellCast, SpellCastContext, SpellConfig, TargetingMode,

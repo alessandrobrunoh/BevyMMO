@@ -7,63 +7,57 @@ use std::collections::HashMap;
 
 use super::context::{CastKind, ChannelMovementPolicy};
 use super::registry::SpellId;
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum HotbarSlot {
-    Q,
-    W,
-    E,
-}
+use crate::abilities::AbilitySlot;
 
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::component::Component))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct SpellHotbar {
-    pub q_spell: Option<SpellId>,
-    pub w_spell: Option<SpellId>,
-    pub e_spell: Option<SpellId>,
+    pub primary: Option<SpellId>,
+    pub secondary: Option<SpellId>,
+    pub ultimate: Option<SpellId>,
 }
 
 impl SpellHotbar {
-    pub fn spell_for_slot(&self, slot: HotbarSlot) -> Option<&SpellId> {
+    pub fn spell_for_slot(&self, slot: AbilitySlot) -> Option<&SpellId> {
         match slot {
-            HotbarSlot::Q => self.q_spell.as_ref(),
-            HotbarSlot::W => self.w_spell.as_ref(),
-            HotbarSlot::E => self.e_spell.as_ref(),
+            AbilitySlot::Primary => self.primary.as_ref(),
+            AbilitySlot::Secondary => self.secondary.as_ref(),
+            AbilitySlot::Ultimate => self.ultimate.as_ref(),
         }
     }
 
-    pub fn assign(&mut self, slot: HotbarSlot, spell_id: Option<SpellId>) {
+    pub fn assign(&mut self, slot: AbilitySlot, spell_id: Option<SpellId>) {
         if let Some(id) = &spell_id {
-            if self.q_spell.as_ref() == Some(id) {
-                self.q_spell = None;
+            if self.primary.as_ref() == Some(id) {
+                self.primary = None;
             }
-            if self.w_spell.as_ref() == Some(id) {
-                self.w_spell = None;
+            if self.secondary.as_ref() == Some(id) {
+                self.secondary = None;
             }
-            if self.e_spell.as_ref() == Some(id) {
-                self.e_spell = None;
+            if self.ultimate.as_ref() == Some(id) {
+                self.ultimate = None;
             }
         }
 
         match slot {
-            HotbarSlot::Q => self.q_spell = spell_id,
-            HotbarSlot::W => self.w_spell = spell_id,
-            HotbarSlot::E => self.e_spell = spell_id,
+            AbilitySlot::Primary => self.primary = spell_id,
+            AbilitySlot::Secondary => self.secondary = spell_id,
+            AbilitySlot::Ultimate => self.ultimate = spell_id,
         }
     }
 
     pub fn contains(&self, spell_id: &SpellId) -> bool {
-        self.q_spell.as_ref() == Some(spell_id)
-            || self.w_spell.as_ref() == Some(spell_id)
-            || self.e_spell.as_ref() == Some(spell_id)
+        self.primary.as_ref() == Some(spell_id)
+            || self.secondary.as_ref() == Some(spell_id)
+            || self.ultimate.as_ref() == Some(spell_id)
     }
 }
 
 pub fn default_player_hotbar() -> SpellHotbar {
     SpellHotbar {
-        q_spell: Some(SpellId::new("attack")),
-        w_spell: Some(SpellId::new("fireball")),
-        e_spell: Some(SpellId::new("healing_circle")),
+        primary: Some(SpellId::new("attack")),
+        secondary: Some(SpellId::new("fireball")),
+        ultimate: Some(SpellId::new("healing_circle")),
     }
 }
 

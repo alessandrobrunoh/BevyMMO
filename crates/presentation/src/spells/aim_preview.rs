@@ -20,8 +20,8 @@ use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::base_ability::FORWARD_LANE_HALF_WIDTH;
 use bevymmo_gameplay::abilities::{
-    AbilityAim, AbilityGeometry, AncientWordRegistry, BaseAbilityRegistry, KnownAncientLanguage,
-    RootWordRegistry, SlotPreview, resolve_active_ability, resolve_root_inscribed_slot,
+    resolve_active_ability, resolve_root_inscribed_slot, AbilityAim, AbilityGeometry,
+    AncientWordRegistry, BaseAbilityRegistry, KnownAncientLanguage, RootWordRegistry, SlotPreview,
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -348,10 +348,9 @@ mod tests {
             .press(KeyCode::Escape);
         app.update();
 
-        assert!(
-            app.world()
-                .resource::<ButtonInput<KeyCode>>()
-                .just_pressed(KeyCode::Escape)
-        );
+        assert!(app
+            .world()
+            .resource::<ButtonInput<KeyCode>>()
+            .just_pressed(KeyCode::Escape));
     }
 }

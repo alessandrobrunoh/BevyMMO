@@ -1,0 +1,81 @@
+<app-auth-shell
+  mode="register"
+  title="Forge an account"
+>
+  <form class="auth-form" (ngSubmit)="onSubmit()" novalidate>
+    @if (errorMessage()) {
+      <div class="auth-form__message auth-form__message--error" role="alert" aria-live="assertive">
+        <span class="material-symbols-outlined" aria-hidden="true">warning</span>
+        {{ errorMessage() }}
+      </div>
+    }
+
+    <div class="auth-form__field">
+      <label for="register-email">Account email</label>
+      <div class="auth-form__input-wrap">
+        <input
+          id="register-email"
+          type="email"
+          name="email"
+          autocomplete="email"
+          inputmode="email"
+          enterkeyhint="next"
+          placeholder="wayfarer@eivar.online"
+          [ngModel]="email()"
+          (ngModelChange)="email.set($event); errorMessage.set(null)"
+          required
+        />
+      </div>
+    </div>
+
+    <div class="auth-form__field">
+      <label for="register-password">Choose a password</label>
+      <div class="auth-form__input-wrap">
+        <input
+          id="register-password"
+          [type]="showPassword() ? 'text' : 'password'"
+          name="password"
+          autocomplete="new-password"
+          enterkeyhint="next"
+          placeholder="At least 8 characters"
+          [ngModel]="password()"
+          (ngModelChange)="password.set($event); errorMessage.set(null)"
+          required
+          minlength="8"
+        />
+        <button type="button" class="auth-form__visibility" (click)="toggleShowPassword()" [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'">
+          <img
+            [src]="showPassword() ? 'assets/images/auth-eye-off.png' : 'assets/images/auth-eye.png'"
+            alt=""
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+    </div>
+
+    <div class="auth-form__field">
+      <label for="register-password-confirmation">Confirm password</label>
+      <div class="auth-form__input-wrap">
+        <input
+          id="register-password-confirmation"
+          [type]="showPassword() ? 'text' : 'password'"
+          name="passwordConfirmation"
+          autocomplete="new-password"
+          enterkeyhint="done"
+          placeholder="Repeat your password"
+          [ngModel]="passwordConfirmation()"
+          (ngModelChange)="passwordConfirmation.set($event); errorMessage.set(null)"
+          required
+        />
+      </div>
+    </div>
+
+    <p class="auth-form__terms">By forging an account, you agree to take part in the ongoing alpha journey.</p>
+
+    <app-eivar-button variant="ornate" type="submit" [fullWidth]="true" [loading]="isLoading()">
+      Forge my account
+    </app-eivar-button>
+
+    <p class="auth-form__switch">Already attuned? <a routerLink="/login">Return to login</a></p>
+  </form>
+</app-auth-shell>

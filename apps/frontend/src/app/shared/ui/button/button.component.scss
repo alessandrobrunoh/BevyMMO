@@ -1,190 +1,316 @@
 @use '../../../../styles/variables' as *;
 
 .eivar-btn {
+  --button-edge: var(--gold-dark);
+  --button-face: #101315;
+  --button-ink: var(--gold-light);
+  --button-glow: transparent;
+
   position: relative;
   isolation: isolate;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  min-height: 44px;
-  padding: 0 22px;
+  display: inline-grid;
+  min-width: 132px;
+  min-height: 42px;
+  place-items: center;
+  padding: 0 24px;
   overflow: hidden;
-  border-radius: var(--radius-xs);
+  border: 1px solid var(--button-edge);
+  border-radius: 0;
+  background: var(--button-face);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.74), inset 0 1px 0 rgba(255, 236, 182, 0.11), 0 4px 12px rgba(0, 0, 0, 0.38);
+  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px);
+  color: var(--button-ink);
   cursor: pointer;
   font-family: var(--font-serif);
-  font-size: 0.76rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.115em;
+  line-height: 1;
   text-transform: uppercase;
-  text-decoration: none;
-  transition: transform var(--transition), box-shadow var(--transition), filter var(--transition), background var(--transition);
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition), color var(--transition), background var(--transition);
 
-  // Subtle metallic border highlight
-  &::before {
+  &::before,
+  &::after {
     position: absolute;
-    inset: 0;
-    content: "";
-    border-radius: inherit;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    pointer-events: none;
-    z-index: 1;
+    z-index: 0;
+    width: 9px;
+    height: 9px;
+    border-color: var(--gold-light);
+    content: '';
+    opacity: 0.76;
+    transition: opacity var(--transition), transform var(--transition);
   }
 
-  // Light sweep shimmer layer
-  .shimmer-layer {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      105deg,
-      transparent 20%,
-      rgba(255, 255, 255, 0.28) 50%,
-      transparent 80%
-    );
-    transform: translateX(-100%);
-    transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
-    pointer-events: none;
-    z-index: 2;
+  &::before {
+    top: 3px;
+    left: 3px;
+    border-top: 1px solid;
+    border-left: 1px solid;
+  }
+
+  &::after {
+    right: 3px;
+    bottom: 3px;
+    border-right: 1px solid;
+    border-bottom: 1px solid;
+  }
+
+  &:hover:not(:disabled),
+  &.is-active:not(:disabled) {
+    z-index: 1;
+    border-color: var(--gold-light);
+    box-shadow: inset 0 0 0 1px rgba(255, 225, 154, 0.17), inset 0 1px 0 rgba(255, 244, 208, 0.27), 0 0 0 1px rgba(112, 75, 24, 0.48), 0 0 22px var(--button-glow);
+
+    &::before,
+    &::after {
+      opacity: 1;
+    }
   }
 
   &:hover:not(:disabled) {
     transform: translateY(-2px);
-
-    .shimmer-layer {
-      transform: translateX(100%);
-    }
   }
 
   &:active:not(:disabled) {
     transform: translateY(1px);
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7), 0 1px 5px rgba(0, 0, 0, 0.42);
   }
 
   &:disabled {
-    opacity: 0.55;
+    border-color: #3a3b3a;
+    color: #74736f;
     cursor: not-allowed;
-    filter: grayscale(0.5);
+    filter: grayscale(1);
+    opacity: 0.62;
   }
 
   &.full-width {
     width: 100%;
   }
 
-  // Size variants
   &.size-sm {
+    min-width: 96px;
     min-height: 34px;
-    padding: 0 14px;
-    font-size: 0.68rem;
-    letter-spacing: 0.1em;
-  }
-
-  &.size-md {
-    min-height: 44px;
-    padding: 0 22px;
-    font-size: 0.76rem;
+    padding: 0 16px;
+    font-size: 0.61rem;
   }
 
   &.size-lg {
-    min-height: 52px;
-    padding: 0 30px;
-    font-size: 0.84rem;
+    min-width: 228px;
+    min-height: 62px;
+    padding: 0 38px;
+    font-size: 0.82rem;
     letter-spacing: 0.14em;
   }
 
-  // Primary / Gold Radiant Variant
   &.variant-primary,
-  &.variant-gold {
-    color: #162432;
-    background: linear-gradient(180deg, #f6dc94 0%, #d5aa4e 45%, #ae8027 100%);
-    border: 1px solid #ffecb6;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.8),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-      0 4px 16px rgba(0, 0, 0, 0.35),
-      0 0 14px rgba(212, 173, 87, 0.3);
-    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  &.variant-gold,
+  &.variant-cta {
+    --button-edge: #a97a32;
+    --button-face: linear-gradient(145deg, #211b13 0%, #121313 52%, #1b1710 100%);
+    --button-ink: #f2d58f;
+    --button-glow: rgba(215, 159, 64, 0.46);
 
+    &.is-active,
     &:hover:not(:disabled) {
-      background: linear-gradient(180deg, #fff0c2 0%, #e2b95a 45%, #c08f30 100%);
-      border-color: #ffffff;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.95),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.25),
-        0 8px 24px rgba(0, 0, 0, 0.45),
-        0 0 24px rgba(243, 220, 152, 0.65);
-      color: #0c1824;
-    }
-
-    &:active:not(:disabled) {
-      box-shadow:
-        inset 0 2px 4px rgba(0, 0, 0, 0.35),
-        0 2px 6px rgba(0, 0, 0, 0.4);
+      --button-face: linear-gradient(145deg, #5a3d18 0%, #2d2112 52%, #4f3416 100%);
     }
   }
 
-  // Secondary / Arcane Celestial Cyan Variant
   &.variant-secondary,
+  &.variant-navigation {
+    --button-edge: #725b39;
+    --button-face: linear-gradient(145deg, #181919, #0d0f10 54%, #161515);
+    --button-ink: #cfb27b;
+    --button-glow: rgba(211, 161, 80, 0.28);
+    min-width: 120px;
+    min-height: 36px;
+  }
+
   &.variant-cyan {
-    color: #ffffff;
-    background: linear-gradient(180deg, #1e699b 0%, #12466c 45%, #0b314d 100%);
-    border: 1px solid #6cd6ff;
-    box-shadow:
-      inset 0 1px 0 rgba(164, 238, 255, 0.6),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.4),
-      0 4px 16px rgba(0, 0, 0, 0.35),
-      0 0 14px rgba(60, 203, 255, 0.3);
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+    --button-edge: #4288a3;
+    --button-face: linear-gradient(145deg, #143447, #0d1e29 55%, #102c3b);
+    --button-ink: #b7edff;
+    --button-glow: rgba(60, 203, 255, 0.42);
+  }
 
-    &:hover:not(:disabled) {
-      background: linear-gradient(180deg, #277fb9 0%, #175786 45%, #0f3f63 100%);
-      border-color: #a4eeff;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.8),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-        0 8px 24px rgba(0, 0, 0, 0.45),
-        0 0 24px rgba(60, 203, 255, 0.65);
+  &.variant-ornate {
+    min-height: 4.25rem;
+    padding: 0 2.6rem;
+    border: 0;
+    clip-path: none;
+    color: #d9f6ff;
+    background: url('/assets/images/auth-button.png') center / 100% 100% no-repeat;
+    box-shadow: none;
+    text-shadow: 0 1px 0 rgba(3, 15, 25, 0.9), 0 0 0.6rem rgba(164, 238, 255, 0.42);
+
+    &::before,
+    &::after,
+    .eivar-btn__metal,
+    .eivar-btn__rune {
+      display: none;
+    }
+
+    &:hover:not(:disabled),
+    &.is-active:not(:disabled) {
+      background-image: url('/assets/images/auth-button-hover.png');
+      box-shadow: none;
+      filter: drop-shadow(0 0 0.7rem rgba(60, 203, 255, 0.42));
     }
 
     &:active:not(:disabled) {
-      box-shadow:
-        inset 0 2px 4px rgba(0, 0, 0, 0.45),
-        0 2px 6px rgba(0, 0, 0, 0.4);
+      box-shadow: none;
+      filter: brightness(0.92) drop-shadow(0 0 0.4rem rgba(60, 203, 255, 0.35));
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--cyan-light);
+      outline-offset: 2px;
     }
   }
 
-  // Ghost Variant
+  &.variant-outline {
+    --button-edge: #9e7c43;
+    --button-face: transparent;
+    --button-ink: #dfc188;
+    --button-glow: rgba(211, 161, 80, 0.26);
+    border-width: 1px;
+  }
+
   &.variant-ghost {
-    background: rgba(10, 32, 52, 0.5);
-    border: 1px solid rgba(212, 173, 87, 0.45);
-    color: var(--gold-light);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    --button-edge: transparent;
+    --button-face: transparent;
+    --button-ink: var(--gold-light);
+    box-shadow: none;
+    clip-path: none;
 
-    &:hover:not(:disabled) {
-      background: rgba(212, 173, 87, 0.18);
-      border-color: var(--gold-light);
-      color: #ffffff;
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3), 0 0 16px rgba(212, 173, 87, 0.3);
-    }
-
-    &:active:not(:disabled) {
-      background: rgba(212, 173, 87, 0.25);
+    &::before,
+    &::after,
+    .eivar-btn__metal,
+    .eivar-btn__rune {
+      display: none;
     }
   }
 
-  .btn-content {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    z-index: 3;
-    position: relative;
+  &.variant-tag {
+    --button-edge: #85652f;
+    --button-face: #171411;
+    --button-ink: #d7bd83;
+    min-width: 0;
+    min-height: 32px;
+    padding: 0 18px;
+    font-size: 0.62rem;
+
+    .eivar-btn__rune {
+      display: none;
+    }
   }
 
-  .spinner-rune {
-    display: inline-block;
-    animation: runePulse 1s infinite;
+  &.variant-icon-square,
+  &.variant-social {
+    min-width: 46px;
+    width: 46px;
+    min-height: 46px;
+    padding: 0;
+
+    .eivar-btn__rune {
+      display: none;
+    }
   }
 
-  .btn-icon {
-    font-size: 1.1em;
+  &.variant-icon-circle {
+    min-width: 48px;
+    width: 48px;
+    min-height: 48px;
+    padding: 0;
+    border-radius: 50%;
+    clip-path: none;
+
+    &::before,
+    &::after {
+      display: none;
+    }
+
+    .eivar-btn__rune {
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(243, 220, 152, 0.5);
+      border-radius: 50%;
+    }
+  }
+
+  &.icon-only {
+    min-width: 42px;
+    width: 42px;
+    min-height: 42px;
+    padding: 0;
+
+    .eivar-btn__rune {
+      display: none;
+    }
   }
 }
 
+.eivar-btn__metal {
+  position: absolute;
+  z-index: -1;
+  inset: 3px;
+  background-image: radial-gradient(circle at 18% 25%, rgba(255, 240, 195, 0.1) 0 1px, transparent 2px), radial-gradient(circle at 74% 60%, rgba(255, 240, 195, 0.06) 0 1px, transparent 2px), linear-gradient(120deg, transparent 24%, rgba(255, 255, 255, 0.035) 25%, transparent 27%);
+  opacity: 0.82;
+  pointer-events: none;
+}
+
+.eivar-btn__rune {
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  color: rgba(235, 197, 122, 0.36);
+  font-family: Georgia, serif;
+  font-size: 0.95rem;
+  line-height: 18px;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.eivar-btn__content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.eivar-btn__icon {
+  display: inline-grid;
+  place-items: center;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.eivar-btn__spinner {
+  display: inline-block;
+  animation: eivar-button-spin 900ms linear infinite;
+}
+
+@keyframes eivar-button-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 550px) {
+  .eivar-btn.variant-ornate {
+    min-height: 3.25rem;
+    padding: 0 2rem;
+    font-size: 0.68rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eivar-btn,
+  .eivar-btn__spinner {
+    transition: none;
+    animation: none;
+  }
+}

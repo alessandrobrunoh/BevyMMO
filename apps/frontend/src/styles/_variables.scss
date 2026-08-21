@@ -58,12 +58,16 @@
   --text-light-muted: rgba(240, 246, 255, 0.8);
 
   // Typography
+  --font-logo: 'Cinzel Decorative', 'Cinzel', Georgia, serif;
   --font-serif: 'Cinzel', Georgia, 'Times New Roman', serif;
-  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-body: 'Crimson Pro', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-ui: var(--font-sans);
+  --font-display: var(--font-serif);
 
   // Layout
   --container-max: 1280px;
-  --header-height: 74px;
+  --header-height: 172px;
 
   // Shadows
   --shadow: 0 18px 45px rgba(6, 19, 31, 0.16), 0 4px 14px rgba(6, 19, 31, 0.12);
@@ -88,8 +92,6 @@
   --color-warning: #e0982d;
 
   // Aliases
-  --font-body: var(--font-sans);
-  --font-display: var(--font-serif);
   --color-gold: var(--gold);
   --color-rune-cyan: var(--cyan);
   --color-sky-500: var(--sky);
@@ -99,6 +101,12 @@
   --text-stone: var(--stone);
   --text-muted: rgba(237, 248, 255, 0.7);
   --text-dim: rgba(237, 248, 255, 0.55);
+}
+
+@media (max-width: 1280px) {
+  :root {
+    --header-height: 94px;
+  }
 }
 
 // SCSS variables

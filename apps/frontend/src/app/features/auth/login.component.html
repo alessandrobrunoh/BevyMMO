@@ -1,140 +1,75 @@
-<div class="auth-page-wrapper">
-  <!-- Atmospheric Background -->
-  <div class="auth-backdrop" style="background-image: url('assets/images/hero-cover.png');"></div>
-  <div class="auth-overlay"></div>
+<app-auth-shell
+  mode="login"
+  title="Enter Eivar"
+>
+  <form class="auth-form" (ngSubmit)="onSubmit()" novalidate>
+    @if (errorMessage()) {
+      <div class="auth-form__message auth-form__message--error" role="alert" aria-live="assertive">
+        <span class="material-symbols-outlined" aria-hidden="true">warning</span>
+        {{ errorMessage() }}
+      </div>
+    }
 
-  <div class="auth-container">
-    <div class="auth-panel stone-panel chamfer-box">
-      <!-- Panel Header -->
-      <header class="auth-header">
-        <div class="auth-rune-logo">
-          <svg viewBox="0 0 100 160" class="rune-svg" fill="none">
-            <path d="M50 14 L54 30 L50 26 L46 30 Z" fill="#3ccbff" />
-            <line x1="50" y1="14" x2="50" y2="40" stroke="#3ccbff" stroke-width="3" />
-            <path d="M50 35 L68 56 L50 78 L32 56 Z" stroke="#3ccbff" stroke-width="3.5" fill="none" />
-            <line x1="24" y1="56" x2="76" y2="56" stroke="#3ccbff" stroke-width="3" />
-            <circle cx="50" cy="80" r="4" fill="#e6cb86" />
-            <path d="M50 82 L68 104 L50 126 L32 104 Z" stroke="#3ccbff" stroke-width="3.5" fill="none" />
-            <line x1="24" y1="104" x2="76" y2="104" stroke="#3ccbff" stroke-width="3" />
-            <line x1="50" y1="120" x2="50" y2="146" stroke="#3ccbff" stroke-width="3" />
-          </svg>
-        </div>
-
-        <h2 class="auth-title">
-          @if (mode() === 'login') { ENTER EIVAR }
-          @if (mode() === 'register') { JOIN THE VANGUARD }
-          @if (mode() === 'forgot') { RECOVER ATTUNEMENT }
-        </h2>
-
-        <p class="auth-subtitle">
-          @if (mode() === 'login') { Sign in to access closed alpha playtesting and saved chronicles. }
-          @if (mode() === 'register') { Create your test account for the ongoing alpha phase. }
-          @if (mode() === 'forgot') { Enter your email to receive recovery instructions. }
-        </p>
-      </header>
-
-      <!-- Auth Form -->
-      <form class="auth-form" (ngSubmit)="onSubmit()">
-        <!-- Error Message Callout -->
-        @if (errorMessage()) {
-          <div class="auth-error-banner">
-            <span class="material-symbols-outlined err-ico">warning</span>
-            <span class="err-text">{{ errorMessage() }}</span>
-          </div>
-        }
-
-        <!-- Email Field -->
-        <div class="form-group">
-          <label class="form-label" for="email">Account Email</label>
-          <div class="input-wrap">
-            <span class="material-symbols-outlined field-icon">mail</span>
-            <input
-              id="email"
-              type="email"
-              class="form-input"
-              placeholder="wayfarer@eivar.online"
-              [ngModel]="email()"
-              (ngModelChange)="email.set($event)"
-              name="email"
-              required
-            />
-          </div>
-        </div>
-
-        <!-- Password Field (Hidden in Forgot mode) -->
-        @if (mode() !== 'forgot') {
-          <div class="form-group">
-            <div class="label-row">
-              <label class="form-label" for="password">Secret Glyph (Password)</label>
-              @if (mode() === 'login') {
-                <button type="button" class="forgot-link" (click)="setMode('forgot')">Forgot?</button>
-              }
-            </div>
-            <div class="input-wrap">
-              <span class="material-symbols-outlined field-icon">lock</span>
-              <input
-                id="password"
-                [type]="showPassword() ? 'text' : 'password'"
-                class="form-input"
-                placeholder="••••••••"
-                [ngModel]="password()"
-                (ngModelChange)="password.set($event)"
-                name="password"
-                required
-              />
-              <button
-                type="button"
-                class="password-toggle-btn"
-                (click)="toggleShowPassword()"
-                title="Toggle password visibility"
-              >
-                <span class="material-symbols-outlined">{{ showPassword() ? 'visibility_off' : 'visibility' }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Remember Me -->
-          <div class="form-options">
-            <label class="checkbox-label">
-              <input
-                type="checkbox"
-                [ngModel]="rememberMe()"
-                (ngModelChange)="rememberMe.set($event)"
-                name="rememberMe"
-              />
-              <span>Remember this sanctum</span>
-            </label>
-          </div>
-        }
-
-        <!-- Submit Button -->
-        <div class="form-submit">
-          <app-eivar-button
-            variant="cyan"
-            size="lg"
-            type="submit"
-            [fullWidth]="true"
-            [loading]="isLoading()"
-          >
-            <span>
-              @if (mode() === 'login') { Authenticate & Enter }
-              @if (mode() === 'register') { Forge Account }
-              @if (mode() === 'forgot') { Send Recovery Rune }
-            </span>
-          </app-eivar-button>
-        </div>
-
-        <app-rune-divider styleVariant="stone" [glow]="false"></app-rune-divider>
-
-        <!-- Mode Switcher -->
-        <div class="mode-switch-footer">
-          @if (mode() === 'login') {
-            <p>New to the world? <button type="button" class="switch-link" (click)="setMode('register')">Create Account</button></p>
-          } @else {
-            <p>Already attuned? <button type="button" class="switch-link" (click)="setMode('login')">Return to Login</button></p>
-          }
-        </div>
-      </form>
+    <div class="auth-form__field">
+      <label for="login-email">Account email</label>
+      <div class="auth-form__input-wrap">
+        <input
+          id="login-email"
+          type="email"
+          name="email"
+          autocomplete="email"
+          inputmode="email"
+          enterkeyhint="next"
+          placeholder="wayfarer@eivar.online"
+          [ngModel]="email()"
+          (ngModelChange)="email.set($event); errorMessage.set(null)"
+          required
+        />
+      </div>
     </div>
-  </div>
-</div>
+
+    <div class="auth-form__field">
+      <div class="auth-form__label-row">
+        <label for="login-password">Password</label>
+        <a routerLink="/register" class="auth-form__help-link">Need an account?</a>
+      </div>
+      <div class="auth-form__input-wrap">
+        <input
+          id="login-password"
+          [type]="showPassword() ? 'text' : 'password'"
+          name="password"
+          autocomplete="current-password"
+          enterkeyhint="done"
+          placeholder="Your secret glyph"
+          [ngModel]="password()"
+          (ngModelChange)="password.set($event); errorMessage.set(null)"
+          required
+          minlength="8"
+        />
+        <button
+          type="button"
+          class="auth-form__visibility"
+          (click)="toggleShowPassword()"
+          [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+        >
+          <img
+            [src]="showPassword() ? 'assets/images/auth-eye-off.png' : 'assets/images/auth-eye.png'"
+            alt=""
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+    </div>
+
+    <label class="auth-form__remember">
+      <input type="checkbox" name="rememberMe" [ngModel]="rememberMe()" (ngModelChange)="rememberMe.set($event)" />
+      <span>Keep this sanctum remembered</span>
+    </label>
+
+    <app-eivar-button variant="ornate" type="submit" [fullWidth]="true" [loading]="isLoading()">
+      Enter the world
+    </app-eivar-button>
+
+    <p class="auth-form__switch">New to Eivar? <a routerLink="/register">Forge your account</a></p>
+  </form>
+</app-auth-shell>

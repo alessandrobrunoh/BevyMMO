@@ -66,6 +66,11 @@ export const routes: Routes = [
     title: 'Alpha Login — Eivar Online'
   },
   {
+    path: 'register',
+    loadComponent: () => import('./features/auth/register/register.component').then(m => m.RegisterComponent),
+    title: 'Forge an Account — Eivar Online'
+  },
+  {
     path: 'profile',
     loadComponent: () => import('./features/profile/profile.component').then(m => m.ProfileComponent),
     canActivate: [authGuard],

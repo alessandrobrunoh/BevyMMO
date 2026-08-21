@@ -55,31 +55,26 @@
       }
 
       @for (art of filteredArticles(); track art.id) {
-        <article class="news-card stone-panel chamfer-box" [routerLink]="['/news', art.slug]">
-          <div class="card-media">
-            <img [src]="art.image" [alt]="art.title" class="card-img" />
-            <span class="card-category-badge">{{ art.category }}</span>
-          </div>
-
-          <div class="card-body">
-            <div class="card-meta">
-              <span class="meta-date">{{ art.publishedAt }}</span>
-              <span class="meta-dot">·</span>
-              <span class="meta-reading">{{ art.readingTime }} min read</span>
-            </div>
-
-            <h3 class="card-title">{{ art.title }}</h3>
-            <p class="card-excerpt">{{ art.excerpt }}</p>
-
-            <div class="card-footer">
-              <div class="card-tags">
+        <article class="news-card" [routerLink]="['/news', art.slug]">
+          <app-eivar-card
+            [image]="art.image"
+            [imageAlt]="art.title"
+            [badge]="art.category"
+            [eyebrow]="art.publishedAt + ' · ' + art.readingTime + ' min read'"
+            [title]="art.title"
+            [description]="art.excerpt"
+            mediaRatio="wide"
+            [interactive]="true"
+          >
+            <div card-footer class="news-card-footer">
+              <div class="news-card-tags">
                 @for (tag of art.tags; track tag) {
-                  <span class="card-tag">#{{ tag }}</span>
+                  <span class="news-card-tag">#{{ tag }}</span>
                 }
               </div>
-              <span class="read-link">Read More →</span>
+              <span class="news-read-link">Read More →</span>
             </div>
-          </div>
+          </app-eivar-card>
         </article>
       }
     </div>

@@ -4,12 +4,13 @@ import { RouterModule } from '@angular/router';
 import { ContentService } from '../../../core/services/content.service';
 import { PageHeaderComponent } from '../../../shared/ui/page-header/page-header.component';
 import { EivarButtonComponent } from '../../../shared/ui/button/button.component';
+import { EivarCardComponent } from '../../../shared/ui/card/card.component';
 import { NewsArticle, NewsCategory } from '../../../shared/models/news.model';
 
 @Component({
   selector: 'app-news-list',
   standalone: true,
-  imports: [CommonModule, RouterModule, PageHeaderComponent, EivarButtonComponent],
+  imports: [CommonModule, RouterModule, PageHeaderComponent, EivarButtonComponent, EivarCardComponent],
   templateUrl: './news-list.component.html',
   styleUrls: ['./news-list.component.scss']
 })

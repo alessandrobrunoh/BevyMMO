@@ -1,7 +1,20 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'cyan' | 'gold' | 'ghost';
+export type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'cyan'
+  | 'ornate'
+  | 'gold'
+  | 'ghost'
+  | 'navigation'
+  | 'outline'
+  | 'tag'
+  | 'cta'
+  | 'icon-square'
+  | 'icon-circle'
+  | 'social';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 @Component({
@@ -12,27 +25,29 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
     <button
       [type]="type"
       [disabled]="disabled || loading"
+      [attr.aria-label]="ariaLabel || null"
+      [attr.aria-pressed]="toggle ? active : null"
       [ngClass]="[
         'eivar-btn',
         'variant-' + variant,
         'size-' + size,
-        fullWidth ? 'full-width' : ''
+        fullWidth ? 'full-width' : '',
+        active ? 'is-active' : '',
+        iconOnly ? 'icon-only' : ''
       ]"
       (click)="onClick.emit($event)"
     >
-      <!-- Active ambient glow layer -->
-      <span class="glow-layer"></span>
-
-      <!-- Shimmer light sweep -->
-      <span class="shimmer-layer"></span>
-
-      <!-- Button Content -->
-      <span class="btn-content">
+      <span class="eivar-btn__metal" aria-hidden="true"></span>
+      <span class="eivar-btn__rune" aria-hidden="true">✦</span>
+      <span class="eivar-btn__content">
         @if (loading) {
-          <span class="spinner-rune">ᛟ</span>
-        }
-        @if (icon) {
-          <span class="btn-icon">{{ icon }}</span>
+          <span class="eivar-btn__spinner" aria-hidden="true">✦</span>
+        } @else if (icon) {
+          <span
+            [class.material-symbols-outlined]="iconSet === 'material'"
+            class="eivar-btn__icon"
+            aria-hidden="true"
+          >{{ icon }}</span>
         }
         <ng-content></ng-content>
       </span>
@@ -47,8 +62,12 @@ export class EivarButtonComponent {
   @Input() disabled = false;
   @Input() loading = false;
   @Input() fullWidth = false;
+  @Input() active = false;
+  @Input() toggle = false;
+  @Input() iconOnly = false;
   @Input() icon?: string;
+  @Input() iconSet: 'material' | 'glyph' = 'material';
+  @Input() ariaLabel?: string;
 
   @Output() onClick = new EventEmitter<MouseEvent>();
 }
-

@@ -1,10 +1,10 @@
-import { Component, inject, HostListener, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule, Router } from '@angular/router';
-import { SearchService } from '../../services/search.service';
-import { AuthService } from '../../services/auth.service';
-import { ToastService } from '../../services/toast.service';
+import { Component, HostListener, inject, signal } from '@angular/core';
+import { RouterModule } from '@angular/router';
 import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-menu.component';
+import { AuthService } from '../../services/auth.service';
+import { SearchService } from '../../services/search.service';
+import { ToastService } from '../../services/toast.service';
 
 @Component({
   selector: 'app-header',
@@ -12,155 +12,186 @@ import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-me
   imports: [CommonModule, RouterModule, AccountMenuComponent],
   template: `
     <header class="navbar" [class.scrolled]="isScrolled()">
-      <div class="nav-inner">
-        <!-- Brand Lockup: Seamless, frameless, glowing rune and vector wordmark -->
-        <a routerLink="/" class="brand-link" (click)="closeMobileMenu()">
-          <div class="brand-rune-wrap">
-            <img src="assets/branding/eivar-rune.svg" alt="Eivar Emblem" class="brand-mark" />
-            <span class="rune-glow-effect"></span>
-          </div>
-          <span class="brand-divider"></span>
-          <span class="brand-text">
-            <img src="assets/branding/eivar-wordmark.svg" alt="Eivar" class="brand-wordmark" />
-            <span class="brand-subtitle">Online</span>
-          </span>
-        </a>
+      <div class="ornamental-shell">
+        <picture class="header-frame" aria-hidden="true">
+          <source srcset="/assets/images/header/header-frame.webp?v=2" type="image/webp" />
+          <img
+            src="/assets/images/header/header-frame.png?v=2"
+            alt=""
+            width="1880"
+            height="180"
+            decoding="async"
+            fetchpriority="high"
+          />
+        </picture>
 
-        <!-- Desktop Navigation Links -->
-        <nav class="desktop-nav">
-          <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-link">
-            <span>Game</span>
+        <div class="nav-inner">
+          <a routerLink="/" class="brand-link" aria-label="Eivar Online, home" (click)="closeMobileMenu()">
+            <span class="brand-text">
+              <img src="assets/branding/eivar-wordmark.svg" alt="Eivar" class="brand-wordmark" width="1185" height="254" />
+              <span class="brand-subtitle">Online</span>
+            </span>
           </a>
-          <span class="nav-sep">◈</span>
-          <a routerLink="/news" routerLinkActive="active" class="nav-link">
-            <span>News</span>
-          </a>
-          <span class="nav-sep">◈</span>
-          <a routerLink="/updates" routerLinkActive="active" class="nav-link">
-            <span>Updates</span>
-          </a>
-          <span class="nav-sep">◈</span>
-          <a routerLink="/wiki" routerLinkActive="active" class="nav-link">
-            <span>Wiki</span>
-          </a>
-          <span class="nav-sep">◈</span>
-          <a routerLink="/store" routerLinkActive="active" class="nav-link">
-            <span>Store</span>
-          </a>
-          <span class="nav-sep">◈</span>
-          <a routerLink="/market" routerLinkActive="active" class="nav-link">
-            <span>Market</span>
-          </a>
-        </nav>
 
-        <!-- Right Nav Actions Group -->
-        <div class="nav-actions">
-          <!-- Search Action -->
-          <button class="nav-action search-btn" (click)="searchService.open()" title="Search (Cmd+K / Ctrl+K)">
-            <span class="material-symbols-outlined nav-ico">search</span>
-            <span class="action-label">Search</span>
-            <kbd class="key-shortcut">⌘K</kbd>
-          </button>
+          <nav class="desktop-nav" aria-label="Primary navigation">
+            <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }" class="nav-link">Game</a>
+            <span class="nav-sep" aria-hidden="true">◆</span>
+            <a routerLink="/news" routerLinkActive="active" class="nav-link">News</a>
+            <span class="nav-sep" aria-hidden="true">◆</span>
+            <a routerLink="/updates" routerLinkActive="active" class="nav-link">Updates</a>
+            <span class="nav-sep" aria-hidden="true">◆</span>
+            <a routerLink="/wiki" routerLinkActive="active" class="nav-link">Wiki</a>
+            <span class="nav-sep" aria-hidden="true">◆</span>
+            <a routerLink="/store" routerLinkActive="active" class="nav-link">Store</a>
+            <span class="nav-sep" aria-hidden="true">◆</span>
+            <a routerLink="/market" routerLinkActive="active" class="nav-link">Market</a>
+          </nav>
 
-          <!-- Community Action -->
-          <button class="nav-action" (click)="onCommunityClick()">
-            <span class="material-symbols-outlined nav-ico">forum</span>
-            <span class="action-label">Community</span>
-          </button>
-
-          <!-- Login / Account Action -->
-          @if (authService.isLoggedIn()) {
-            <div class="account-wrapper">
-              <button class="nav-action account-btn" (click)="toggleAccountMenu()">
-                <span class="material-symbols-outlined nav-ico">person</span>
-                <span class="action-label">{{ authService.email() ?? 'Wayfarer' }}</span>
-                <span class="material-symbols-outlined arrow-ico">expand_more</span>
-              </button>
-              @if (isAccountMenuOpen()) {
-                <app-account-menu (closeMenu)="isAccountMenuOpen.set(false)"></app-account-menu>
-              }
-            </div>
-          } @else {
-            <a routerLink="/login" class="nav-action">
-              <span class="material-symbols-outlined nav-ico">person</span>
-              <span class="action-label">Login</span>
-            </a>
-          }
-
-          <!-- Discover Eivar Button -->
-          <a routerLink="/" fragment="world" class="cta-link">
-            <button class="header-cta-button">
-              <span class="btn-rune-spark">✦</span>
-              <span class="btn-text">Discover Eivar</span>
+          <div class="nav-actions">
+            <button type="button" class="nav-action" aria-label="Search" (click)="searchService.open()">
+              <svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="10.8" cy="10.8" r="6.3"></circle>
+                <path d="m15.5 15.5 4.2 4.2"></path>
+              </svg>
+              <span class="action-label">Search</span>
             </button>
-          </a>
 
-          <!-- Mobile Hamburger Toggle -->
-          <button
-            class="mobile-menu-button"
-            (click)="toggleMobileMenu()"
-            aria-label="Open navigation menu"
-          >
-            <span class="material-symbols-outlined">menu</span>
-          </button>
+            <button type="button" class="nav-action community-action" aria-label="Community" (click)="onCommunityClick()">
+              <svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="9" cy="8" r="3"></circle>
+                <circle cx="17" cy="9" r="2.3"></circle>
+                <path d="M3.5 19c.4-3.6 2.2-5.4 5.5-5.4s5.1 1.8 5.5 5.4M14.2 14.4c3.8-.7 5.8.8 6.3 4.1"></path>
+              </svg>
+              <span class="action-label">Community</span>
+            </button>
+
+            @if (authService.isLoggedIn()) {
+              <div class="account-wrapper">
+                <button
+                  type="button"
+                  class="nav-action account-btn account-action"
+                  aria-label="Open account menu"
+                  [attr.aria-expanded]="isAccountMenuOpen()"
+                  (click)="toggleAccountMenu()"
+                >
+                  <svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="8" r="3.4"></circle>
+                    <path d="M5.2 20c.5-4.2 2.8-6.3 6.8-6.3s6.3 2.1 6.8 6.3"></path>
+                  </svg>
+                  <span class="action-label">Account</span>
+                </button>
+                @if (isAccountMenuOpen()) {
+                  <app-account-menu (closeMenu)="isAccountMenuOpen.set(false)"></app-account-menu>
+                }
+              </div>
+            } @else {
+              <a routerLink="/login" class="nav-action account-action" aria-label="Login">
+                <svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M13.5 5H19v14h-5.5M4 12h10M10.5 8.5 14 12l-3.5 3.5"></path>
+                </svg>
+                <span class="action-label">Login</span>
+              </a>
+            }
+
+            <a routerLink="/" fragment="world" class="header-cta" aria-label="Discover Eivar">
+              <picture aria-hidden="true">
+                <source srcset="assets/images/header/header-cta-frame.webp" type="image/webp" />
+                <img src="assets/images/header/header-cta-frame.png" alt="" width="882" height="150" decoding="async" />
+              </picture>
+              <span>Discover Eivar</span>
+            </a>
+
+            <button
+              type="button"
+              class="mobile-menu-button"
+              [attr.aria-label]="isMobileMenuOpen() ? 'Close navigation menu' : 'Open navigation menu'"
+              [attr.aria-expanded]="isMobileMenuOpen()"
+              aria-controls="mobile-navigation"
+              (click)="toggleMobileMenu()"
+            >
+              @if (isMobileMenuOpen()) {
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 6 12 12M18 6 6 18"></path>
+                </svg>
+              } @else {
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 7h14M5 12h14M5 17h14"></path>
+                </svg>
+              }
+            </button>
+          </div>
         </div>
+
       </div>
     </header>
 
-    <!-- Mobile Navigation Drawer -->
-    <nav class="mobile-menu" [class.open]="isMobileMenuOpen()">
-      <a routerLink="/" (click)="closeMobileMenu()">Game</a>
-      <a routerLink="/news" (click)="closeMobileMenu()">News</a>
-      <a routerLink="/updates" (click)="closeMobileMenu()">Updates</a>
-      <a routerLink="/wiki" (click)="closeMobileMenu()">Wiki</a>
-      <a routerLink="/store" (click)="closeMobileMenu()">Store</a>
-      <a routerLink="/market" (click)="closeMobileMenu()">Market</a>
-      <a (click)="onCommunityClick(); closeMobileMenu()">Community</a>
-      @if (authService.isLoggedIn()) {
-        <a (click)="authService.logout(); closeMobileMenu()">Logout ({{ authService.email() ?? 'Wayfarer' }})</a>
-      } @else {
-        <a routerLink="/login" (click)="closeMobileMenu()">Login</a>
-      }
+    <nav
+      id="mobile-navigation"
+      class="mobile-menu"
+      [class.open]="isMobileMenuOpen()"
+      [attr.aria-hidden]="!isMobileMenuOpen()"
+      [attr.inert]="isMobileMenuOpen() ? null : ''"
+      aria-label="Mobile navigation"
+    >
+      <ul>
+        <li><a routerLink="/" (click)="closeMobileMenu()">Game</a></li>
+        <li><a routerLink="/news" (click)="closeMobileMenu()">News</a></li>
+        <li><a routerLink="/updates" (click)="closeMobileMenu()">Updates</a></li>
+        <li><a routerLink="/wiki" (click)="closeMobileMenu()">Wiki</a></li>
+        <li><a routerLink="/store" (click)="closeMobileMenu()">Store</a></li>
+        <li><a routerLink="/market" (click)="closeMobileMenu()">Market</a></li>
+        <li><button type="button" (click)="searchService.open(); closeMobileMenu()">Search</button></li>
+        <li><button type="button" (click)="onCommunityClick(); closeMobileMenu()">Community</button></li>
+        @if (authService.isLoggedIn()) {
+          <li><button type="button" (click)="authService.logout(); closeMobileMenu()">Logout</button></li>
+        } @else {
+          <li><a routerLink="/login" (click)="closeMobileMenu()">Login</a></li>
+        }
+      </ul>
     </nav>
   `,
-  styleUrls: ['./header.component.scss']
+  styleUrls: ['./header.component.scss'],
 })
 export class HeaderComponent {
   searchService = inject(SearchService);
   authService = inject(AuthService);
   toastService = inject(ToastService);
-  router = inject(Router);
 
-  isScrolled = signal<boolean>(false);
-  isMobileMenuOpen = signal<boolean>(false);
-  isAccountMenuOpen = signal<boolean>(false);
+  isScrolled = signal(false);
+  isMobileMenuOpen = signal(false);
+  isAccountMenuOpen = signal(false);
 
-  @HostListener('window:scroll', [])
-  onWindowScroll() {
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
     this.isScrolled.set(window.scrollY > 20);
   }
 
   @HostListener('document:keydown', ['$event'])
-  onGlobalKeyDown(event: KeyboardEvent) {
+  onGlobalKeyDown(event: KeyboardEvent): void {
     if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
       event.preventDefault();
       this.searchService.open();
     }
+
+    if (event.key === 'Escape') {
+      this.closeMobileMenu();
+      this.isAccountMenuOpen.set(false);
+    }
   }
 
-  toggleMobileMenu() {
-    this.isMobileMenuOpen.update(v => !v);
+  toggleMobileMenu(): void {
+    this.isMobileMenuOpen.update((open) => !open);
   }
 
-  closeMobileMenu() {
+  closeMobileMenu(): void {
     this.isMobileMenuOpen.set(false);
   }
 
-  toggleAccountMenu() {
-    this.isAccountMenuOpen.update(v => !v);
+  toggleAccountMenu(): void {
+    this.isAccountMenuOpen.update((open) => !open);
   }
 
-  onCommunityClick() {
+  onCommunityClick(): void {
     this.toastService.showInfo('Official Eivar Discord & Community Guilds link active.', 'Eivar Community');
   }
 }

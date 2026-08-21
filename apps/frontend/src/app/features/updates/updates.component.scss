@@ -153,7 +153,7 @@
     .update-summary-box {
       margin-bottom: 1.5rem;
       .summary-text {
-        font-family: var(--font-serif);
+        font-family: var(--font-body);
         font-size: 1.05rem;
         color: #3b4249;
         line-height: 1.7;
@@ -182,7 +182,7 @@
         gap: 0.4rem;
 
         li {
-          font-family: var(--font-serif);
+          font-family: var(--font-body);
           font-size: 0.95rem;
           color: var(--text-dark);
           display: flex;
@@ -223,7 +223,7 @@
           gap: 0.45rem;
 
           li {
-            font-family: var(--font-serif);
+            font-family: var(--font-body);
             font-size: 0.92rem;
             color: #3b4249;
             line-height: 1.55;

@@ -1,0 +1,114 @@
+@use '../../../../styles/variables' as *;
+
+:host { display: block; }
+
+.auth-shell {
+  position: relative;
+  min-height: 100svh;
+  overflow: auto;
+  color: var(--text-light);
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(26, 72, 105, 0.3), transparent 43rem),
+    radial-gradient(circle at 50% 40%, rgba(60, 203, 255, 0.09), transparent 23rem),
+    #17191b;
+}
+
+.auth-shell::before {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(3, 8, 13, 0.54) 100%);
+}
+
+
+.auth-shell__stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-height: 100svh;
+  padding: 1rem;
+  place-items: center;
+}
+
+.auth-shell__portal {
+  position: relative;
+  width: min(100%, 42rem);
+  filter: drop-shadow(0 2rem 2.8rem rgba(0, 0, 0, 0.55));
+}
+
+.auth-shell__portal > img {
+  width: 100%;
+  user-select: none;
+}
+
+.auth-shell__content {
+  position: absolute;
+  top: 19.5%;
+  right: 24%;
+  bottom: 19%;
+  left: 24%;
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-shell__header { flex: none; text-align: center; }
+
+.auth-shell__header > p:first-child {
+  margin: 0;
+  color: var(--gold-light);
+  font-family: var(--font-serif);
+  font-size: clamp(0.54rem, 1.6cqi, 0.68rem);
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.auth-shell__header h1 {
+  margin: 0.14rem 0 0;
+  color: var(--text-light);
+  font-family: var(--font-serif);
+  font-size: clamp(1.3rem, 4.1cqi, 2rem);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.12;
+  text-shadow: 0 0.18rem 0.65rem rgba(0, 0, 0, 0.75);
+}
+
+.auth-shell__divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin: 0.22rem 0 0.38rem;
+  color: var(--cyan-light);
+  font-size: 0.78rem;
+}
+
+.auth-shell__divider::before,
+.auth-shell__divider::after {
+  width: 28%;
+  height: 1px;
+  content: '';
+  background: linear-gradient(90deg, transparent, rgba(212, 173, 87, 0.86));
+}
+
+.auth-shell__divider::after { transform: scaleX(-1); }
+
+.auth-shell--register .auth-shell__content {
+  top: 18%;
+  bottom: 15%;
+}
+
+@media (max-width: 550px) {
+  .auth-shell__stage { min-height: auto; padding: 0.5rem 0.1rem 0.75rem; }
+  .auth-shell__portal { width: min(100%, 34rem); }
+  .auth-shell__content { top: 19.5%; right: 22%; bottom: 18%; left: 22%; }
+  .auth-shell--register .auth-shell__content { top: 17%; bottom: 13%; }
+}
+
+@media (max-width: 380px) {
+  .auth-shell__content { top: 19%; right: 20%; bottom: 16%; left: 20%; }
+  .auth-shell--register .auth-shell__content { top: 15%; bottom: 10%; }
+}

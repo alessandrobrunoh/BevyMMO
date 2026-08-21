@@ -16,7 +16,7 @@ use crate::placeables::resource;
     yield_amount = 1,
     regen_interval_seconds = 600.0,
     regen_amount = 10,
-    interact_range = 2.5,
+    interact_range = 6.0,
 )]
 pub struct OakTreeResource;
 

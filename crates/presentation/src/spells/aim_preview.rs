@@ -138,6 +138,7 @@ pub fn draw_ability_aim_preview(
     let combat = CombatStats {
         attack_power: 0.0,
         armor: 0.0,
+        threat_generation: 1.0,
     };
     let ctx = SpellCastContext::new(
         EntityId::PLACEHOLDER,

@@ -48,23 +48,6 @@ pub struct JoinRequest {
     pub player_name: String,
 }
 
-/// Client -> server command to request a spell cast.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct SpellCastCommand {
-    pub spell_id: String,
-    pub target_position: Option<Vec3>,
-    pub target_id: Option<u64>,
-}
-
-/// Client -> server command to release a channeling spell or
-/// interrupt a CastTime spell. The client sends it on `just_released`
-/// of the currently channeling spell key, or on re-press of the same
-/// spell key (D2c: re-press = interrupt).
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct SpellCastRelease {
-    pub spell_id: String,
-}
-
 /// Periodic snapshot sent from server to all clients to replicate the
 /// state of a spell being cast or channeled. Used by the client to
 /// position and fill the world-space cast bar above the caster.
@@ -105,17 +88,10 @@ pub struct SpellVisualEffect {
     pub end: Vec3,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct UpdateHotbarSlotRequest {
-    pub slot: AbilitySlot,
-    pub spell_id: Option<String>,
-}
-
 /// Client -> server command to cast the equipped weapon's Eidolon gesture at
-/// `slot`. Unlike [`SpellCastCommand`], it carries no spell id: the server
-/// resolves gesture + Incisione from the caster's equipped weapon and
-/// `KnownGlyphs`. Supports Instant, CastTime, and Channeling via the unified
-/// server pipeline (same cast bar / release flow as spell casts).
+/// `slot`. The server resolves gesture + Incisione from the caster's equipped
+/// weapon. Supports Instant, CastTime, and Channeling via the unified
+/// pipeline (same cast bar / release flow).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct EidolonCastCommand {
     pub slot: AbilitySlot,

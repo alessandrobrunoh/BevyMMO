@@ -10556,6 +10556,28 @@
         ]
       },
       "blocks_movement": false
+    },
+    {
+      "id": "PLACEABLE_mob_goblin_01",
+      "kind": "mob_goblin",
+      "transform": {
+        "translation": [
+          12.0,
+          3.0,
+          8.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "blocks_movement": false
     }
   ],
   "test_route": [],

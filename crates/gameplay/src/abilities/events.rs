@@ -1,7 +1,4 @@
-//! Internal ECS request to cast the equipped weapon's Eidolon gesture.
-//! Mirrors `crate::spells::events::SpellCastRequest`, translated from the
-//! network `EidolonCastCommand` the same way that one is translated from
-//! `SpellCastCommand` (see `bevymmo_server::network::server`).
+//! Internal request to cast an equipped `BaseAbility` (`cast_weapon`).
 
 use crate::EntityId;
 use glam::Vec3;

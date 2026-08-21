@@ -70,6 +70,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 10.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let target = EntityId::new(2);
         let potential = [(target, Vec3::new(0.0, 0.0, 2.0))];

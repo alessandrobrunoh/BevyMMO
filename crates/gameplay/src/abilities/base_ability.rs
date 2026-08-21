@@ -789,6 +789,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 10.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let caster_pos = Vec3::new(0.0, 12.0, 0.0);
         let target_on_mountain = Vec3::new(1.0, 14.0, 1.0);
@@ -818,6 +819,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 10.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let mut ctx = SpellCastContext::new(
             EntityId::new(1),
@@ -846,6 +848,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 10.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let mut ctx = SpellCastContext::new(
             EntityId::new(1),

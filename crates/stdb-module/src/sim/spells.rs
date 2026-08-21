@@ -1,12 +1,8 @@
-//! The spell runtime: casts in progress, projectiles in flight, AoE regions on
+//! Ability runtime: casts in progress, projectiles in flight, AoE regions on
 //! the ground, and the cooldowns that gate them all.
 //!
-//! This is the port of `crates/server/src/spells` (`systems.rs`, `projectile.rs`,
-//! `aoe.rs`). The game rules did *not* come with it: `Spell::cast` is the same
-//! function that ran under Bevy, because [`SpellCastContext`] was already a pure
-//! collector of pending effects with no ECS in it. What lives here is only the
-//! part Bevy used to provide — where the caster is, who is nearby, and how a
-//! pending effect becomes a row.
+//! Combat content is [`BaseAbility`]. [`SpellCastContext`] collects pending
+//! effects; this module turns those into rows.
 //!
 //! # What changed, and why
 //!
@@ -43,10 +39,9 @@ use bevymmo_domain::items::registry::ItemRegistry;
 use bevymmo_domain::items::WeaponFamilyRegistry;
 use bevymmo_domain::spells::components::MOVEMENT_INTERRUPT_EPSILON;
 use bevymmo_domain::spells::context::{
-    AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ProjectileSpawnRequest, Spell,
-    SpellCastContext, TargetingMode,
+    AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ProjectileSpawnRequest, SpellCastContext,
+    TargetingMode,
 };
-use bevymmo_domain::spells::registry::{SpellId, SpellRegistry};
 use bevymmo_domain::stats::components::{CombatStats, StatsBundleData};
 use bevymmo_domain::stats::events::{
     ApplyStatModifierEvent, ModifierEffect, ModifierKind, ModifierOp,
@@ -61,10 +56,10 @@ use crate::rows::{
 };
 use crate::sim::targets;
 use crate::tables::{
-    aoe_region, cast_ended, cast_state, cooldown, enemy_ai, entity_stats, game_entity, grid_cell,
-    projectile, spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow, CastEndedEvent,
-    CastKindRow, CastSourceRow, CastState, Cooldown, EntityStateRow, GameEntity, ModifierKindRow,
-    Projectile, SpellVisualEffectEvent,
+    aoe_region, boss_state, cast_ended, cast_state, cooldown, enemy_ai, entity_stats, game_entity,
+    grid_cell, projectile, spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow,
+    CastEndedEvent, CastKindRow, CastSourceRow, CastState, Cooldown, EntityStateRow, GameEntity,
+    ModifierKindRow, Projectile, SpellVisualEffectEvent,
 };
 
 /// Resolves an item's ability pools, falling back to its weapon family when
@@ -108,16 +103,6 @@ pub const CAST_RANGE_TOLERANCE: f32 = 1.0;
 // Registries
 // ---------------------------------------------------------------------------
 //
-// Built once per module instance, not per cast: `default_spells` allocates an
-// `Arc` per spell and a `HashMap`, and a cast happens several times a second
-// per player. `OnceLock` rather than `lazy_static` because the module is
-// single-threaded and this needs no dependency.
-
-pub fn spells() -> &'static SpellRegistry {
-    static REGISTRY: OnceLock<SpellRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::content::spells::default_spells)
-}
-
 pub fn base_abilities() -> &'static BaseAbilityRegistry {
     static REGISTRY: OnceLock<BaseAbilityRegistry> = OnceLock::new();
     REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
@@ -342,53 +327,6 @@ pub fn end_cast(ctx: &ReducerContext, entity_id: u64, spell_id: String, interrup
     });
 }
 
-// ---------------------------------------------------------------------------
-// Firing a spell
-// ---------------------------------------------------------------------------
-
-/// Builds the cast context, runs `Spell::cast`, and turns the pending effects
-/// into rows. Returns the cooldown the caster earned, or `None` if the cast
-/// could not run at all.
-///
-/// The direct port of Bevy's `fire_spell`, and the only place a spell's own
-/// logic is invoked — the instant path, the cast-time completion and every
-/// channel tick all come through here.
-pub fn fire_spell(
-    ctx: &ReducerContext,
-    caster: &GameEntity,
-    spell: &dyn Spell,
-    target_position: Option<Vec3>,
-    target_entity: Option<u64>,
-) -> Option<f32> {
-    let combat = combat_stats(ctx, caster.entity_id)?;
-    let config = spell.config();
-    let caster_position = Vec3::from(caster.position);
-
-    let query_radius = config.cast_range + config.area_radius + TARGET_QUERY_MARGIN;
-    let targets = potential_targets(ctx, caster_position, query_radius);
-
-    let mut cast = SpellCastContext::new(
-        EntityId::new(caster.entity_id),
-        caster_position,
-        &combat,
-        Vec3::from(caster.look),
-        target_position,
-        target_entity.map(EntityId::new),
-        &targets,
-    );
-
-    spell.cast(&mut cast);
-    apply_pending(
-        ctx,
-        caster.entity_id,
-        caster_position,
-        spell.id().as_str(),
-        &mut cast,
-    );
-
-    Some(config.cooldown_seconds)
-}
-
 /// Fires a weapon ability by re-resolving equipment and inscriptions.
 ///
 /// Used by `advance_casts` when a CastTime/Channeling weapon cast completes.
@@ -607,13 +545,29 @@ fn catalog_inscription(
     entity_id: u64,
     ability_id: &str,
 ) -> Option<KitInscription> {
-    let row = ctx.db.enemy_ai().entity_id().find(&entity_id)?;
-    let config = crate::world::enemy_config_for(&row.kind_id)?;
-    config
-        .abilities
-        .into_iter()
-        .find(|entry| entry.ability_id.as_str() == ability_id)
-        .map(|entry| entry.inscription)
+    if let Some(row) = ctx.db.enemy_ai().entity_id().find(&entity_id) {
+        if let Some(config) = crate::world::enemy_config_for(&row.kind_id) {
+            if let Some(entry) = config
+                .abilities
+                .into_iter()
+                .find(|entry| entry.ability_id.as_str() == ability_id)
+            {
+                return Some(entry.inscription);
+            }
+        }
+    }
+    if ctx.db.boss_state().entity_id().find(&entity_id).is_some() {
+        if let Some(config) = crate::world::boss_config_for("boss_dragon") {
+            if let Some(entry) = config
+                .abilities
+                .into_iter()
+                .find(|entry| entry.ability_id.as_str() == ability_id)
+            {
+                return Some(entry.inscription);
+            }
+        }
+    }
+    None
 }
 
 /// Fires a catalog `BaseAbility` without equipment or known glyphs.
@@ -1050,7 +1004,7 @@ struct EndedCast {
 /// Bevy's `advance_cast_progress`: ticks every wind-up and channel, fires the
 /// ones that came due, and cancels the ones that were interrupted.
 ///
-/// Handles both legacy [`CastSourceRow::Spell`] and [`CastSourceRow::Weapon`] casts.
+/// Handles weapon, armor, and catalog [`CastSourceRow`] casts.
 fn advance_casts(ctx: &ReducerContext, dt: f32) {
     // Collected up front because firing writes to `entity_stats`, `projectile`,
     // `aoe_region` and `cooldown`, and a tick is one transaction: iterating a
@@ -1105,64 +1059,14 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
         let mut weapon_cast_failed = false; // Tracks resolution failure for CastTime
 
         let finished = match (cast.source, cast.kind) {
-            // --- Legacy Spell paths (unchanged behaviour) ---
-            (CastSourceRow::Spell, CastKindRow::CastTime) => {
-                let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
-                    log::warn!(
-                        "cast in progress for unknown spell {:?}; cancelling",
-                        cast.spell_id
-                    );
-                    ended.push(EndedCast {
-                        entity_id: cast.entity_id,
-                        spell_id: cast.spell_id,
-                        interrupted: true,
-                    });
-                    continue;
-                };
-                let due = elapsed_seconds >= cast.required_seconds;
-                if due {
-                    if let Some(cd) = fire_spell(
-                        ctx,
-                        &caster,
-                        spell.as_ref(),
-                        target_position,
-                        cast.target_entity,
-                    ) {
-                        start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
-                    }
-                }
-                due
-            }
-            (CastSourceRow::Spell, CastKindRow::Channeling) => {
-                let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
-                    log::warn!(
-                        "cast in progress for unknown spell {:?}; cancelling",
-                        cast.spell_id
-                    );
-                    ended.push(EndedCast {
-                        entity_id: cast.entity_id,
-                        spell_id: cast.spell_id,
-                        interrupted: true,
-                    });
-                    continue;
-                };
-                channel_tick_accumulator += dt;
-                let interval = if cast.tick_interval_seconds > 0.0 {
-                    cast.tick_interval_seconds
-                } else {
-                    dt.max(f32::EPSILON)
-                };
-                while channel_tick_accumulator >= interval {
-                    channel_tick_accumulator -= interval;
-                    fire_spell(
-                        ctx,
-                        &caster,
-                        spell.as_ref(),
-                        target_position,
-                        cast.target_entity,
-                    );
-                }
-                cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
+            (CastSourceRow::Spell, _) => {
+                log::warn!(
+                    "legacy Spell cast {:?} for entity {} — catalog is gone; interrupting",
+                    cast.spell_id,
+                    cast.entity_id
+                );
+                weapon_cast_failed = true;
+                true
             }
 
             // --- weapon ability paths ---

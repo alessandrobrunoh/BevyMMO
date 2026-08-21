@@ -5,7 +5,6 @@
 //! derived stats) is server logic and lives in `bevymmo_server`. This crate
 //! only defines the contract and the data, mirroring `crate::spells`.
 
-pub mod available_spells;
 pub mod components;
 pub mod definition;
 pub mod effects;
@@ -13,10 +12,8 @@ pub mod events;
 pub mod instance;
 pub mod recipe;
 pub mod registry;
-pub mod spell_kit;
 pub mod weapon_family;
 
-pub use available_spells::{compute_available_choices, AvailableSpellChoices};
 pub use components::{EquipSlot, Equipment, Inventory, StackOpError, INVENTORY_CAPACITY};
 pub use definition::{Item, ItemCategory, ItemConfig, ItemRarity};
 pub use effects::ItemEffect;
@@ -26,5 +23,4 @@ pub use instance::{
 };
 pub use recipe::{CraftIngredient, CraftRecipe};
 pub use registry::{ItemId, ItemRegistry};
-pub use spell_kit::SpellKit;
 pub use weapon_family::{WeaponFamily, WeaponFamilyId, WeaponFamilyMetadata, WeaponFamilyRegistry};

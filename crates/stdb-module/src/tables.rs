@@ -804,17 +804,22 @@ pub struct PeriodicEffect {
     pub remaining_seconds: f32,
 }
 
-/// How much a boss hates each of its attackers.
+/// How much a Table-policy combatant hates each of its attackers.
+///
+/// Used by bosses and by any enemy whose kit threat policy is Table
+/// (Sticky also writes amount-1 rows to remember the current target).
+/// Adding `threat_generation` / renaming this column requires
+/// `./scripts/stdb.sh reset`.
 #[table(
     accessor = threat,
     public,
-    index(accessor = by_boss, btree(columns = [boss_entity]))
+    index(accessor = by_combatant, btree(columns = [combatant_entity]))
 )]
 pub struct Threat {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
-    pub boss_entity: u64,
+    pub combatant_entity: u64,
     pub target_entity: u64,
     pub amount: f32,
 }

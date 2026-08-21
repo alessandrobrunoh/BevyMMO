@@ -296,7 +296,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
 
     ctx.db.hotbar().insert(Hotbar {
         character_id,
-        slots: HotbarRow::from(&bevymmo_domain::spells::components::default_player_hotbar()),
+        slots: HotbarRow::default(),
     });
     ctx.db.inventory().insert(InventoryTable {
         character_id,
@@ -466,7 +466,7 @@ fn delete_character_rows(ctx: &ReducerContext, character: &Player) {
         .filter(|row| row.entity_id == entity_id)
         .map(|row| row.id)
         .collect();
-    // A player entity is only ever a threat *target*, never a `boss_entity`.
+    // A player entity is only ever a threat *target*, never a `combatant_entity`.
     let threat_ids: Vec<_> = ctx
         .db
         .threat()

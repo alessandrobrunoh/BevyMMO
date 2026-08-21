@@ -29,7 +29,6 @@ impl Plugin for PresentationCorePlugin {
         app.init_state::<PresentationState>()
             .init_resource::<bevymmo_gameplay::placeables::PlaceableRegistry>()
             .insert_resource(bevymmo_content::status_definitions::default_statuses())
-            .insert_resource(bevymmo_content::spell_definitions::default_spells())
             .insert_resource(bevymmo_content::item_definitions::default_items())
             .insert_resource(bevymmo_content::ability_definitions::default_base_abilities())
             .insert_resource(bevymmo_content::ancient_word_definitions::default_ancient_words())

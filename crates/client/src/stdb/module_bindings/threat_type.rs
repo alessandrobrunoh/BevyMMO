@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct Threat {
     pub id: u64,
-    pub boss_entity: u64,
+    pub combatant_entity: u64,
     pub target_entity: u64,
     pub amount: f32,
 }
@@ -22,7 +22,7 @@ impl __sdk::InModule for Threat {
 /// Provides typed access to columns for query building.
 pub struct ThreatCols {
     pub id: __sdk::__query_builder::Col<Threat, u64>,
-    pub boss_entity: __sdk::__query_builder::Col<Threat, u64>,
+    pub combatant_entity: __sdk::__query_builder::Col<Threat, u64>,
     pub target_entity: __sdk::__query_builder::Col<Threat, u64>,
     pub amount: __sdk::__query_builder::Col<Threat, f32>,
 }
@@ -32,7 +32,7 @@ impl __sdk::__query_builder::HasCols for Threat {
     fn cols(table_name: &'static str) -> Self::Cols {
         ThreatCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
-            boss_entity: __sdk::__query_builder::Col::new(table_name, "boss_entity"),
+            combatant_entity: __sdk::__query_builder::Col::new(table_name, "combatant_entity"),
             target_entity: __sdk::__query_builder::Col::new(table_name, "target_entity"),
             amount: __sdk::__query_builder::Col::new(table_name, "amount"),
         }
@@ -43,7 +43,7 @@ impl __sdk::__query_builder::HasCols for Threat {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct ThreatIxCols {
-    pub boss_entity: __sdk::__query_builder::IxCol<Threat, u64>,
+    pub combatant_entity: __sdk::__query_builder::IxCol<Threat, u64>,
     pub id: __sdk::__query_builder::IxCol<Threat, u64>,
 }
 
@@ -51,7 +51,7 @@ impl __sdk::__query_builder::HasIxCols for Threat {
     type IxCols = ThreatIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ThreatIxCols {
-            boss_entity: __sdk::__query_builder::IxCol::new(table_name, "boss_entity"),
+            combatant_entity: __sdk::__query_builder::IxCol::new(table_name, "combatant_entity"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
         }
     }

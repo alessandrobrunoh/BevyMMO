@@ -3,7 +3,7 @@
 //! Stats are split into separate ECS components to keep queries granular
 //! and reduce coupling:
 //! - [`MovementStats`] — movement speed and parameters
-//! - [`CombatStats`] — attack power and armor
+//! - [`CombatStats`] — attack power, armor, and threat generation
 //! - [`VitalStats`] — health, mana, and regeneration
 //! - [`GatheringStats`] — gathering speed and bonus
 //!
@@ -37,6 +37,9 @@ pub struct MovementStats {
 pub struct CombatStats {
     pub attack_power: f32,
     pub armor: f32,
+    /// Multiplier on threat this entity generates when it deals damage.
+    /// `1.0` is a normal hit; tanks author `> 1`.
+    pub threat_generation: f32,
 }
 
 impl CombatStats {
@@ -166,6 +169,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 10.0,
             armor: 100.0,
+            threat_generation: 1.0,
         };
         assert_eq!(combat.armor_damage_reduction(), 0.5);
     }
@@ -175,10 +179,12 @@ mod tests {
         let negative = CombatStats {
             attack_power: 10.0,
             armor: -50.0,
+            threat_generation: 1.0,
         };
         let very_high = CombatStats {
             attack_power: 10.0,
             armor: 1.0e30,
+            threat_generation: 1.0,
         };
         assert_eq!(negative.armor_damage_reduction(), 0.0);
         assert_eq!(very_high.armor_damage_reduction(), 1.0);
@@ -207,6 +213,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 10.0,
             armor: 25.0,
+            threat_generation: 1.0,
         };
         let vital = VitalStats {
             current_health: 80.0,

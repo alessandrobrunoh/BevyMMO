@@ -1,7 +1,7 @@
 //! Static metadata and the `Item` trait contract.
 //!
-//! Mirrors `crate::spells::context::Spell`: the trait is the contract that
-//! every concrete item implements; static metadata lives in [`ItemConfig`].
+//! The `Item` trait is the contract every concrete item implements;
+//! static metadata lives in [`ItemConfig`].
 //! Concrete implementations live in `crate::content::items`.
 
 use std::borrow::Cow;
@@ -15,7 +15,6 @@ use super::components::EquipSlot;
 use super::effects::ItemEffect;
 use super::recipe::CraftRecipe;
 use super::registry::ItemId;
-use super::spell_kit::SpellKit;
 use super::weapon_family::WeaponFamilyId;
 
 /// Narrative category, used by the inventory UI (filtering / icons) and by
@@ -113,21 +112,6 @@ pub trait Item: Send + Sync + 'static {
     /// equippable. The server reads this when validating an equip command.
     fn equip_requirements(&self) -> &[EquipRequirement] {
         &[]
-    }
-
-    /// Spells this item makes available on Primary/Secondary/Ultimate while
-    /// equipped.
-    ///
-    /// `None` (the default) means the item grants no spells at all — most
-    /// armor/accessory items only contribute [`effects`](Item::effects) and
-    /// never override this. Items that *do* grant spells implement it via
-    /// the `#[item(..., spells(primary = [...], secondary = [...], ultimate = ...))]`
-    /// macro, which also enforces the Primary(1+)/Secondary(1+)/Ultimate(1)
-    /// shape at compile time; see `bevymmo_server::items::available_spells`
-    /// for how kits from every equipped item are unioned into the player's
-    /// selectable spell pool.
-    fn spell_kit(&self) -> Option<&SpellKit> {
-        None
     }
 
     /// Shared weapon category. `None` for non-weapon items or items that do

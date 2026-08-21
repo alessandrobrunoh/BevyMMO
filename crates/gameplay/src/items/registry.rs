@@ -80,7 +80,7 @@ impl ItemRegistry {
     /// All registered items sorted alphabetically by display name.
     ///
     /// Deterministic iteration order keeps the inventory UI stable across
-    /// rebuilds and matches the behavior of `SpellRegistry::sorted_spells`.
+    /// rebuilds and matches the behavior of other sorted registries.
     pub fn sorted_items(&self) -> Vec<(ItemId, Arc<dyn Item>)> {
         self.items
             .sorted_by(|a, b| a.display_name().cmp(b.display_name()))

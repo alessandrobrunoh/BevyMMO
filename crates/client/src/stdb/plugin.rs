@@ -40,8 +40,7 @@ use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
 use bevymmo_domain::movement::{self, predicted_move_dest, reconcile_offset, Reconcile, Step};
 use bevymmo_domain::movement::{movement_intent_allowed, MovementLock};
-use bevymmo_domain::spells::components::SpellHotbar;
-use bevymmo_domain::spells::registry::SpellId;
+
 use bevymmo_domain::stats::events::{ModifierKind, ModifierOp, StatField};
 use bevymmo_domain::stats::modifiers::{
     ActiveStatModifiers, ModifierEffectInstance, ModifierId as StatModifierId, StatModifierInstance,
@@ -1504,9 +1503,6 @@ fn replay_character(
             .entity(entity)
             .insert_if_neq(equipment_from(&row.slots));
     }
-    if let Some(row) = pending.hotbar.get(&character_id) {
-        commands.entity(entity).insert_if_neq(hotbar_from(row));
-    }
     if local_character_id == Some(character_id) {
         if let Some(row) = pending.known_ancient_language.get(&character_id) {
             commands
@@ -1528,6 +1524,7 @@ fn apply_stats(commands: &mut Commands, entity: Entity, row: &EntityStats) {
         CombatStats {
             armor: row.stats.armor,
             attack_power: row.stats.attack_power,
+            threat_generation: row.stats.threat_generation,
         },
         MovementStats {
             speed: row.stats.movement_speed,
@@ -1547,14 +1544,6 @@ fn vital_from_entity_stats(row: &EntityStats) -> VitalStats {
         current_mana: row.current_mana,
         max_mana: stats.max_mana,
         mana_regeneration: stats.mana_regeneration,
-    }
-}
-
-fn hotbar_from(row: &Hotbar) -> SpellHotbar {
-    SpellHotbar {
-        primary: row.slots.primary.clone().map(SpellId::new),
-        secondary: row.slots.secondary.clone().map(SpellId::new),
-        ultimate: row.slots.ultimate.clone().map(SpellId::new),
     }
 }
 

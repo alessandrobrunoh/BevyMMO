@@ -141,8 +141,7 @@ const fn rarity_label(rarity: ItemRarity) -> &'static str {
 }
 
 /// Costruisce il riepilogo weapon di `instance`, o `None` se l'item non è
-/// un'arma con gesti propri (armor, pozioni, armi sul vecchio modello
-/// `spell_kit`).
+/// un'arma con gesti propri (armor, pozioni, armi senza loadout).
 pub fn summarize_weapon(
     instance: &ItemInstance,
     items: &ItemRegistry,

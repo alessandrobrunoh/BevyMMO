@@ -57,6 +57,7 @@ mod tests {
         let target = CombatStats {
             attack_power: 0.0,
             armor: 100.0,
+            threat_generation: 1.0,
         };
         // 100 armor = 50% reduction
         assert_eq!(damage_after_armor(10.0, &target), 5.0);
@@ -67,6 +68,7 @@ mod tests {
         let target = CombatStats {
             attack_power: 0.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         assert_eq!(damage_after_armor(-10.0, &target), 0.0);
     }
@@ -76,6 +78,7 @@ mod tests {
         let target = CombatStats {
             attack_power: 0.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         assert_eq!(damage_after_armor(25.0, &target), 25.0);
     }

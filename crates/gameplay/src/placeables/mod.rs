@@ -3,9 +3,8 @@
 //!
 //! Each kind has a [`PlaceableDefinition`] (shared data contract) and
 //! optionally a server binding (gameplay behavior) and a client binding
-//! (rendering). This mirrors the spell framework (`spells/` +
-//! `content/spells/` + [`crate::spells::SpellRegistry`]): one trait, a typed
-//! registry, and concrete definitions in [`crate::content::placeables`].
+//! (rendering). One trait, a typed registry, and concrete definitions in
+//! content.
 //!
 //! ## Categories as subtraits
 //!
@@ -32,10 +31,13 @@ pub mod config;
 pub mod definition;
 pub mod registry;
 
+pub use crate::entity::enemy::aggro::{AcquirePolicy, AggroOrigin, ThreatPolicy};
+pub use crate::entity::enemy::kit::{AbilityTargeting, AbilityUse};
+pub use crate::entity::enemy::pick::pick_ability;
 pub use category::PlaceableCategory;
 pub use config::{
-    AbilityKitEntry, BossConfig, EnemyConfig, InteractionKind, ResourceConfig, TriggerConfig,
-    TriggerEvent, TriggerShape,
+    AbilityKitEntry, BossConfig, BossPhaseDef, CombatMovement, EnemyConfig, EnemyRank,
+    InteractionKind, ResourceConfig, TriggerConfig, TriggerEvent, TriggerShape,
 };
 pub use definition::{
     AssetHint, BossPlaceable, DummyPlaceable, EnemyPlaceable, InteractablePlaceable, NpcPlaceable,
@@ -45,4 +47,4 @@ pub use definition::{
 pub use registry::{KindId, PlaceableRegistry};
 
 // Re-export the procedural macro for ergonomic prop definition
-pub use bevymmo_props_macro::{props, resource};
+pub use bevymmo_props_macro::{enemy, npc, props, resource};

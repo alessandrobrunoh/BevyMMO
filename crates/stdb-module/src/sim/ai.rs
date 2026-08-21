@@ -40,12 +40,18 @@
 //! there is no index on `kind`, so the mobs have to be found by looking. It is
 //! one pass for the whole tick rather than one per mob.
 
-use bevymmo_domain::entity::boss::components::{Boss, BossPhase, BossRotationState, BossSpellbook};
-use bevymmo_domain::entity::enemy::aggro::is_leashed;
+use bevymmo_domain::abilities::AbilityId;
+use bevymmo_domain::entity::boss::components::{Boss, BossPhase, BossRotationState};
+use bevymmo_domain::entity::enemy::aggro::{
+    acquire_center, acquires_by_proximity, horizontal_distance, is_leashed, select_target,
+    ThreatCandidate, ThreatPolicy,
+};
+use bevymmo_domain::entity::enemy::kit::AbilityTargeting;
+use bevymmo_domain::entity::enemy::pick::pick_ability;
+use bevymmo_domain::entity::enemy::threat::threat_from_damage;
 use bevymmo_domain::movement;
 use bevymmo_domain::placeables::EnemyConfig;
-use bevymmo_domain::spells::context::ChannelMovementPolicy as SpellChannelMovementPolicy;
-use bevymmo_domain::spells::{CastKind, SpellId};
+use bevymmo_domain::EntityId;
 use glam::Vec3;
 use spacetimedb::{ReducerContext, Table};
 
@@ -54,7 +60,7 @@ use crate::sim::targets;
 use crate::sim::{crowd_control, spells};
 use crate::tables::{
     boss_state, cast_state, enemy_ai, entity_stats, game_entity, grid_cell, threat, BossPhaseRow,
-    BossState, CastState, EntityKindRow, EntityStateRow, GameEntity, Threat,
+    BossState, EntityKindRow, EntityStateRow, GameEntity, Threat,
 };
 use crate::world;
 
@@ -93,6 +99,7 @@ struct Actors {
 /// A living player as the selection helpers want it: id and position.
 ///
 /// The Bevy shape carried a `bevy::Entity`; here it is the `game_entity` key.
+#[derive(Clone, Copy)]
 struct PlayerRef {
     entity: u64,
     position: Vec3,
@@ -173,6 +180,7 @@ fn step_enemy(
     };
 
     if is_leashed(spawn, position, config.leash_aggro) {
+        clear_threat(ctx, entity_id);
         let move_target = if position.distance(spawn) > HOME_ARRIVAL_EPSILON {
             Some(enemy.spawn_point)
         } else {
@@ -184,7 +192,7 @@ fn step_enemy(
         return;
     }
 
-    let target = nearest_living_player(ctx, online, position, config.aggro);
+    let target = select_enemy_target(ctx, online, entity_id, position, spawn, &config);
 
     let (look, move_target) = match &target {
         Some(target) => {
@@ -221,8 +229,80 @@ fn step_enemy(
     let enemy = write_pose(ctx, enemy, look, move_target);
 
     if let Some(target) = target {
-        try_attack(ctx, &enemy, &target, &config);
+        try_attack(ctx, online, &enemy, &target, &config);
     }
+}
+
+/// Acquire + threat-policy pick for one trash mob.
+///
+/// Proximity scans the authored origin (body or spawn). Passive skips that
+/// scan and only fights a sticky/table target that damage already wrote.
+/// Sticky remembers the first chosen id via the threat table (amount 1).
+fn select_enemy_target(
+    ctx: &ReducerContext,
+    online: &std::collections::HashSet<spacetimedb::Uuid>,
+    entity_id: u64,
+    position: Vec3,
+    spawn: Vec3,
+    config: &EnemyConfig,
+) -> Option<PlayerRef> {
+    let center = acquire_center(config.origin, position, spawn);
+    let mut candidates = if acquires_by_proximity(config.acquire) {
+        living_players_near(ctx, online, center, config.aggro)
+    } else {
+        Vec::new()
+    };
+
+    let current_id = match config.threat {
+        ThreatPolicy::Nearest => None,
+        ThreatPolicy::Sticky | ThreatPolicy::Table => current_threat_target(ctx, entity_id),
+    };
+    if let Some(id) = current_id {
+        if !candidates.iter().any(|player| player.entity == id) {
+            if let Some(player) = living_player_by_id(ctx, online, id) {
+                candidates.push(player);
+            }
+        }
+    }
+    if config.threat == ThreatPolicy::Table {
+        for row in ctx.db.threat().by_combatant().filter(&entity_id) {
+            if candidates
+                .iter()
+                .any(|player| player.entity == row.target_entity)
+            {
+                continue;
+            }
+            if let Some(player) = living_player_by_id(ctx, online, row.target_entity) {
+                candidates.push(player);
+            }
+        }
+    }
+
+    let mapped: Vec<ThreatCandidate> = candidates
+        .iter()
+        .map(|player| ThreatCandidate {
+            entity: EntityId::new(player.entity),
+            distance: horizontal_distance(position, player.position),
+        })
+        .collect();
+    let selected = select_target(
+        config.threat,
+        &mapped,
+        current_id.map(EntityId::new),
+        |id| threat_amount(ctx, entity_id, id.get()),
+    );
+
+    if config.threat == ThreatPolicy::Sticky {
+        match selected {
+            Some(id) => remember_sticky(ctx, entity_id, id.get()),
+            None => clear_threat(ctx, entity_id),
+        }
+    }
+
+    let selected = selected?;
+    candidates
+        .into_iter()
+        .find(|player| player.entity == selected.get())
 }
 
 /// Requests the basic attack when the target is genuinely reachable.
@@ -231,8 +311,22 @@ fn step_enemy(
 /// `attack` only lands within its three-unit radius, so every enemy in the zone
 /// burned its cooldown swinging at air the whole way in. The gate here is the
 /// spell's own radius.
-fn try_attack(ctx: &ReducerContext, enemy: &GameEntity, target: &PlayerRef, config: &EnemyConfig) {
-    let Some(entry) = config.abilities.first() else {
+fn try_attack(
+    ctx: &ReducerContext,
+    online: &std::collections::HashSet<spacetimedb::Uuid>,
+    enemy: &GameEntity,
+    target: &PlayerRef,
+    config: &EnemyConfig,
+) {
+    if !can_start_cast(ctx, enemy.entity_id) {
+        return;
+    }
+    let position = Vec3::from(enemy.position);
+    let distance = crate::sim::spells::flat_distance(position, target.position);
+    let hp_fraction = health_fraction(ctx, enemy.entity_id);
+    let Some(entry) = pick_ability(&config.abilities, distance, hp_fraction, |id| {
+        ability_is_ready(ctx, enemy.entity_id, config, id)
+    }) else {
         return;
     };
     let ability_id = &entry.ability_id;
@@ -240,122 +334,81 @@ fn try_attack(ctx: &ReducerContext, enemy: &GameEntity, target: &PlayerRef, conf
         .get(ability_id)
         .map(|ability| ability.base_params().range)
         .unwrap_or(5.0);
-    let position = Vec3::from(enemy.position);
-    if crate::sim::spells::flat_distance(position, target.position) > range {
+    if distance > range {
         return;
     }
-    if !can_start_cast(ctx, enemy.entity_id) {
+    let scan_radius = config.leash_aggro.max(config.aggro).max(16.0);
+    let living = living_players_near(ctx, online, position, scan_radius);
+    let Some((target_entity, target_position)) =
+        resolve_kit_target(&entry.use_when.targeting, position, target, &living)
+    else {
         return;
-    }
-    if spells::is_on_cooldown(ctx, enemy.entity_id, ability_id.as_str()) {
-        return;
-    }
-    spells::request_catalog_ability(
+    };
+    if !spells::request_catalog_ability(
         ctx,
         enemy,
         ability_id.as_str(),
-        Some(target.entity),
-        Some(target.position),
-    );
+        target_entity,
+        target_position,
+    ) {
+        return;
+    }
+    if entry.use_when.interval > 0.0 {
+        spells::start_cooldown(
+            ctx,
+            enemy.entity_id,
+            &kit_interval_key(ability_id.as_str()),
+            entry.use_when.interval,
+        );
+    }
+}
+
+fn ability_is_ready(
+    ctx: &ReducerContext,
+    entity_id: u64,
+    config: &EnemyConfig,
+    ability_id: &AbilityId,
+) -> bool {
+    if spells::is_on_cooldown(ctx, entity_id, ability_id.as_str()) {
+        return false;
+    }
+    let interval = config
+        .abilities
+        .iter()
+        .find(|entry| &entry.ability_id == ability_id)
+        .map(|entry| entry.use_when.interval)
+        .unwrap_or(0.0);
+    if interval <= 0.0 {
+        return true;
+    }
+    !spells::is_on_cooldown(ctx, entity_id, &kit_interval_key(ability_id.as_str()))
+}
+
+fn kit_interval_key(ability_id: &str) -> String {
+    format!("kit-interval:{ability_id}")
+}
+
+fn resolve_kit_target(
+    targeting: &AbilityTargeting,
+    caster_position: Vec3,
+    main: &PlayerRef,
+    living: &[PlayerRef],
+) -> Option<(Option<u64>, Option<Vec3>)> {
+    match targeting {
+        AbilityTargeting::Main => Some((Some(main.entity), Some(main.position))),
+        AbilityTargeting::SelfCentered => Some((None, Some(caster_position))),
+        AbilityTargeting::Farthest => {
+            farthest_target(living, caster_position).map(|p| (Some(p.entity), Some(p.position)))
+        }
+        AbilityTargeting::DensestCluster { n } => {
+            densest_cluster(living, *n).map(|c| (None, Some(c)))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Boss
 // ---------------------------------------------------------------------------
-
-/// How an ability picks what it points at. From `boss/systems.rs::Targeting`.
-enum Targeting {
-    /// Highest threat, or the nearest player before anyone has any.
-    MainThreat,
-    /// The farthest living player — Enraged punishing the backline.
-    Farthest,
-    /// Centred on the boss itself.
-    CasterCentered,
-    /// The centroid of the `n` most tightly packed living players.
-    DensestCluster(usize),
-}
-
-/// One entry in a phase's priority list.
-struct RotationEntry {
-    spell_id: &'static str,
-    targeting: Targeting,
-}
-
-/// Phase one's priority list: grounded melee and breath.
-static GROUND_ROTATION: &[RotationEntry] = &[
-    RotationEntry {
-        spell_id: "searing_breath",
-        targeting: Targeting::MainThreat,
-    },
-    RotationEntry {
-        spell_id: "cinder_storm",
-        targeting: Targeting::DensestCluster(2),
-    },
-    RotationEntry {
-        spell_id: "wing_buffet",
-        targeting: Targeting::CasterCentered,
-    },
-    RotationEntry {
-        spell_id: "tail_sweep",
-        targeting: Targeting::CasterCentered,
-    },
-    RotationEntry {
-        spell_id: "dragon_claw",
-        targeting: Targeting::MainThreat,
-    },
-];
-
-/// Phase two: airborne, so only the arena-wide patterns.
-static AERIAL_ROTATION: &[RotationEntry] = &[
-    RotationEntry {
-        spell_id: "molten_eruption",
-        targeting: Targeting::CasterCentered,
-    },
-    RotationEntry {
-        spell_id: "cinder_storm",
-        targeting: Targeting::DensestCluster(2),
-    },
-];
-
-/// Enraged: the ground roster with Cataclysm on top and the breath aimed at
-/// whoever thought distance would save them.
-static BERSERK_ROTATION: &[RotationEntry] = &[
-    RotationEntry {
-        spell_id: "cataclysm",
-        targeting: Targeting::CasterCentered,
-    },
-    RotationEntry {
-        spell_id: "searing_breath",
-        targeting: Targeting::Farthest,
-    },
-    RotationEntry {
-        spell_id: "cinder_storm",
-        targeting: Targeting::DensestCluster(2),
-    },
-    RotationEntry {
-        spell_id: "wing_buffet",
-        targeting: Targeting::CasterCentered,
-    },
-    RotationEntry {
-        spell_id: "dragon_claw",
-        targeting: Targeting::MainThreat,
-    },
-];
-
-/// The priority list for a phase.
-///
-/// `priority_list_for` built a fresh `Vec<RotationEntry>` every tick for every
-/// boss; the lists are constant, so they are statics here and the rotation
-/// driver allocates nothing.
-fn priority_list_for(phase: BossPhase) -> &'static [RotationEntry] {
-    match phase {
-        BossPhase::Ground => GROUND_ROTATION,
-        BossPhase::Aerial => AERIAL_ROTATION,
-        BossPhase::Berserk => BERSERK_ROTATION,
-        // Dormant and Dead have no rotation.
-        BossPhase::Dormant | BossPhase::Dead => &[],
-    }
-}
 
 /// One boss's turn: engage, advance the phase, chase, cast.
 ///
@@ -422,7 +475,9 @@ fn step_boss(
             // and a breath fired from a stale facing points at where the target
             // used to be.
             let boss = chase(ctx, boss, phase, main);
-            run_rotation(ctx, &boss, phase, &living, main, &mut rotation);
+            if let Some(config) = world::boss_config_for("boss_dragon") {
+                run_rotation(ctx, &boss, &config, &living, main, &mut rotation);
+            }
         }
         None => {
             // Engaged with nobody in the ring: the fight is still running (the
@@ -537,7 +592,7 @@ fn chase(
 fn run_rotation(
     ctx: &ReducerContext,
     boss: &GameEntity,
-    phase: BossPhase,
+    config: &bevymmo_domain::placeables::BossConfig,
     living: &[PlayerRef],
     main: &PlayerRef,
     rotation: &mut BossRotationState,
@@ -546,53 +601,49 @@ fn run_rotation(
     if !can_start_cast(ctx, entity_id) {
         return;
     }
-    // The boss's own spellbook, which is what let the dragon cycle more than
-    // the three slots a player hotbar holds. Checked here so a rotation entry
-    // that drifts away from `Boss::SPELLS` fails loudly at the source, rather
-    // than as a lookup miss deep inside the cast pipeline.
-    let spellbook = BossSpellbook {
-        spells: Boss::SPELLS.iter().copied().map(SpellId::new).collect(),
-    };
     let boss_position = Vec3::from(boss.position);
+    let hp_fraction = health_fraction(ctx, entity_id);
+    let distance = spells::flat_distance(boss_position, main.position);
 
-    for (index, entry) in priority_list_for(phase).iter().enumerate() {
-        let spell_id = SpellId::new(entry.spell_id);
-        if !spellbook.contains(&spell_id) {
-            log::warn!(
-                "boss rotation lists {:?}, which is not in Boss::SPELLS",
-                entry.spell_id
-            );
-            continue;
-        }
-        if spells::is_on_cooldown(ctx, entity_id, entry.spell_id) {
-            continue;
-        }
+    let mut skipped: Vec<String> = Vec::new();
+    loop {
+        let Some(entry) = pick_ability(&config.abilities, distance, hp_fraction, |id| {
+            !spells::is_on_cooldown(ctx, entity_id, id.as_str())
+                && !skipped.iter().any(|skipped| skipped == id.as_str())
+        }) else {
+            return;
+        };
         let Some((target_entity, target_position)) =
-            resolve_target(&entry.targeting, boss_position, living, main)
+            resolve_kit_target(&entry.use_when.targeting, boss_position, main, living)
         else {
+            skipped.push(entry.ability_id.as_str().to_string());
             continue;
         };
-        request_cast(ctx, boss, &spell_id, target_entity, target_position);
-        rotation.priority_cursor = index;
-        break;
-    }
-}
-
-/// Turns a `Targeting` into an (entity, position) pair, or `None` when the
-/// ability has nothing to point at this tick.
-fn resolve_target(
-    targeting: &Targeting,
-    caster_position: Vec3,
-    living: &[PlayerRef],
-    main: &PlayerRef,
-) -> Option<(Option<u64>, Option<Vec3>)> {
-    match targeting {
-        Targeting::CasterCentered => Some((None, Some(caster_position))),
-        Targeting::MainThreat => Some((Some(main.entity), Some(main.position))),
-        Targeting::Farthest => {
-            farthest_target(living, caster_position).map(|p| (Some(p.entity), Some(p.position)))
+        let Some(mut caster) = ctx.db.game_entity().entity_id().find(&entity_id) else {
+            return;
+        };
+        if let Some(aim) = target_position {
+            if let Some(direction) = movement::look_direction(boss_position, aim) {
+                let move_target = caster.move_target;
+                caster = write_pose(ctx, caster, Vec3Row::from(direction), move_target);
+            }
         }
-        Targeting::DensestCluster(n) => densest_cluster(living, *n).map(|c| (None, Some(c))),
+        if !spells::request_catalog_ability(
+            ctx,
+            &caster,
+            entry.ability_id.as_str(),
+            target_entity,
+            target_position,
+        ) {
+            skipped.push(entry.ability_id.as_str().to_string());
+            continue;
+        }
+        rotation.priority_cursor = config
+            .abilities
+            .iter()
+            .position(|candidate| candidate.ability_id.as_str() == entry.ability_id.as_str())
+            .unwrap_or(0);
+        break;
     }
 }
 
@@ -600,45 +651,122 @@ fn resolve_target(
 // Threat
 // ---------------------------------------------------------------------------
 
-/// Records `amount` of threat on `target` from `source`, if `target` is a boss.
+/// Records post-armor damage as threat on `target` from `source`.
 ///
-/// The entry point `accrue_threat` was: it read every `DamageEvent` and added
-/// to the `ThreatTable` of the boss that was hit. `damage_event` here is an
-/// *event* table — delivered to subscribers, never read back — so the accrual
-/// cannot listen after the fact. `sim::combat::apply_damage` should call this
-/// as it applies damage. Until it does, the boss falls back to nearest-player
-/// targeting, which is the same fallback the Bevy version used before the first
-/// hit landed, so the encounter works and only the aggro *ordering* is missing.
-///
-/// The `boss_state` lookup is a primary-key hit, so a call for a non-boss
-/// target costs one point read and returns.
-pub fn accrue_threat(ctx: &ReducerContext, target: u64, source: u64, amount: f32) {
-    if amount <= 0.0 || ctx.db.boss_state().entity_id().find(target).is_none() {
+/// Accrues when `target` is a boss (always Table) or an enemy whose kit
+/// `threat` is Table or Sticky. Nearest trash ignores this. The amount is
+/// `effective * source.threat_generation` via [`threat_from_damage`]; missing
+/// source stats default to `1.0`. Sticky only stores the first attacker
+/// (amount 1) so Passive+Sticky still fights whoever hit them without
+/// turning into a table.
+pub fn accrue_threat(ctx: &ReducerContext, target: u64, source: u64, effective: f32) {
+    let Some(policy) = threat_policy_for(ctx, target) else {
         return;
+    };
+    match policy {
+        ThreatPolicy::Nearest => {}
+        ThreatPolicy::Sticky => {
+            if current_threat_target(ctx, target).is_some() {
+                return;
+            }
+            ctx.db.threat().insert(Threat {
+                id: 0,
+                combatant_entity: target,
+                target_entity: source,
+                amount: 1.0,
+            });
+        }
+        ThreatPolicy::Table => {
+            let generation = spells::combat_stats(ctx, source)
+                .map(|stats| stats.threat_generation)
+                .unwrap_or(1.0);
+            let amount = threat_from_damage(effective, generation);
+            if amount <= 0.0 {
+                return;
+            }
+            let existing = ctx
+                .db
+                .threat()
+                .by_combatant()
+                .filter(&target)
+                .find(|row| row.target_entity == source);
+            match existing {
+                Some(row) => {
+                    ctx.db.threat().id().update(Threat {
+                        amount: row.amount + amount,
+                        ..row
+                    });
+                }
+                None => {
+                    ctx.db.threat().insert(Threat {
+                        id: 0,
+                        combatant_entity: target,
+                        target_entity: source,
+                        amount,
+                    });
+                }
+            }
+        }
     }
-    let existing = ctx
+}
+
+fn threat_policy_for(ctx: &ReducerContext, target: u64) -> Option<ThreatPolicy> {
+    if ctx.db.boss_state().entity_id().find(&target).is_some() {
+        return Some(ThreatPolicy::Table);
+    }
+    config_for(ctx, target).map(|config| config.threat)
+}
+
+fn threat_amount(ctx: &ReducerContext, combatant: u64, target: u64) -> f32 {
+    ctx.db
+        .threat()
+        .by_combatant()
+        .filter(&combatant)
+        .find(|row| row.target_entity == target)
+        .map(|row| row.amount)
+        .unwrap_or(0.0)
+}
+
+fn current_threat_target(ctx: &ReducerContext, combatant: u64) -> Option<u64> {
+    let mut best: Option<(u64, f32)> = None;
+    for row in ctx.db.threat().by_combatant().filter(&combatant) {
+        if best.is_none_or(|(_, amount)| row.amount > amount) {
+            best = Some((row.target_entity, row.amount));
+        }
+    }
+    best.map(|(id, _)| id)
+}
+
+fn remember_sticky(ctx: &ReducerContext, combatant: u64, target: u64) {
+    let existing: Vec<Threat> = ctx.db.threat().by_combatant().filter(&combatant).collect();
+    let mut have_target = false;
+    for row in existing {
+        if row.target_entity == target {
+            have_target = true;
+        } else {
+            ctx.db.threat().id().delete(&row.id);
+        }
+    }
+    if !have_target {
+        ctx.db.threat().insert(Threat {
+            id: 0,
+            combatant_entity: combatant,
+            target_entity: target,
+            amount: 1.0,
+        });
+    }
+}
+
+pub fn clear_threat(ctx: &ReducerContext, combatant: u64) {
+    let ids: Vec<u64> = ctx
         .db
         .threat()
-        .by_boss()
-        .filter(target)
-        .find(|row| row.target_entity == source);
-
-    match existing {
-        Some(row) => {
-            ctx.db.threat().id().update(Threat {
-                amount: row.amount + amount,
-                ..row
-            });
-        }
-        None => {
-            ctx.db.threat().insert(Threat {
-                // Zero asks the sequence for an id.
-                id: 0,
-                boss_entity: target,
-                target_entity: source,
-                amount,
-            });
-        }
+        .by_combatant()
+        .filter(&combatant)
+        .map(|row| row.id)
+        .collect();
+    for id in ids {
+        ctx.db.threat().id().delete(&id);
     }
 }
 
@@ -658,33 +786,22 @@ fn main_target<'a>(
     living: &'a [PlayerRef],
     origin: Vec3,
 ) -> Option<&'a PlayerRef> {
-    let mut best: Option<(&PlayerRef, f32)> = None;
-    for row in ctx.db.threat().by_boss().filter(boss_entity) {
-        // Threat from someone dead or out of the arena does not count; the row
-        // is kept, so the meters still read right when they come back.
-        let Some(player) = living.iter().find(|p| p.entity == row.target_entity) else {
-            continue;
-        };
-        if best.is_none_or(|(_, amount)| row.amount > amount) {
-            best = Some((player, row.amount));
-        }
-    }
-    best.map(|(player, _)| player)
-        .or_else(|| nearest_target(living, origin))
+    let candidates: Vec<ThreatCandidate> = living
+        .iter()
+        .map(|player| ThreatCandidate {
+            entity: EntityId::new(player.entity),
+            distance: horizontal_distance(origin, player.position),
+        })
+        .collect();
+    let selected = select_target(ThreatPolicy::Table, &candidates, None, |id| {
+        threat_amount(ctx, boss_entity, id.get())
+    })?;
+    living.iter().find(|player| player.entity == selected.get())
 }
 
 // ---------------------------------------------------------------------------
 // Target selection (ported from boss/target_select.rs)
 // ---------------------------------------------------------------------------
-
-/// The nearest of `players` to `origin`.
-fn nearest_target(players: &[PlayerRef], origin: Vec3) -> Option<&PlayerRef> {
-    players.iter().min_by(|left, right| {
-        left.position
-            .distance_squared(origin)
-            .total_cmp(&right.position.distance_squared(origin))
-    })
-}
 
 /// The farthest of `players` from `origin`.
 fn farthest_target(players: &[PlayerRef], origin: Vec3) -> Option<&PlayerRef> {
@@ -783,18 +900,20 @@ fn max_pairwise_distance(combo: &[usize], players: &[PlayerRef]) -> f32 {
 // Spatial queries
 // ---------------------------------------------------------------------------
 
-/// The nearest living player within `radius` of `origin`.
-fn nearest_living_player(
+/// A living online player by id, or `None` if they have left / died.
+fn living_player_by_id(
     ctx: &ReducerContext,
     online: &std::collections::HashSet<spacetimedb::Uuid>,
-    origin: Vec3,
-    radius: f32,
+    entity_id: u64,
 ) -> Option<PlayerRef> {
-    let candidates = living_players_near(ctx, online, origin, radius);
-    let nearest = nearest_target(&candidates, origin)?;
+    let entity = ctx.db.game_entity().entity_id().find(&entity_id)?;
+    let online_flag = entity.owner_character_id.map(|id| online.contains(&id));
+    if !targets::is_online_living_player(entity.kind, entity.state, online_flag) {
+        return None;
+    }
     Some(PlayerRef {
-        entity: nearest.entity,
-        position: nearest.position,
+        entity: entity.entity_id,
+        position: Vec3::from(entity.position),
     })
 }
 
@@ -921,104 +1040,6 @@ fn health_fraction(ctx: &ReducerContext, entity_id: u64) -> f32 {
 fn can_start_cast(ctx: &ReducerContext, entity_id: u64) -> bool {
     !crowd_control::is_casting_blocked(ctx, entity_id)
         && ctx.db.cast_state().entity_id().find(entity_id).is_none()
-}
-
-/// Starts a spell on an AI actor's behalf.
-///
-/// The Bevy systems wrote a `SpellCastRequest` and let `process_cast_requests`
-/// validate it. There is no message queue here and, deliberately, no reducer:
-/// `reducers::spells::cast_spell` authenticates a *caller* and enforces a
-/// player's three-slot hotbar, neither of which a mob has. So this composes the
-/// same pipeline from `sim::spells`' public parts — the shared registry, the
-/// shared `fire_spell`, the shared cooldown — and the only thing it does not
-/// borrow is the hotbar check, replaced upstream by the boss spellbook and by
-/// the enemy only ever asking for `attack`.
-///
-/// The caller must have checked [`can_start_cast`]: `cast_state` is keyed by
-/// caster, so opening a second cast on one would be an insert conflict.
-fn request_cast(
-    ctx: &ReducerContext,
-    caster: &GameEntity,
-    spell_id: &SpellId,
-    target_entity: Option<u64>,
-    target_position: Option<Vec3>,
-) {
-    let Some(spell) = spells::spells().get(spell_id) else {
-        // A rotation entry with no implementation registered. Worth saying out
-        // loud: the fight silently loses an ability otherwise.
-        log::warn!("ai: no spell registered for {:?}", spell_id.as_str());
-        return;
-    };
-    let config = spell.config();
-    let kind = spell.cast_kind();
-
-    match kind {
-        CastKind::Instant => {
-            if let Some(cooldown_seconds) =
-                spells::fire_spell(ctx, caster, spell.as_ref(), target_position, target_entity)
-            {
-                spells::start_cooldown(ctx, caster.entity_id, spell_id.as_str(), cooldown_seconds);
-            }
-        }
-        CastKind::CastTime | CastKind::Channeling => {
-            let channeling = matches!(kind, CastKind::Channeling);
-            let required_seconds = if channeling {
-                // A player ends a channel by releasing the key. An AI has no
-                // key, so a channel with no declared duration would run until
-                // something else interrupted it. Skipping the ability costs the
-                // boss one entry in its rotation; casting it would cost every
-                // other entry, permanently.
-                let Some(duration) = config.channel_duration_seconds else {
-                    log::warn!(
-                        "ai: {:?} channels with no duration; skipping",
-                        spell_id.as_str()
-                    );
-                    return;
-                };
-                duration
-            } else {
-                config.cast_time_seconds
-            };
-            let tick_interval_seconds = spell.channel_tick_interval_seconds();
-
-            // Both details mirror `reducers::spells::cast_spell`: a channel
-            // starts armed so its first tick lands immediately, and its
-            // cooldown starts now rather than on completion, so a long channel
-            // cannot also delay the next cast.
-            let channel_tick_accumulator = if channeling {
-                tick_interval_seconds
-            } else {
-                0.0
-            };
-            if channeling {
-                spells::start_cooldown(
-                    ctx,
-                    caster.entity_id,
-                    spell_id.as_str(),
-                    config.cooldown_seconds,
-                );
-            }
-
-            ctx.db.cast_state().insert(CastState {
-                entity_id: caster.entity_id,
-                spell_id: spell_id.as_str().to_string(),
-                kind: spells::cast_kind_row(kind),
-                source: crate::tables::CastSourceRow::Spell,
-                elapsed_seconds: 0.0,
-                required_seconds,
-                start_position: caster.position,
-                target_position: target_position.map(Vec3Row::from),
-                target_entity,
-                channel_tick_accumulator,
-                tick_interval_seconds,
-                // Boss AI always uses legacy spell path; read from SpellConfig.
-                channel_movement_interrupts: matches!(
-                    kind,
-                    CastKind::Channeling if config.channel_movement == SpellChannelMovementPolicy::InterruptOnMove
-                ),
-            });
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

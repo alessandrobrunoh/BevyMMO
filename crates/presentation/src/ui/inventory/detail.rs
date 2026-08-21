@@ -325,6 +325,7 @@ fn effect_label(effect: &ItemEffect) -> String {
                 StatField::Speed => "Speed",
                 StatField::AttackPower => "Attack Power",
                 StatField::Armor => "Armor",
+                StatField::ThreatGeneration => "Threat Generation",
                 StatField::ManaRegeneration => "Mana Regen",
                 StatField::GatheringSpeed => "Gather Speed",
                 StatField::GatheringBonus => "Gather Bonus",

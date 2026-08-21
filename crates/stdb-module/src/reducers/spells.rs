@@ -16,9 +16,8 @@
 //! - **Cancelling a cast reports the cast that was cancelled.** Bevy emitted the
 //!   *incoming* spell's id in the `SpellCastEnded` it sent when a new cast
 //!   replaced a running one, which made the client hide the wrong bar.
-//! - **The boss spellbook path is gone.** These reducers are for players; the
-//!   boss casts from `sim::ai` through [`crate::sim::spells::fire_spell`], which
-//!   is the same function the hotbar path ends in.
+//! - **AI does not use these reducers.** Enemies fire catalog `BaseAbility`s
+//!   through [`crate::sim::spells::request_catalog_ability`].
 
 use bevymmo_domain::abilities::{
     cast_armor_inscribed_ability, cast_root_inscribed_slot, movement_lock_for_ability,
@@ -27,12 +26,8 @@ use bevymmo_domain::abilities::{
     ChannelMovementPolicy as AbilityChannelMovementPolicy,
 };
 use bevymmo_domain::movement::{should_face_cast_target, MovementLock};
-// Legacy spell channeling uses spells::context::ChannelMovementPolicy.
 use bevymmo_domain::items::components::EquipSlot;
-use bevymmo_domain::spells::components::SpellHotbar;
-use bevymmo_domain::spells::context::ChannelMovementPolicy as SpellChannelMovementPolicy;
-use bevymmo_domain::spells::context::{CastKind, SpellCastContext};
-use bevymmo_domain::spells::registry::SpellId;
+use bevymmo_domain::spells::context::SpellCastContext;
 use bevymmo_domain::EntityId;
 use glam::Vec3;
 use spacetimedb::{reducer, ReducerContext, Table};
@@ -41,132 +36,9 @@ use crate::reducers::lifecycle::{caller_character, caller_entity};
 use crate::rows::{equipment_from_rows, known_ancient_language_from_rows, Vec3Row};
 use crate::sim::spells::{self, ability_loadout_for_item};
 use crate::tables::{
-    cast_state, equipment, game_entity, hotbar, known_ancient_language, CastKindRow, CastSourceRow,
+    cast_state, equipment, game_entity, known_ancient_language, CastKindRow, CastSourceRow,
     CastState, EntityStateRow, GameEntity,
 };
-
-/// Casts a spell from the caller's hotbar.
-///
-/// `target_position` is the aimed ground point; `None` means "wherever I am
-/// facing", which is what a self-centred spell wants. `target_entity` is the
-/// selected target, required by single-target spells such as Fireball.
-///
-/// Instant spells resolve inside this call. Cast-time and channelled spells only
-/// open a `cast_state`; [`crate::sim::spells::step`] takes it from there.
-#[reducer]
-pub fn cast_spell(
-    ctx: &ReducerContext,
-    spell_id: String,
-    target_entity: Option<u64>,
-    target_position: Option<Vec3Row>,
-) -> Result<(), String> {
-    let character_id = caller_character(ctx)?.character_id;
-    let caster = caller_entity(ctx)?;
-    if caster.state == EntityStateRow::Dead {
-        return Err("dead characters do not cast".to_string());
-    }
-
-    let spell = spells::spells()
-        .get(&SpellId::new(spell_id.clone()))
-        .ok_or_else(|| format!("unknown spell {spell_id:?}"))?;
-
-    // Players cast what is on their hotbar and nothing else. Bevy also allowed
-    // a `BossSpellbook` here; the boss no longer goes through a reducer.
-    let hotbar: SpellHotbar = ctx
-        .db
-        .hotbar()
-        .character_id()
-        .find(&character_id)
-        .map(|row| (&row.slots).into())
-        .unwrap_or_default();
-    if !hotbar.contains(&SpellId::new(spell_id.clone())) {
-        return Err(format!("{spell_id:?} is not on the hotbar"));
-    }
-
-    if spells::is_on_cooldown(ctx, caster.entity_id, &spell_id) {
-        return Err(format!("{spell_id:?} is on cooldown"));
-    }
-    if spells::casting_blocked(ctx, caster.entity_id) {
-        return Err("you cannot cast right now".to_string());
-    }
-
-    let config = spell.config();
-    let target_position = target_position.map(Vec3::from);
-    spells::validate_cast_target(
-        ctx,
-        &caster,
-        config.cast_range,
-        config.targeting,
-        target_entity,
-        target_position,
-    )?;
-
-    let lock = match spell.cast_kind() {
-        CastKind::Instant => MovementLock::None,
-        CastKind::CastTime => MovementLock::CastTime,
-        CastKind::Channeling => MovementLock::Channel,
-    };
-    let caster = face_target(ctx, caster, target_position, lock);
-    cancel_active_cast(ctx, caster.entity_id);
-
-    match spell.cast_kind() {
-        CastKind::Instant => {
-            if let Some(cooldown_seconds) =
-                spells::fire_spell(ctx, &caster, spell.as_ref(), target_position, target_entity)
-            {
-                spells::start_cooldown(ctx, caster.entity_id, &spell_id, cooldown_seconds);
-            }
-        }
-        kind @ (CastKind::CastTime | CastKind::Channeling) => {
-            let channeling = matches!(kind, CastKind::Channeling);
-            let tick_interval_seconds = spell.channel_tick_interval_seconds();
-            let required_seconds = if channeling {
-                config.channel_duration_seconds.unwrap_or(0.0)
-            } else {
-                config.cast_time_seconds
-            };
-
-            // A channel starts armed so its first effect lands on the very next
-            // tick: without this a short press looks like the key did nothing.
-            let channel_tick_accumulator = if channeling {
-                tick_interval_seconds
-            } else {
-                0.0
-            };
-            // And its cooldown starts on press, not on release, so holding the
-            // key longer cannot also delay the next cast.
-            if channeling {
-                spells::start_cooldown(ctx, caster.entity_id, &spell_id, config.cooldown_seconds);
-            }
-
-            let caster = if matches!(kind, CastKind::CastTime) {
-                stop_movement(ctx, caster)
-            } else {
-                caster
-            };
-            ctx.db.cast_state().insert(CastState {
-                entity_id: caster.entity_id,
-                spell_id,
-                kind: spells::cast_kind_row(kind),
-                source: CastSourceRow::Spell,
-                elapsed_seconds: 0.0,
-                required_seconds,
-                start_position: caster.position,
-                target_position: target_position.map(Vec3Row::from),
-                target_entity,
-                channel_tick_accumulator,
-                tick_interval_seconds,
-                // Legacy spell: read movement policy from SpellConfig.
-                channel_movement_interrupts: matches!(
-                    kind,
-                    CastKind::Channeling if config.channel_movement == SpellChannelMovementPolicy::InterruptOnMove
-                ),
-            });
-        }
-    }
-
-    Ok(())
-}
 
 /// Ends the caller's cast of `spell_id`, as on key release.
 ///

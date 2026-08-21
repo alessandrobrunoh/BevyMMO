@@ -12,6 +12,7 @@ pub enum StatField {
     Speed,
     Armor,
     AttackPower,
+    ThreatGeneration,
     MaxHealth,
     MaxMana,
     ManaRegeneration,

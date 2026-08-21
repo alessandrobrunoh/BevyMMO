@@ -26,7 +26,7 @@
 //!   `Changed<Equipment>` query. `recompute_equipment_bonuses` and
 //!   `recompute_available_spells` both ran reactively; there is no change
 //!   detection here, so every reducer that touches `equipment` calls
-//!   [`recompute_effective_stats`] and [`prune_hotbar_to_available`] itself.
+//!   [`recompute_effective_stats`] itself.
 //!
 //! # Base versus effective stats
 //!
@@ -52,19 +52,16 @@ use bevymmo_domain::items::components::{EquipSlot, Equipment, Inventory, INVENTO
 use bevymmo_domain::items::definition::{EquipRequirement, ItemCategory};
 use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId, STARTER_WEAPON_ITEM_ID};
 use bevymmo_domain::items::registry::{ItemId, ItemRegistry};
-use bevymmo_domain::items::{compute_available_choices, AvailableSpellChoices};
-use bevymmo_domain::spells::components::SpellHotbar;
-use bevymmo_domain::spells::registry::SpellId;
 use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
 use crate::reducers::lifecycle::caller_character;
 use crate::rows::{
     equipment_from_rows, equipment_to_rows, inventory_from_rows, inventory_to_rows,
-    known_ancient_language_from_rows, HotbarRow,
+    known_ancient_language_from_rows,
 };
 use crate::tables::{
-    equipment, game_entity, hotbar, inventory, known_ancient_language, market_sell_order, player,
-    EntityKindRow, EquipmentTable, Hotbar, InventoryTable,
+    equipment, game_entity, inventory, known_ancient_language, market_sell_order, player,
+    EntityKindRow, EquipmentTable, InventoryTable,
 };
 
 // ---------------------------------------------------------------------------
@@ -166,7 +163,6 @@ pub fn equip_item(ctx: &ReducerContext, slot_index: u8) -> Result<(), String> {
 
     // Equipment changed, so both things derived from it are now stale.
     recompute_effective_stats(ctx, character_id)?;
-    prune_hotbar_to_available(ctx, character_id, &equipment);
     Ok(())
 }
 
@@ -204,7 +200,6 @@ pub fn unequip_item(ctx: &ReducerContext, slot: String) -> Result<(), String> {
     store_equipment(ctx, character_id, &equipment);
 
     recompute_effective_stats(ctx, character_id)?;
-    prune_hotbar_to_available(ctx, character_id, &equipment);
     Ok(())
 }
 
@@ -353,74 +348,6 @@ pub fn destroy_item(ctx: &ReducerContext, instance_id: u64) -> Result<(), String
 
     inventory.slots[slot] = None;
     store_inventory(ctx, character_id, &inventory);
-    Ok(())
-}
-
-/// Binds a spell to a hotbar key, or clears the key when `spell_id` is `None`.
-///
-/// `slot` is `"primary"`, `"secondary"` or `"ultimate"`, case-insensitive.
-///
-/// # Why not `set_hotbar_slot`
-///
-/// `reducers::spells` still carries a `set_hotbar_slot` stub, and two reducers
-/// cannot share a name — the generated registration symbols collide at link
-/// time. This one is named for what it does instead. **When that stub goes
-/// away, the right move is to rename this reducer to `set_hotbar_slot`**, or to
-/// have the stub delegate to [`assign_hotbar_spell`], which is public for
-/// exactly that reason.
-#[reducer]
-pub fn set_hotbar_spell(
-    ctx: &ReducerContext,
-    slot: String,
-    spell_id: Option<String>,
-) -> Result<(), String> {
-    let character_id = caller_character(ctx)?.character_id;
-    assign_hotbar_spell(ctx, character_id, &slot, spell_id)
-}
-
-/// The body of [`set_hotbar_spell`], callable from another reducer.
-///
-/// The legal picks are **not** "any registered spell": they are whatever the
-/// currently equipped items offer for that key, unioned from every equipped
-/// item's `SpellKit` by
-/// [`compute_available_choices`](bevymmo_domain::items::compute_available_choices).
-/// That is the same rule `handle_update_hotbar_slot_requests` enforced against
-/// the reactively-maintained `AvailableSpellChoices` component; here the value
-/// is computed on the spot, because there is no component to keep in sync and
-/// the computation is a walk over ten slots.
-pub fn assign_hotbar_spell(
-    ctx: &ReducerContext,
-    character_id: Uuid,
-    slot: &str,
-    spell_id: Option<String>,
-) -> Result<(), String> {
-    let key = parse_ability_slot(slot)?;
-    let equipment = load_equipment(ctx, character_id)?;
-
-    let row = ctx
-        .db
-        .hotbar()
-        .character_id()
-        .find(&character_id)
-        .ok_or_else(|| "no character for this identity; call `join` first".to_string())?;
-    let mut bar = SpellHotbar::from(&row.slots);
-
-    let spell = spell_id.map(SpellId::new);
-    if let Some(id) = &spell {
-        let choices = available_choices(&equipment);
-        if !choices.contains(key, id) {
-            return Err(format!(
-                "{:?} is not offered on {slot:?} by your equipped items",
-                id.as_str()
-            ));
-        }
-    }
-
-    bar.assign(key, spell);
-    ctx.db.hotbar().character_id().update(Hotbar {
-        character_id,
-        slots: HotbarRow::from(&bar),
-    });
     Ok(())
 }
 
@@ -764,48 +691,6 @@ pub fn recompute_effective_stats(ctx: &ReducerContext, character_id: Uuid) -> Re
     // which the next combat tick would silently overwrite.
     crate::sim::combat::recalculate_effective_stats(ctx, player.entity_id);
     Ok(())
-}
-
-/// Clears any hotbar selection the current equipment no longer offers.
-///
-/// The port of `available_spells::recompute_available_spells`. Same trigger
-/// point as the Bevy version — every equipment change — and the same reason:
-/// unequipping the item that granted a spell must not leave the key bound to
-/// something the character can no longer cast.
-///
-/// Silent when the character has no hotbar row: that is a state `join` does not
-/// produce, and failing an otherwise valid equip over it would be worse than
-/// ignoring it.
-fn prune_hotbar_to_available(ctx: &ReducerContext, character_id: Uuid, equipment: &Equipment) {
-    let Some(row) = ctx.db.hotbar().character_id().find(&character_id) else {
-        return;
-    };
-    let choices = available_choices(equipment);
-    let mut bar = SpellHotbar::from(&row.slots);
-
-    let mut changed = false;
-    for key in AbilitySlot::ALL {
-        let stale = bar
-            .spell_for_slot(key)
-            .is_some_and(|selected| !choices.contains(key, selected));
-        if stale {
-            log::info!("clearing {key:?} selection: no longer offered by equipped items");
-            bar.assign(key, None);
-            changed = true;
-        }
-    }
-
-    if changed {
-        ctx.db.hotbar().character_id().update(Hotbar {
-            character_id,
-            slots: HotbarRow::from(&bar),
-        });
-    }
-}
-
-/// Which spells the equipped items currently offer for Primary/Secondary/Ultimate.
-fn available_choices(equipment: &Equipment) -> AvailableSpellChoices {
-    compute_available_choices(equipment, item_registry())
 }
 
 // ---------------------------------------------------------------------------

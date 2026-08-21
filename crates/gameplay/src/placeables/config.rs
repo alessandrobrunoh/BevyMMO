@@ -7,9 +7,37 @@
 //! dynamically without recompiling per kind.
 
 use crate::abilities::{AbilityId, KitInscription};
-use crate::items::definition::ItemCategory;
-use crate::spells::SpellId;
+use crate::entity::enemy::aggro::{AcquirePolicy, AggroOrigin, ThreatPolicy};
+use crate::entity::enemy::kit::AbilityUse;
 use crate::stats::components::StatsBundleData;
+
+/// Normal trash vs a named encounter that owns an arena.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EnemyRank {
+    #[default]
+    Normal,
+    Boss,
+}
+
+/// How a creature moves once it has a target.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum CombatMovement {
+    #[default]
+    Chase,
+    KeepDistance {
+        range: f32,
+    },
+    Stationary,
+    Hover,
+}
+
+/// HP-gated movement swap for a boss encounter (UI + chase vs hover).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BossPhaseDef {
+    pub id: &'static str,
+    pub hp_below: f32,
+    pub movement: CombatMovement,
+}
 
 // -------------------------------------------------------------------------
 // Creature configs
@@ -21,46 +49,69 @@ use crate::stats::components::StatsBundleData;
 pub struct AbilityKitEntry {
     pub ability_id: AbilityId,
     pub inscription: KitInscription,
+    /// Range / HP / priority gates. [`AbilityKitEntry::new`] uses the default
+    /// (only the ability cooldown, any HP, no max range).
+    pub use_when: AbilityUse,
 }
 
 impl AbilityKitEntry {
-    /// Naked gesture, no Root Word.
+    /// Naked gesture, no Root Word, default [`AbilityUse`].
     pub fn new(ability_id: impl Into<AbilityId>) -> Self {
         Self {
             ability_id: ability_id.into(),
             inscription: KitInscription::default(),
+            use_when: AbilityUse::default(),
         }
+    }
+
+    /// Replaces the default use-when gates.
+    pub fn with_use(mut self, use_when: AbilityUse) -> Self {
+        self.use_when = use_when;
+        self
+    }
+
+    pub fn with_use_when(self, use_when: AbilityUse) -> Self {
+        self.with_use(use_when)
     }
 }
 
 /// Configuration returned by [`super::definition::EnemyPlaceable::enemy_config`].
 ///
 /// Drives spawn: stats, aggro acquire radius, leash-from-spawn, and the
-/// ability kit the AI fires through `resolve_ability`.
+/// ability kit the AI fires through `pick_ability` / `resolve_ability`.
 #[derive(Debug, Clone)]
 pub struct EnemyConfig {
     /// Stat profile for this archetype (HP, mana, armor, attack, speed).
     pub stats: StatsBundleData,
-    /// Acquire: a living player inside this radius of the mob enters combat.
+    /// Acquire: a living player inside this radius of the origin enters combat.
     pub aggro: f32,
     /// Reset: if the mob is farther than this from its spawn, drop and go home.
     pub leash_aggro: f32,
-    /// Shared `BaseAbility` ids, in picker order. Slice 1 uses the first entry.
+    /// How the mob notices a player. Default for trash is proximity.
+    pub acquire: AcquirePolicy,
+    /// Center of the acquire circle: current body or spawn.
+    pub origin: AggroOrigin,
+    /// Who to fight among candidates. Default for trash is nearest.
+    pub threat: ThreatPolicy,
+    /// Shared `BaseAbility` ids, scored by [`AbilityUse::priority`].
     pub abilities: Vec<AbilityKitEntry>,
+    pub rank: EnemyRank,
+    pub movement: CombatMovement,
+    pub arena_radius: Option<f32>,
+    pub enrage_after_seconds: Option<f32>,
+    pub phases: Vec<BossPhaseDef>,
 }
 
 /// Configuration returned by [`super::definition::BossPlaceable::boss_config`].
 ///
-/// The boss plugin reads the `rotation` list to build the
-/// `BossSpellbook`; today that list is hardcoded as `Boss::SPELLS` in the
-/// dragon definition — this DTO replaces that constant so each boss kind
-/// can declare its own rotation.
+/// Same ability catalog as [`EnemyConfig`]: `BaseAbility` ids plus [`AbilityUse`]
+/// gates. Phase movement lives on [`EnemyConfig::phases`].
 #[derive(Debug, Clone)]
 pub struct BossConfig {
     /// Stat profile for this boss.
     pub stats: StatsBundleData,
-    /// Spell ids in the boss rotation, in priority order.
-    pub rotation: Vec<SpellId>,
+    /// Catalog kit the AI picks from. Same entries as an enemy kit.
+    pub abilities: Vec<AbilityKitEntry>,
     /// Radius of the arena trigger centered on the boss spawn.
     pub arena_radius: f32,
 }
@@ -73,7 +124,7 @@ pub struct BossConfig {
 ///
 /// Kept as a non-`Component` enum so the trait stays object-safe; the server
 /// binding converts it into the appropriate replicated component at spawn.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum InteractionKind {
     /// Opens a shop inventory. `inventory_id` references a content table.
     Shop { inventory_id: String },
@@ -81,8 +132,10 @@ pub enum InteractionKind {
     Market { market_id: String },
     /// Opens a dialogue tree. `dialogue_tree_id` references a dialogue asset.
     Dialogue { dialogue_tree_id: String },
-    /// Opens a crafter UI listing catalogue items in `category` that have a recipe.
-    Craft { category: ItemCategory },
+    /// Opens an isolated crafting bench for one item category.
+    Craft {
+        category: crate::items::ItemCategory,
+    },
     /// Opens a chest and rolls the given loot table.
     OpenChest { loot_table_id: String },
     /// Toggles a door (open / closed).

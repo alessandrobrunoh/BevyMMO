@@ -43,7 +43,7 @@ use spacetimedb::{ReducerContext, Table, Uuid};
 use crate::rows::{equipment_from_rows, StatsRow, EQUIP_SLOTS};
 use crate::tables::{
     boss_state, crowd_control, damage_event, entity_stats, equipment, game_entity, party_member,
-    periodic_effect, player_stats, stat_modifier, threat, BossPhaseRow, BossState, DamageEventRow,
+    periodic_effect, player_stats, stat_modifier, BossPhaseRow, BossState, DamageEventRow,
     EntityKindRow, EntityStateRow, EntityStats, GameEntity, ModifierKindRow, PeriodicEffect,
     StatModifier,
 };
@@ -604,8 +604,8 @@ pub fn apply_healing(ctx: &ReducerContext, target: u64, amount: f32) {
 /// Applies a timed buff or debuff to one stat field of `target`.
 ///
 /// `field` is a [`StatField`] debug name — `"Speed"`, `"Armor"`,
-/// `"AttackPower"`, `"MaxHealth"`, `"MaxMana"`, `"ManaRegeneration"`,
-/// `"GatheringSpeed"`, `"GatheringBonus"` — matching how
+/// `"AttackPower"`, `"ThreatGeneration"`, `"MaxHealth"`, `"MaxMana"`,
+/// `"ManaRegeneration"`, `"GatheringSpeed"`, `"GatheringBonus"` — matching how
 /// `stat_modifier.field` is stored. An unrecognised name is logged and ignored
 /// rather than panicking: the caller is gameplay code, and a typo in a spell
 /// definition should not take down the tick.
@@ -766,16 +766,7 @@ fn reset_boss_encounter(ctx: &ReducerContext, entity_id: u64) {
         ..boss
     });
 
-    let threat_ids: Vec<u64> = ctx
-        .db
-        .threat()
-        .by_boss()
-        .filter(&entity_id)
-        .map(|row| row.id)
-        .collect();
-    for id in threat_ids {
-        ctx.db.threat().id().delete(&id);
-    }
+    crate::sim::ai::clear_threat(ctx, entity_id);
 }
 
 /// Removes every modifier on `target` and rebuilds its stats.
@@ -989,6 +980,7 @@ fn apply_stat_op(stats: &mut StatsRow, field: StatField, op: ModifierOp, value: 
         StatField::Speed => &mut stats.movement_speed,
         StatField::Armor => &mut stats.armor,
         StatField::AttackPower => &mut stats.attack_power,
+        StatField::ThreatGeneration => &mut stats.threat_generation,
         StatField::MaxHealth => &mut stats.max_health,
         StatField::MaxMana => &mut stats.max_mana,
         StatField::ManaRegeneration => &mut stats.mana_regeneration,
@@ -1008,6 +1000,7 @@ fn parse_stat_field(field: &str) -> Option<StatField> {
         "Speed" => Some(StatField::Speed),
         "Armor" => Some(StatField::Armor),
         "AttackPower" => Some(StatField::AttackPower),
+        "ThreatGeneration" => Some(StatField::ThreatGeneration),
         "MaxHealth" => Some(StatField::MaxHealth),
         "MaxMana" => Some(StatField::MaxMana),
         "ManaRegeneration" => Some(StatField::ManaRegeneration),
@@ -1023,6 +1016,7 @@ fn stat_field_name(field: StatField) -> &'static str {
         StatField::Speed => "Speed",
         StatField::Armor => "Armor",
         StatField::AttackPower => "AttackPower",
+        StatField::ThreatGeneration => "ThreatGeneration",
         StatField::MaxHealth => "MaxHealth",
         StatField::MaxMana => "MaxMana",
         StatField::ManaRegeneration => "ManaRegeneration",

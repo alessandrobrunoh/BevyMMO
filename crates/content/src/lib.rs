@@ -16,8 +16,6 @@ pub mod market_definitions;
 pub mod placeable_definitions;
 #[path = "root_words/mod.rs"]
 pub mod root_word_definitions;
-#[path = "spells/mod.rs"]
-pub mod spell_definitions;
 #[path = "statuses/mod.rs"]
 pub mod status_definitions;
 

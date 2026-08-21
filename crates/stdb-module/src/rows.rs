@@ -25,8 +25,6 @@ use bevymmo_domain::items::components::{Equipment, Inventory};
 use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId};
 use bevymmo_domain::items::registry::ItemId;
 use bevymmo_domain::items::EquipSlot;
-use bevymmo_domain::spells::components::SpellHotbar;
-use bevymmo_domain::spells::registry::SpellId;
 use bevymmo_domain::stats::components::{
     CombatStats, GatheringStats, MovementStats, StatsBundleData, VitalStats,
 };
@@ -179,6 +177,11 @@ pub struct StatsRow {
     pub armor: f32,
     pub movement_speed: f32,
     pub attack_power: f32,
+    /// Multiplier on threat this entity generates when it deals damage.
+    ///
+    /// Adding this column is not auto-filled to `1.0` for existing character
+    /// rows; `./scripts/stdb.sh reset` is required after publish.
+    pub threat_generation: f32,
     pub gathering_speed: f32,
     pub gathering_bonus: f32,
 }
@@ -193,6 +196,7 @@ impl From<&StatsBundleData> for StatsRow {
             armor: s.combat.armor,
             movement_speed: s.movement.speed,
             attack_power: s.combat.attack_power,
+            threat_generation: s.combat.threat_generation,
             gathering_speed: s.gathering.speed,
             gathering_bonus: s.gathering.bonus,
         }
@@ -212,6 +216,7 @@ impl From<StatsRow> for StatsBundleData {
             combat: CombatStats {
                 armor: s.armor,
                 attack_power: s.attack_power,
+                threat_generation: s.threat_generation,
             },
             movement: MovementStats {
                 speed: s.movement_speed,
@@ -477,26 +482,6 @@ pub struct HotbarRow {
     pub primary: Option<String>,
     pub secondary: Option<String>,
     pub ultimate: Option<String>,
-}
-
-impl From<&SpellHotbar> for HotbarRow {
-    fn from(h: &SpellHotbar) -> Self {
-        Self {
-            primary: h.primary.as_ref().map(|s| s.as_str().to_string()),
-            secondary: h.secondary.as_ref().map(|s| s.as_str().to_string()),
-            ultimate: h.ultimate.as_ref().map(|s| s.as_str().to_string()),
-        }
-    }
-}
-
-impl From<&HotbarRow> for SpellHotbar {
-    fn from(h: &HotbarRow) -> Self {
-        SpellHotbar {
-            primary: h.primary.clone().map(SpellId::new),
-            secondary: h.secondary.clone().map(SpellId::new),
-            ultimate: h.ultimate.clone().map(SpellId::new),
-        }
-    }
 }
 
 pub fn known_ancient_language_from_rows(

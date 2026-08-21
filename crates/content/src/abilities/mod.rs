@@ -1,10 +1,28 @@
 //! Base-ability content and its registry.
 
 pub mod blade_storm;
+pub mod cataclysm;
+pub mod cinder_storm;
 pub mod cleave;
+pub mod dragon_claw;
 pub mod lunge;
+pub mod molten_eruption;
+pub mod searing_breath;
+pub mod tail_sweep;
+pub mod wing_buffet;
 
 use crate::abilities::BaseAbilityRegistry;
+
+/// Catalog ids for the dragon kit (`#[base_ability]` in this module).
+pub const DRAGON_ABILITY_IDS: &[&str] = &[
+    "dragon_claw",
+    "searing_breath",
+    "cinder_storm",
+    "wing_buffet",
+    "tail_sweep",
+    "molten_eruption",
+    "cataclysm",
+];
 
 /// Builds the registry containing every base ability shipped by this game build.
 pub fn default_base_abilities() -> BaseAbilityRegistry {
@@ -12,6 +30,13 @@ pub fn default_base_abilities() -> BaseAbilityRegistry {
     cleave::register(&mut registry);
     lunge::register(&mut registry);
     blade_storm::register(&mut registry);
+    dragon_claw::register(&mut registry);
+    searing_breath::register(&mut registry);
+    cinder_storm::register(&mut registry);
+    wing_buffet::register(&mut registry);
+    tail_sweep::register(&mut registry);
+    molten_eruption::register(&mut registry);
+    cataclysm::register(&mut registry);
     registry
 }
 
@@ -22,10 +47,31 @@ mod tests {
     #[test]
     fn default_base_abilities_contains_sword_gestures() {
         let registry = default_base_abilities();
-        assert_eq!(registry.len(), 3);
+        assert_eq!(registry.len(), 3 + DRAGON_ABILITY_IDS.len());
         assert!(registry.contains(&crate::abilities::AbilityId::new("cleave")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("lunge")));
         assert!(registry.contains(&crate::abilities::AbilityId::new("blade_storm")));
+    }
+
+    #[test]
+    fn default_base_abilities_contains_every_dragon_id() {
+        let registry = default_base_abilities();
+        for id in DRAGON_ABILITY_IDS {
+            assert!(
+                registry.contains(&crate::abilities::AbilityId::new(*id)),
+                "dragon ability {id} must be registered"
+            );
+        }
+    }
+
+    #[test]
+    fn pick_ability_at_hp_0_2_prefers_cataclysm_if_in_kit() {
+        use crate::placeable_definitions::creatures::boss_dragon::BossDragon;
+        use crate::placeables::{pick_ability, BossPlaceable};
+
+        let kit = BossDragon.boss_config().abilities;
+        let picked = pick_ability(&kit, 3.0, 0.2, |_| true).expect("berserk pick");
+        assert_eq!(picked.ability_id.as_str(), "cataclysm");
     }
 
     #[test]

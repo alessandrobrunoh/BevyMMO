@@ -1,64 +1,78 @@
 //! Isolated player-market NPCs.
 
-use std::sync::Arc;
+use crate::placeables::PlaceableRegistry;
 
-use crate::placeables::{
-    AssetHint, InteractionKind, KindId, NpcPlaceable, PlaceableDefaults, PlaceableDefinition,
-    PlaceableRegistry,
-};
-use crate::world::TransformData;
-use bevymmo_gameplay::markets::{MARKET_1_ID, MARKET_2_ID};
+mod npc_market_1 {
+    use crate::placeables::npc;
 
-struct MarketNpc {
-    kind: &'static str,
-    name: &'static str,
-    market_id: &'static str,
+    #[npc(
+        id = "npc_market_1",
+        name = "Market 1",
+        icon = "🏦",
+        asset = "models/npcs/merchant.glb",
+        tint = (0.75, 0.6, 0.25),
+        interaction = market("market_1"),
+    )]
+    pub struct Market1;
 }
 
-impl PlaceableDefinition for MarketNpc {
-    fn id(&self) -> KindId {
-        KindId::new(self.kind)
-    }
-    fn display_name(&self) -> &'static str {
-        self.name
-    }
-    fn icon(&self) -> &'static str {
-        "🏦"
-    }
-    fn asset_hint(&self) -> AssetHint {
-        AssetHint::Scene("models/npcs/merchant.glb")
-    }
-    fn defaults(&self) -> PlaceableDefaults {
-        PlaceableDefaults {
-            transform: TransformData {
-                translation: [0.0, 0.0, 0.0],
-                rotation_deg: [0.0, 0.0, 0.0],
-                scale: [1.0, 1.0, 1.0],
-            },
-            tint: Some([0.75, 0.6, 0.25]),
-            collision: None,
-            blocks_movement: false,
-        }
-    }
-}
+mod npc_market_2 {
+    use crate::placeables::npc;
 
-impl NpcPlaceable for MarketNpc {
-    fn interaction(&self) -> InteractionKind {
-        InteractionKind::Market {
-            market_id: self.market_id.to_string(),
-        }
-    }
+    #[npc(
+        id = "npc_market_2",
+        name = "Market 2",
+        icon = "🏦",
+        asset = "models/npcs/merchant.glb",
+        tint = (0.75, 0.6, 0.25),
+        interaction = market("market_2"),
+    )]
+    pub struct Market2;
 }
 
 pub fn register(registry: &mut PlaceableRegistry) {
-    registry.register_npc(Arc::new(MarketNpc {
-        kind: "npc_market_1",
-        name: "Market 1",
-        market_id: MARKET_1_ID,
-    }));
-    registry.register_npc(Arc::new(MarketNpc {
-        kind: "npc_market_2",
-        name: "Market 2",
-        market_id: MARKET_2_ID,
-    }));
+    npc_market_1::register(registry);
+    npc_market_2::register(registry);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::placeables::{AssetHint, InteractionKind, KindId, NpcPlaceable};
+    use bevymmo_gameplay::markets::{MARKET_1_ID, MARKET_2_ID};
+
+    fn assert_market_npc(def: &dyn NpcPlaceable, kind: &str, name: &str, expected_market_id: &str) {
+        assert_eq!(def.id().as_str(), kind);
+        assert_eq!(def.display_name(), name);
+        assert_eq!(def.icon(), "🏦");
+        assert!(matches!(
+            def.asset_hint(),
+            AssetHint::Scene("models/npcs/merchant.glb")
+        ));
+        assert_eq!(def.defaults().tint, Some([0.75, 0.6, 0.25]));
+        match def.interaction() {
+            InteractionKind::Market { market_id } => {
+                assert_eq!(market_id, expected_market_id);
+            }
+            other => panic!("expected Market, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn market_npcs_keep_isolated_halls() {
+        let mut registry = PlaceableRegistry::default();
+        register(&mut registry);
+
+        let one = registry
+            .npcs
+            .get(&KindId::new("npc_market_1"))
+            .expect("npc_market_1 is registered");
+        assert_market_npc(one.as_ref(), "npc_market_1", "Market 1", MARKET_1_ID);
+
+        let two = registry
+            .npcs
+            .get(&KindId::new("npc_market_2"))
+            .expect("npc_market_2 is registered");
+        assert_market_npc(two.as_ref(), "npc_market_2", "Market 2", MARKET_2_ID);
+    }
 }

@@ -15,6 +15,7 @@ pub fn player_defaults() -> StatsBundleData {
         combat: CombatStats {
             attack_power: 10.0,
             armor: 25.0,
+            threat_generation: 1.0,
         },
         vital: VitalStats {
             current_health: 100.0,
@@ -37,6 +38,7 @@ pub fn enemy_defaults() -> StatsBundleData {
         combat: CombatStats {
             attack_power: 20.0,
             armor: 10.0,
+            threat_generation: 1.0,
         },
         vital: VitalStats {
             current_health: 50.0,
@@ -62,6 +64,7 @@ pub fn boss_defaults() -> StatsBundleData {
         combat: CombatStats {
             attack_power: 28.0,
             armor: 30.0,
+            threat_generation: 1.0,
         },
         vital: VitalStats {
             current_health: 6000.0,
@@ -87,6 +90,7 @@ pub fn dummy_defaults() -> StatsBundleData {
         combat: CombatStats {
             attack_power: 0.0,
             armor: 0.0,
+            threat_generation: 1.0,
         },
         vital: VitalStats {
             current_health: 10_000.0,
@@ -115,6 +119,7 @@ mod tests {
         assert_eq!(stats.vital.mana_regeneration, 5.0);
         assert_eq!(stats.gathering.speed, 0.0);
         assert_eq!(stats.gathering.bonus, 0.0);
+        assert_eq!(stats.combat.threat_generation, 1.0);
     }
 
     #[test]

@@ -144,6 +144,15 @@ pub(crate) fn enemy_config_for(kind_id: &str) -> Option<bevymmo_domain::placeabl
         .map(|definition| definition.enemy_config())
 }
 
+/// Catalog config for a spawned boss, keyed by the placeable `kind_id`.
+pub(crate) fn boss_config_for(kind_id: &str) -> Option<bevymmo_domain::placeables::BossConfig> {
+    let id = bevymmo_domain::placeables::KindId::new(kind_id.to_string());
+    placeables()
+        .bosses
+        .get(&id)
+        .map(|definition| definition.boss_config())
+}
+
 /// Reverses `build.rs`'s encoding.
 fn decode(bytes: &[u8]) -> Result<MapManifest, String> {
     let (mut manifest, heightfields): EncodedMap =

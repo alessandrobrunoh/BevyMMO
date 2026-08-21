@@ -62,6 +62,7 @@ mod tests {
             CombatStats {
                 attack_power: 10.0,
                 armor: 100.0,
+                threat_generation: 1.0,
             },
             VitalStats {
                 current_health: 100.0,
@@ -99,6 +100,7 @@ mod tests {
                 CombatStats {
                     attack_power: 10.0,
                     armor: 0.0,
+                    threat_generation: 1.0,
                 },
                 VitalStats {
                     current_health: 100.0,
@@ -144,6 +146,7 @@ mod tests {
             CombatStats {
                 attack_power: 10.0,
                 armor: 0.0,
+                threat_generation: 1.0,
             },
             VitalStats {
                 current_health: 100.0,

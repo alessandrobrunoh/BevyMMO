@@ -3,7 +3,6 @@
 use std::borrow::Cow;
 
 use crate::economy::{quote_fee, FeeQuote, Gold, GoldError};
-use crate::items::registry::ItemId;
 use crate::registry::Registry;
 
 /// How close a character must stand to an in-game market NPC, squared.
@@ -33,18 +32,18 @@ impl MarketId {
 }
 
 /// Static description of one isolated market.
+///
+/// What a market accepts is a property of the *item*, not of the hall: any
+/// `tradable` item can be listed anywhere. Halls used to carry an allowlist as
+/// well, which made an item flagged `tradable = true` still unsellable
+/// everywhere unless someone remembered to add its id to a hall — a rule with
+/// no visible cause in the item that was refused. What still separates the
+/// halls is their order books and their fees.
 #[derive(Debug, Clone)]
 pub struct MarketDefinition {
     pub id: MarketId,
     pub display_name: Cow<'static, str>,
     pub fee_bps: u16,
-    pub allowed_item_ids: Vec<ItemId>,
-}
-
-impl MarketDefinition {
-    pub fn allows(&self, item_id: &ItemId) -> bool {
-        self.allowed_item_ids.iter().any(|id| id == item_id)
-    }
 }
 
 /// Lookup table of markets, keyed by [`MarketId`].
@@ -75,7 +74,8 @@ impl MarketRegistry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarketError {
     UnknownMarket,
-    ItemNotAllowed,
+    /// No item type with that id exists in the registry.
+    UnknownItem,
     /// The item type is flagged `tradable = false`. This market transfers
     /// ownership between players, so a non-tradable item cannot be listed,
     /// bid on, or filled here.
@@ -94,7 +94,7 @@ impl std::fmt::Display for MarketError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnknownMarket => write!(f, "unknown market"),
-            Self::ItemNotAllowed => write!(f, "that item cannot be traded in this market"),
+            Self::UnknownItem => write!(f, "no such item"),
             Self::ItemNotTradable => write!(f, "that item cannot be traded"),
             Self::WrongMarket => write!(f, "that order belongs to a different market"),
             Self::SelfTrade => write!(f, "you cannot fill your own order"),
@@ -233,26 +233,13 @@ pub fn plan_fill_buy_order(
     Ok(FillPlan { quote })
 }
 
-pub fn assert_item_allowed(market: &MarketDefinition, item_id: &ItemId) -> Result<(), MarketError> {
-    if market.allows(item_id) {
-        Ok(())
-    } else {
-        Err(MarketError::ItemNotAllowed)
-    }
-}
-
-/// Whether `item_id` may be listed, bid on, or filled in this market.
+/// Whether an item may be listed, bid on, or filled in a market.
 ///
-/// These halls are player-to-player order books, so the item must be on the
-/// hall allowlist **and** `tradable`. Callers look the flag up from the item
+/// These halls are player-to-player order books, so the one thing that matters
+/// is the item's own `tradable` flag. Callers look it up from the item
 /// registry; this function stays a pure check so tests do not need a full
 /// `Item` impl.
-pub fn assert_item_marketable(
-    market: &MarketDefinition,
-    item_id: &ItemId,
-    tradable: bool,
-) -> Result<(), MarketError> {
-    assert_item_allowed(market, item_id)?;
+pub fn assert_item_marketable(tradable: bool) -> Result<(), MarketError> {
     if !tradable {
         return Err(MarketError::ItemNotTradable);
     }
@@ -276,36 +263,16 @@ mod tests {
             id: MarketId::new(MARKET_1_ID),
             display_name: "Market 1".into(),
             fee_bps: MARKET_1_FEE_BPS,
-            allowed_item_ids: vec![ItemId::new("sword"), ItemId::new("bow")],
         }
     }
 
+    /// The flag on the item is the whole rule: a hall no longer has a say.
     #[test]
-    fn market_one_rejects_armor() {
-        let market = market_one();
-        assert!(market.allows(&ItemId::new("sword")));
+    fn marketable_follows_the_item_flag_alone() {
+        assert!(assert_item_marketable(true).is_ok());
         assert_eq!(
-            assert_item_allowed(&market, &ItemId::new("simple_helm")),
-            Err(MarketError::ItemNotAllowed)
-        );
-    }
-
-    #[test]
-    fn marketable_requires_allowlist_and_tradable() {
-        let market = market_one();
-        let sword = ItemId::new("sword");
-        assert!(assert_item_marketable(&market, &sword, true).is_ok());
-        assert_eq!(
-            assert_item_marketable(&market, &sword, false),
+            assert_item_marketable(false),
             Err(MarketError::ItemNotTradable)
-        );
-        assert_eq!(
-            assert_item_marketable(&market, &ItemId::new("simple_helm"), true),
-            Err(MarketError::ItemNotAllowed)
-        );
-        assert_eq!(
-            assert_item_marketable(&market, &ItemId::new("simple_helm"), false),
-            Err(MarketError::ItemNotAllowed)
         );
     }
 
@@ -405,21 +372,17 @@ mod tests {
     }
 
     #[test]
-    fn isolated_registries_do_not_share_allowlists() {
+    fn registered_halls_keep_their_own_fees() {
         let mut registry = MarketRegistry::default();
         registry.register(market_one());
         registry.register(MarketDefinition {
             id: MarketId::new(MARKET_2_ID),
             display_name: "Market 2".into(),
             fee_bps: MARKET_2_FEE_BPS,
-            allowed_item_ids: vec![ItemId::new("simple_helm")],
         });
-        let one = registry.get(MARKET_1_ID).unwrap();
-        let two = registry.get(MARKET_2_ID).unwrap();
-        assert!(one.allows(&ItemId::new("sword")));
-        assert!(!two.allows(&ItemId::new("sword")));
-        assert!(two.allows(&ItemId::new("simple_helm")));
-        assert!(!one.allows(&ItemId::new("simple_helm")));
+        assert_eq!(registry.get(MARKET_1_ID).unwrap().fee_bps, MARKET_1_FEE_BPS);
+        assert_eq!(registry.get(MARKET_2_ID).unwrap().fee_bps, MARKET_2_FEE_BPS);
+        assert!(registry.get("market_3").is_none());
     }
 
     fn bid(id: u64, market: &str, item: &str, price: u64, is_own: bool) -> BuyBid {

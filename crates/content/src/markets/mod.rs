@@ -1,29 +1,23 @@
 //! The two isolated markets shipped with this build.
 
-use bevymmo_gameplay::items::registry::ItemId;
 use bevymmo_gameplay::markets::{
     MarketDefinition, MarketId, MarketRegistry, MARKET_1_FEE_BPS, MARKET_1_ID, MARKET_2_FEE_BPS,
     MARKET_2_ID,
 };
 
-/// Market 1: weapons. Market 2: a subset of armor. Isolated order books.
+/// Two halls with isolated order books and different fees. Neither restricts
+/// what it accepts: any item flagged `tradable` can be listed in either.
 pub fn default_markets() -> MarketRegistry {
     let mut registry = MarketRegistry::default();
     registry.register(MarketDefinition {
         id: MarketId::new(MARKET_1_ID),
         display_name: "Market 1".into(),
         fee_bps: MARKET_1_FEE_BPS,
-        allowed_item_ids: vec![ItemId::new("sword")],
     });
     registry.register(MarketDefinition {
         id: MarketId::new(MARKET_2_ID),
         display_name: "Market 2".into(),
         fee_bps: MARKET_2_FEE_BPS,
-        allowed_item_ids: vec![
-            ItemId::new("simple_helm"),
-            ItemId::new("simple_cuirass"),
-            ItemId::new("simple_buckler"),
-        ],
     });
     registry
 }
@@ -31,33 +25,26 @@ pub fn default_markets() -> MarketRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevymmo_gameplay::items::registry::ItemId;
+    use bevymmo_gameplay::markets::assert_item_marketable;
 
     #[test]
-    fn markets_are_isolated() {
+    fn halls_are_isolated_by_fee_not_by_catalogue() {
         let registry = default_markets();
         let one = registry.get(MARKET_1_ID).unwrap();
         let two = registry.get(MARKET_2_ID).unwrap();
-        assert!(one.allows(&ItemId::new("sword")));
-        assert!(!two.allows(&ItemId::new("sword")));
-        assert!(two.allows(&ItemId::new("simple_helm")));
-        assert!(!one.allows(&ItemId::new("simple_helm")));
+        assert_eq!(one.fee_bps, MARKET_1_FEE_BPS);
+        assert_eq!(two.fee_bps, MARKET_2_FEE_BPS);
+        assert_ne!(one.fee_bps, two.fee_bps);
     }
 
+    /// A gathered material is the case that used to fail: `tradable = true`,
+    /// but on nobody's allowlist, so it could not be sold anywhere.
     #[test]
-    fn allowlisted_items_are_tradable() {
+    fn every_tradable_item_can_be_listed() {
         let items = crate::item_definitions::default_items();
-        for market in default_markets().iter() {
-            for item_id in &market.allowed_item_ids {
-                let item = items.get(item_id).unwrap_or_else(|| {
-                    panic!("allowlist id {} is not a registered item", item_id.as_str())
-                });
-                assert!(
-                    item.tradable(),
-                    "{} is on {} but tradable = false",
-                    item_id.as_str(),
-                    market.id.as_str()
-                );
-            }
-        }
+        let wood = items.get(&ItemId::new("wood")).expect("wood is registered");
+        assert!(wood.tradable());
+        assert!(assert_item_marketable(wood.tradable()).is_ok());
     }
 }

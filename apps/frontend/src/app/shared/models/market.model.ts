@@ -2,7 +2,6 @@ export interface MarketSummary {
   id: string;
   display_name: string;
   fee_bps: number;
-  allowed_item_ids: string[];
 }
 
 export interface SellOffer {

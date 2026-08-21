@@ -31,6 +31,7 @@ pub mod cast_source_row_type;
 pub mod cast_spell_reducer;
 pub mod cast_state_table;
 pub mod cast_state_type;
+pub mod cast_weapon_reducer;
 pub mod character_wallet_table;
 pub mod character_wallet_type;
 pub mod claim_npc_item_reducer;
@@ -48,7 +49,6 @@ pub mod effect_payload_filter_row_type;
 pub mod effect_payload_kind_row_type;
 pub mod effect_payload_row_type;
 pub mod effect_payload_selection_row_type;
-pub mod cast_weapon_reducer;
 pub mod entity_kind_row_type;
 pub mod entity_state_row_type;
 pub mod entity_stats_table;
@@ -178,6 +178,7 @@ pub use cast_source_row_type::CastSourceRow;
 pub use cast_spell_reducer::cast_spell;
 pub use cast_state_table::*;
 pub use cast_state_type::CastState;
+pub use cast_weapon_reducer::cast_weapon;
 pub use character_wallet_table::*;
 pub use character_wallet_type::CharacterWallet;
 pub use claim_npc_item_reducer::claim_npc_item;
@@ -195,7 +196,6 @@ pub use effect_payload_filter_row_type::EffectPayloadFilterRow;
 pub use effect_payload_kind_row_type::EffectPayloadKindRow;
 pub use effect_payload_row_type::EffectPayloadRow;
 pub use effect_payload_selection_row_type::EffectPayloadSelectionRow;
-pub use cast_weapon_reducer::cast_weapon;
 pub use entity_kind_row_type::EntityKindRow;
 pub use entity_state_row_type::EntityStateRow;
 pub use entity_stats_table::*;
@@ -329,6 +329,11 @@ pub enum Reducer {
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
     },
+    CastWeapon {
+        slot: String,
+        target_entity: Option<u64>,
+        target_position: Option<Vec3Row>,
+    },
     ClaimNpcItem {
         npc_entity_id: u64,
         item_id: String,
@@ -338,11 +343,6 @@ pub enum Reducer {
     },
     DestroyItem {
         instance_id: u64,
-    },
-    CastWeapon {
-        slot: String,
-        target_entity: Option<u64>,
-        target_position: Option<Vec3Row>,
     },
     EquipItem {
         slot_index: u8,
@@ -474,10 +474,10 @@ impl __sdk::Reducer for Reducer {
             Reducer::CancelBuyOrder { .. } => "cancel_buy_order",
             Reducer::CancelSellOrder { .. } => "cancel_sell_order",
             Reducer::CastSpell { .. } => "cast_spell",
+            Reducer::CastWeapon { .. } => "cast_weapon",
             Reducer::ClaimNpcItem { .. } => "claim_npc_item",
             Reducer::DeleteCharacter { .. } => "delete_character",
             Reducer::DestroyItem { .. } => "destroy_item",
-            Reducer::CastWeapon { .. } => "cast_weapon",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::GmClearPropOverride { .. } => "gm_clear_prop_override",
             Reducer::GmGrantGold { .. } => "gm_grant_gold",
@@ -555,6 +555,15 @@ impl __sdk::Reducer for Reducer {
                 target_entity: target_entity.clone(),
                 target_position: target_position.clone(),
             }),
+            Reducer::CastWeapon {
+                slot,
+                target_entity,
+                target_position,
+            } => __sats::bsatn::to_vec(&cast_weapon_reducer::CastWeaponArgs {
+                slot: slot.clone(),
+                target_entity: target_entity.clone(),
+                target_position: target_position.clone(),
+            }),
             Reducer::ClaimNpcItem {
                 npc_entity_id,
                 item_id,
@@ -572,15 +581,6 @@ impl __sdk::Reducer for Reducer {
                     instance_id: instance_id.clone(),
                 })
             }
-            Reducer::CastWeapon {
-                slot,
-                target_entity,
-                target_position,
-            } => __sats::bsatn::to_vec(&cast_weapon_reducer::CastWeaponArgs {
-                slot: slot.clone(),
-                target_entity: target_entity.clone(),
-                target_position: target_position.clone(),
-            }),
             Reducer::EquipItem { slot_index } => {
                 __sats::bsatn::to_vec(&equip_item_reducer::EquipItemArgs {
                     slot_index: slot_index.clone(),

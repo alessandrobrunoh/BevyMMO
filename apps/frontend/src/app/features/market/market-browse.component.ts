@@ -69,15 +69,6 @@ export class MarketBrowseComponent implements OnInit {
       map.get(offer.item_id)!.push(offer);
     }
 
-    const hall = this.market();
-    if (hall && hall.allowed_item_ids) {
-      for (const allowedId of hall.allowed_item_ids) {
-        if (!map.has(allowedId)) {
-          map.set(allowedId, []);
-        }
-      }
-    }
-
     const results: GroupedItemSummary[] = [];
     map.forEach((offerList, itemId) => {
       const sorted = [...offerList].sort((a, b) => a.price_gold - b.price_gold);

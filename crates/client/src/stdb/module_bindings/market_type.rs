@@ -10,7 +10,6 @@ pub struct Market {
     pub id: String,
     pub display_name: String,
     pub fee_bps: u16,
-    pub allowed_item_ids: Vec<String>,
 }
 
 impl __sdk::InModule for Market {
@@ -24,7 +23,6 @@ pub struct MarketCols {
     pub id: __sdk::__query_builder::Col<Market, String>,
     pub display_name: __sdk::__query_builder::Col<Market, String>,
     pub fee_bps: __sdk::__query_builder::Col<Market, u16>,
-    pub allowed_item_ids: __sdk::__query_builder::Col<Market, Vec<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for Market {
@@ -34,7 +32,6 @@ impl __sdk::__query_builder::HasCols for Market {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             display_name: __sdk::__query_builder::Col::new(table_name, "display_name"),
             fee_bps: __sdk::__query_builder::Col::new(table_name, "fee_bps"),
-            allowed_item_ids: __sdk::__query_builder::Col::new(table_name, "allowed_item_ids"),
         }
     }
 }

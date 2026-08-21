@@ -183,7 +183,6 @@ pub struct Market {
     pub id: String,
     pub display_name: String,
     pub fee_bps: u16,
-    pub allowed_item_ids: Vec<String>,
 }
 
 /// Runtime NPC profile. Re-seeded with `game_entity` because entity ids

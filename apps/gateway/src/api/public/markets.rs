@@ -21,7 +21,6 @@ pub struct MarketSummary {
     pub id: String,
     pub display_name: String,
     pub fee_bps: u16,
-    pub allowed_item_ids: Vec<String>,
 }
 
 impl From<Market> for MarketSummary {
@@ -30,7 +29,6 @@ impl From<Market> for MarketSummary {
             id: row.id,
             display_name: row.display_name,
             fee_bps: row.fee_bps,
-            allowed_item_ids: row.allowed_item_ids,
         }
     }
 }
@@ -307,7 +305,6 @@ mod tests {
             id: id.to_string(),
             display_name: id.to_string(),
             fee_bps: 200,
-            allowed_item_ids: vec!["sword".into()],
         }
     }
 

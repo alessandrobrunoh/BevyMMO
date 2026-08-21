@@ -7,7 +7,7 @@ use bevymmo_domain::items::instance::ItemInstanceId;
 use bevymmo_domain::items::registry::{ItemId, ItemRegistry};
 use bevymmo_domain::markets::{
     assert_item_marketable, assert_order_cap, plan_fill, plan_fill_buy_order, plan_place_buy_order,
-    select_best_buy_order, BuyBid, MarketDefinition, MarketRegistry, MARKET_PROXIMITY_SQUARED,
+    select_best_buy_order, BuyBid, MarketRegistry, MARKET_PROXIMITY_SQUARED,
 };
 use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
@@ -30,12 +30,12 @@ fn item_registry() -> &'static ItemRegistry {
     REGISTRY.get_or_init(bevymmo_domain::content::items::default_items)
 }
 
-/// Allowlist plus `tradable`. Unknown ids fail before the flag.
-fn assert_can_trade_item(definition: &MarketDefinition, item_id: &ItemId) -> Result<(), String> {
+/// The item's own `tradable` flag. Unknown ids fail before the flag.
+fn assert_can_trade_item(item_id: &ItemId) -> Result<(), String> {
     let item = item_registry()
         .get(item_id)
         .ok_or_else(|| format!("unknown item {:?}", item_id.as_str()))?;
-    assert_item_marketable(definition, item_id, item.tradable()).map_err(|err| err.to_string())
+    assert_item_marketable(item.tradable()).map_err(|err| err.to_string())
 }
 
 /// Inserts the two catalog markets if this database does not have them yet.
@@ -49,11 +49,6 @@ pub fn seed_markets(ctx: &ReducerContext) {
             id: definition.id.as_str().to_string(),
             display_name: definition.display_name.to_string(),
             fee_bps: definition.fee_bps,
-            allowed_item_ids: definition
-                .allowed_item_ids
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
         });
     }
 }
@@ -143,7 +138,8 @@ pub fn place_sell_order(
         .market_id
         .clone()
         .ok_or_else(|| "that NPC is not a market".to_string())?;
-    let definition = market_registry()
+    // Validated for its own sake: an order must belong to a hall that exists.
+    market_registry()
         .get(&market_id)
         .ok_or_else(|| "unknown market".to_string())?;
 
@@ -160,7 +156,7 @@ pub fn place_sell_order(
         return Err("item instance is not in your inventory".to_string());
     };
     let instance = inventory.slots[slot].take().expect("slot was occupied");
-    assert_can_trade_item(definition, &instance.item_id)?;
+    assert_can_trade_item(&instance.item_id)?;
 
     store_inventory(ctx, character.character_id, &inventory);
     ctx.db.market_sell_order().insert(MarketSellOrder {
@@ -206,7 +202,7 @@ pub fn market_buy(
     let definition = market_registry()
         .get(&acting_market)
         .ok_or_else(|| "unknown market".to_string())?;
-    assert_can_trade_item(definition, &ItemId::new(order.item_id.clone()))?;
+    assert_can_trade_item(&ItemId::new(order.item_id.clone()))?;
     let seller_account = ensure_account_economy(ctx, seller.account_id);
     let buyer_wallet = ensure_wallet(ctx, buyer.character_id);
     let mut inventory = load_inventory(ctx, buyer.character_id)?;
@@ -281,11 +277,11 @@ pub fn place_buy_order(
         .market_id
         .clone()
         .ok_or_else(|| "that NPC is not a market".to_string())?;
-    let definition = market_registry()
+    market_registry()
         .get(&market_id)
         .ok_or_else(|| "unknown market".to_string())?;
     let item_id = ItemId::new(item_id);
-    assert_can_trade_item(definition, &item_id)?;
+    assert_can_trade_item(&item_id)?;
 
     let character = caller_character(ctx)?;
     assert_order_cap(open_order_count(ctx, character.character_id, &market_id))
@@ -341,7 +337,7 @@ pub fn market_sell(
         .as_ref()
         .expect("slot was occupied")
         .clone();
-    assert_can_trade_item(definition, &instance.item_id)?;
+    assert_can_trade_item(&instance.item_id)?;
 
     let item_id = instance.item_id.as_str().to_string();
     let rows: Vec<MarketBuyOrder> = ctx

@@ -74,19 +74,20 @@ pub fn listable_inventory_rows(inventory: &Inventory, market_id: &str) -> Vec<(u
         .collect()
 }
 
+/// Mirrors what `place_sell_order` will accept, so the sell list never offers a
+/// row the server is going to refuse.
 pub fn item_allowed_in_open_market(market_id: &str, item_id: &str) -> bool {
     item_market_status(market_id, item_id).is_ok()
 }
 
 fn item_market_status(market_id: &str, item_id: &str) -> Result<(), MarketError> {
-    let market = market_catalog()
-        .get(market_id)
-        .ok_or(MarketError::UnknownMarket)?;
-    let item_id = ItemId::new(item_id.to_string());
+    if !market_catalog().contains(market_id) {
+        return Err(MarketError::UnknownMarket);
+    }
     let item = item_catalog()
-        .get(&item_id)
-        .ok_or(MarketError::ItemNotAllowed)?;
-    assert_item_marketable(market, &item_id, item.tradable())
+        .get(&ItemId::new(item_id.to_string()))
+        .ok_or(MarketError::UnknownItem)?;
+    assert_item_marketable(item.tradable())
 }
 
 pub fn fee_bps_for_market(market_id: &str) -> u16 {
@@ -1468,21 +1469,23 @@ mod tests {
             rows,
             vec![(2, "sword".to_string()), (5, "simple_helm".to_string())]
         );
-        assert_eq!(
-            listable_inventory_rows(&inventory, MARKET_1_ID),
-            vec![(2, "sword".to_string())]
-        );
-        assert_eq!(
-            listable_inventory_rows(&inventory, MARKET_2_ID),
-            vec![(5, "simple_helm".to_string())]
-        );
+        // Both halls list both items: the sell list follows `tradable`, and
+        // nothing about the hall narrows it.
+        for market in [MARKET_1_ID, MARKET_2_ID] {
+            assert_eq!(listable_inventory_rows(&inventory, market), rows);
+        }
     }
 
     #[test]
-    fn item_allowed_in_open_market_uses_the_hall_allowlist() {
-        assert!(item_allowed_in_open_market(MARKET_1_ID, "sword"));
-        assert!(!item_allowed_in_open_market(MARKET_1_ID, "simple_helm"));
-        assert!(item_allowed_in_open_market(MARKET_2_ID, "simple_helm"));
+    fn every_tradable_item_is_listable_in_either_hall() {
+        for market in [MARKET_1_ID, MARKET_2_ID] {
+            assert!(item_allowed_in_open_market(market, "sword"));
+            assert!(item_allowed_in_open_market(market, "simple_helm"));
+            // The gathered material that used to be sellable nowhere.
+            assert!(item_allowed_in_open_market(market, "wood"));
+        }
+        assert!(!item_allowed_in_open_market("market_3", "sword"));
+        assert!(!item_allowed_in_open_market(MARKET_1_ID, "not_an_item"));
     }
 
     #[test]

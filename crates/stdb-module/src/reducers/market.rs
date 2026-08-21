@@ -132,7 +132,7 @@ fn take_listed_instance(
         return Err("item instance is not in your inventory".to_string());
     };
     let stacks = match inventory.slots[slot].as_ref() {
-        Some(instance) => item_stacks(&instance.item_id),
+        Some(instance) => instance.quantity > 1 || item_stacks(&instance.item_id),
         None => return Err("item instance is not in your inventory".to_string()),
     };
     inventory

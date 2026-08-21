@@ -24,10 +24,10 @@ use bevymmo_network::world_components::NetworkEntityId;
 use super::{
     MarketBagList, MarketCancelBuyButton, MarketCancelSellButton, MarketCard, MarketGoldText,
     MarketInventoryPanel, MarketOfferButton, MarketOfferName, MarketOfferPrice, MarketOffersPanel,
-    MarketOpenTicket, MarketPriceBump, MarketQuantityBump, MarketSellFromBag, MarketTab,
-    MarketTabButton, MarketTicketAction, MarketTicketActionButton, MarketTicketBuyList,
-    MarketTicketCard, MarketTicketCreateButton, MarketTicketFeeText, MarketTicketPriceText,
-    MarketTicketQuantityText, MarketTicketSellList, MarketUiState,
+    MarketOpenTicket, MarketPriceBump, MarketQuantityBump, MarketQuantityPreset, MarketSellFromBag,
+    MarketTab, MarketTabButton, MarketTicketAction, MarketTicketActionButton, MarketTicketBuyList,
+    MarketTicketCard, MarketTicketCreateButton, MarketTicketCreateSummary, MarketTicketFeeText,
+    MarketTicketPriceText, MarketTicketQuantityText, MarketTicketSellList, MarketUiState,
 };
 use crate::renderer;
 use crate::ui::button::{spawn_bar_child, BarButtonKind, UiButtonImages};
@@ -281,7 +281,7 @@ pub fn npc_market_on_click(
 const MARKET_CARD_WIDTH: f32 = 980.0;
 const MARKET_CARD_HEIGHT: f32 = 640.0;
 const TICKET_CARD_WIDTH: f32 = 1080.0;
-const TICKET_CARD_HEIGHT: f32 = 700.0;
+const TICKET_CARD_HEIGHT: f32 = 760.0;
 
 fn spawn_market_card(
     commands: &mut Commands,
@@ -619,6 +619,34 @@ fn spawn_quantity_bumps(parent: &mut ChildSpawnerCommands, theme: &UiTheme) {
                 );
             }
         });
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            column_gap: Val::Px(6.0),
+            ..default()
+        })
+        .with_children(|row| {
+            spawn_bar_child(
+                row,
+                "1",
+                13.0,
+                theme.text_color,
+                Val::Px(72.0),
+                Val::Px(28.0),
+                BarButtonKind::Neutral,
+                MarketQuantityPreset { amount: 1 },
+            );
+            spawn_bar_child(
+                row,
+                "All",
+                13.0,
+                theme.text_color,
+                Val::Px(72.0),
+                Val::Px(28.0),
+                BarButtonKind::Neutral,
+                MarketQuantityPreset { amount: 0 },
+            );
+        });
 }
 
 #[derive(Component)]
@@ -907,7 +935,7 @@ pub fn sell_from_bag(
         return;
     }
     ui.bag_slot = Some(sell.slot);
-    ui.list_quantity = sell.quantity.max(1);
+    ui.list_quantity = 1;
     ui.ticket_action = MarketTicketAction::SellOrder;
     let item_id = sell.item_id.clone();
     let slot = sell.slot;
@@ -1047,6 +1075,15 @@ fn spawn_market_ticket(
                             TextColor(text_color),
                             MarketTicketFeeText,
                         ));
+                        left.spawn((
+                            Text::new("List 1 of 1"),
+                            TextFont {
+                                font_size: FontSize::Px(14.0),
+                                ..default()
+                            },
+                            TextColor(text_color),
+                            MarketTicketCreateSummary,
+                        ));
                         spawn_bar_child(
                             left,
                             "Create",
@@ -1055,7 +1092,7 @@ fn spawn_market_ticket(
                             Val::Percent(100.0),
                             Val::Px(32.0),
                             BarButtonKind::Primary,
-                            MarketTicketCreateButton,
+                            MarketTicketCreateButton { armed: false },
                         );
                     });
                 columns
@@ -1170,6 +1207,7 @@ pub fn refresh_market_ticket(
             With<MarketTicketPriceText>,
             Without<MarketTicketFeeText>,
             Without<MarketTicketQuantityText>,
+            Without<MarketTicketCreateSummary>,
         ),
     >,
     mut quantity_text: Query<
@@ -1178,6 +1216,7 @@ pub fn refresh_market_ticket(
             With<MarketTicketQuantityText>,
             Without<MarketTicketFeeText>,
             Without<MarketTicketPriceText>,
+            Without<MarketTicketCreateSummary>,
         ),
     >,
     mut fee_text: Query<
@@ -1186,6 +1225,16 @@ pub fn refresh_market_ticket(
             With<MarketTicketFeeText>,
             Without<MarketTicketPriceText>,
             Without<MarketTicketQuantityText>,
+            Without<MarketTicketCreateSummary>,
+        ),
+    >,
+    mut create_summary: Query<
+        &mut Text,
+        (
+            With<MarketTicketCreateSummary>,
+            Without<MarketTicketPriceText>,
+            Without<MarketTicketQuantityText>,
+            Without<MarketTicketFeeText>,
         ),
     >,
     mut actions: Query<(&MarketTicketActionButton, &mut BackgroundColor)>,
@@ -1198,10 +1247,8 @@ pub fn refresh_market_ticket(
     let Some(market_id) = ui.open_market_id.as_deref() else {
         return;
     };
-    let available = bag_or_selected_instance(ticket, &inventory_ui, &inventory)
-        .map(|instance| instance.quantity.max(1))
-        .unwrap_or(1);
-    let quantity = ui.listing_quantity(available);
+    let available = ticket_available_quantity(ticket, &inventory_ui, &inventory);
+    let quantity = ui.listing_quantity(available.max(1));
     let unit = ui.listing_price();
     let quote_price = match ui.ticket_action {
         MarketTicketAction::Buy => {
@@ -1217,7 +1264,20 @@ pub fn refresh_market_ticket(
         text.0 = format!("Price: {unit}g each");
     }
     for mut text in quantity_text.iter_mut() {
-        text.0 = format!("Qty: {quantity} / {available}");
+        if available == 0 {
+            text.0 = format!("Qty: {quantity}");
+        } else {
+            text.0 = format!("Qty: {quantity} / {available}");
+        }
+    }
+    let summary = match ui.ticket_action {
+        MarketTicketAction::SellOrder => format!("List {quantity} of {}", available.max(quantity)),
+        MarketTicketAction::Sell => format!("Sell {quantity} of {}", available.max(quantity)),
+        MarketTicketAction::Buy => "Buy cheapest ask".to_string(),
+        MarketTicketAction::BuyOrder => "Place buy order".to_string(),
+    };
+    for mut text in create_summary.iter_mut() {
+        text.0 = summary.clone();
     }
     let fee_body = ticket_fee_lines(quote_price, market_id)
         .map(|lines| format_ticket_fees(&lines))
@@ -1406,9 +1466,7 @@ pub fn step_list_quantity(
     let Some(ticket) = tickets.iter().next() else {
         return;
     };
-    let available = bag_or_selected_instance(ticket, &inventory_ui, &inventory)
-        .map(|instance| instance.quantity.max(1))
-        .unwrap_or(1);
+    let available = ticket_available_quantity(ticket, &inventory_ui, &inventory).max(1);
     for (interaction, bump) in interactions.iter() {
         if *interaction != Interaction::Pressed {
             continue;
@@ -1417,6 +1475,41 @@ pub fn step_list_quantity(
         let next = i64::from(current).saturating_add(i64::from(bump.delta));
         let as_u32 = u32::try_from(next.max(0)).unwrap_or(0);
         ui.list_quantity = Inventory::clamp_trade_amount(as_u32, available);
+    }
+}
+
+pub fn step_list_quantity_preset(
+    interactions: Query<(&Interaction, &MarketQuantityPreset), Changed<Interaction>>,
+    mut ui: ResMut<MarketUiState>,
+    tickets: Query<&MarketTicketCard>,
+    inventory_ui: Res<InventoryUiState>,
+    inventory: Query<&Inventory, With<LocalPlayer>>,
+) {
+    let Some(ticket) = tickets.iter().next() else {
+        return;
+    };
+    let available = ticket_available_quantity(ticket, &inventory_ui, &inventory).max(1);
+    for (interaction, preset) in interactions.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        ui.list_quantity = if preset.amount == 0 {
+            available
+        } else {
+            Inventory::clamp_trade_amount(preset.amount, available)
+        };
+    }
+}
+
+pub fn arm_market_create(
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut buttons: Query<&mut MarketTicketCreateButton>,
+) {
+    if mouse.pressed(MouseButton::Left) {
+        return;
+    }
+    for mut button in &mut buttons {
+        button.armed = true;
     }
 }
 
@@ -1434,7 +1527,7 @@ pub fn select_ticket_action(
 
 #[allow(clippy::too_many_arguments)]
 pub fn create_ticket_order(
-    interactions: Query<&Interaction, (Changed<Interaction>, With<MarketTicketCreateButton>)>,
+    interactions: Query<(&Interaction, &MarketTicketCreateButton), Changed<Interaction>>,
     ui: Res<MarketUiState>,
     tickets: Query<&MarketTicketCard>,
     book: Res<MarketOrderBook>,
@@ -1445,7 +1538,7 @@ pub fn create_ticket_order(
 ) {
     if !interactions
         .iter()
-        .any(|interaction| *interaction == Interaction::Pressed)
+        .any(|(interaction, button)| *interaction == Interaction::Pressed && button.armed)
     {
         return;
     }
@@ -1482,6 +1575,9 @@ pub fn create_ticket_order(
                 return;
             };
             let quantity = ui.listing_quantity(instance.quantity.max(1));
+            if quantity == 0 {
+                return;
+            }
             let _ = commands::place_sell_order(
                 &connection,
                 network_id.0,
@@ -1495,6 +1591,9 @@ pub fn create_ticket_order(
                 return;
             };
             let quantity = ui.listing_quantity(instance.quantity.max(1));
+            if quantity == 0 {
+                return;
+            }
             let _ = commands::market_sell(
                 &connection,
                 network_id.0,
@@ -1555,19 +1654,7 @@ fn selected_slot_instance<'a>(
     inventory.slots.get(index as usize)?.as_ref()
 }
 
-fn selected_slot_matching<'a>(
-    inventory_ui: &InventoryUiState,
-    inventory: &'a Query<&Inventory, With<LocalPlayer>>,
-    item_id: &str,
-) -> Option<&'a bevymmo_gameplay::items::instance::ItemInstance> {
-    let instance = selected_slot_instance(inventory_ui, inventory)?;
-    if instance.item_id.as_str() != item_id || !instance.instance_id.is_assigned() {
-        return None;
-    }
-    Some(instance)
-}
-
-fn bag_or_selected_instance<'a>(
+fn ticket_stack<'a>(
     ticket: &MarketTicketCard,
     inventory_ui: &InventoryUiState,
     inventory: &'a Query<&Inventory, With<LocalPlayer>>,
@@ -1575,12 +1662,35 @@ fn bag_or_selected_instance<'a>(
     if let Some(slot) = ticket.bag_slot {
         let bag = inventory.single().ok()?;
         let instance = bag.slots.get(slot as usize)?.as_ref()?;
-        if instance.item_id.as_str() != ticket.item_id || !instance.instance_id.is_assigned() {
+        if instance.item_id.as_str() != ticket.item_id {
             return None;
         }
         return Some(instance);
     }
-    selected_slot_matching(inventory_ui, inventory, &ticket.item_id)
+    selected_slot_instance(inventory_ui, inventory)
+        .filter(|instance| instance.item_id.as_str() == ticket.item_id)
+}
+
+fn ticket_available_quantity(
+    ticket: &MarketTicketCard,
+    inventory_ui: &InventoryUiState,
+    inventory: &Query<&Inventory, With<LocalPlayer>>,
+) -> u32 {
+    ticket_stack(ticket, inventory_ui, inventory)
+        .map(|instance| instance.quantity.max(1))
+        .unwrap_or(0)
+}
+
+fn bag_or_selected_instance<'a>(
+    ticket: &MarketTicketCard,
+    inventory_ui: &InventoryUiState,
+    inventory: &'a Query<&Inventory, With<LocalPlayer>>,
+) -> Option<&'a bevymmo_gameplay::items::instance::ItemInstance> {
+    let instance = ticket_stack(ticket, inventory_ui, inventory)?;
+    if !instance.instance_id.is_assigned() {
+        return None;
+    }
+    Some(instance)
 }
 
 fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> f32 {
@@ -1669,6 +1779,21 @@ mod tests {
     fn stack_label_shows_quantity_for_piles() {
         assert_eq!(stack_label("Wood", 50), "Wood x50");
         assert_eq!(stack_label("Sword", 1), "Sword");
+    }
+
+    #[test]
+    fn listing_quantity_defaults_to_one_not_the_whole_pile() {
+        let ui = MarketUiState::default();
+        assert_eq!(ui.listing_quantity(5), 1);
+        let mut ui = MarketUiState {
+            list_quantity: 1,
+            ..MarketUiState::default()
+        };
+        assert_eq!(ui.listing_quantity(5), 1);
+        ui.list_quantity = 5;
+        assert_eq!(ui.listing_quantity(5), 5);
+        ui.list_quantity = 99;
+        assert_eq!(ui.listing_quantity(5), 5);
     }
 
     #[test]

@@ -7,11 +7,11 @@ use bevy::prelude::*;
 use crate::game_state::Screen;
 
 use systems::{
-    buy_market_offer, cancel_ticket_buy_order, cancel_ticket_sell_order,
+    arm_market_create, buy_market_offer, cancel_ticket_buy_order, cancel_ticket_sell_order,
     close_ticket_if_browse_closed, create_ticket_order, npc_market_on_click, open_market_ticket,
     refresh_bag_rows, refresh_market_rows, refresh_market_ticket, select_market_tab,
     select_ticket_action, sell_from_bag, step_list_price, step_list_quantity,
-    sync_market_tab_visibility,
+    step_list_quantity_preset, sync_market_tab_visibility,
 };
 
 pub struct MarketUiPlugin;
@@ -31,6 +31,8 @@ impl Plugin for MarketUiPlugin {
                 select_ticket_action,
                 step_list_price,
                 step_list_quantity,
+                step_list_quantity_preset,
+                arm_market_create,
                 refresh_market_rows,
                 refresh_bag_rows,
                 refresh_market_ticket,
@@ -78,7 +80,7 @@ pub struct MarketUiState {
     pub open_market_id: Option<String>,
     pub npc: Option<Entity>,
     pub list_price: u64,
-    /// Units to list / instant-sell. `0` means "use the whole pile".
+    /// Units to list / instant-sell. `0` means 1 (never the whole pile).
     pub list_quantity: u32,
     pub search: String,
     pub ticket_action: MarketTicketAction,
@@ -92,14 +94,13 @@ impl MarketUiState {
     }
 
     pub fn listing_quantity(&self, available: u32) -> u32 {
-        bevymmo_gameplay::items::components::Inventory::clamp_trade_amount(
-            if self.list_quantity == 0 {
-                available
-            } else {
-                self.list_quantity
-            },
-            available,
-        )
+        let available = available.max(1);
+        let selected = if self.list_quantity == 0 {
+            1
+        } else {
+            self.list_quantity
+        };
+        bevymmo_gameplay::items::components::Inventory::clamp_trade_amount(selected, available)
     }
 }
 
@@ -147,6 +148,12 @@ pub struct MarketQuantityBump {
     pub delta: i32,
 }
 
+/// `0` means the whole pile.
+#[derive(Component, Clone, Copy)]
+pub struct MarketQuantityPreset {
+    pub amount: u32,
+}
+
 #[derive(Component, Clone, Copy)]
 pub struct MarketTabButton {
     pub tab: MarketTab,
@@ -174,7 +181,14 @@ pub struct MarketTicketActionButton {
 }
 
 #[derive(Component)]
-pub struct MarketTicketCreateButton;
+pub struct MarketTicketCreateButton {
+    /// False until the mouse that opened this ticket is released, so the
+    /// bag's Sell click cannot fire Create on the newly spawned button.
+    pub armed: bool,
+}
+
+#[derive(Component)]
+pub struct MarketTicketCreateSummary;
 
 #[derive(Component)]
 pub struct MarketTicketPriceText;

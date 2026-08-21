@@ -448,6 +448,49 @@ fn apply_prop_overrides(ctx: &ReducerContext, map_id: &str, props: &mut Vec<Prop
     }
 }
 
+/// Spawns harvestable placements missing from a live database.
+///
+/// `seed` runs only on an empty DB (and GM reseed). A publish onto an existing
+/// world therefore never creates `resource_oak_tree` — the client does not
+/// draw resource kinds from the map GLB, so the tree is simply absent.
+pub fn ensure_resource_nodes(ctx: &ReducerContext) -> bool {
+    let Some(map) = default_map() else {
+        return false;
+    };
+    let registry = placeables();
+    for prop in &map.manifest.props {
+        let Some(definition) = registry.resources.get(&prop.kind) else {
+            continue;
+        };
+        if let Some(existing) = ctx.db.resource_node().placement_id().find(&prop.id) {
+            if ctx
+                .db
+                .game_entity()
+                .entity_id()
+                .find(&existing.entity_id)
+                .is_some()
+            {
+                continue;
+            }
+        }
+        let entity = spawn_entity(
+            ctx,
+            prop,
+            EntityKindRow::ResourceNode,
+            definition.display_name(),
+            0.0,
+        );
+        upsert_resource_node(ctx, prop, entity.entity_id, definition.resource_config());
+        log::info!(
+            "seeded resource {} ({}) at entity {}",
+            prop.id,
+            prop.kind.as_str(),
+            entity.entity_id
+        );
+    }
+    true
+}
+
 /// Spawns the allied training dummy if this database was seeded before that
 /// placement existed. `seed` only runs on empty DBs and GM reseed, so a live
 /// world would otherwise keep the old dummy-only roster after publish.

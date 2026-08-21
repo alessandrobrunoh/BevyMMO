@@ -166,6 +166,7 @@ impl Plugin for RendererPlugin {
             Update,
             (
                 spawn_entity_meshes,
+                upgrade_harvestable_visual,
                 sync_equipped_weapon,
                 sync_transforms,
                 anchor_player_model,
@@ -215,20 +216,19 @@ fn spawn_entity_meshes(
         if let (Some(harvestable), Some(placeables), Some(asset_server)) =
             (harvestable, placeables.as_ref(), asset_server.as_ref())
         {
-            if let Some(definition) = placeables
-                .resources
-                .get(&KindId::new(harvestable.kind_id.clone()))
+            if let Some((handle, transform)) =
+                harvestable_scene(harvestable, placeables, asset_server, position.0)
             {
-                if let AssetHint::Scene(path) = definition.asset_hint() {
-                    let handle = asset_server.load::<WorldAsset>(format!("{path}#Scene0"));
-                    commands.entity(entity).insert((
-                        WorldAssetRoot(handle),
-                        Transform::from_translation(position.0),
-                        RenderedEntity,
-                    ));
-                    continue;
-                }
+                commands
+                    .entity(entity)
+                    .insert((WorldAssetRoot(handle), transform, RenderedEntity));
+                continue;
             }
+        }
+        // Resource nodes have no creature prefab. Wait for `Harvestable` so we
+        // do not lock in a fallback cube before the replicated row arrives.
+        if matches!(kind, Some(EntityKind::Resource)) && harvestable.is_none() {
+            continue;
         }
         let is_projectile = projectile_visual.is_some();
         if is_projectile {
@@ -317,6 +317,53 @@ fn spawn_entity_meshes(
                 }
             }
         }
+    }
+}
+
+fn harvestable_scene(
+    harvestable: &Harvestable,
+    placeables: &PlaceableRegistry,
+    asset_server: &AssetServer,
+    position: Vec3,
+) -> Option<(Handle<WorldAsset>, Transform)> {
+    let definition = placeables
+        .resources
+        .get(&KindId::new(harvestable.kind_id.clone()))?;
+    let AssetHint::Scene(path) = definition.asset_hint() else {
+        return None;
+    };
+    let handle = asset_server.load::<WorldAsset>(format!("{path}#Scene0"));
+    let scale = Vec3::from_array(definition.defaults().transform.scale);
+    Some((
+        handle,
+        Transform::from_translation(position).with_scale(scale),
+    ))
+}
+
+/// Replaces the cube fallback once `Harvestable` arrives on an already-rendered entity.
+fn upgrade_harvestable_visual(
+    mut commands: Commands,
+    placeables: Option<Res<PlaceableRegistry>>,
+    asset_server: Option<Res<AssetServer>>,
+    cubes: Query<
+        (Entity, &Harvestable, &Position),
+        (With<RenderedEntity>, With<Mesh3d>, Without<WorldAssetRoot>),
+    >,
+) {
+    let (Some(placeables), Some(asset_server)) = (placeables, asset_server) else {
+        return;
+    };
+    for (entity, harvestable, position) in &cubes {
+        let Some((handle, transform)) =
+            harvestable_scene(harvestable, &placeables, &asset_server, position.0)
+        else {
+            continue;
+        };
+        commands
+            .entity(entity)
+            .remove::<Mesh3d>()
+            .remove::<MeshMaterial3d<StandardMaterial>>()
+            .insert((WorldAssetRoot(handle), transform));
     }
 }
 

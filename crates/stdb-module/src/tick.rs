@@ -6,14 +6,15 @@
 //! before the cast advances, and deaths have to settle before the AI picks
 //! targets.
 
-use spacetimedb::{reducer, ReducerContext, Table, Timestamp};
+use spacetimedb::{ReducerContext, Table, Timestamp, reducer};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::sim;
-use crate::tables::{tick_stats, TickSchedule, TickStats};
+use crate::tables::{TickSchedule, TickStats, tick_stats};
 
 static ALLY_DUMMY_SEEDED: AtomicBool = AtomicBool::new(false);
+static RESOURCE_NODES_SEEDED: AtomicBool = AtomicBool::new(false);
 
 /// Upper bound on a single step's `dt`, in seconds.
 ///
@@ -31,6 +32,9 @@ pub fn game_tick(ctx: &ReducerContext, _schedule: TickSchedule) {
 
     if !ALLY_DUMMY_SEEDED.load(Ordering::Relaxed) && crate::world::ensure_ally_dummy(ctx) {
         ALLY_DUMMY_SEEDED.store(true, Ordering::Relaxed);
+    }
+    if !RESOURCE_NODES_SEEDED.load(Ordering::Relaxed) && crate::world::ensure_resource_nodes(ctx) {
+        RESOURCE_NODES_SEEDED.store(true, Ordering::Relaxed);
     }
 
     sim::status::step(ctx, dt);

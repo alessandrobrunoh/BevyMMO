@@ -18,3 +18,14 @@ pub struct Wood;
 pub fn register(registry: &mut ItemRegistry) {
     Wood::register(registry);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::items::Item;
+
+    #[test]
+    fn icon_is_unassigned_until_selected() {
+        assert!(Wood.icon().is_none());
+    }
+}

@@ -63,8 +63,8 @@ use crate::rows::{
     known_ancient_language_from_rows, HotbarRow,
 };
 use crate::tables::{
-    equipment, game_entity, hotbar, inventory, known_ancient_language, player, EntityKindRow,
-    EquipmentTable, Hotbar, InventoryTable,
+    equipment, game_entity, hotbar, inventory, known_ancient_language, market_sell_order, player,
+    EntityKindRow, EquipmentTable, Hotbar, InventoryTable,
 };
 
 // ---------------------------------------------------------------------------
@@ -208,10 +208,13 @@ pub fn unequip_item(ctx: &ReducerContext, slot: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Swaps the contents of two inventory slots.
+/// Moves `from` onto `to`: same-item Material piles merge up to the bag cap,
+/// everything else swaps (including two full Wood stacks, so they stay
+/// rearrangable).
 ///
-/// Purely positional: nothing derived depends on *where* in the inventory an
-/// item sits, so unlike equip/unequip this touches no stats and no hotbar.
+/// Purely positional besides the merge: nothing derived depends on *where*
+/// in the inventory an item sits, so unlike equip/unequip this touches no
+/// stats and no hotbar.
 #[reducer]
 pub fn move_item(ctx: &ReducerContext, from: u8, to: u8) -> Result<(), String> {
     let character_id = caller_character(ctx)?.character_id;
@@ -223,7 +226,60 @@ pub fn move_item(ctx: &ReducerContext, from: u8, to: u8) -> Result<(), String> {
     }
 
     let mut inventory = load_inventory(ctx, character_id)?;
-    inventory.slots.swap(from_index, to_index);
+    let stacks = slots_stack_together(&inventory, from_index, to_index);
+    inventory
+        .move_or_merge(from_index, to_index, stacks)
+        .map_err(|error| error.to_string())?;
+    store_inventory(ctx, character_id, &inventory);
+    Ok(())
+}
+
+/// Peels `amount` off inventory slot `slot_index` into the first empty slot.
+///
+/// `amount` is the size of the **new** pile (7 off 50 leaves 43). Materials
+/// only; unique items are refused even if they somehow share a quantity.
+#[reducer]
+pub fn split_item(ctx: &ReducerContext, slot_index: u8, amount: u32) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
+    let index = usize::from(slot_index);
+    if index >= INVENTORY_CAPACITY {
+        return Err(format!(
+            "inventory slot {slot_index} out of range (0..{INVENTORY_CAPACITY})"
+        ));
+    }
+
+    let mut inventory = load_inventory(ctx, character_id)?;
+    let stacks = match inventory.slots[index].as_ref() {
+        Some(instance) => item_stacks(&instance.item_id),
+        None => return Err(format!("inventory slot {slot_index} is empty")),
+    };
+    let next_id = next_instance_id(ctx);
+    inventory
+        .split_stack(index, amount, stacks, || ItemInstanceId(next_id))
+        .map_err(|error| error.to_string())?;
+    store_inventory(ctx, character_id, &inventory);
+    Ok(())
+}
+
+/// Pulls other piles of the same Material into `slot_index` up to the bag cap.
+#[reducer]
+pub fn combine_item(ctx: &ReducerContext, slot_index: u8) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
+    let index = usize::from(slot_index);
+    if index >= INVENTORY_CAPACITY {
+        return Err(format!(
+            "inventory slot {slot_index} out of range (0..{INVENTORY_CAPACITY})"
+        ));
+    }
+
+    let mut inventory = load_inventory(ctx, character_id)?;
+    let stacks = match inventory.slots[index].as_ref() {
+        Some(instance) => item_stacks(&instance.item_id),
+        None => return Err(format!("inventory slot {slot_index} is empty")),
+    };
+    inventory
+        .combine_into(index, stacks)
+        .map_err(|error| error.to_string())?;
     store_inventory(ctx, character_id, &inventory);
     Ok(())
 }
@@ -783,6 +839,19 @@ pub(crate) fn item_category(item_id: &str) -> Option<ItemCategory> {
         .map(|item| item.config().category)
 }
 
+pub(crate) fn item_stacks(item_id: &ItemId) -> bool {
+    item_registry()
+        .get(item_id)
+        .is_some_and(|item| Inventory::stacks_category(item.config().category))
+}
+
+fn slots_stack_together(inventory: &Inventory, from: usize, to: usize) -> bool {
+    match (&inventory.slots[from], &inventory.slots[to]) {
+        (Some(src), Some(dst)) if src.item_id == dst.item_id => item_stacks(&src.item_id),
+        _ => false,
+    }
+}
+
 /// Puts `amount` of `item_id` into the inventory, stacking Materials in the bag.
 ///
 /// Returns how many pieces were actually placed. A short grant still persists:
@@ -873,7 +942,7 @@ pub(crate) fn equip_granted_starter_staff(
 /// fine at the rate items are created and wrong at the rate they would be if
 /// this were ever called in a loop. If it becomes hot, the fix is a one-row
 /// counter table, which the schema does not currently have.
-fn next_instance_id(ctx: &ReducerContext) -> u64 {
+pub(crate) fn next_instance_id(ctx: &ReducerContext) -> u64 {
     let from_inventories = ctx
         .db
         .inventory()
@@ -886,8 +955,20 @@ fn next_instance_id(ctx: &ReducerContext) -> u64 {
         .iter()
         .flat_map(|row| row.slots.into_iter().flatten())
         .map(|item| item.instance_id);
+    // Listed piles leave the bag but keep their instance id. Skipping them
+    // here would reuse an escrowed id the next time a stack is peeled.
+    let from_orders = ctx
+        .db
+        .market_sell_order()
+        .iter()
+        .map(|row| row.item.instance_id);
 
-    from_inventories.chain(from_equipment).max().unwrap_or(0) + 1
+    from_inventories
+        .chain(from_equipment)
+        .chain(from_orders)
+        .max()
+        .unwrap_or(0)
+        + 1
 }
 
 // Equipment bonuses are folded into the effective stats by `sim::combat`, which

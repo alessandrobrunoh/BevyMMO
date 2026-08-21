@@ -16,7 +16,7 @@ pub mod spell_kit;
 pub mod weapon_family;
 
 pub use available_spells::{compute_available_choices, AvailableSpellChoices};
-pub use components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY};
+pub use components::{EquipSlot, Equipment, Inventory, StackOpError, INVENTORY_CAPACITY};
 pub use definition::{Item, ItemCategory, ItemConfig, ItemRarity};
 pub use effects::ItemEffect;
 pub use events::{EquipItemCommand, MoveItemCommand, UnequipItemCommand};

@@ -36,6 +36,7 @@ pub mod character_wallet_table;
 pub mod character_wallet_type;
 pub mod claim_npc_item_reducer;
 pub mod color_row_type;
+pub mod combine_item_reducer;
 pub mod cooldown_table;
 pub mod cooldown_type;
 pub mod crowd_control_kind_row_type;
@@ -49,6 +50,8 @@ pub mod effect_payload_filter_row_type;
 pub mod effect_payload_kind_row_type;
 pub mod effect_payload_row_type;
 pub mod effect_payload_selection_row_type;
+pub mod enemy_ai_table;
+pub mod enemy_ai_type;
 pub mod entity_kind_row_type;
 pub mod entity_state_row_type;
 pub mod entity_stats_table;
@@ -138,6 +141,7 @@ pub mod set_root_inscription_reducer;
 pub mod slot_inscription_row_type;
 pub mod spell_visual_effect_event_type;
 pub mod spell_visual_effect_table;
+pub mod split_item_reducer;
 pub mod start_gather_reducer;
 pub mod stat_modifier_table;
 pub mod stat_modifier_type;
@@ -183,6 +187,7 @@ pub use character_wallet_table::*;
 pub use character_wallet_type::CharacterWallet;
 pub use claim_npc_item_reducer::claim_npc_item;
 pub use color_row_type::ColorRow;
+pub use combine_item_reducer::combine_item;
 pub use cooldown_table::*;
 pub use cooldown_type::Cooldown;
 pub use crowd_control_kind_row_type::CrowdControlKindRow;
@@ -196,6 +201,8 @@ pub use effect_payload_filter_row_type::EffectPayloadFilterRow;
 pub use effect_payload_kind_row_type::EffectPayloadKindRow;
 pub use effect_payload_row_type::EffectPayloadRow;
 pub use effect_payload_selection_row_type::EffectPayloadSelectionRow;
+pub use enemy_ai_table::*;
+pub use enemy_ai_type::EnemyAi;
 pub use entity_kind_row_type::EntityKindRow;
 pub use entity_state_row_type::EntityStateRow;
 pub use entity_stats_table::*;
@@ -285,6 +292,7 @@ pub use set_root_inscription_reducer::set_root_inscription;
 pub use slot_inscription_row_type::SlotInscriptionRow;
 pub use spell_visual_effect_event_type::SpellVisualEffectEvent;
 pub use spell_visual_effect_table::*;
+pub use split_item_reducer::split_item;
 pub use start_gather_reducer::start_gather;
 pub use stat_modifier_table::*;
 pub use stat_modifier_type::StatModifier;
@@ -338,6 +346,9 @@ pub enum Reducer {
         npc_entity_id: u64,
         item_id: String,
     },
+    CombineItem {
+        slot_index: u8,
+    },
     DeleteCharacter {
         character_id: __sdk::Uuid,
     },
@@ -382,6 +393,7 @@ pub enum Reducer {
         npc_entity_id: u64,
         instance_id: u64,
         min_price: u64,
+        quantity: u32,
     },
     MoveItem {
         from: u8,
@@ -414,6 +426,7 @@ pub enum Reducer {
         npc_entity_id: u64,
         instance_id: u64,
         price: u64,
+        quantity: u32,
     },
     Register {
         email: String,
@@ -452,6 +465,10 @@ pub enum Reducer {
         secondary_words: Vec<String>,
         ultimate_words: Vec<String>,
     },
+    SplitItem {
+        slot_index: u8,
+        amount: u32,
+    },
     StartGather {
         node_entity_id: u64,
     },
@@ -476,6 +493,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CastSpell { .. } => "cast_spell",
             Reducer::CastWeapon { .. } => "cast_weapon",
             Reducer::ClaimNpcItem { .. } => "claim_npc_item",
+            Reducer::CombineItem { .. } => "combine_item",
             Reducer::DeleteCharacter { .. } => "delete_character",
             Reducer::DestroyItem { .. } => "destroy_item",
             Reducer::EquipItem { .. } => "equip_item",
@@ -508,6 +526,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetHotbarSpell { .. } => "set_hotbar_spell",
             Reducer::SetResonanceXp { .. } => "set_resonance_xp",
             Reducer::SetRootInscription { .. } => "set_root_inscription",
+            Reducer::SplitItem { .. } => "split_item",
             Reducer::StartGather { .. } => "start_gather",
             Reducer::Stop => "stop",
             Reducer::StopGather => "stop_gather",
@@ -571,6 +590,11 @@ impl __sdk::Reducer for Reducer {
                 npc_entity_id: npc_entity_id.clone(),
                 item_id: item_id.clone(),
             }),
+            Reducer::CombineItem { slot_index } => {
+                __sats::bsatn::to_vec(&combine_item_reducer::CombineItemArgs {
+                    slot_index: slot_index.clone(),
+                })
+            }
             Reducer::DeleteCharacter { character_id } => {
                 __sats::bsatn::to_vec(&delete_character_reducer::DeleteCharacterArgs {
                     character_id: character_id.clone(),
@@ -640,10 +664,12 @@ impl __sdk::Reducer for Reducer {
                 npc_entity_id,
                 instance_id,
                 min_price,
+                quantity,
             } => __sats::bsatn::to_vec(&market_sell_reducer::MarketSellArgs {
                 npc_entity_id: npc_entity_id.clone(),
                 instance_id: instance_id.clone(),
                 min_price: min_price.clone(),
+                quantity: quantity.clone(),
             }),
             Reducer::MoveItem { from, to } => {
                 __sats::bsatn::to_vec(&move_item_reducer::MoveItemArgs {
@@ -688,10 +714,12 @@ impl __sdk::Reducer for Reducer {
                 npc_entity_id,
                 instance_id,
                 price,
+                quantity,
             } => __sats::bsatn::to_vec(&place_sell_order_reducer::PlaceSellOrderArgs {
                 npc_entity_id: npc_entity_id.clone(),
                 instance_id: instance_id.clone(),
                 price: price.clone(),
+                quantity: quantity.clone(),
             }),
             Reducer::Register { email, password } => {
                 __sats::bsatn::to_vec(&register_reducer::RegisterArgs {
@@ -755,6 +783,12 @@ impl __sdk::Reducer for Reducer {
                 secondary_words: secondary_words.clone(),
                 ultimate_words: ultimate_words.clone(),
             }),
+            Reducer::SplitItem { slot_index, amount } => {
+                __sats::bsatn::to_vec(&split_item_reducer::SplitItemArgs {
+                    slot_index: slot_index.clone(),
+                    amount: amount.clone(),
+                })
+            }
             Reducer::StartGather { node_entity_id } => {
                 __sats::bsatn::to_vec(&start_gather_reducer::StartGatherArgs {
                     node_entity_id: node_entity_id.clone(),
@@ -784,6 +818,7 @@ pub struct DbUpdate {
     cooldown: __sdk::TableUpdate<Cooldown>,
     crowd_control: __sdk::TableUpdate<CrowdControl>,
     damage_event: __sdk::TableUpdate<DamageEventRow>,
+    enemy_ai: __sdk::TableUpdate<EnemyAi>,
     entity_stats: __sdk::TableUpdate<EntityStats>,
     equipment: __sdk::TableUpdate<EquipmentTable>,
     game_entity: __sdk::TableUpdate<GameEntity>,
@@ -850,6 +885,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "damage_event" => db_update
                     .damage_event
                     .append(damage_event_table::parse_table_update(table_update)?),
+                "enemy_ai" => db_update
+                    .enemy_ai
+                    .append(enemy_ai_table::parse_table_update(table_update)?),
                 "entity_stats" => db_update
                     .entity_stats
                     .append(entity_stats_table::parse_table_update(table_update)?),
@@ -986,6 +1024,9 @@ impl __sdk::DbUpdate for DbUpdate {
             .apply_diff_to_table::<CrowdControl>("crowd_control", &self.crowd_control)
             .with_updates_by_pk(|row| &row.id);
         diff.damage_event = self.damage_event.into_event_diff();
+        diff.enemy_ai = cache
+            .apply_diff_to_table::<EnemyAi>("enemy_ai", &self.enemy_ai)
+            .with_updates_by_pk(|row| &row.entity_id);
         diff.entity_stats = cache
             .apply_diff_to_table::<EntityStats>("entity_stats", &self.entity_stats)
             .with_updates_by_pk(|row| &row.entity_id);
@@ -1103,6 +1144,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "damage_event" => db_update
                     .damage_event
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "enemy_ai" => db_update
+                    .enemy_ai
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "entity_stats" => db_update
                     .entity_stats
@@ -1231,6 +1275,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "damage_event" => db_update
                     .damage_event
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "enemy_ai" => db_update
+                    .enemy_ai
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "entity_stats" => db_update
                     .entity_stats
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -1340,6 +1387,7 @@ pub struct AppliedDiff<'r> {
     cooldown: __sdk::TableAppliedDiff<'r, Cooldown>,
     crowd_control: __sdk::TableAppliedDiff<'r, CrowdControl>,
     damage_event: __sdk::TableAppliedDiff<'r, DamageEventRow>,
+    enemy_ai: __sdk::TableAppliedDiff<'r, EnemyAi>,
     entity_stats: __sdk::TableAppliedDiff<'r, EntityStats>,
     equipment: __sdk::TableAppliedDiff<'r, EquipmentTable>,
     game_entity: __sdk::TableAppliedDiff<'r, GameEntity>,
@@ -1415,6 +1463,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.damage_event,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<EnemyAi>("enemy_ai", &self.enemy_ai, event);
         callbacks.invoke_table_row_callbacks::<EntityStats>(
             "entity_stats",
             &self.entity_stats,
@@ -2173,6 +2222,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         cooldown_table::register_table(client_cache);
         crowd_control_table::register_table(client_cache);
         damage_event_table::register_table(client_cache);
+        enemy_ai_table::register_table(client_cache);
         entity_stats_table::register_table(client_cache);
         equipment_table::register_table(client_cache);
         game_entity_table::register_table(client_cache);
@@ -2213,6 +2263,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "cooldown",
         "crowd_control",
         "damage_event",
+        "enemy_ai",
         "entity_stats",
         "equipment",
         "game_entity",

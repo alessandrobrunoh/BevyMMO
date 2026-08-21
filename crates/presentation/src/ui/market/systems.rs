@@ -15,8 +15,8 @@ use bevymmo_gameplay::entity::components::{EntityKind, GameEntity};
 use bevymmo_gameplay::items::components::Inventory;
 use bevymmo_gameplay::items::registry::{ItemId, ItemRegistry};
 use bevymmo_gameplay::markets::{
-    assert_item_marketable, MarketError, MarketRegistry, MARKET_1_FEE_BPS, MARKET_1_ID,
-    MARKET_2_FEE_BPS, MARKET_2_ID,
+    assert_item_marketable, listing_total, unit_price, MarketError, MarketRegistry,
+    MARKET_1_FEE_BPS, MARKET_1_ID, MARKET_2_FEE_BPS, MARKET_2_ID,
 };
 use bevymmo_network::network::protocol::Position;
 use bevymmo_network::world_components::NetworkEntityId;
@@ -24,10 +24,10 @@ use bevymmo_network::world_components::NetworkEntityId;
 use super::{
     MarketBagList, MarketCancelBuyButton, MarketCancelSellButton, MarketCard, MarketGoldText,
     MarketInventoryPanel, MarketOfferButton, MarketOfferName, MarketOfferPrice, MarketOffersPanel,
-    MarketOpenTicket, MarketPriceBump, MarketSellFromBag, MarketTab, MarketTabButton,
-    MarketTicketAction, MarketTicketActionButton, MarketTicketBuyList, MarketTicketCard,
-    MarketTicketCreateButton, MarketTicketFeeText, MarketTicketPriceText, MarketTicketSellList,
-    MarketUiState,
+    MarketOpenTicket, MarketPriceBump, MarketQuantityBump, MarketSellFromBag, MarketTab,
+    MarketTabButton, MarketTicketAction, MarketTicketActionButton, MarketTicketBuyList,
+    MarketTicketCard, MarketTicketCreateButton, MarketTicketFeeText, MarketTicketPriceText,
+    MarketTicketQuantityText, MarketTicketSellList, MarketUiState,
 };
 use crate::renderer;
 use crate::ui::button::{spawn_bar_child, BarButtonKind, UiButtonImages};
@@ -52,26 +52,52 @@ fn item_catalog() -> &'static ItemRegistry {
     CATALOG.get_or_init(bevymmo_content::item_definitions::default_items)
 }
 
-/// Occupied bag slots as `(index, item_id)`. Empty slots are omitted.
-pub fn occupied_inventory_rows(inventory: &Inventory) -> Vec<(u8, String)> {
+/// Occupied bag slots as `(index, item_id, quantity)`. Empty slots are omitted.
+pub fn occupied_inventory_rows(inventory: &Inventory) -> Vec<(u8, String, u32)> {
     inventory
         .slots
         .iter()
         .enumerate()
         .filter_map(|(index, slot)| {
-            slot.as_ref()
-                .map(|item| (index as u8, item.item_id.as_str().to_string()))
+            slot.as_ref().map(|item| {
+                (
+                    index as u8,
+                    item.item_id.as_str().to_string(),
+                    item.quantity.max(1),
+                )
+            })
         })
         .collect()
 }
 
 /// Occupied slots this hall will actually list: on the allowlist and `tradable`.
 /// Bound items never appear in the sell list.
-pub fn listable_inventory_rows(inventory: &Inventory, market_id: &str) -> Vec<(u8, String)> {
+pub fn listable_inventory_rows(inventory: &Inventory, market_id: &str) -> Vec<(u8, String, u32)> {
     occupied_inventory_rows(inventory)
         .into_iter()
-        .filter(|(_, item_id)| item_allowed_in_open_market(market_id, item_id))
+        .filter(|(_, item_id, _)| item_allowed_in_open_market(market_id, item_id))
         .collect()
+}
+
+fn stack_label(name: &str, quantity: u32) -> String {
+    if quantity > 1 {
+        format!("{name} x{quantity}")
+    } else {
+        name.to_string()
+    }
+}
+
+fn listed_quantity(order: &MarketSellOrder) -> u32 {
+    order.item.quantity.max(1)
+}
+
+fn offer_price_label(order: &MarketSellOrder) -> String {
+    let quantity = listed_quantity(order);
+    if quantity > 1 {
+        format!("{} × {}g", quantity, unit_price(order.price_gold, quantity))
+    } else {
+        format!("{}", order.price_gold)
+    }
 }
 
 /// Mirrors what `place_sell_order` will accept, so the sell list never offers a
@@ -255,7 +281,7 @@ pub fn npc_market_on_click(
 const MARKET_CARD_WIDTH: f32 = 980.0;
 const MARKET_CARD_HEIGHT: f32 = 640.0;
 const TICKET_CARD_WIDTH: f32 = 1080.0;
-const TICKET_CARD_HEIGHT: f32 = 640.0;
+const TICKET_CARD_HEIGHT: f32 = 700.0;
 
 fn spawn_market_card(
     commands: &mut Commands,
@@ -470,7 +496,19 @@ fn spawn_offer_header(parent: &mut ChildSpawnerCommands, text_color: Color) {
             ));
             row.spawn((
                 Node {
-                    width: Val::Px(120.0),
+                    width: Val::Px(72.0),
+                    ..default()
+                },
+                Text::new("Qty"),
+                TextFont {
+                    font_size: FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(text_color.with_alpha(0.7)),
+            ));
+            row.spawn((
+                Node {
+                    width: Val::Px(140.0),
                     ..default()
                 },
                 Text::new("Price"),
@@ -515,6 +553,18 @@ fn spawn_bag_header(parent: &mut ChildSpawnerCommands, text_color: Color) {
             ));
             row.spawn((
                 Node {
+                    width: Val::Px(72.0),
+                    ..default()
+                },
+                Text::new("Qty"),
+                TextFont {
+                    font_size: FontSize::Px(13.0),
+                    ..default()
+                },
+                TextColor(text_color.with_alpha(0.7)),
+            ));
+            row.spawn((
+                Node {
                     width: Val::Px(120.0),
                     ..default()
                 },
@@ -547,12 +597,36 @@ fn spawn_price_bumps(parent: &mut ChildSpawnerCommands, theme: &UiTheme) {
         });
 }
 
+fn spawn_quantity_bumps(parent: &mut ChildSpawnerCommands, theme: &UiTheme) {
+    let bumps = [(-10_i32, "−10"), (-1, "−1"), (1, "+1"), (10, "+10")];
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            column_gap: Val::Px(6.0),
+            ..default()
+        })
+        .with_children(|row| {
+            for (delta, label) in bumps {
+                spawn_bar_child(
+                    row,
+                    label,
+                    13.0,
+                    theme.text_color,
+                    Val::Px(72.0),
+                    Val::Px(28.0),
+                    BarButtonKind::Neutral,
+                    MarketQuantityBump { delta },
+                );
+            }
+        });
+}
+
 #[derive(Component)]
 pub struct MarketOfferList;
 
 #[derive(Default)]
 pub struct OfferListFingerprint {
-    rows: Vec<(u64, u64, String)>,
+    rows: Vec<(u64, u64, u32, String)>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -579,9 +653,16 @@ pub fn refresh_market_rows(
         return;
     };
     let offers = offers_for_market(book.orders.values(), market_id);
-    let next: Vec<(u64, u64, String)> = offers
+    let next: Vec<(u64, u64, u32, String)> = offers
         .iter()
-        .map(|order| (order.id, order.price_gold, order.item_id.clone()))
+        .map(|order| {
+            (
+                order.id,
+                order.price_gold,
+                listed_quantity(order),
+                order.item_id.clone(),
+            )
+        })
         .collect();
     if fingerprint.rows == next {
         return;
@@ -609,6 +690,7 @@ pub fn refresh_market_rows(
                     .map(|item| item.display_name().to_string())
                     .unwrap_or_else(|| order.item_id.clone());
                 let item_id = order.item_id.clone();
+                let quantity = listed_quantity(order);
                 parent
                     .spawn(Node {
                         width: Val::Percent(100.0),
@@ -631,11 +713,12 @@ pub fn refresh_market_rows(
                             MarketOpenTicket {
                                 item_id,
                                 price_gold: order.price_gold,
+                                quantity,
                             },
                         ))
                         .with_children(|btn| {
                             btn.spawn((
-                                Text::new(name),
+                                Text::new(stack_label(&name, quantity)),
                                 TextFont {
                                     font_size: FontSize::Px(16.0),
                                     ..default()
@@ -646,10 +729,22 @@ pub fn refresh_market_rows(
                         });
                         row.spawn((
                             Node {
-                                width: Val::Px(120.0),
+                                width: Val::Px(72.0),
                                 ..default()
                             },
-                            Text::new(format!("{}", order.price_gold)),
+                            Text::new(format!("{quantity}")),
+                            TextFont {
+                                font_size: FontSize::Px(16.0),
+                                ..default()
+                            },
+                            TextColor(theme.text_color),
+                        ));
+                        row.spawn((
+                            Node {
+                                width: Val::Px(140.0),
+                                ..default()
+                            },
+                            Text::new(offer_price_label(order)),
                             TextFont {
                                 font_size: FontSize::Px(16.0),
                                 ..default()
@@ -675,7 +770,7 @@ pub fn refresh_market_rows(
 
 #[derive(Default)]
 pub struct BagListFingerprint {
-    rows: Vec<(u8, String)>,
+    rows: Vec<(u8, String, u32)>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -730,7 +825,7 @@ pub fn refresh_bag_rows(
                 ));
                 return;
             }
-            for (slot, item_id) in &rows {
+            for (slot, item_id, quantity) in &rows {
                 let name = registry
                     .get(&ItemId::new(item_id.clone()))
                     .map(|item| item.display_name().to_string())
@@ -751,7 +846,19 @@ pub fn refresh_bag_rows(
                                 flex_grow: 1.0,
                                 ..default()
                             },
-                            Text::new(name),
+                            Text::new(stack_label(&name, *quantity)),
+                            TextFont {
+                                font_size: FontSize::Px(16.0),
+                                ..default()
+                            },
+                            TextColor(theme.text_color),
+                        ));
+                        row.spawn((
+                            Node {
+                                width: Val::Px(72.0),
+                                ..default()
+                            },
+                            Text::new(format!("{quantity}")),
                             TextFont {
                                 font_size: FontSize::Px(16.0),
                                 ..default()
@@ -769,6 +876,7 @@ pub fn refresh_bag_rows(
                             MarketSellFromBag {
                                 slot: *slot,
                                 item_id: item_id.clone(),
+                                quantity: *quantity,
                             },
                         );
                     });
@@ -799,6 +907,7 @@ pub fn sell_from_bag(
         return;
     }
     ui.bag_slot = Some(sell.slot);
+    ui.list_quantity = sell.quantity.max(1);
     ui.ticket_action = MarketTicketAction::SellOrder;
     let item_id = sell.item_id.clone();
     let slot = sell.slot;
@@ -837,7 +946,9 @@ pub fn open_market_ticket(
     };
     let item_id = ticket.item_id.clone();
     if ticket.price_gold > 0 {
-        ui.list_price = ticket.price_gold;
+        let quantity = ticket.quantity.max(1);
+        ui.list_price = unit_price(ticket.price_gold, quantity).max(1);
+        ui.list_quantity = quantity;
     }
     ui.ticket_action = MarketTicketAction::Buy;
     ui.bag_slot = None;
@@ -908,7 +1019,7 @@ fn spawn_market_ticket(
                         ));
                         spawn_ticket_actions(left, text_color);
                         left.spawn((
-                            Text::new("Price: 1"),
+                            Text::new("Price: 1g each"),
                             TextFont {
                                 font_size: FontSize::Px(16.0),
                                 ..default()
@@ -917,6 +1028,16 @@ fn spawn_market_ticket(
                             MarketTicketPriceText,
                         ));
                         spawn_price_bumps(left, theme);
+                        left.spawn((
+                            Text::new("Qty: 1"),
+                            TextFont {
+                                font_size: FontSize::Px(16.0),
+                                ..default()
+                            },
+                            TextColor(text_color),
+                            MarketTicketQuantityText,
+                        ));
+                        spawn_quantity_bumps(left, theme);
                         left.spawn((
                             Text::new(""),
                             TextFont {
@@ -1041,8 +1162,32 @@ pub fn refresh_market_ticket(
     book: Res<MarketOrderBook>,
     bids: Res<MarketBuyBook>,
     tickets: Query<&MarketTicketCard>,
-    mut price_text: Query<&mut Text, (With<MarketTicketPriceText>, Without<MarketTicketFeeText>)>,
-    mut fee_text: Query<&mut Text, (With<MarketTicketFeeText>, Without<MarketTicketPriceText>)>,
+    inventory_ui: Res<InventoryUiState>,
+    inventory: Query<&Inventory, With<LocalPlayer>>,
+    mut price_text: Query<
+        &mut Text,
+        (
+            With<MarketTicketPriceText>,
+            Without<MarketTicketFeeText>,
+            Without<MarketTicketQuantityText>,
+        ),
+    >,
+    mut quantity_text: Query<
+        &mut Text,
+        (
+            With<MarketTicketQuantityText>,
+            Without<MarketTicketFeeText>,
+            Without<MarketTicketPriceText>,
+        ),
+    >,
+    mut fee_text: Query<
+        &mut Text,
+        (
+            With<MarketTicketFeeText>,
+            Without<MarketTicketPriceText>,
+            Without<MarketTicketQuantityText>,
+        ),
+    >,
     mut actions: Query<(&MarketTicketActionButton, &mut BackgroundColor)>,
     sell_lists: Query<Entity, With<MarketTicketSellList>>,
     buy_lists: Query<Entity, With<MarketTicketBuyList>>,
@@ -1053,17 +1198,26 @@ pub fn refresh_market_ticket(
     let Some(market_id) = ui.open_market_id.as_deref() else {
         return;
     };
+    let available = bag_or_selected_instance(ticket, &inventory_ui, &inventory)
+        .map(|instance| instance.quantity.max(1))
+        .unwrap_or(1);
+    let quantity = ui.listing_quantity(available);
+    let unit = ui.listing_price();
     let quote_price = match ui.ticket_action {
         MarketTicketAction::Buy => {
             offers_for_item(book.orders.values(), market_id, &ticket.item_id)
                 .first()
                 .map(|order| order.price_gold)
-                .unwrap_or_else(|| ui.listing_price())
+                .unwrap_or_else(|| listing_total(unit, quantity).unwrap_or(unit))
         }
-        _ => ui.listing_price(),
+        MarketTicketAction::BuyOrder => unit,
+        _ => listing_total(unit, quantity).unwrap_or(unit),
     };
     for mut text in price_text.iter_mut() {
-        text.0 = format!("Price: {}", ui.listing_price());
+        text.0 = format!("Price: {unit}g each");
+    }
+    for mut text in quantity_text.iter_mut() {
+        text.0 = format!("Qty: {quantity} / {available}");
     }
     let fee_body = ticket_fee_lines(quote_price, market_id)
         .map(|lines| format_ticket_fees(&lines))
@@ -1108,7 +1262,7 @@ pub fn refresh_market_ticket(
                     })
                     .with_children(|row| {
                         row.spawn((
-                            Text::new(format!("{}", order.price_gold)),
+                            Text::new(offer_price_label(order)),
                             TextFont {
                                 font_size: FontSize::Px(14.0),
                                 ..default()
@@ -1242,6 +1396,30 @@ pub fn step_list_price(
     }
 }
 
+pub fn step_list_quantity(
+    interactions: Query<(&Interaction, &MarketQuantityBump), Changed<Interaction>>,
+    mut ui: ResMut<MarketUiState>,
+    tickets: Query<&MarketTicketCard>,
+    inventory_ui: Res<InventoryUiState>,
+    inventory: Query<&Inventory, With<LocalPlayer>>,
+) {
+    let Some(ticket) = tickets.iter().next() else {
+        return;
+    };
+    let available = bag_or_selected_instance(ticket, &inventory_ui, &inventory)
+        .map(|instance| instance.quantity.max(1))
+        .unwrap_or(1);
+    for (interaction, bump) in interactions.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let current = ui.listing_quantity(available);
+        let next = i64::from(current).saturating_add(i64::from(bump.delta));
+        let as_u32 = u32::try_from(next.max(0)).unwrap_or(0);
+        ui.list_quantity = Inventory::clamp_trade_amount(as_u32, available);
+    }
+}
+
 pub fn select_ticket_action(
     interactions: Query<(&Interaction, &MarketTicketActionButton), Changed<Interaction>>,
     mut ui: ResMut<MarketUiState>,
@@ -1303,22 +1481,26 @@ pub fn create_ticket_order(
             let Some(instance) = bag_or_selected_instance(ticket, &inventory_ui, &inventory) else {
                 return;
             };
+            let quantity = ui.listing_quantity(instance.quantity.max(1));
             let _ = commands::place_sell_order(
                 &connection,
                 network_id.0,
                 instance.instance_id.0,
                 ui.listing_price(),
+                quantity,
             );
         }
         MarketTicketAction::Sell => {
             let Some(instance) = bag_or_selected_instance(ticket, &inventory_ui, &inventory) else {
                 return;
             };
+            let quantity = ui.listing_quantity(instance.quantity.max(1));
             let _ = commands::market_sell(
                 &connection,
                 network_id.0,
                 instance.instance_id.0,
                 ui.listing_price(),
+                quantity,
             );
         }
         MarketTicketAction::BuyOrder => {
@@ -1464,16 +1646,29 @@ mod tests {
         inventory.slots[5] = Some(bevymmo_gameplay::items::instance::ItemInstance::new(
             ItemId::new("simple_helm"),
         ));
+        let mut wood = bevymmo_gameplay::items::instance::ItemInstance::new(ItemId::new("wood"));
+        wood.quantity = 50;
+        inventory.slots[7] = Some(wood);
         let rows = occupied_inventory_rows(&inventory);
         assert_eq!(
             rows,
-            vec![(2, "sword".to_string()), (5, "simple_helm".to_string())]
+            vec![
+                (2, "sword".to_string(), 1),
+                (5, "simple_helm".to_string(), 1),
+                (7, "wood".to_string(), 50),
+            ]
         );
         // Both halls list both items: the sell list follows `tradable`, and
         // nothing about the hall narrows it.
         for market in [MARKET_1_ID, MARKET_2_ID] {
             assert_eq!(listable_inventory_rows(&inventory, market), rows);
         }
+    }
+
+    #[test]
+    fn stack_label_shows_quantity_for_piles() {
+        assert_eq!(stack_label("Wood", 50), "Wood x50");
+        assert_eq!(stack_label("Sword", 1), "Sword");
     }
 
     #[test]

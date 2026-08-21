@@ -72,6 +72,9 @@ pub struct AncientWordMetadata {
     /// Priorità visuale; più alto = disegnato sopra gli altri (z-index logico).
     pub visual_priority: i32,
     pub rune_cost: u32,
+    /// Bevy asset path under `assets/` for the inscription-editor icon.
+    /// Empty means the UI falls back to the display name.
+    pub icon: &'static str,
 }
 
 impl AncientWordMetadata {
@@ -90,6 +93,7 @@ impl AncientWordMetadata {
             phase: 0,
             visual_priority: 0,
             rune_cost,
+            icon: "",
         }
     }
 
@@ -268,6 +272,7 @@ mod tests {
             phase: 2,
             visual_priority: 10,
             rune_cost: 5,
+            icon: "ancient_words/icons/echo.png",
         };
 
         assert_eq!(meta.display_name, "Echo Word");
@@ -277,6 +282,7 @@ mod tests {
         assert_eq!(meta.phase, 2);
         assert_eq!(meta.visual_priority, 10);
         assert_eq!(meta.rune_cost, 5);
+        assert_eq!(meta.icon, "ancient_words/icons/echo.png");
     }
 
     #[test]

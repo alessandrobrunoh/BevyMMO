@@ -7,7 +7,7 @@ import { EivarButtonComponent } from '../../shared/ui/button/button.component';
 import { MarketSummary, SellOffer } from '../../shared/models/market.model';
 import { MarketService } from './market.service';
 import { getItemDetail, ItemDetailInfo } from './market-items.data';
-import { formatGold } from './market.utils';
+import { formatOfferPrice, offerQuantity, unitPriceGold } from './market.utils';
 
 export interface ListedItemEntry {
   item: ItemDetailInfo;
@@ -17,6 +17,8 @@ export interface ListedItemEntry {
   offers: SellOffer[];
   lowestPrice: number;
   highestPrice: number;
+  totalQuantity: number;
+  cheapestOffer: SellOffer;
   activeOffersCount: number;
 }
 
@@ -49,7 +51,7 @@ export class MarketListComponent implements OnInit {
 
   readonly categories = ['All', 'Weapons', 'Armor', 'Accessories', 'Materials'];
 
-  formatGold = formatGold;
+  formatOfferPrice = formatOfferPrice;
 
   /**
    * Builds the complete list of items across all markets that have AT LEAST 1 active offer.
@@ -74,8 +76,14 @@ export class MarketListComponent implements OnInit {
 
       itemGroupMap.forEach((offers, itemId) => {
         if (offers.length > 0) {
-          const sortedOffers = [...offers].sort((a, b) => a.price_gold - b.price_gold);
+          const sortedOffers = [...offers].sort((a, b) => {
+            const unitA = unitPriceGold(a.price_gold, offerQuantity(a));
+            const unitB = unitPriceGold(b.price_gold, offerQuantity(b));
+            return unitA - unitB || a.price_gold - b.price_gold;
+          });
           const item = getItemDetail(itemId);
+          const cheapest = sortedOffers[0];
+          const dearest = sortedOffers[sortedOffers.length - 1];
 
           entries.push({
             item,
@@ -83,8 +91,10 @@ export class MarketListComponent implements OnInit {
             marketName: market.display_name,
             marketFeeBps: market.fee_bps,
             offers: sortedOffers,
-            lowestPrice: sortedOffers[0].price_gold,
-            highestPrice: sortedOffers[sortedOffers.length - 1].price_gold,
+            lowestPrice: unitPriceGold(cheapest.price_gold, offerQuantity(cheapest)),
+            highestPrice: unitPriceGold(dearest.price_gold, offerQuantity(dearest)),
+            totalQuantity: sortedOffers.reduce((sum, offer) => sum + offerQuantity(offer), 0),
+            cheapestOffer: cheapest,
             activeOffersCount: sortedOffers.length
           });
         }

@@ -17,6 +17,8 @@ pub enum CastSourceRow {
     Armor,
 
     Shoes,
+
+    Catalog,
 }
 
 impl __sdk::InModule for CastSourceRow {

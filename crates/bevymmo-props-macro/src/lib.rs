@@ -567,6 +567,7 @@ fn parse_triple_f32(s: &str) -> Option<(f32, f32, f32)> {
 //     category = Weapon,
 //     rarity = Rare,
 //     slot = Weapon,
+//     icon = "items/icons/magic_staff.png",
 //     tradable = true,
 //     effects = [stat_bonus(field = AttackPower, op = Add, value = 25.0)],
 //     spells(
@@ -951,6 +952,7 @@ struct ItemDef {
     slot: Option<Ident>,
     family: Option<Ident>,
     tradable: bool,
+    icon: Option<LitStr>,
     effects: Vec<EffectDef>,
     spells: Option<SpellsDef>,
     abilities: Option<AbilitiesDef>,
@@ -967,6 +969,7 @@ impl Parse for ItemDef {
         let mut slot = None;
         let mut family = None;
         let mut tradable = true;
+        let mut icon = None;
         let mut effects = Vec::new();
         let mut spells = None;
         let mut abilities = None;
@@ -1000,6 +1003,7 @@ impl Parse for ItemDef {
                     "slot" => slot = Some(input.parse::<Ident>()?),
                     "family" => family = Some(input.parse::<Ident>()?),
                     "tradable" => tradable = input.parse::<LitBool>()?.value(),
+                    "icon" => icon = Some(input.parse::<LitStr>()?),
                     "effects" => {
                         let content;
                         bracketed!(content in input);
@@ -1011,7 +1015,7 @@ impl Parse for ItemDef {
                             &key,
                             format!(
                                 "unknown key `{other}` in #[item(...)] (expected id, name, description, \
-                                 category, rarity, slot, family, tradable, effects, \
+                                 category, rarity, slot, family, tradable, icon, effects, \
                                  spells, abilities, rune_profile)"
                             ),
                         ))
@@ -1047,6 +1051,7 @@ impl Parse for ItemDef {
             slot,
             family,
             tradable,
+            icon,
             effects,
             spells,
             abilities,
@@ -1067,6 +1072,7 @@ impl ItemDef {
         let category = &self.category;
         let rarity = &self.rarity;
         let tradable = self.tradable;
+        let icon = icon_or(self.icon.clone(), empty_icon());
         let equippable_into = match &self.slot {
             Some(slot) => quote! { Some(crate::items::EquipSlot::#slot) },
             None => quote! { None },
@@ -1173,6 +1179,7 @@ impl ItemDef {
                         equippable_into: #equippable_into,
                         weight: 0.0,
                         tradable: #tradable,
+                        icon: #icon,
                     })
                 }
 
@@ -1200,6 +1207,7 @@ impl ItemDef {
 struct WeaponFamilyDef {
     id: LitStr,
     name: LitStr,
+    icon: Option<LitStr>,
     primary: Option<Vec<Path>>,
     secondary: Option<Vec<Path>>,
     ultimate: Option<Vec<Path>>,
@@ -1209,6 +1217,7 @@ impl Parse for WeaponFamilyDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut id = None;
         let mut name = None;
+        let mut icon = None;
         let mut primary = None;
         let mut secondary = None;
         let mut ultimate = None;
@@ -1219,6 +1228,7 @@ impl Parse for WeaponFamilyDef {
             match key.to_string().as_str() {
                 "id" => id = Some(input.parse::<LitStr>()?),
                 "name" => name = Some(input.parse::<LitStr>()?),
+                "icon" => icon = Some(input.parse::<LitStr>()?),
                 "primary" => {
                     let inner;
                     bracketed!(inner in input);
@@ -1240,7 +1250,7 @@ impl Parse for WeaponFamilyDef {
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in #[weapon_family(...)] (expected id, name, primary, secondary, ultimate)"),
+                        format!("unknown key `{other}` in #[weapon_family(...)] (expected id, name, icon, primary, secondary, ultimate)"),
                     ))
                 }
             }
@@ -1255,6 +1265,7 @@ impl Parse for WeaponFamilyDef {
             id: id.ok_or_else(|| input.error("#[weapon_family(...)] requires `id = \"...\"`"))?,
             name: name
                 .ok_or_else(|| input.error("#[weapon_family(...)] requires `name = \"...\"`"))?,
+            icon,
             primary,
             secondary,
             ultimate,
@@ -1272,6 +1283,7 @@ pub fn weapon_family(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = &input.ident;
     let id = &def.id;
     let display_name = &def.name;
+    let icon = icon_or(def.icon, empty_icon());
 
     let ability_loadout = match (&def.primary, &def.secondary, &def.ultimate) {
         (Some(primary), Some(secondary), Some(ultimate))
@@ -1314,6 +1326,7 @@ pub fn weapon_family(attr: TokenStream, item: TokenStream) -> TokenStream {
                 crate::items::WeaponFamilyMetadata {
                     id: crate::items::WeaponFamilyId::new(Self::ID),
                     display_name: #display_name,
+                    icon: #icon,
                     ability_loadout: #metadata_ability_loadout,
                 }
             }
@@ -1321,6 +1334,20 @@ pub fn weapon_family(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+/// Optional `icon = "..."` path. `default` is used when the key is omitted
+/// (`""` for most content; abilities default to `abilities/icons/{id}.png`).
+fn icon_or(icon: Option<LitStr>, default: LitStr) -> LitStr {
+    icon.unwrap_or(default)
+}
+
+fn empty_icon() -> LitStr {
+    LitStr::new("", proc_macro2::Span::call_site())
+}
+
+fn default_ability_icon(id: &LitStr) -> LitStr {
+    LitStr::new(&format!("abilities/icons/{}.png", id.value()), id.span())
 }
 
 /// Rejects anything but a bare unit struct — every macro in this file only
@@ -1360,6 +1387,7 @@ fn require_unit_struct(input: &DeriveInput, macro_name: &str) -> Result<(), Toke
 //     geometry = projectile(speed = 26.0),
 //     potency = 260.0, cast_time = 0.35, cooldown = 4.0, mana_cost = 12.0,
 //     animation = "staff_bolt_cast", impact_vfx = "bolt_impact_burst",
+//     icon = "abilities/icons/staff_bolt.png",
 // )]
 // pub struct StaffBolt;
 // ```
@@ -1441,6 +1469,7 @@ struct BaseAbilityDef {
     mana_cost: LitFloat,
     animation: LitStr,
     impact_vfx: LitStr,
+    icon: Option<LitStr>,
     /// Opzionali: assenti = impatto immediato e nessun controllo.
     impact_delay: Option<LitFloat>,
     stun_seconds: Option<LitFloat>,
@@ -1470,6 +1499,7 @@ impl Parse for BaseAbilityDef {
         let mut mana_cost = None;
         let mut animation = None;
         let mut impact_vfx = None;
+        let mut icon = None;
         let mut impact_delay = None;
         let mut stun_seconds = None;
         let mut statuses = Vec::new();
@@ -1502,6 +1532,7 @@ impl Parse for BaseAbilityDef {
                 "mana_cost" => mana_cost = Some(input.parse::<LitFloat>()?),
                 "animation" => animation = Some(input.parse::<LitStr>()?),
                 "impact_vfx" => impact_vfx = Some(input.parse::<LitStr>()?),
+                "icon" => icon = Some(input.parse::<LitStr>()?),
                 "impact_delay" => impact_delay = Some(input.parse::<LitFloat>()?),
                 "stun_seconds" => stun_seconds = Some(input.parse::<LitFloat>()?),
                 "statuses" => {
@@ -1543,7 +1574,7 @@ impl Parse for BaseAbilityDef {
                         &key,
                         format!(
                             "unknown key `{other}` in #[base_ability(...)] (expected id, name, tags, range, geometry, \
-                             potency, cast_time, cooldown, mana_cost, animation, impact_vfx, impact_delay, \
+                             potency, cast_time, cooldown, mana_cost, animation, impact_vfx, icon, impact_delay, \
                              stun_seconds, statuses, channeling)"
                         )
                     ))
@@ -1578,6 +1609,7 @@ impl Parse for BaseAbilityDef {
             impact_vfx: impact_vfx.ok_or_else(|| {
                 input.error("#[base_ability(...)] requires `impact_vfx = \"...\"`")
             })?,
+            icon,
             impact_delay,
             stun_seconds,
             statuses,
@@ -1605,6 +1637,7 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mana_cost = &def.mana_cost;
     let animation = &def.animation;
     let impact_vfx = &def.impact_vfx;
+    let icon = icon_or(def.icon, default_ability_icon(&def.id));
 
     let cleanse_method = match &def.cleanse {
         Some(filter) => {
@@ -1765,6 +1798,9 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             fn impact_vfx(&self) -> &'static str {
                 #impact_vfx
+            }
+            fn icon(&self) -> &'static str {
+                #icon
             }
             #impact_delay_method
             #stun_seconds_method
@@ -2314,6 +2350,7 @@ pub fn status(attr: TokenStream, item: TokenStream) -> TokenStream {
 struct AncientWordDef {
     id: LitStr,
     name: LitStr,
+    icon: Option<LitStr>,
     tag: Ident,
     /// Full required-tag list when `tags = [...]` is set; otherwise just `tag`.
     required_tags: Vec<Ident>,
@@ -2324,6 +2361,7 @@ impl Parse for AncientWordDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut id = None;
         let mut name = None;
+        let mut icon = None;
         let mut tag = None;
         let mut required_tags = Vec::new();
         let mut rune_cost = None;
@@ -2334,6 +2372,7 @@ impl Parse for AncientWordDef {
             match key.to_string().as_str() {
                 "id" => id = Some(input.parse::<LitStr>()?),
                 "name" => name = Some(input.parse::<LitStr>()?),
+                "icon" => icon = Some(input.parse::<LitStr>()?),
                 "tag" => tag = Some(input.parse::<Ident>()?),
                 "tags" => {
                     let content;
@@ -2345,7 +2384,7 @@ impl Parse for AncientWordDef {
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in #[ancient_word(...)] (expected id, name, tag, tags, rune_cost)"),
+                        format!("unknown key `{other}` in #[ancient_word(...)] (expected id, name, icon, tag, tags, rune_cost)"),
                     ))
                 }
             }
@@ -2360,6 +2399,7 @@ impl Parse for AncientWordDef {
             id: id.ok_or_else(|| input.error("#[ancient_word(...)] requires `id = \"...\"`"))?,
             name: name
                 .ok_or_else(|| input.error("#[ancient_word(...)] requires `name = \"...\"`"))?,
+            icon,
             tag: tag.ok_or_else(|| {
                 input.error("#[ancient_word(...)] requires `tag = ...` (an AbilityTag)")
             })?,
@@ -2381,6 +2421,7 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let id_lit = &def.id;
     let name_lit = &def.name;
+    let icon = icon_or(def.icon, empty_icon());
     let tag = &def.tag;
     let rune_cost = &def.rune_cost;
     let required_tags = if def.required_tags.is_empty() {
@@ -2418,6 +2459,7 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
                     phase: 0,
                     visual_priority: 0,
                     rune_cost: #rune_cost,
+                    icon: #icon,
                 }
             }
             fn post_process(
@@ -2458,6 +2500,7 @@ struct RootWordDef {
     name: LitStr,
     description: LitStr,
     rune_cost: LitInt,
+    icon: Option<LitStr>,
 }
 
 impl Parse for RootWordDef {
@@ -2466,6 +2509,7 @@ impl Parse for RootWordDef {
         let mut name = None;
         let mut description = None;
         let mut rune_cost = None;
+        let mut icon = None;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -2475,10 +2519,11 @@ impl Parse for RootWordDef {
                 "name" => name = Some(input.parse::<LitStr>()?),
                 "description" => description = Some(input.parse::<LitStr>()?),
                 "rune_cost" => rune_cost = Some(input.parse::<LitInt>()?),
+                "icon" => icon = Some(input.parse::<LitStr>()?),
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in #[root_word(...)] (expected id, name, description, rune_cost)"),
+                        format!("unknown key `{other}` in #[root_word(...)] (expected id, name, description, rune_cost, icon)"),
                     ))
                 }
             }
@@ -2496,6 +2541,7 @@ impl Parse for RootWordDef {
                 .ok_or_else(|| input.error("#[root_word(...)] requires `description = \"...\"`"))?,
             rune_cost: rune_cost
                 .ok_or_else(|| input.error("#[root_word(...)] requires `rune_cost = ...`"))?,
+            icon,
         })
     }
 }
@@ -2513,6 +2559,7 @@ pub fn root_word(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name_lit = &def.name;
     let description_lit = &def.description;
     let rune_cost = &def.rune_cost;
+    let icon = icon_or(def.icon, empty_icon());
 
     let expanded = quote! {
         #input
@@ -2530,6 +2577,7 @@ pub fn root_word(attr: TokenStream, item: TokenStream) -> TokenStream {
                     display_name: #name_lit,
                     description: #description_lit,
                     rune_cost: #rune_cost,
+                    icon: #icon,
                 };
                 &META
             }
@@ -2663,6 +2711,7 @@ struct SpellChannelingDef {
 struct SpellDef {
     id: LitStr,
     name: LitStr,
+    icon: Option<LitStr>,
     config: SpellConfigDef,
     cast_time: Option<LitFloat>,
     channeling: Option<SpellChannelingDef>,
@@ -2672,6 +2721,7 @@ impl Parse for SpellDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut id = None;
         let mut name = None;
+        let mut icon = None;
         let mut config = None;
         let mut cooldown = None;
         let mut targeting = None;
@@ -2712,6 +2762,7 @@ impl Parse for SpellDef {
                 match key_str.as_str() {
                     "id" => id = Some(input.parse::<LitStr>()?),
                     "name" => name = Some(input.parse::<LitStr>()?),
+                    "icon" => icon = Some(input.parse::<LitStr>()?),
                     "config" => {
                         let kind: Ident = input.parse()?;
                         let content;
@@ -2729,7 +2780,7 @@ impl Parse for SpellDef {
                             &key,
                             format!(
                                 "unknown key `{other}` in #[spell(...)] (expected \
-                                 id, name, config, cooldown, targeting, range, area, cast_time, channeling)"
+                                 id, name, icon, config, cooldown, targeting, range, area, cast_time, channeling)"
                             ),
                         ))
                     }
@@ -2761,6 +2812,7 @@ impl Parse for SpellDef {
         Ok(Self {
             id: id.ok_or_else(|| input.error("#[spell(...)] requires `id = \"...\"`"))?,
             name: name.ok_or_else(|| input.error("#[spell(...)] requires `name = \"...\"`"))?,
+            icon,
             config,
             cast_time,
             channeling,
@@ -2779,6 +2831,7 @@ pub fn spell(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let id_lit = &def.id;
     let name_lit = &def.name;
+    let icon = icon_or(def.icon, empty_icon());
 
     // Build the base config from the config shape.
     let base_config = match &def.config {
@@ -2934,6 +2987,10 @@ pub fn spell(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             fn display_name(&self) -> &'static str {
                 #name_lit
+            }
+
+            fn icon(&self) -> &'static str {
+                #icon
             }
 
             fn config(&self) -> crate::spells::SpellConfig {

@@ -20,6 +20,7 @@ use crate::abilities::BaseAbilityRegistry;
     channeling = (tick_interval = 0.2, movement = InterruptOnMove),
     animation = "sword_ultimate",
     impact_vfx = "blade_storm_impact",
+    icon = "abilities/icons/blade_storm.png",
 )]
 pub struct BladeStorm;
 
@@ -45,5 +46,10 @@ mod tests {
             }
             other => panic!("expected Channeling, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn selects_its_icon_asset() {
+        assert_eq!(BladeStorm.icon(), "abilities/icons/blade_storm.png");
     }
 }

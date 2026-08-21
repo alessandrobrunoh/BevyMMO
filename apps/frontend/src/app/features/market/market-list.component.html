@@ -173,13 +173,14 @@
               <div class="price-box">
                 <span class="orders-count-label">
                   {{ entry.activeOffersCount }} {{ entry.activeOffersCount === 1 ? 'active offer' : 'active offers' }}
+                  · {{ entry.totalQuantity }} listed
                 </span>
                 <div class="price-main">
                   <span class="gold-icon">✦</span>
-                  <span class="price-amount">{{ formatGold(entry.lowestPrice) }}</span>
+                  <span class="price-amount">{{ formatOfferPrice(entry.cheapestOffer.price_gold, entry.cheapestOffer.quantity) }}</span>
                 </div>
                 @if (entry.activeOffersCount > 1 && entry.highestPrice !== entry.lowestPrice) {
-                  <span class="price-range">Range: {{ entry.lowestPrice }}g – {{ entry.highestPrice }}g</span>
+                  <span class="price-range">Unit range: {{ entry.lowestPrice }}g – {{ entry.highestPrice }}g</span>
                 }
               </div>
 

@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevymmo_client::server_feed::{ChatLine, ServerNotice};
 use bevymmo_client::stdb::{commands, PartyRoster, StdbConnection};
 
-use crate::game_state::{in_unpaused_gameplay, PauseOverlay, Screen};
+use crate::game_state::{in_unpaused_gameplay, not_typing, PauseOverlay, Screen};
 use crate::ui::scrollbar::spawn_scroll_view_with_content;
 use crate::ui::theme::UiTheme;
 
@@ -47,7 +47,9 @@ impl Plugin for ChatPlugin {
             (
                 sync_chat_visibility
                     .run_if(state_changed::<Screen>.or_eager(state_changed::<PauseOverlay>)),
-                focus_chat_on_enter.run_if(in_unpaused_gameplay),
+                focus_chat_on_enter
+                    .run_if(in_unpaused_gameplay)
+                    .run_if(not_typing),
                 focus_chat_on_click,
                 defocus_chat_on_world_click,
                 edit_chat_input,

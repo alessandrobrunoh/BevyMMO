@@ -7,6 +7,9 @@ export interface MarketSummary {
 export interface SellOffer {
   id: number;
   item_id: string;
+  /** Units listed. Unique items are 1. */
+  quantity: number;
+  /** Total gold for the listed pile. Per-unit is `price_gold / quantity`. */
   price_gold: number;
   seller_character_id: string;
 }

@@ -45,3 +45,24 @@ export function quoteFee(
 export function formatGold(amount: number): string {
   return `${amount.toLocaleString('en-US')} Gold`;
 }
+
+/** Listed pile size. Missing or zero (legacy rows) reads as 1. */
+export function offerQuantity(offer: { quantity?: number }): number {
+  const quantity = offer.quantity ?? 1;
+  return quantity > 0 ? quantity : 1;
+}
+
+/** Integer gold per unit for a listed pile. */
+export function unitPriceGold(priceGold: number, quantity: number): number {
+  return Math.floor(priceGold / offerQuantity({ quantity }));
+}
+
+/** `10 × 5g` for stacks, otherwise the total in Gold. */
+export function formatOfferPrice(priceGold: number, quantity: number): string {
+  const qty = offerQuantity({ quantity });
+  if (qty === 1) {
+    return formatGold(priceGold);
+  }
+  const unit = unitPriceGold(priceGold, qty);
+  return `${qty.toLocaleString('en-US')} × ${unit.toLocaleString('en-US')}g`;
+}

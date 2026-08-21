@@ -35,15 +35,15 @@ import { formatGold } from '../../market.utils';
             <input
               type="number"
               [ngModel]="quantity()"
-              (ngModelChange)="quantity.set($event)"
+              (ngModelChange)="setQuantity($event)"
               min="1"
             />
           </div>
           <div class="qty-presets">
-            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 1" [toggle]="true" (onClick)="quantity.set(1)">1x</app-eivar-button>
-            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 5" [toggle]="true" (onClick)="quantity.set(5)">5x</app-eivar-button>
-            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 10" [toggle]="true" (onClick)="quantity.set(10)">10x</app-eivar-button>
-            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 25" [toggle]="true" (onClick)="quantity.set(25)">25x</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 1" [toggle]="true" (onClick)="setQuantity(1)">1x</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 5" [toggle]="true" (onClick)="setQuantity(5)">5x</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 10" [toggle]="true" (onClick)="setQuantity(10)">10x</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 25" [toggle]="true" (onClick)="setQuantity(25)">25x</app-eivar-button>
           </div>
         </div>
       </div>
@@ -72,6 +72,7 @@ import { formatGold } from '../../market.utils';
 })
 export class MarketCalculatorComponent {
   readonly currentPrice = input<number>(100);
+  readonly suggestedQuantity = input<number>(1);
   readonly marketFeeBps = input<number>(200);
   readonly accountFeeBps = input<number>(100);
 
@@ -82,8 +83,14 @@ export class MarketCalculatorComponent {
 
   constructor() {
     setTimeout(() => {
-      this.targetPrice.set(this.currentPrice());
+      this.targetPrice.set(Math.max(1, this.currentPrice()));
+      this.setQuantity(this.suggestedQuantity());
     }, 0);
+  }
+
+  setQuantity(value: number) {
+    const amount = Number.isFinite(value) ? Math.floor(value) : 1;
+    this.quantity.set(Math.max(1, amount));
   }
 
   readonly totalBps = computed(() => this.marketFeeBps() + this.accountFeeBps());

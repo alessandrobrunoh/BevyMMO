@@ -71,7 +71,7 @@ const ORNATE_PANEL_SLICE: f32 = 88.0;
 /// Title-screen splash used by the login and character-select roots.
 const MAIN_MENU_BACKGROUND_PATH: &str = "ui/menu/title_screen.png";
 
-const ORNATE_MENU_PANEL_PATH: &str = "ui/extracted_065811/panel_large_left.png";
+const ORNATE_MENU_PANEL_PATH: &str = "ui/hud/panel_large_left.png";
 
 /// Viewport fraction for login / character-select chrome. Clamped in px so
 /// 800x600 does not fill the window and 1080p does not grow unbounded.

@@ -38,8 +38,8 @@ pub use cooldowns::AbilityCooldowns;
 
 pub use events::WeaponCastRequest;
 pub use inscription::{
-    AbilityInscription, ItemInscription, RuneProfile, SecondaryWord, SlotInscription,
-    WeaponInscription,
+    AbilityInscription, ArmorInscription, ItemInscription, KitInscription, RuneProfile,
+    SecondaryWord, SlotInscription, WeaponInscription,
 };
 pub use root_word::{
     ArcRootWord, RootWord, RootWordEffect, RootWordId, RootWordMetadata, RootWordRegistry,
@@ -48,8 +48,8 @@ pub use root_word::{
 pub use known_glyphs::KnownAncientLanguage;
 
 pub use resolve::{
-    cast_armor_inscribed_ability, cast_root_inscribed_slot, resolve_armor_inscribed_ability,
-    resolve_root_inscribed_slot, CastBlockedReason, SlotPreview,
+    cast_ability_preview, cast_armor_inscribed_ability, cast_root_inscribed_slot, resolve_ability,
+    resolve_armor_inscribed_ability, resolve_root_inscribed_slot, CastBlockedReason, SlotPreview,
 };
 pub use slot::AbilitySlot;
 pub use weapon_abilities::{

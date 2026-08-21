@@ -58,6 +58,7 @@ export function itemToArticle(item: CatalogItem): WikiArticle {
     title: item.name,
     overview: item.description,
     lastUpdated: 'Live from game catalog',
+    image: item.icon,
     infobox: itemInfobox(item),
     sections: [],
     relatedSlugs: []
@@ -131,6 +132,7 @@ function itemInfobox(item: CatalogItem): WikiInfoBox {
   ];
   return {
     title: item.name,
+    image: item.icon,
     type: item.slot ?? item.category,
     rarity: toWikiRarity(item.rarity),
     stats

@@ -44,9 +44,9 @@ use spacetimedb::{ReducerContext, Table, reducer};
 use crate::rows::{StatsRow, Vec3Row};
 use crate::sim::gathering::far_future;
 use crate::tables::{
-    BossPhaseRow, BossState, ColorRow, EntityKindRow, EntityStateRow, EntityStats, GameEntity, Npc,
-    PropOverride, ResourceNode, boss_state, entity_stats, game_entity, grid_cell, npc, player,
-    prop_override, resource_node,
+    BossPhaseRow, BossState, ColorRow, EnemyAi, EntityKindRow, EntityStateRow, EntityStats,
+    GameEntity, Npc, PropOverride, ResourceNode, boss_state, enemy_ai, entity_stats, game_entity,
+    grid_cell, npc, player, prop_override, resource_node,
 };
 
 // `EMBEDDED_MAPS: &[(&str, &[u8])]`, one entry per authored map.
@@ -127,12 +127,20 @@ fn maps() -> &'static HashMap<String, MapData> {
 /// The definitions themselves are `bevymmo_domain`'s — the same ones the editor
 /// palette and the client asset resolver use. Nothing about a goblin is
 /// restated here.
-fn placeables() -> &'static PlaceableRegistry {
+pub(crate) fn placeables() -> &'static PlaceableRegistry {
     PLACEABLES.get_or_init(|| {
         let mut registry = PlaceableRegistry::default();
         register_all(&mut registry);
         registry
     })
+}
+
+/// Catalog config for a spawned enemy, keyed by the placeable `kind_id`.
+pub(crate) fn enemy_config_for(
+    kind_id: &str,
+) -> Option<bevymmo_domain::placeables::EnemyConfig> {
+    let id = bevymmo_domain::placeables::KindId::new(kind_id.to_string());
+    placeables().enemies.get(&id).map(|definition| definition.enemy_config())
 }
 
 /// Reverses `build.rs`'s encoding.
@@ -258,12 +266,10 @@ pub fn seed(ctx: &ReducerContext) {
                 definition.display_name(),
                 StatsRow::from(&config.stats),
             );
-            let attack = config
-                .spell_hotbar
-                .primary
-                .clone()
-                .unwrap_or_else(|| bevymmo_domain::spells::SpellId::new("fireball"));
-            crate::sim::ai::remember_enemy(entity.entity_id, config.aggro_range, attack);
+            ctx.db.enemy_ai().insert(EnemyAi {
+                entity_id: entity.entity_id,
+                kind_id: prop.kind.as_str().to_string(),
+            });
             enemies += 1;
         } else if let Some(definition) = registry.bosses.get(&prop.kind) {
             let config = definition.boss_config();
@@ -751,6 +757,7 @@ pub fn gm_reseed_world(ctx: &ReducerContext) -> Result<(), String> {
         .collect();
     for entity_id in seeded {
         ctx.db.boss_state().entity_id().delete(&entity_id);
+        ctx.db.enemy_ai().entity_id().delete(&entity_id);
         ctx.db.entity_stats().entity_id().delete(&entity_id);
         ctx.db.game_entity().entity_id().delete(&entity_id);
     }

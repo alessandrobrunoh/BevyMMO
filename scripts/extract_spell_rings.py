@@ -14,7 +14,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "assets/ui/source/spell_rings.png"
-OUTPUT = ROOT / "assets/ui/extracted_kit"
+OUTPUT = ROOT / "assets/ui/spells"
 
 FILL_TOLERANCE = 12
 CROP_PAD = 4

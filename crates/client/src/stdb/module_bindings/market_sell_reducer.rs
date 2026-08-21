@@ -10,6 +10,7 @@ pub(super) struct MarketSellArgs {
     pub npc_entity_id: u64,
     pub instance_id: u64,
     pub min_price: u64,
+    pub quantity: u32,
 }
 
 impl From<MarketSellArgs> for super::Reducer {
@@ -18,6 +19,7 @@ impl From<MarketSellArgs> for super::Reducer {
             npc_entity_id: args.npc_entity_id,
             instance_id: args.instance_id,
             min_price: args.min_price,
+            quantity: args.quantity,
         }
     }
 }
@@ -42,8 +44,9 @@ pub trait market_sell {
         npc_entity_id: u64,
         instance_id: u64,
         min_price: u64,
+        quantity: u32,
     ) -> __sdk::Result<()> {
-        self.market_sell_then(npc_entity_id, instance_id, min_price, |_, _| {})
+        self.market_sell_then(npc_entity_id, instance_id, min_price, quantity, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `market_sell` to run as soon as possible,
@@ -57,6 +60,7 @@ pub trait market_sell {
         npc_entity_id: u64,
         instance_id: u64,
         min_price: u64,
+        quantity: u32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -70,6 +74,7 @@ impl market_sell for super::RemoteReducers {
         npc_entity_id: u64,
         instance_id: u64,
         min_price: u64,
+        quantity: u32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -80,6 +85,7 @@ impl market_sell for super::RemoteReducers {
                 npc_entity_id,
                 instance_id,
                 min_price,
+                quantity,
             },
             callback,
         )

@@ -113,6 +113,7 @@ mod tests {
                     equippable_into: Some(EquipSlot::Weapon),
                     weight: 0.0,
                     tradable: true,
+                    icon: "",
                 },
             }
         }

@@ -34,10 +34,14 @@ impl From<Market> for MarketSummary {
 }
 
 /// One sell listing, already scoped to a single market by the handler.
+///
+/// `price_gold` is the **total** for `quantity` units. Per-unit price is
+/// `price_gold / quantity`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct SellOffer {
     pub id: u64,
     pub item_id: String,
+    pub quantity: u32,
     pub price_gold: u64,
     pub seller_character_id: Uuid,
 }
@@ -67,6 +71,7 @@ pub struct SellOrderRecord {
     pub id: u64,
     pub market_id: String,
     pub item_id: String,
+    pub quantity: u32,
     pub price_gold: u64,
     pub seller_character_id: Uuid,
 }
@@ -77,6 +82,7 @@ impl From<MarketSellOrder> for SellOrderRecord {
             id: row.id,
             market_id: row.market_id,
             item_id: row.item_id,
+            quantity: row.item.quantity.max(1),
             price_gold: row.price_gold,
             seller_character_id: Uuid::from_u128(row.seller_character_id.as_u128()),
         }
@@ -132,6 +138,7 @@ impl From<&SellOrderRecord> for SellOffer {
         Self {
             id: row.id,
             item_id: row.item_id.clone(),
+            quantity: row.quantity.max(1),
             price_gold: row.price_gold,
             seller_character_id: row.seller_character_id,
         }
@@ -295,8 +302,16 @@ mod tests {
             id,
             market_id: market_id.to_string(),
             item_id: item_id.to_string(),
+            quantity: 1,
             price_gold: id * 10,
             seller_character_id: Uuid::from_u128(id as u128),
+        }
+    }
+
+    fn stacked(id: u64, market_id: &str, item_id: &str, quantity: u32) -> SellOrderRecord {
+        SellOrderRecord {
+            quantity,
+            ..record(id, market_id, item_id)
         }
     }
 
@@ -358,6 +373,23 @@ mod tests {
             price_gold: id * 5,
             buyer_character_id: Uuid::from_u128(id as u128),
         }
+    }
+
+    #[test]
+    fn sell_offer_carries_the_listed_quantity() {
+        let orders = vec![
+            stacked(1, "market_1", "wood", 50),
+            stacked(2, "market_1", "wood", 10),
+            record(3, "market_1", "sword"),
+        ];
+        let wood = offers_for_item(&orders, "market_1", "wood");
+        assert_eq!(wood.len(), 2);
+        assert_eq!(wood[0].quantity, 50);
+        assert_eq!(wood[1].quantity, 10);
+        let offer = SellOffer::from(wood[0]);
+        assert_eq!(offer.quantity, 50);
+        assert_eq!(offer.item_id, "wood");
+        assert_eq!(SellOffer::from(&orders[2]).quantity, 1);
     }
 
     #[test]

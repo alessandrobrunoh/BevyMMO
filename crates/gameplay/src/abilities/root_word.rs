@@ -42,6 +42,9 @@ pub struct RootWordMetadata {
     pub display_name: &'static str,
     pub description: &'static str,
     pub rune_cost: u32,
+    /// Bevy asset path under `assets/` for the inscription-editor icon.
+    /// Empty means the UI falls back to the display name.
+    pub icon: &'static str,
 }
 
 /// Effect hook: trasforma il blueprint base applicando la semantica della
@@ -128,6 +131,7 @@ mod tests {
             display_name: "Danno",
             description: "Infligge danno ai bersagli",
             rune_cost: 1,
+            icon: "",
         };
         assert_eq!(meta.display_name, "Danno");
         assert_eq!(meta.rune_cost, 1);
@@ -146,6 +150,7 @@ mod tests {
                 display_name: "Test",
                 description: "Root word di test",
                 rune_cost: 0,
+                icon: "",
             };
             &META
         }

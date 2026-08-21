@@ -1,7 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SellOffer } from '../../../../shared/models/market.model';
-import { formatGold } from '../../market.utils';
+import { formatGold, offerQuantity, unitPriceGold } from '../../market.utils';
 
 interface PriceBucket {
   price: number;
@@ -131,23 +131,32 @@ export class MarketPriceChartComponent {
   formatGold = formatGold;
 
   readonly sortedOffers = computed(() => {
-    return [...this.offers()].sort((a, b) => a.price_gold - b.price_gold);
+    return [...this.offers()].sort((a, b) => {
+      const unitA = unitPriceGold(a.price_gold, offerQuantity(a));
+      const unitB = unitPriceGold(b.price_gold, offerQuantity(b));
+      return unitA - unitB || a.price_gold - b.price_gold;
+    });
   });
 
   readonly lowestPrice = computed(() => {
     const list = this.sortedOffers();
-    return list.length > 0 ? list[0].price_gold : 0;
+    return list.length > 0 ? unitPriceGold(list[0].price_gold, offerQuantity(list[0])) : 0;
   });
 
   readonly highestPrice = computed(() => {
     const list = this.sortedOffers();
-    return list.length > 0 ? list[list.length - 1].price_gold : 0;
+    if (list.length === 0) return 0;
+    const last = list[list.length - 1];
+    return unitPriceGold(last.price_gold, offerQuantity(last));
   });
 
   readonly averagePrice = computed(() => {
     const list = this.sortedOffers();
     if (list.length === 0) return 0;
-    const total = list.reduce((sum, o) => sum + o.price_gold, 0);
+    const total = list.reduce(
+      (sum, o) => sum + unitPriceGold(o.price_gold, offerQuantity(o)),
+      0
+    );
     return Math.round(total / list.length);
   });
 
@@ -197,7 +206,8 @@ export class MarketPriceChartComponent {
         list.length === 1
           ? this.paddingLeft + availableWidth / 2
           : this.paddingLeft + (idx / (list.length - 1)) * availableWidth;
-      const y = bottomY - ((offer.price_gold - min) / range) * heightSpan;
+      const unit = unitPriceGold(offer.price_gold, offerQuantity(offer));
+      const y = bottomY - ((unit - min) / range) * heightSpan;
       return {
         id: offer.id,
         price: offer.price_gold,

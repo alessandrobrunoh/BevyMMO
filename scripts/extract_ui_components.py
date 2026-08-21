@@ -8,8 +8,8 @@ import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "ChatGPT Image Aug 19, 2026, 06_39_03 PM.png"
-OUTPUT = ROOT / "assets/ui/extracted"
+SOURCE = ROOT / "assets/ui/source/components_sheet.png"
+OUTPUT = ROOT / "assets/ui/components"
 
 # Coordinates are (left, top, right, bottom), in source-image pixels.
 COMPONENTS: list[tuple[str, tuple[int, int, int, int]]] = [

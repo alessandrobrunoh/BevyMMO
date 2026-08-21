@@ -244,6 +244,14 @@ pub trait BaseAbility: Send + Sync + 'static {
     /// applica solo colore/tema (vedi `EssenceVisualTheme`).
     fn impact_vfx(&self) -> &'static str;
 
+    /// Bevy asset path under `assets/` for the HUD icon.
+    ///
+    /// Empty means the presentation layer shows no icon. `#[base_ability]`
+    /// defaults this to `abilities/icons/{id}.png` when `icon` is omitted.
+    fn icon(&self) -> &'static str {
+        ""
+    }
+
     /// Ritardo fra il lancio e l'impatto. > 0 significa "cerchio di
     /// preavviso a terra, poi lo schianto" (il Meteorite); il client legge
     /// lo stesso valore da qui per far durare il marker esattamente quanto
@@ -556,6 +564,11 @@ mod tests {
         let ability = DummyAbility;
         assert!(ability.has_tag(AbilityTag::Area));
         assert!(!ability.has_tag(AbilityTag::Projectile));
+    }
+
+    #[test]
+    fn icon_defaults_to_empty_when_not_overridden() {
+        assert_eq!(DummyAbility.icon(), "");
     }
 
     #[test]

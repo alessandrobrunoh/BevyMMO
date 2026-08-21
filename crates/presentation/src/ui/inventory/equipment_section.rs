@@ -6,7 +6,8 @@ use bevymmo_gameplay::items::{
     registry::ItemRegistry,
 };
 
-use super::components::{EquipSlotButton, EquipSlotText, InventorySlotImages};
+use super::components::{EquipSlotButton, EquipSlotIcon, EquipSlotText, InventorySlotImages};
+use super::load_item_icon;
 use crate::ui::theme::UiTheme;
 
 const EQUIP_SLOT_SIZE: f32 = 44.0;
@@ -45,6 +46,7 @@ pub(super) fn spawn_equipment_section(
     equipment: &Equipment,
     registry: &ItemRegistry,
     images: &InventorySlotImages,
+    asset_server: &AssetServer,
 ) {
     let grid_slots = &EquipSlot::ALL[..9];
     let mount_slot = EquipSlot::ALL[9];
@@ -78,8 +80,10 @@ pub(super) fn spawn_equipment_section(
                             grid,
                             theme,
                             slot,
-                            equip_slot_label(equipment, registry, slot),
+                            equipment,
+                            registry,
                             images,
+                            asset_server,
                         );
                     }
                 });
@@ -95,8 +99,10 @@ pub(super) fn spawn_equipment_section(
                         row,
                         theme,
                         mount_slot,
-                        equip_slot_label(equipment, registry, mount_slot),
+                        equipment,
+                        registry,
                         images,
+                        asset_server,
                     );
                 });
         });
@@ -107,10 +113,22 @@ fn spawn_equip_slot_cell(
     parent: &mut ChildSpawnerCommands,
     theme: &UiTheme,
     slot: EquipSlot,
-    label: String,
+    equipment: &Equipment,
+    registry: &ItemRegistry,
     images: &InventorySlotImages,
+    asset_server: &AssetServer,
 ) {
-    let has_item = label != EMPTY_SLOT_PLACEHOLDER;
+    let icon = equipment
+        .get(slot)
+        .as_ref()
+        .and_then(|instance| load_item_icon(asset_server, registry, &instance.item_id));
+    let icon_visible = icon.is_some();
+    let has_item = equipment.get(slot).is_some();
+    let label = if icon_visible {
+        String::new()
+    } else {
+        equip_slot_label(equipment, registry, slot)
+    };
 
     parent
         .spawn(Node {
@@ -135,6 +153,7 @@ fn spawn_equip_slot_cell(
                 Node {
                     width: Val::Px(EQUIP_SLOT_SIZE),
                     height: Val::Px(EQUIP_SLOT_SIZE),
+                    position_type: PositionType::Relative,
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
                     padding: UiRect::all(Val::Px(2.0)),
@@ -151,6 +170,27 @@ fn spawn_equip_slot_cell(
                 EquipSlotButton { slot },
             ))
             .with_children(|button| {
+                button.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(4.0),
+                        right: Val::Px(4.0),
+                        top: Val::Px(4.0),
+                        bottom: Val::Px(4.0),
+                        ..default()
+                    },
+                    ImageNode {
+                        image: icon.unwrap_or_default(),
+                        image_mode: NodeImageMode::Stretch,
+                        ..default()
+                    },
+                    if icon_visible {
+                        Visibility::Inherited
+                    } else {
+                        Visibility::Hidden
+                    },
+                    EquipSlotIcon { slot },
+                ));
                 button.spawn((
                     Text::new(label),
                     TextFont {

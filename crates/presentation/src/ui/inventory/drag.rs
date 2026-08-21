@@ -88,6 +88,7 @@ struct PendingDrag {
     instance_id: ItemInstanceId,
     start: Vec2,
     label: String,
+    icon_path: Option<String>,
     ghost: Option<Entity>,
 }
 
@@ -163,10 +164,12 @@ pub fn start_item_drag(
         return;
     };
 
-    let label = registry
-        .get(&item_id)
+    let item = registry.get(&item_id);
+    let label = item
+        .as_ref()
         .map(|item| item.display_name().to_string())
         .unwrap_or_else(|| item_id.as_str().to_string());
+    let icon_path = item.and_then(|item| item.icon().map(str::to_string));
 
     drag_state.pending = Some(PendingDrag {
         origin,
@@ -175,6 +178,7 @@ pub fn start_item_drag(
         instance_id,
         start: cursor,
         label,
+        icon_path,
         ghost: None,
     });
 }
@@ -192,6 +196,7 @@ pub fn update_item_drag(
     mut backgrounds: Query<&mut BackgroundColor>,
     all_cards: Query<(Entity, &CardWindow)>,
     mut state: ResMut<InventoryUiState>,
+    asset_server: Res<AssetServer>,
     mut commands: Commands,
 ) {
     if !mouse.pressed(MouseButton::Left) {
@@ -219,8 +224,10 @@ pub fn update_item_drag(
         pending.ghost = Some(spawn_drag_ghost(
             &mut commands,
             &theme,
+            &asset_server,
             cursor,
             &pending.label,
+            pending.icon_path.as_deref(),
         ));
     }
 
@@ -361,6 +368,7 @@ pub(super) fn inspect_clicked_item(
     state.selected = Some(selection);
     detail_state.active_slot = bevymmo_gameplay::abilities::AbilitySlot::Primary;
     detail_state.scroll = 0.0;
+    detail_state.split_amount = 0;
     despawn_detail_cards(&mut commands, &all_cards);
     spawn_item_detail_card(
         &mut commands,
@@ -448,7 +456,14 @@ fn apply_slot_drop(
     }
 }
 
-fn spawn_drag_ghost(commands: &mut Commands, theme: &UiTheme, cursor: Vec2, label: &str) -> Entity {
+fn spawn_drag_ghost(
+    commands: &mut Commands,
+    theme: &UiTheme,
+    asset_server: &AssetServer,
+    cursor: Vec2,
+    label: &str,
+    icon_path: Option<&str>,
+) -> Entity {
     commands
         .spawn((
             Node {
@@ -462,6 +477,7 @@ fn spawn_drag_ghost(commands: &mut Commands, theme: &UiTheme, cursor: Vec2, labe
                 padding: UiRect::all(Val::Px(3.0)),
                 border: UiRect::all(Val::Px(2.0)),
                 border_radius: BorderRadius::all(Val::Px(8.0)),
+                overflow: Overflow::clip(),
                 ..default()
             },
             BackgroundColor(theme.button_pressed_bg.with_alpha(0.92)),
@@ -474,16 +490,29 @@ fn spawn_drag_ghost(commands: &mut Commands, theme: &UiTheme, cursor: Vec2, labe
             ItemDragGhost,
         ))
         .with_children(|ghost| {
-            ghost.spawn((
-                Text::new(label.to_string()),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.55),
-                    ..default()
-                },
-                TextColor(theme.text_color),
-                TextLayout::justify(Justify::Center),
-                Pickable::IGNORE,
-            ));
+            if let Some(path) = icon_path {
+                ghost.spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..default()
+                    },
+                    ImageNode::new(asset_server.load(path.to_string()))
+                        .with_mode(NodeImageMode::Stretch),
+                    Pickable::IGNORE,
+                ));
+            } else {
+                ghost.spawn((
+                    Text::new(label.to_string()),
+                    TextFont {
+                        font_size: FontSize::Px(theme.button_font_size * 0.55),
+                        ..default()
+                    },
+                    TextColor(theme.text_color),
+                    TextLayout::justify(Justify::Center),
+                    Pickable::IGNORE,
+                ));
+            }
         })
         .id()
 }

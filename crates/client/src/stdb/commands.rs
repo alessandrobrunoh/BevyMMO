@@ -34,6 +34,7 @@ use super::module_bindings::cancel_buy_order_reducer::cancel_buy_order as cancel
 use super::module_bindings::cancel_sell_order_reducer::cancel_sell_order as cancel_sell_order_reducer;
 use super::module_bindings::cast_weapon_reducer::cast_weapon as cast_weapon_reducer;
 use super::module_bindings::claim_npc_item_reducer::claim_npc_item as claim_npc_item_reducer;
+use super::module_bindings::combine_item_reducer::combine_item as combine_item_reducer;
 use super::module_bindings::destroy_item_reducer::destroy_item as destroy_item_reducer;
 use super::module_bindings::equip_item_reducer::equip_item as equip_item_reducer;
 use super::module_bindings::market_buy_reducer::market_buy as market_buy_reducer;
@@ -53,6 +54,7 @@ use super::module_bindings::set_ability_selection_reducer::set_ability_selection
 use super::module_bindings::set_armor_inscription_reducer::set_armor_inscription as set_armor_inscription_reducer;
 
 use super::module_bindings::set_root_inscription_reducer::set_root_inscription as set_root_inscription_reducer;
+use super::module_bindings::split_item_reducer::split_item as split_item_reducer;
 use super::module_bindings::start_gather_reducer::start_gather as start_gather_reducer;
 use super::module_bindings::stop_gather_reducer::stop_gather as stop_gather_reducer;
 use super::module_bindings::unequip_item_reducer::unequip_item as unequip_item_reducer;
@@ -80,17 +82,21 @@ pub fn claim_npc_item(conn: &StdbConnection, npc_entity_id: u64, item_id: String
     )
 }
 
-/// Lists an inventory instance on the NPC's isolated market.
+/// Lists `quantity` of an inventory pile on the NPC's isolated market.
+///
+/// `price` is gold per unit. The module stores the total (`price * quantity`).
 pub fn place_sell_order(
     conn: &StdbConnection,
     npc_entity_id: u64,
     instance_id: u64,
     price: u64,
+    quantity: u32,
 ) -> Sent {
     conn.reducers().place_sell_order_then(
         npc_entity_id,
         instance_id,
         price,
+        quantity,
         conn.report_rejection("could not list that item"),
     )
 }
@@ -127,17 +133,21 @@ pub fn place_buy_order(
     )
 }
 
-/// Instant-sells an inventory instance into the best matching bid.
+/// Instant-sells `quantity` of an inventory pile into the best matching bid.
+///
+/// `min_price` is gold per unit.
 pub fn market_sell(
     conn: &StdbConnection,
     npc_entity_id: u64,
     instance_id: u64,
     min_price: u64,
+    quantity: u32,
 ) -> Sent {
     conn.reducers().market_sell_then(
         npc_entity_id,
         instance_id,
         min_price,
+        quantity,
         conn.report_rejection("could not sell that item"),
     )
 }
@@ -170,10 +180,27 @@ pub fn unequip_item(conn: &StdbConnection, slot: EquipSlot) -> Sent {
     )
 }
 
-/// Swaps two inventory slots.
+/// Swaps two inventory slots, or merges same-item Material piles.
 pub fn move_item(conn: &StdbConnection, from: u8, to: u8) -> Sent {
     conn.reducers()
         .move_item_then(from, to, conn.report_rejection("could not move that item"))
+}
+
+/// Peels `amount` off inventory slot `slot_index` into the first empty slot.
+pub fn split_item(conn: &StdbConnection, slot_index: u8, amount: u32) -> Sent {
+    conn.reducers().split_item_then(
+        slot_index,
+        amount,
+        conn.report_rejection("could not split that stack"),
+    )
+}
+
+/// Pulls other piles of the same Material into `slot_index` up to the bag cap.
+pub fn combine_item(conn: &StdbConnection, slot_index: u8) -> Sent {
+    conn.reducers().combine_item_then(
+        slot_index,
+        conn.report_rejection("could not combine those stacks"),
+    )
 }
 
 /// Writes the equipped weapon's shared Root Word and per-slot Ancient Words.

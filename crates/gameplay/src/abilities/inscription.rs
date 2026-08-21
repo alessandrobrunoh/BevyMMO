@@ -160,6 +160,23 @@ impl ItemInscription {
     }
 }
 
+/// Content-authored inscription on an enemy/NPC kit entry.
+///
+/// Same shape as [`ArmorInscription`], but there is no "does this caster know
+/// the glyph" gate: the catalog is trusted. An empty inscription is a naked
+/// gesture (`AbilityBlueprint::from_base_ability`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct KitInscription {
+    pub root_word: Option<RootWordId>,
+    pub secondary_words: Vec<SecondaryWord>,
+}
+
+impl KitInscription {
+    pub fn is_empty(&self) -> bool {
+        self.root_word.is_none() && self.secondary_words.is_empty()
+    }
+}
+
 /// Independent inscription carried by Helmet, Chest and Shoes.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ArmorInscription {

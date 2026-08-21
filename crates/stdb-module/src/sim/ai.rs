@@ -40,15 +40,12 @@
 //! there is no index on `kind`, so the mobs have to be found by looking. It is
 //! one pass for the whole tick rather than one per mob.
 
-use std::collections::HashMap;
-use std::sync::Mutex;
-
-use bevymmo_domain::content::spells::fireball::FireballSpell;
 use bevymmo_domain::entity::boss::components::{Boss, BossPhase, BossRotationState, BossSpellbook};
-use bevymmo_domain::entity::enemy::components::AggroRange;
+use bevymmo_domain::entity::enemy::aggro::is_leashed;
 use bevymmo_domain::movement;
+use bevymmo_domain::placeables::EnemyConfig;
 use bevymmo_domain::spells::context::ChannelMovementPolicy as SpellChannelMovementPolicy;
-use bevymmo_domain::spells::{CastKind, Spell, SpellId};
+use bevymmo_domain::spells::{CastKind, SpellId};
 use glam::Vec3;
 use spacetimedb::{ReducerContext, Table};
 
@@ -56,9 +53,10 @@ use crate::rows::Vec3Row;
 use crate::sim::targets;
 use crate::sim::{crowd_control, spells};
 use crate::tables::{
-    boss_state, cast_state, entity_stats, game_entity, grid_cell, threat, BossPhaseRow, BossState,
-    CastState, EntityKindRow, EntityStateRow, GameEntity, Threat,
+    boss_state, cast_state, enemy_ai, entity_stats, game_entity, grid_cell, threat, BossPhaseRow,
+    BossState, CastState, EntityKindRow, EntityStateRow, GameEntity, Threat,
 };
+use crate::world;
 
 /// Distance a melee attacker stops at, so it fights the target instead of
 /// standing inside it. From `boss/systems.rs::MELEE_REACH`.
@@ -144,40 +142,9 @@ fn collect_actors(ctx: &ReducerContext) -> Actors {
 // Enemies
 // ---------------------------------------------------------------------------
 
-#[derive(Clone)]
-struct EnemyProfile {
-    aggro_range: f32,
-    attack_spell: SpellId,
-}
-
-static ENEMY_PROFILES: Mutex<Option<HashMap<u64, EnemyProfile>>> = Mutex::new(None);
-
-fn enemy_profiles() -> std::sync::MutexGuard<'static, Option<HashMap<u64, EnemyProfile>>> {
-    ENEMY_PROFILES
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// Records the placeable's aggro radius and Q-slot attack for this spawn.
-pub fn remember_enemy(entity_id: u64, aggro_range: f32, attack_spell: SpellId) {
-    enemy_profiles().get_or_insert_with(HashMap::new).insert(
-        entity_id,
-        EnemyProfile {
-            aggro_range,
-            attack_spell,
-        },
-    );
-}
-
-fn profile_for(entity_id: u64) -> EnemyProfile {
-    enemy_profiles()
-        .as_ref()
-        .and_then(|map| map.get(&entity_id))
-        .cloned()
-        .unwrap_or_else(|| EnemyProfile {
-            aggro_range: AggroRange::default().0,
-            attack_spell: SpellId::new(FireballSpell::ID),
-        })
+fn config_for(ctx: &ReducerContext, entity_id: u64) -> Option<EnemyConfig> {
+    let row = ctx.db.enemy_ai().entity_id().find(&entity_id)?;
+    world::enemy_config_for(&row.kind_id)
 }
 
 /// One enemy's turn: pick a target, close to melee, swing, or walk home.
@@ -200,8 +167,24 @@ fn step_enemy(
 ) {
     let entity_id = enemy.entity_id;
     let position = Vec3::from(enemy.position);
-    let profile = profile_for(entity_id);
-    let target = nearest_living_player(ctx, online, position, profile.aggro_range);
+    let spawn = Vec3::from(enemy.spawn_point);
+    let Some(config) = config_for(ctx, entity_id) else {
+        return;
+    };
+
+    if is_leashed(spawn, position, config.leash_aggro) {
+        let move_target = if position.distance(spawn) > HOME_ARRIVAL_EPSILON {
+            Some(enemy.spawn_point)
+        } else {
+            None
+        };
+        let look = enemy.look;
+        let move_target = gate_movement(ctx, entity_id, move_target);
+        write_pose(ctx, enemy, look, move_target);
+        return;
+    }
+
+    let target = nearest_living_player(ctx, online, position, config.aggro);
 
     let (look, move_target) = match &target {
         Some(target) => {
@@ -225,8 +208,7 @@ fn step_enemy(
             (look, move_target)
         }
         None => {
-            let home = Vec3::from(enemy.spawn_point);
-            let move_target = if position.distance(home) > HOME_ARRIVAL_EPSILON {
+            let move_target = if position.distance(spawn) > HOME_ARRIVAL_EPSILON {
                 Some(enemy.spawn_point)
             } else {
                 None
@@ -239,7 +221,7 @@ fn step_enemy(
     let enemy = write_pose(ctx, enemy, look, move_target);
 
     if let Some(target) = target {
-        try_attack(ctx, &enemy, &target, &profile);
+        try_attack(ctx, &enemy, &target, &config);
     }
 }
 
@@ -253,17 +235,16 @@ fn try_attack(
     ctx: &ReducerContext,
     enemy: &GameEntity,
     target: &PlayerRef,
-    profile: &EnemyProfile,
+    config: &EnemyConfig,
 ) {
-    let spell_id = if spells::spells().get(&profile.attack_spell).is_some() {
-        profile.attack_spell.clone()
-    } else {
-        SpellId::new(FireballSpell::ID)
+    let Some(entry) = config.abilities.first() else {
+        return;
     };
-    let range = spells::spells()
-        .get(&spell_id)
-        .map(|spell| spell.config().cast_range)
-        .unwrap_or_else(|| FireballSpell.config().cast_range);
+    let ability_id = &entry.ability_id;
+    let range = spells::base_abilities()
+        .get(ability_id)
+        .map(|ability| ability.base_params().range)
+        .unwrap_or(5.0);
     let position = Vec3::from(enemy.position);
     if crate::sim::spells::flat_distance(position, target.position) > range {
         return;
@@ -271,13 +252,13 @@ fn try_attack(
     if !can_start_cast(ctx, enemy.entity_id) {
         return;
     }
-    if spells::is_on_cooldown(ctx, enemy.entity_id, spell_id.as_str()) {
+    if spells::is_on_cooldown(ctx, enemy.entity_id, ability_id.as_str()) {
         return;
     }
-    request_cast(
+    spells::request_catalog_ability(
         ctx,
         enemy,
-        &spell_id,
+        ability_id.as_str(),
         Some(target.entity),
         Some(target.position),
     );

@@ -10,7 +10,8 @@ use systems::{
     buy_market_offer, cancel_ticket_buy_order, cancel_ticket_sell_order,
     close_ticket_if_browse_closed, create_ticket_order, npc_market_on_click, open_market_ticket,
     refresh_bag_rows, refresh_market_rows, refresh_market_ticket, select_market_tab,
-    select_ticket_action, sell_from_bag, step_list_price, sync_market_tab_visibility,
+    select_ticket_action, sell_from_bag, step_list_price, step_list_quantity,
+    sync_market_tab_visibility,
 };
 
 pub struct MarketUiPlugin;
@@ -29,6 +30,7 @@ impl Plugin for MarketUiPlugin {
                 sell_from_bag,
                 select_ticket_action,
                 step_list_price,
+                step_list_quantity,
                 refresh_market_rows,
                 refresh_bag_rows,
                 refresh_market_ticket,
@@ -76,6 +78,8 @@ pub struct MarketUiState {
     pub open_market_id: Option<String>,
     pub npc: Option<Entity>,
     pub list_price: u64,
+    /// Units to list / instant-sell. `0` means "use the whole pile".
+    pub list_quantity: u32,
     pub search: String,
     pub ticket_action: MarketTicketAction,
     pub tab: MarketTab,
@@ -85,6 +89,17 @@ pub struct MarketUiState {
 impl MarketUiState {
     pub fn listing_price(&self) -> u64 {
         self.list_price.max(1)
+    }
+
+    pub fn listing_quantity(&self, available: u32) -> u32 {
+        bevymmo_gameplay::items::components::Inventory::clamp_trade_amount(
+            if self.list_quantity == 0 {
+                available
+            } else {
+                self.list_quantity
+            },
+            available,
+        )
     }
 }
 
@@ -110,6 +125,7 @@ pub struct MarketOfferButton {
 pub struct MarketOpenTicket {
     pub item_id: String,
     pub price_gold: u64,
+    pub quantity: u32,
 }
 
 #[derive(Component)]
@@ -124,6 +140,11 @@ pub struct MarketGoldText;
 #[derive(Component)]
 pub struct MarketPriceBump {
     pub delta: i64,
+}
+
+#[derive(Component)]
+pub struct MarketQuantityBump {
+    pub delta: i32,
 }
 
 #[derive(Component, Clone, Copy)]
@@ -144,6 +165,7 @@ pub struct MarketBagList;
 pub struct MarketSellFromBag {
     pub slot: u8,
     pub item_id: String,
+    pub quantity: u32,
 }
 
 #[derive(Component)]
@@ -156,6 +178,9 @@ pub struct MarketTicketCreateButton;
 
 #[derive(Component)]
 pub struct MarketTicketPriceText;
+
+#[derive(Component)]
+pub struct MarketTicketQuantityText;
 
 #[derive(Component)]
 pub struct MarketTicketFeeText;

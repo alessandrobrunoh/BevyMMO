@@ -6,8 +6,8 @@ import { describeGatewayError } from './market.service';
 describe('MarketService isolation contract', () => {
   it('drops foreign-market rows if a mixed payload is ever returned', () => {
     const payload: Array<SellOffer & { market_id: string }> = [
-      { id: 1, item_id: 'sword', price_gold: 50, seller_character_id: 'x', market_id: 'market_1' },
-      { id: 2, item_id: 'simple_cuirass', price_gold: 70, seller_character_id: 'y', market_id: 'market_2' }
+      { id: 1, item_id: 'sword', quantity: 1, price_gold: 50, seller_character_id: 'x', market_id: 'market_1' },
+      { id: 2, item_id: 'simple_cuirass', quantity: 1, price_gold: 70, seller_character_id: 'y', market_id: 'market_2' }
     ];
     const forHall = (marketId: string) =>
       filterOffersByMarketId(payload, marketId).map(row => row.item_id);

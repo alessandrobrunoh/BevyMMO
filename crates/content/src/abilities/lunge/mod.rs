@@ -20,6 +20,7 @@ use crate::abilities::BaseAbilityRegistry;
     stun_seconds = 0.4,
     animation = "sword_lunge",
     impact_vfx = "lunge_impact",
+    icon = "abilities/icons/lunge.png",
 )]
 pub struct Lunge;
 

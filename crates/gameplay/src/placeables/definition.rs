@@ -145,11 +145,11 @@ pub trait DummyPlaceable: PlaceableDefinition {
 
 /// Hostile or neutral AI creature (goblin, wolf, skeleton, ...).
 ///
-/// The server binding calls `enemy_config()` to read the stats / spells /
-/// aggro range, then spawns the existing `Enemy` entity via
+/// The server binding calls `enemy_config()` to read the stats / kit /
+/// aggro, then spawns the existing `Enemy` entity via
 /// `spawn_entity::<Enemy>()` and overrides those components.
 pub trait EnemyPlaceable: PlaceableDefinition {
-    /// Per-archetype stats, hotbar and aggro range.
+    /// Per-archetype stats, catalog ability kit, acquire and leash radii.
     fn enemy_config(&self) -> EnemyConfig;
 }
 

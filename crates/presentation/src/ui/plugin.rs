@@ -9,9 +9,9 @@ use super::{
     systems, target_frame, target_indicator,
 };
 
-use bevymmo_client::pointer::{PointerOnHud, world_pointer_blocked};
+use bevymmo_client::pointer::{world_pointer_blocked, PointerOnHud};
 
-use crate::game_state::{Screen, not_typing};
+use crate::game_state::{not_typing, Screen};
 use crate::ui::theme::UiTheme;
 
 /// Camera 2D dedicata alla UI. Resta attiva nel menu e durante la partita,

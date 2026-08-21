@@ -6,7 +6,8 @@ use bevymmo_gameplay::items::{
     registry::ItemRegistry,
 };
 
-use super::components::{InventorySlotImages, ItemSlotButton, ItemSlotText};
+use super::components::{InventorySlotImages, ItemSlotButton, ItemSlotIcon, ItemSlotText};
+use super::load_item_icon;
 use crate::ui::{scrollbar::spawn_scroll_view, theme::UiTheme};
 
 const INVENTORY_GRID_COLUMNS: u16 = 4;
@@ -26,25 +27,32 @@ pub(super) fn spawn_inventory_section(
     inventory: &Inventory,
     registry: &ItemRegistry,
     images: &InventorySlotImages,
+    asset_server: &AssetServer,
 ) {
-    let item_labels: Vec<String> = (0..INVENTORY_CAPACITY)
+    let slot_visuals: Vec<(bool, String, Option<Handle<Image>>)> = (0..INVENTORY_CAPACITY)
         .map(|index| {
-            inventory
-                .slots
-                .get(index)
-                .and_then(|item| item.as_ref())
-                .map(|instance| {
-                    let display = registry
-                        .get(&instance.item_id)
-                        .map(|item| item.display_name().to_string())
-                        .unwrap_or_else(|| instance.item_id.as_str().to_string());
-                    if instance.quantity > 1 {
-                        format!("{display} x{}", instance.quantity)
-                    } else {
-                        display
-                    }
-                })
-                .unwrap_or_default()
+            let Some(instance) = inventory.slots.get(index).and_then(|item| item.as_ref()) else {
+                return (false, String::new(), None);
+            };
+            let icon = load_item_icon(asset_server, registry, &instance.item_id);
+            let label = if icon.is_some() {
+                if instance.quantity > 1 {
+                    instance.quantity.to_string()
+                } else {
+                    String::new()
+                }
+            } else {
+                let display = registry
+                    .get(&instance.item_id)
+                    .map(|item| item.display_name().to_string())
+                    .unwrap_or_else(|| instance.item_id.as_str().to_string());
+                if instance.quantity > 1 {
+                    format!("{display} x{}", instance.quantity)
+                } else {
+                    display
+                }
+            };
+            (true, label, icon)
         })
         .collect();
 
@@ -89,14 +97,17 @@ pub(super) fn spawn_inventory_section(
                         ..default()
                     })
                     .with_children(|grid| {
-                        for (index, item_name) in item_labels.into_iter().enumerate() {
-                            let has_item = !item_name.is_empty();
+                        for (index, (has_item, item_name, icon)) in
+                            slot_visuals.into_iter().enumerate()
+                        {
+                            let icon_visible = icon.is_some();
 
                             grid.spawn((
                                 Button,
                                 Node {
                                     width: Val::Px(INVENTORY_SLOT_SIZE),
                                     height: Val::Px(INVENTORY_SLOT_SIZE),
+                                    position_type: PositionType::Relative,
                                     justify_content: JustifyContent::Center,
                                     align_items: AlignItems::Center,
                                     padding: UiRect::all(Val::Px(3.0)),
@@ -113,6 +124,27 @@ pub(super) fn spawn_inventory_section(
                                 ItemSlotButton { index: index as u8 },
                             ))
                             .with_children(|button| {
+                                button.spawn((
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: Val::Px(6.0),
+                                        right: Val::Px(6.0),
+                                        top: Val::Px(6.0),
+                                        bottom: Val::Px(6.0),
+                                        ..default()
+                                    },
+                                    ImageNode {
+                                        image: icon.unwrap_or_default(),
+                                        image_mode: NodeImageMode::Stretch,
+                                        ..default()
+                                    },
+                                    if icon_visible {
+                                        Visibility::Inherited
+                                    } else {
+                                        Visibility::Hidden
+                                    },
+                                    ItemSlotIcon { index: index as u8 },
+                                ));
                                 button.spawn((
                                     Text::new(item_name),
                                     TextFont {

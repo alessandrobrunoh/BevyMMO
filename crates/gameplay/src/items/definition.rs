@@ -63,6 +63,9 @@ pub struct ItemConfig {
     /// Defaults to `true` in `#[item(...)]`. Soulbound / quest items set
     /// `tradable = false` and never appear in a hall's sell list.
     pub tradable: bool,
+    /// Bevy asset path under `assets/` for the inventory / detail-card icon.
+    /// Empty means the UI falls back to the item name.
+    pub icon: &'static str,
 }
 
 /// Contract every concrete item implements.
@@ -89,6 +92,12 @@ pub trait Item: Send + Sync + 'static {
     /// Player-facing display name. Defaults to `config().display_name`.
     fn display_name(&self) -> &str {
         &self.config().display_name
+    }
+
+    /// Inventory / HUD icon asset path. `None` when `config().icon` is empty.
+    fn icon(&self) -> Option<&'static str> {
+        let icon = self.config().icon;
+        (!icon.is_empty()).then_some(icon)
     }
 
     /// Whether this item can change owner via the player market.
@@ -192,6 +201,7 @@ mod tests {
             equippable_into: Some(EquipSlot::Weapon),
             weight: 0.0,
             tradable: true,
+            icon: "",
         }
     }
 
@@ -225,5 +235,21 @@ mod tests {
             config: sample_config(),
         };
         assert!(item.equip_requirements().is_empty());
+    }
+
+    #[test]
+    fn icon_is_absent_when_the_path_is_empty() {
+        let item = Dummy {
+            config: sample_config(),
+        };
+        assert!(item.icon().is_none());
+
+        let with_icon = Dummy {
+            config: ItemConfig {
+                icon: "items/icons/dummy.png",
+                ..sample_config()
+            },
+        };
+        assert_eq!(with_icon.icon(), Some("items/icons/dummy.png"));
     }
 }

@@ -86,6 +86,9 @@ pub enum MarketError {
     InventoryFull,
     OrderCap,
     ZeroPrice,
+    ZeroQuantity,
+    InsufficientQuantity,
+    ListingOverflow,
     FeeExceedsPrice,
     NoMatchingBid,
 }
@@ -102,6 +105,9 @@ impl std::fmt::Display for MarketError {
             Self::InventoryFull => write!(f, "inventory is full"),
             Self::OrderCap => write!(f, "too many open orders in this market"),
             Self::ZeroPrice => write!(f, "price must be greater than 0"),
+            Self::ZeroQuantity => write!(f, "quantity must be greater than 0"),
+            Self::InsufficientQuantity => write!(f, "not enough of that item"),
+            Self::ListingOverflow => write!(f, "listing total overflowed"),
             Self::FeeExceedsPrice => write!(f, "fee exceeds price"),
             Self::NoMatchingBid => write!(f, "no matching buy order"),
         }
@@ -151,6 +157,29 @@ pub fn plan_fill(
     let quote = quote_fee(price, market_bps, seller_account_bps)?;
     buyer_gold.debit(quote.buyer_pays.amount())?;
     Ok(FillPlan { quote })
+}
+
+/// `unit_price * quantity` stored as the order's total gold.
+///
+/// `price_gold` on a sell order is the **total** for the listed pile so fills
+/// stay a single debit. The ticket UI quotes a per-unit price and multiplies
+/// here before the reducer runs.
+pub fn listing_total(unit_price: u64, quantity: u32) -> Result<u64, MarketError> {
+    if unit_price == 0 {
+        return Err(MarketError::ZeroPrice);
+    }
+    if quantity == 0 {
+        return Err(MarketError::ZeroQuantity);
+    }
+    unit_price
+        .checked_mul(u64::from(quantity))
+        .ok_or(MarketError::ListingOverflow)
+}
+
+/// Per-unit gold shown in the book. `quantity` of 0 is treated as 1 so a
+/// legacy row without a pile size still renders.
+pub fn unit_price(total_price: u64, quantity: u32) -> u64 {
+    total_price / u64::from(quantity.max(1))
 }
 
 /// Escrows `price` gold for a buy order. Fees are quoted later, on fill.
@@ -490,6 +519,21 @@ mod tests {
         assert_eq!(plan.quote.total_bps, 200);
         assert_eq!(plan.quote.fee_gold, 200);
         assert_eq!(plan.quote.seller_receives.amount(), 9_800);
+    }
+
+    #[test]
+    fn listing_total_is_unit_times_quantity() {
+        assert_eq!(listing_total(5, 10).unwrap(), 50);
+        assert_eq!(listing_total(1, 1).unwrap(), 1);
+        assert_eq!(listing_total(0, 10), Err(MarketError::ZeroPrice));
+        assert_eq!(listing_total(5, 0), Err(MarketError::ZeroQuantity));
+        assert_eq!(
+            listing_total(u64::MAX, 2),
+            Err(MarketError::ListingOverflow)
+        );
+        assert_eq!(unit_price(50, 10), 5);
+        assert_eq!(unit_price(100, 0), 100);
+        assert_eq!(unit_price(7, 3), 2);
     }
 
     #[test]

@@ -47,6 +47,9 @@ pub struct CatalogItem {
     pub rune_profile: Option<CatalogRuneProfile>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub abilities: Option<CatalogAbilityLoadout>,
+    /// Bevy asset path under `assets/` for the inventory icon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// Gameplay effect, tagged for a stable HTTP contract.
@@ -129,6 +132,7 @@ fn catalog_item(item: &dyn Item) -> CatalogItem {
                 .map(|id| id.as_str().to_string())
                 .collect(),
         }),
+        icon: item.icon().map(str::to_string),
     }
 }
 
@@ -213,6 +217,7 @@ mod tests {
         assert!(wood.slot.is_none());
         assert!(wood.abilities.is_none());
         assert!(wood.rune_profile.is_none());
+        assert!(wood.icon.is_none());
     }
 
     #[test]

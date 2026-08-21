@@ -3,16 +3,17 @@
 use std::sync::OnceLock;
 
 use bevymmo_domain::economy::Gold;
-use bevymmo_domain::items::instance::ItemInstanceId;
+use bevymmo_domain::items::components::Inventory;
+use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId};
 use bevymmo_domain::items::registry::{ItemId, ItemRegistry};
 use bevymmo_domain::markets::{
-    assert_item_marketable, assert_order_cap, plan_fill, plan_fill_buy_order, plan_place_buy_order,
-    select_best_buy_order, BuyBid, MarketRegistry, MARKET_PROXIMITY_SQUARED,
+    assert_item_marketable, assert_order_cap, listing_total, plan_fill, plan_fill_buy_order,
+    plan_place_buy_order, select_best_buy_order, BuyBid, MarketRegistry, MARKET_PROXIMITY_SQUARED,
 };
 use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
 use crate::reducers::economy::{credit_gold, debit_gold, ensure_account_economy, ensure_wallet};
-use crate::reducers::items::{load_inventory, store_inventory};
+use crate::reducers::items::{item_stacks, load_inventory, next_instance_id, store_inventory};
 use crate::reducers::lifecycle::caller_character;
 use crate::rows::ItemInstanceRow;
 use crate::tables::{
@@ -116,23 +117,49 @@ fn buy_bids_for(rows: &[MarketBuyOrder], seller_character_id: Uuid) -> Vec<BuyBi
         .collect()
 }
 
-/// Escrows an inventory instance as a sell order in the NPC's market.
+/// Peels `quantity` off the bag pile `instance_id`. Taking the whole pile
+/// keeps the original id; a partial take mints a new one for the listed copy.
+fn take_listed_instance(
+    ctx: &ReducerContext,
+    inventory: &mut Inventory,
+    instance_id: ItemInstanceId,
+    quantity: u32,
+) -> Result<ItemInstance, String> {
+    let Some(slot) = inventory.slots.iter().position(|item| {
+        item.as_ref()
+            .is_some_and(|item| item.instance_id == instance_id)
+    }) else {
+        return Err("item instance is not in your inventory".to_string());
+    };
+    let stacks = match inventory.slots[slot].as_ref() {
+        Some(instance) => item_stacks(&instance.item_id),
+        None => return Err("item instance is not in your inventory".to_string()),
+    };
+    inventory
+        .take_amount(slot, quantity, stacks, || {
+            ItemInstanceId(next_instance_id(ctx))
+        })
+        .map_err(|error| error.to_string())
+}
+
+/// Escrows `quantity` of an inventory pile as a sell order in the NPC's market.
 ///
-/// Named `place_sell_order` because the table accessor is already
-/// `market_sell_order` and two items cannot share a type-namespace name.
+/// `price` is gold **per unit**. The stored `price_gold` is the total for the
+/// listed pile so a fill is still one debit. Named `place_sell_order` because
+/// the table accessor is already `market_sell_order` and two items cannot share
+/// a type-namespace name.
 #[reducer]
 pub fn place_sell_order(
     ctx: &ReducerContext,
     npc_entity_id: u64,
     instance_id: u64,
     price: u64,
+    quantity: u32,
 ) -> Result<(), String> {
     if instance_id == 0 {
         return Err("item instance is not assigned".to_string());
     }
-    if price == 0 {
-        return Err("price must be greater than 0".to_string());
-    }
+    let total = listing_total(price, quantity).map_err(|err| err.to_string())?;
     let npc = nearby_market_npc(ctx, npc_entity_id)?;
     let market_id = npc
         .market_id
@@ -148,14 +175,8 @@ pub fn place_sell_order(
         .map_err(|err| err.to_string())?;
 
     let mut inventory = load_inventory(ctx, character.character_id)?;
-    let instance_id = ItemInstanceId(instance_id);
-    let Some(slot) = inventory.slots.iter().position(|item| {
-        item.as_ref()
-            .is_some_and(|item| item.instance_id == instance_id)
-    }) else {
-        return Err("item instance is not in your inventory".to_string());
-    };
-    let instance = inventory.slots[slot].take().expect("slot was occupied");
+    let instance =
+        take_listed_instance(ctx, &mut inventory, ItemInstanceId(instance_id), quantity)?;
     assert_can_trade_item(&instance.item_id)?;
 
     store_inventory(ctx, character.character_id, &inventory);
@@ -165,7 +186,7 @@ pub fn place_sell_order(
         seller_character_id: character.character_id,
         item_id: instance.item_id.as_str().to_string(),
         item: ItemInstanceRow::from(&instance),
-        price_gold: price,
+        price_gold: total,
         created_at: ctx.timestamp,
     });
     Ok(())
@@ -301,20 +322,22 @@ pub fn place_buy_order(
     Ok(())
 }
 
-/// Instant-sells an inventory instance into the best matching bid.
+/// Instant-sells `quantity` of an inventory pile into the best matching bid.
+///
+/// `min_price` is gold **per unit**; it is compared against the bid's total
+/// divided by this quantity so a 10-wood dump does not fill a 5g bid for one.
 #[reducer]
 pub fn market_sell(
     ctx: &ReducerContext,
     npc_entity_id: u64,
     instance_id: u64,
     min_price: u64,
+    quantity: u32,
 ) -> Result<(), String> {
     if instance_id == 0 {
         return Err("item instance is not assigned".to_string());
     }
-    if min_price == 0 {
-        return Err("price must be greater than 0".to_string());
-    }
+    let min_total = listing_total(min_price, quantity).map_err(|err| err.to_string())?;
     let npc = nearby_market_npc(ctx, npc_entity_id)?;
     let acting_market = npc
         .market_id
@@ -326,17 +349,12 @@ pub fn market_sell(
 
     let seller = caller_character(ctx)?;
     let mut seller_inventory = load_inventory(ctx, seller.character_id)?;
-    let instance_id = ItemInstanceId(instance_id);
-    let Some(slot) = seller_inventory.slots.iter().position(|item| {
-        item.as_ref()
-            .is_some_and(|item| item.instance_id == instance_id)
-    }) else {
-        return Err("item instance is not in your inventory".to_string());
-    };
-    let instance = seller_inventory.slots[slot]
-        .as_ref()
-        .expect("slot was occupied")
-        .clone();
+    let instance = take_listed_instance(
+        ctx,
+        &mut seller_inventory,
+        ItemInstanceId(instance_id),
+        quantity,
+    )?;
     assert_can_trade_item(&instance.item_id)?;
 
     let item_id = instance.item_id.as_str().to_string();
@@ -347,7 +365,7 @@ pub fn market_sell(
         .filter((&acting_market, &item_id))
         .collect();
     let views = buy_bids_for(&rows, seller.character_id);
-    let best = select_best_buy_order(&views, &acting_market, &item_id, min_price)
+    let best = select_best_buy_order(&views, &acting_market, &item_id, min_total)
         .map_err(|err| err.to_string())?;
     let order = rows
         .into_iter()
@@ -376,7 +394,6 @@ pub fn market_sell(
     .map_err(|err| err.to_string())?;
 
     let buyer_slot = free.expect("plan_fill_buy_order checked a free slot");
-    seller_inventory.slots[slot] = None;
     buyer_inventory.slots[buyer_slot] = Some(instance);
     store_inventory(ctx, seller.character_id, &seller_inventory);
     store_inventory(ctx, buyer.character_id, &buyer_inventory);

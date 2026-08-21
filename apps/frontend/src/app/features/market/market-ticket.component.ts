@@ -9,7 +9,14 @@ import { MarketService } from './market.service';
 import { getItemDetail, ItemDetailInfo } from './market-items.data';
 import { MarketPriceChartComponent } from './components/market-chart/market-chart.component';
 import { MarketCalculatorComponent } from './components/market-calculator/market-calculator.component';
-import { DEFAULT_ACCOUNT_FEE_BPS, formatGold, quoteFee } from './market.utils';
+import {
+  DEFAULT_ACCOUNT_FEE_BPS,
+  formatGold,
+  formatOfferPrice,
+  offerQuantity,
+  quoteFee,
+  unitPriceGold
+} from './market.utils';
 
 @Component({
   selector: 'app-market-ticket',
@@ -52,12 +59,22 @@ export class MarketTicketComponent implements OnInit {
     if (!ticket || ticket.market_id !== this.marketId()) {
       return [] as SellOffer[];
     }
-    return [...ticket.sell_orders].sort((a, b) => a.price_gold - b.price_gold);
+    return [...ticket.sell_orders].sort((a, b) => {
+      const unitA = unitPriceGold(a.price_gold, offerQuantity(a));
+      const unitB = unitPriceGold(b.price_gold, offerQuantity(b));
+      return unitA - unitB || a.price_gold - b.price_gold;
+    });
   });
 
   readonly lowestAsk = computed(() => {
     const sells = this.isolatedSells();
     return sells.length > 0 ? sells[0].price_gold : 0;
+  });
+
+  readonly lowestAskUnit = computed(() => {
+    const sells = this.isolatedSells();
+    if (sells.length === 0) return 0;
+    return unitPriceGold(sells[0].price_gold, offerQuantity(sells[0]));
   });
 
   readonly feeQuote = computed(() => {
@@ -73,6 +90,8 @@ export class MarketTicketComponent implements OnInit {
 
   readonly Math = Math;
   formatGold = formatGold;
+  formatOfferPrice = formatOfferPrice;
+  offerQuantity = offerQuantity;
 
   async ngOnInit() {
     const marketId = this.route.snapshot.paramMap.get('marketId') ?? '';

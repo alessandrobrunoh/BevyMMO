@@ -24,7 +24,8 @@ use crate::ui::theme::UiTheme;
 
 /// Ornate frame drawn on top of every hotbar slot.
 const SPELL_BORDER_PATH: &str = "ui/spells/spell_border.png";
-/// `{ability_id}` is substituted — drop a PNG at this path to show an icon.
+/// `{ability_id}` is substituted — drop a PNG at this path to show an icon
+/// when the ability itself does not declare `icon`.
 const SPELL_ICON_PATH: &str = "abilities/icons/{ability_id}.png";
 const SPELL_SLOT_SIZE: f32 = 76.0;
 /// Matches the inner hole of `spell_border.png` (~12.8% of the square).
@@ -80,6 +81,9 @@ struct SpellHudEntry {
     key_label: String,
     /// Base ability mana cost. Empty slots are 0 (always affordable).
     mana_cost: f32,
+    /// Bevy asset path for the slot icon. `None` for empty slots or abilities
+    /// that never selected an icon.
+    icon_path: Option<String>,
 }
 
 #[derive(Component)]
@@ -91,9 +95,16 @@ struct SpellHudClock;
 #[derive(Resource, Default)]
 struct SpellHudLayoutState {
     initialized: bool,
-    /// `(ability_slot, ability_id, key_label, display_name)` — rebuilds when
-    /// any of these change (weapon swap, gear change, Incisione rewrite).
-    signature: Vec<(AbilitySlot, Option<AbilityId>, String, String)>,
+    /// `(ability_slot, ability_id, key_label, display_name, icon_path)` —
+    /// rebuilds when any of these change (weapon swap, gear change, Incisione
+    /// rewrite, icon reassignment).
+    signature: Vec<(
+        AbilitySlot,
+        Option<AbilityId>,
+        String,
+        String,
+        Option<String>,
+    )>,
 }
 
 impl SpellHudState {
@@ -135,6 +146,14 @@ impl SpellHudState {
 
 fn spell_icon_path(id: &AbilityId) -> String {
     SPELL_ICON_PATH.replace("{ability_id}", id.as_str())
+}
+
+fn resolved_icon_path(declared: &str, id: &AbilityId) -> String {
+    if declared.is_empty() {
+        spell_icon_path(id)
+    } else {
+        declared.to_string()
+    }
 }
 
 #[derive(Component)]
@@ -221,14 +240,15 @@ const HOTBAR_SLOTS: [HotbarSlotDef; 6] = [
 
 /// Resolves the active ability for one equipped item + ability-slot pair.
 ///
-/// Returns `(AbilityId, display_name, mana_cost)` if the item exists, has an
-/// ability loadout, and a valid ability can be resolved through its selection.
+/// Returns `(AbilityId, display_name, mana_cost, icon_path)` if the item exists,
+/// has an ability loadout, and a valid ability can be resolved through its
+/// selection.
 fn resolve_equipment_entry(
     equipped: &Option<bevymmo_gameplay::items::instance::ItemInstance>,
     slot: AbilitySlot,
     item_registry: &ItemRegistry,
     ability_registry: &BaseAbilityRegistry,
-) -> Option<(AbilityId, String, f32)> {
+) -> Option<(AbilityId, String, f32, String)> {
     let instance = equipped.as_ref()?;
     let item = item_registry.get(&instance.item_id)?;
     let loadout = item.ability_loadout()?;
@@ -246,6 +266,7 @@ fn resolve_equipment_entry(
         ability_id.clone(),
         ability.display_name().to_string(),
         ability.base_params().mana_cost,
+        resolved_icon_path(ability.icon(), ability_id),
     ))
 }
 
@@ -279,27 +300,30 @@ fn sync_spell_hud(
             &ability_registry,
         );
 
-        let (cooldown_key, display_name, mana_cost) = match &resolved {
-            Some((id, name, cost)) => (
+        let (cooldown_key, display_name, mana_cost, icon_path) = match &resolved {
+            Some((id, name, cost, icon)) => (
                 Some(HudCooldownKey::Ability(id.clone())),
                 name.clone(),
                 *cost,
+                Some(icon.clone()),
             ),
-            None => (None, "Empty".to_string(), 0.0),
+            None => (None, "Empty".to_string(), 0.0, None),
         };
         let key_label = display_key_label(&settings.0.keybinds.get(def.action).label());
 
         signature.push((
             def.slot,
-            resolved.as_ref().map(|(id, _, _)| id.clone()),
+            resolved.as_ref().map(|(id, _, _, _)| id.clone()),
             key_label.clone(),
             display_name.clone(),
+            icon_path.clone(),
         ));
         entries.push(SpellHudEntry {
             cooldown_key,
             display_name,
             key_label,
             mana_cost,
+            icon_path,
         });
     }
 
@@ -326,9 +350,10 @@ fn spawn_hotbar_slot(
     border: &Handle<Image>,
     entry: SpellHudEntry,
 ) {
-    let icon = entry.cooldown_key.as_ref().and_then(|key| match key {
-        HudCooldownKey::Ability(id) => Some(asset_server.load(spell_icon_path(id))),
-    });
+    let icon = entry
+        .icon_path
+        .as_ref()
+        .map(|path| asset_server.load(path.clone()));
 
     parent
         .spawn((
@@ -631,6 +656,7 @@ mod tests {
             display_name: name.to_string(),
             key_label: key.to_string(),
             mana_cost: 0.0,
+            icon_path: Some(resolved_icon_path("", &AbilityId::new(id))),
         }
     }
 
@@ -640,6 +666,7 @@ mod tests {
             display_name: "Empty".to_string(),
             key_label: key.to_string(),
             mana_cost: 0.0,
+            icon_path: None,
         }
     }
 
@@ -675,6 +702,18 @@ mod tests {
         assert_eq!(
             spell_icon_path(&AbilityId::new("lunge")),
             "abilities/icons/lunge.png"
+        );
+    }
+
+    #[test]
+    fn declared_icon_wins_over_the_id_convention() {
+        assert_eq!(
+            resolved_icon_path("items/icons/sword.png", &AbilityId::new("cleave")),
+            "items/icons/sword.png"
+        );
+        assert_eq!(
+            resolved_icon_path("", &AbilityId::new("cleave")),
+            "abilities/icons/cleave.png"
         );
     }
 

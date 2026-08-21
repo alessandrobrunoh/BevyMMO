@@ -585,6 +585,12 @@ pub trait Spell: Send + Sync + 'static {
     /// Get the human-readable display name for this spell.
     fn display_name(&self) -> &'static str;
 
+    /// Bevy asset path under `assets/` for the HUD / catalog icon.
+    /// Empty means the presentation layer shows no icon.
+    fn icon(&self) -> &'static str {
+        ""
+    }
+
     /// Get the static configuration for this spell.
     fn config(&self) -> SpellConfig;
 

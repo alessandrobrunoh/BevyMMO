@@ -27,6 +27,7 @@ export interface CatalogItem {
   effects: CatalogEffect[];
   rune_profile?: CatalogRuneProfile;
   abilities?: CatalogAbilityLoadout;
+  icon?: string;
 }
 
 export interface Catalog {

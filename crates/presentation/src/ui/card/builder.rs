@@ -17,11 +17,11 @@ use crate::ui::button::{spawn_bar_child, BarButtonKind};
 use crate::ui::scrollbar::spawn_scroll_view;
 use crate::ui::theme::{ornate_panel_image, UiTheme};
 
-const CARD_FRAME_PANEL_PATH: &str = "ui/extracted_065811/panel_large_left.png";
+const CARD_FRAME_PANEL_PATH: &str = "ui/hud/panel_large_left.png";
 /// Neutral bar used for Close / Unequip / vendor rows.
-pub const ORNATE_BAR_NEUTRAL_PATH: &str = "ui/extracted_065811/bar_neutral_right_01.png";
+pub const ORNATE_BAR_NEUTRAL_PATH: &str = "ui/hud/bar_neutral_right_01.png";
 /// Confirm bar used for Equip and other affirmative actions.
-pub const ORNATE_BAR_CONFIRM_PATH: &str = "ui/extracted_065811/bar_blue_left_01.png";
+pub const ORNATE_BAR_CONFIRM_PATH: &str = "ui/hud/bar_blue_left_01.png";
 /// Horizontal / vertical inset that keeps bar-end ornaments from stretching.
 const BAR_SLICE: [f32; 2] = [24.0, 10.0];
 

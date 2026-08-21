@@ -3,9 +3,11 @@
 //! spell "classiche" — riusa tutta la pipeline di cast/rete esistente.
 
 use super::ancient_word::AncientWordRegistry;
-use super::base_ability::{AbilityParams, AbilityTag, ArcBaseAbility, BaseAbilityRegistry};
+use super::base_ability::{
+    AbilityId, AbilityParams, AbilityTag, ArcBaseAbility, BaseAbilityRegistry,
+};
 use super::blueprint::AbilityBlueprint;
-use super::inscription::{ArmorInscription, WeaponInscription};
+use super::inscription::{ArmorInscription, KitInscription, WeaponInscription};
 use super::known_glyphs::KnownAncientLanguage;
 use super::root_word::RootWordRegistry;
 use super::slot::AbilitySlot;
@@ -34,7 +36,10 @@ pub struct SlotPreview {
     pub params: AbilityParams,
 }
 
-fn manifest_blueprint(preview: &SlotPreview, ctx: &mut SpellCastContext) {
+/// Manifests an already-resolved preview into `ctx`. Shared by the player
+/// wrappers and by AI catalog casts: geometry and payload live on the
+/// blueprint, not on who asked for the cast.
+pub fn cast_ability_preview(preview: &SlotPreview, ctx: &mut SpellCastContext) {
     preview.ability.manifest_blueprint(&preview.blueprint, ctx);
     if preview.blueprint.echo && preview.blueprint.has_tag(AbilityTag::EchoCompatible) {
         // Echo is a second manifestation of the already-resolved blueprint;
@@ -42,6 +47,10 @@ fn manifest_blueprint(preview: &SlotPreview, ctx: &mut SpellCastContext) {
         // are impossible.
         preview.ability.manifest_blueprint(&preview.blueprint, ctx);
     }
+}
+
+fn manifest_blueprint(preview: &SlotPreview, ctx: &mut SpellCastContext) {
+    cast_ability_preview(preview, ctx);
 }
 
 /// Shared tail of [`cast_armor_inscribed_ability`] and
@@ -78,6 +87,18 @@ fn apply_secondary_words(
         if !known.knows_ancient_word(&secondary.word_id) {
             return Err(CastBlockedReason::UnknownAncientWord);
         }
+    }
+    apply_secondary_words_trusted(blueprint, words, ancient_words)
+}
+
+/// Applies secondary words without a known-glyph gate. Catalog kits are
+/// trusted: the author listed the word, so the caster "knows" it.
+fn apply_secondary_words_trusted(
+    blueprint: &mut AbilityBlueprint,
+    words: &[super::inscription::SecondaryWord],
+    ancient_words: &AncientWordRegistry,
+) -> Result<(), CastBlockedReason> {
+    for secondary in words {
         let word = ancient_words
             .get(&secondary.word_id)
             .ok_or(CastBlockedReason::UnknownAncientWord)?;
@@ -87,6 +108,43 @@ fn apply_secondary_words(
         word.transform_blueprint(blueprint);
     }
     Ok(())
+}
+
+/// Resolves a `BaseAbility` for any caster (player, enemy, NPC).
+///
+/// No item and no known-glyph check: an enemy kit that names Flame on Cleave
+/// is allowed to burn. Player wrappers (`resolve_root_inscribed_slot`,
+/// `resolve_armor_inscribed_ability`) still enforce equipment and glyphs
+/// before they reach this, or they keep their own path until they wrap it.
+pub fn resolve_ability(
+    ability_id: &AbilityId,
+    inscription: Option<&KitInscription>,
+    ability_registry: &BaseAbilityRegistry,
+    root_words: &RootWordRegistry,
+    ancient_words: &AncientWordRegistry,
+) -> Result<SlotPreview, CastBlockedReason> {
+    let ability = ability_registry
+        .get(ability_id)
+        .ok_or(CastBlockedReason::MissingRegistryEntry)?;
+    let mut blueprint = ability.blueprint();
+
+    if let Some(inscription) = inscription {
+        if let Some(root_id) = inscription.root_word.as_ref() {
+            let root = root_words
+                .get(root_id)
+                .ok_or(CastBlockedReason::UnknownRootWord)?;
+            let root_params = blueprint.params;
+            root.apply_to_blueprint(&mut blueprint, &root_params);
+        }
+        apply_secondary_words_trusted(&mut blueprint, &inscription.secondary_words, ancient_words)?;
+    }
+
+    let params = blueprint.params;
+    Ok(SlotPreview {
+        ability,
+        blueprint,
+        params,
+    })
 }
 
 /// Resolves the active ability through the RootWord inscription pipeline.
@@ -263,4 +321,109 @@ pub fn cast_root_inscribed_slot(
         ),
         ctx,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::abilities::base_ability::{AbilityGeometry, AbilityTag, BaseAbility};
+    use crate::abilities::blueprint::ManifestationKind;
+    use std::sync::Arc;
+
+    struct Slash;
+    impl BaseAbility for Slash {
+        fn id(&self) -> AbilityId {
+            AbilityId::new("slash")
+        }
+        fn display_name(&self) -> &'static str {
+            "Slash"
+        }
+        fn tags(&self) -> &'static [AbilityTag] {
+            &[AbilityTag::Melee, AbilityTag::Area]
+        }
+        fn geometry(&self) -> AbilityGeometry {
+            AbilityGeometry::Cone {
+                radius: 5.0,
+                angle_deg: 85.0,
+            }
+        }
+        fn base_params(&self) -> AbilityParams {
+            AbilityParams {
+                potency: 115.0,
+                area: 5.0,
+                range: 5.0,
+                cast_time: 0.25,
+                cooldown: 3.0,
+                mana_cost: 9.0,
+            }
+        }
+        fn animation(&self) -> &'static str {
+            "slash"
+        }
+        fn impact_vfx(&self) -> &'static str {
+            "slash_impact"
+        }
+    }
+
+    fn registries() -> (BaseAbilityRegistry, RootWordRegistry, AncientWordRegistry) {
+        let mut abilities = BaseAbilityRegistry::default();
+        abilities.register(Arc::new(Slash));
+        (
+            abilities,
+            RootWordRegistry::default(),
+            AncientWordRegistry::default(),
+        )
+    }
+
+    #[test]
+    fn missing_ability_is_a_registry_miss() {
+        let (abilities, roots, words) = registries();
+        let err = resolve_ability(&AbilityId::new("nope"), None, &abilities, &roots, &words);
+        assert!(matches!(err, Err(CastBlockedReason::MissingRegistryEntry)));
+    }
+
+    #[test]
+    fn naked_kit_keeps_the_gesture_blueprint() {
+        let (abilities, roots, words) = registries();
+        let preview = resolve_ability(&AbilityId::new("slash"), None, &abilities, &roots, &words)
+            .expect("slash is registered");
+        assert_eq!(preview.ability.id().as_str(), "slash");
+        assert_eq!(preview.params.potency, 115.0);
+        assert_eq!(preview.params.range, 5.0);
+        assert_eq!(preview.blueprint.payload.kind, ManifestationKind::Damage);
+        assert!(preview.blueprint.payload.status_ids.is_empty());
+    }
+
+    #[test]
+    fn empty_inscription_is_the_naked_gesture() {
+        let (abilities, roots, words) = registries();
+        let empty = KitInscription::default();
+        let preview = resolve_ability(
+            &AbilityId::new("slash"),
+            Some(&empty),
+            &abilities,
+            &roots,
+            &words,
+        )
+        .expect("empty kit is legal");
+        assert_eq!(preview.params.potency, 115.0);
+        assert_eq!(preview.blueprint.payload.kind, ManifestationKind::Damage);
+    }
+
+    #[test]
+    fn unknown_root_word_on_a_kit_is_blocked() {
+        let (abilities, roots, words) = registries();
+        let inscription = KitInscription {
+            root_word: Some(crate::abilities::RootWordId::new("flame")),
+            secondary_words: Vec::new(),
+        };
+        let err = resolve_ability(
+            &AbilityId::new("slash"),
+            Some(&inscription),
+            &abilities,
+            &roots,
+            &words,
+        );
+        assert!(matches!(err, Err(CastBlockedReason::UnknownRootWord)));
+    }
 }

@@ -15,6 +15,7 @@ use bevymmo_gameplay::{
 use super::{
     components::*,
     inscription_editor::{spawn_item_editor, ItemEditorContext, ItemEditorRegistries},
+    stack::{resolved_split_amount, spawn_stack_controls, stack_footer, stack_title},
     weapon_detail::{meta_line, summarize_weapon, GlyphRegistries},
     InventoryUiState, ItemDetailUiState,
 };
@@ -32,7 +33,7 @@ const COLUMN_GAP: f32 = 18.0;
 const PORTRAIT_SIZE: f32 = 132.0;
 const DESCRIPTION_FONT_SIZE: f32 = 15.0;
 const DESCRIPTION_COLOR: Color = Color::srgba(0.78, 0.80, 0.86, 0.95);
-const PORTRAIT_PATH: &str = "ui/extracted_065811/slot_active.png";
+const PORTRAIT_PATH: &str = "ui/hud/slot_active.png";
 const _: () = assert!(CARD_WIDTH <= 800.0 && CARD_HEIGHT <= 600.0);
 
 /// Left column containing the selected item's identity and passive information.
@@ -75,6 +76,7 @@ pub(super) fn spawn_item_detail_card(
 
     let config = item.config();
     let item_name = config.display_name.to_string();
+    let card_title = stack_title(&item_name, item_instance.quantity);
     let description = config.description.to_string();
     let meta = meta_line(
         config.category,
@@ -85,7 +87,11 @@ pub(super) fn spawn_item_detail_card(
     let effects: Vec<String> = item.effects().iter().map(effect_label).collect();
     let equippable_into = config.equippable_into;
     let weapon_summary = summarize_weapon(&item_instance, registry, glyphs.catalog(), known);
-    let portrait = asset_server.load(PORTRAIT_PATH);
+    let has_icon = item.icon().is_some();
+    let portrait = item
+        .icon()
+        .map(|path| asset_server.load(path.to_string()))
+        .unwrap_or_else(|| asset_server.load(PORTRAIT_PATH));
     let active_slot = detail_state.active_slot;
     let initial_scroll = detail_state.scroll;
     let registries = ItemEditorRegistries {
@@ -93,8 +99,11 @@ pub(super) fn spawn_item_detail_card(
         root_words: &glyphs.root_words,
         ancient_words: &glyphs.ancient_words,
     };
+    let stack = stack_footer(inventory, registry, selection);
+    let split_amount =
+        stack.map(|footer| resolved_split_amount(detail_state.split_amount, footer.quantity));
 
-    CardBuilder::new(CardKind::ItemDetail, item_name.clone())
+    CardBuilder::new(CardKind::ItemDetail, card_title)
         .frame(CardFrameAssets::load(asset_server))
         .width(Val::Px(CARD_WIDTH))
         .height(Val::Px(CARD_HEIGHT))
@@ -115,11 +124,12 @@ pub(super) fn spawn_item_detail_card(
                 spawn_item_summary(
                     columns,
                     theme,
-                    &item_name,
+                    &stack_title(&item_name, item_instance.quantity),
                     &meta,
                     &description,
                     &effects,
                     portrait,
+                    has_icon,
                 );
                 spawn_item_editor(
                     columns,
@@ -163,6 +173,9 @@ pub(super) fn spawn_item_detail_card(
                     );
                 }
             }
+            if let (Some(stack), Some(amount)) = (stack, split_amount) {
+                spawn_stack_controls(footer, theme, stack, amount);
+            }
         })
         .spawn(commands, theme);
 }
@@ -175,6 +188,7 @@ fn spawn_item_summary(
     description: &str,
     effects: &[String],
     portrait: Handle<Image>,
+    has_icon: bool,
 ) {
     parent
         .spawn((
@@ -212,15 +226,17 @@ fn spawn_item_summary(
                     ImageNode::new(portrait).with_mode(NodeImageMode::Stretch),
                 ))
                 .with_children(|portrait| {
-                    portrait.spawn((
-                        Text::new(item_name),
-                        TextFont {
-                            font_size: FontSize::Px(theme.button_font_size * 0.72),
-                            ..default()
-                        },
-                        TextColor(theme.text_color),
-                        TextLayout::justify(Justify::Center),
-                    ));
+                    if !has_icon {
+                        portrait.spawn((
+                            Text::new(item_name),
+                            TextFont {
+                                font_size: FontSize::Px(theme.button_font_size * 0.72),
+                                ..default()
+                            },
+                            TextColor(theme.text_color),
+                            TextLayout::justify(Justify::Center),
+                        ));
+                    }
                 });
 
             summary.spawn((
@@ -327,11 +343,14 @@ fn effect_label(effect: &ItemEffect) -> String {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn refresh_item_detail_on_equipment_change(
     mut commands: Commands,
-    inventory_state: Res<InventoryUiState>,
+    mut inventory_state: ResMut<InventoryUiState>,
     mut detail_state: ResMut<ItemDetailUiState>,
     player_query: Query<
         (&Inventory, &Equipment, Option<&KnownAncientLanguage>),
-        (With<LocalPlayer>, Changed<Equipment>),
+        (
+            With<LocalPlayer>,
+            Or<(Changed<Equipment>, Changed<Inventory>)>,
+        ),
     >,
     registry: Res<ItemRegistry>,
     glyphs: GlyphRegistries,
@@ -354,6 +373,12 @@ pub(super) fn refresh_item_detail_on_equipment_change(
         return;
     };
 
+    if selection_is_empty(inventory, equipment, selection) {
+        commands.entity(detail_entity).despawn();
+        inventory_state.selected = None;
+        return;
+    }
+
     detail_state.scroll = descendant_editor_scroll(detail_entity, &children, &scroll_views);
     commands.entity(detail_entity).despawn();
     let known = known.cloned().unwrap_or_default();
@@ -369,6 +394,20 @@ pub(super) fn refresh_item_detail_on_equipment_change(
         &detail_state,
         &asset_server,
     );
+}
+
+fn selection_is_empty(
+    inventory: &Inventory,
+    equipment: &Equipment,
+    selection: InventorySelection,
+) -> bool {
+    match selection {
+        InventorySelection::Slot(index) => inventory
+            .slots
+            .get(index as usize)
+            .is_none_or(Option::is_none),
+        InventorySelection::Equipment(slot) => equipment.get(slot).is_none(),
+    }
 }
 
 fn descendant_editor_scroll(

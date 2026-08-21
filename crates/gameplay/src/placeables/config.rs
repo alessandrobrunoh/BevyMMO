@@ -6,27 +6,46 @@
 //! traits, so the registry can store `Arc<dyn EnemyPlaceable>` and dispatch
 //! dynamically without recompiling per kind.
 
-use crate::spells::{SpellHotbar, SpellId};
+use crate::abilities::{AbilityId, KitInscription};
+use crate::spells::SpellId;
 use crate::stats::components::StatsBundleData;
 
 // -------------------------------------------------------------------------
 // Creature configs
 // -------------------------------------------------------------------------
 
+/// One ability on an enemy kit: a shared `BaseAbility` plus an optional
+/// content-authored inscription (no player glyph gate).
+#[derive(Debug, Clone)]
+pub struct AbilityKitEntry {
+    pub ability_id: AbilityId,
+    pub inscription: KitInscription,
+}
+
+impl AbilityKitEntry {
+    /// Naked gesture, no Root Word.
+    pub fn new(ability_id: impl Into<AbilityId>) -> Self {
+        Self {
+            ability_id: ability_id.into(),
+            inscription: KitInscription::default(),
+        }
+    }
+}
+
 /// Configuration returned by [`super::definition::EnemyPlaceable::enemy_config`].
 ///
-/// Drives the `spawn_entity::<Enemy>()` override layer: the server spawns the
-/// existing `Enemy` entity (which already wires stats / replication / AI) and
-/// then overrides the configured stats, hotbar and aggro range with the
-/// per-kind values defined here.
+/// Drives spawn: stats, aggro acquire radius, leash-from-spawn, and the
+/// ability kit the AI fires through `resolve_ability`.
 #[derive(Debug, Clone)]
 pub struct EnemyConfig {
-    /// Stat profile for this archetype (HP, attack, armor, speed).
+    /// Stat profile for this archetype (HP, mana, armor, attack, speed).
     pub stats: StatsBundleData,
-    /// Spells available to the archetype. Today enemies only use the `Q` slot.
-    pub spell_hotbar: SpellHotbar,
-    /// Distance at which the enemy starts chasing a target.
-    pub aggro_range: f32,
+    /// Acquire: a living player inside this radius of the mob enters combat.
+    pub aggro: f32,
+    /// Reset: if the mob is farther than this from its spawn, drop and go home.
+    pub leash_aggro: f32,
+    /// Shared `BaseAbility` ids, in picker order. Slice 1 uses the first entry.
+    pub abilities: Vec<AbilityKitEntry>,
 }
 
 /// Configuration returned by [`super::definition::BossPlaceable::boss_config`].

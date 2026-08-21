@@ -2,7 +2,7 @@
 """Extract the approved Eivar button sheet into transparent runtime assets.
 
 Run from apps/frontend with:
-    python3 design-assets/extract-buttons.py ../../buttons_components.png
+    python3 design-assets/extract-buttons.py
 """
 
 from __future__ import annotations
@@ -156,7 +156,11 @@ def remove_black_background(image: Image.Image, shape: str) -> Image.Image:
 
 
 def main() -> None:
-    source = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("../../buttons_components.png")
+    source = (
+        Path(sys.argv[1])
+        if len(sys.argv) > 1
+        else Path(__file__).resolve().parent / "sheets/buttons.png"
+    )
     destination = Path(__file__).resolve().parents[1] / "public/assets/ui/buttons"
     destination.mkdir(parents=True, exist_ok=True)
 

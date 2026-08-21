@@ -28,7 +28,11 @@
 
 use std::sync::OnceLock;
 
-use bevymmo_domain::abilities::{AbilityLoadout, AncientWordRegistry, BaseAbilityRegistry};
+use bevymmo_domain::abilities::{
+    cast_ability_preview, resolve_ability, AbilityCastMode, AbilityId, AbilityLoadout,
+    AncientWordRegistry, BaseAbilityRegistry, ChannelMovementPolicy as AbilityChannelMovementPolicy,
+    KitInscription,
+};
 
 use bevymmo_domain::effects::{
     ApplyStatusEffect, CleanseEffect, DamageEffect, EffectBundle, EffectContext, EffectSpec,
@@ -57,10 +61,10 @@ use crate::rows::{
 };
 use crate::sim::targets;
 use crate::tables::{
-    aoe_region, cast_ended, cast_state, cooldown, entity_stats, game_entity, grid_cell, projectile,
-    spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow, CastEndedEvent, CastKindRow,
-    CastSourceRow, CastState, Cooldown, EntityStateRow, GameEntity, ModifierKindRow, Projectile,
-    SpellVisualEffectEvent,
+    aoe_region, cast_ended, cast_state, cooldown, enemy_ai, entity_stats, game_entity, grid_cell,
+    projectile, spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow, CastEndedEvent,
+    CastKindRow, CastSourceRow, CastState, Cooldown, EntityStateRow, GameEntity, ModifierKindRow,
+    Projectile, SpellVisualEffectEvent,
 };
 
 /// Resolves an item's ability pools, falling back to its weapon family when
@@ -499,7 +503,7 @@ pub fn fire_weapon_ability(
             .ok()?;
             (item, preview, armor.armor_inscription.clone())
         }
-        CastSourceRow::Spell => return None,
+        CastSourceRow::Spell | CastSourceRow::Catalog => return None,
     };
 
     let targets = potential_targets(
@@ -583,7 +587,7 @@ pub fn fire_weapon_ability(
             )
             .ok()?;
         }
-        CastSourceRow::Spell => return None,
+        CastSourceRow::Spell | CastSourceRow::Catalog => return None,
     }
 
     cast_ctx.scale_outgoing_potency(charge_fraction);
@@ -596,6 +600,193 @@ pub fn fire_weapon_ability(
         &mut cast_ctx,
     );
     Some(preview.ability.base_params().cooldown)
+}
+
+fn catalog_inscription(
+    ctx: &ReducerContext,
+    entity_id: u64,
+    ability_id: &str,
+) -> Option<KitInscription> {
+    let row = ctx.db.enemy_ai().entity_id().find(&entity_id)?;
+    let config = crate::world::enemy_config_for(&row.kind_id)?;
+    config
+        .abilities
+        .into_iter()
+        .find(|entry| entry.ability_id.as_str() == ability_id)
+        .map(|entry| entry.inscription)
+}
+
+/// Fires a catalog `BaseAbility` without equipment or known glyphs.
+///
+/// Used by AI (enemy kits) and by `advance_casts` when a
+/// [`CastSourceRow::Catalog`] wind-up completes. Returns the cooldown, or
+/// `None` if the ability is not registered or the caster has no stats.
+/// Inscription comes from the caster's `enemy_ai.kind_id` kit, so a CastTime
+/// that started ticks ago still resolves the same Flame Cleave.
+pub fn fire_catalog_ability(
+    ctx: &ReducerContext,
+    caster: &GameEntity,
+    ability_id_str: &str,
+    target_position: Option<Vec3>,
+    target_entity: Option<u64>,
+) -> Option<f32> {
+    let ability_id = AbilityId::new(ability_id_str.to_string());
+    let inscription = catalog_inscription(ctx, caster.entity_id, ability_id_str);
+    let preview = match resolve_ability(
+        &ability_id,
+        inscription.as_ref(),
+        base_abilities(),
+        root_words(),
+        ancient_words(),
+    ) {
+        Ok(preview) => preview,
+        Err(reason) => {
+            log::warn!(
+                "catalog ability {ability_id_str} failed to resolve: {reason:?}"
+            );
+            return None;
+        }
+    };
+
+    let combat = combat_stats(ctx, caster.entity_id)?;
+    let caster_position = Vec3::from(caster.position);
+    let targets = potential_targets(
+        ctx,
+        caster_position,
+        preview.params.range + preview.params.area + TARGET_QUERY_MARGIN,
+    );
+    let mut cast_ctx = SpellCastContext::new(
+        EntityId::new(caster.entity_id),
+        caster_position,
+        &combat,
+        Vec3::from(caster.look),
+        target_position,
+        target_entity.map(EntityId::new),
+        &targets,
+    );
+    cast_ability_preview(&preview, &mut cast_ctx);
+    apply_pending(
+        ctx,
+        caster.entity_id,
+        caster_position,
+        ability_id_str,
+        &mut cast_ctx,
+    );
+    Some(preview.params.cooldown)
+}
+
+/// Starts a catalog ability for an AI caster: Instant fires now, CastTime /
+/// Channeling open a [`CastSourceRow::Catalog`] row.
+///
+/// Caller must have checked [`can_start_cast`]-equivalent (no existing
+/// `cast_state`, not silenced). Returns whether a cast started or fired.
+pub fn request_catalog_ability(
+    ctx: &ReducerContext,
+    caster: &GameEntity,
+    ability_id_str: &str,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3>,
+) -> bool {
+    let ability_id = AbilityId::new(ability_id_str.to_string());
+    let inscription = catalog_inscription(ctx, caster.entity_id, ability_id_str);
+    let Ok(preview) = resolve_ability(
+        &ability_id,
+        inscription.as_ref(),
+        base_abilities(),
+        root_words(),
+        ancient_words(),
+    ) else {
+        log::warn!("ai: no catalog ability registered for {ability_id_str}");
+        return false;
+    };
+
+    if spend_mana(ctx, caster.entity_id, preview.params.mana_cost).is_err() {
+        return false;
+    }
+
+    match preview.ability.cast_mode() {
+        AbilityCastMode::Instant => request_catalog_ability_instant(
+            ctx,
+            caster,
+            ability_id_str,
+            target_entity,
+            target_position,
+        ),
+        AbilityCastMode::CastTime => {
+            let required_seconds = preview.params.cast_time;
+            if required_seconds <= 0.0 {
+                return request_catalog_ability_instant(
+                    ctx,
+                    caster,
+                    ability_id_str,
+                    target_entity,
+                    target_position,
+                );
+            }
+            ctx.db.cast_state().insert(CastState {
+                entity_id: caster.entity_id,
+                spell_id: ability_id_str.to_string(),
+                kind: CastKindRow::CastTime,
+                source: CastSourceRow::Catalog,
+                elapsed_seconds: 0.0,
+                required_seconds,
+                start_position: caster.position,
+                target_position: target_position.map(Vec3Row::from),
+                target_entity,
+                channel_tick_accumulator: 0.0,
+                tick_interval_seconds: 0.0,
+                channel_movement_interrupts: true,
+            });
+            true
+        }
+        AbilityCastMode::Channeling {
+            tick_interval_seconds,
+            movement_policy,
+        } => {
+            let required_seconds = preview.params.cast_time.max(0.1);
+            start_cooldown(
+                ctx,
+                caster.entity_id,
+                ability_id_str,
+                preview.params.cooldown,
+            );
+            ctx.db.cast_state().insert(CastState {
+                entity_id: caster.entity_id,
+                spell_id: ability_id_str.to_string(),
+                kind: CastKindRow::Channeling,
+                source: CastSourceRow::Catalog,
+                elapsed_seconds: 0.0,
+                required_seconds,
+                start_position: caster.position,
+                target_position: target_position.map(Vec3Row::from),
+                target_entity,
+                channel_tick_accumulator: tick_interval_seconds,
+                tick_interval_seconds,
+                channel_movement_interrupts: matches!(
+                    movement_policy,
+                    AbilityChannelMovementPolicy::InterruptOnMove
+                ),
+            });
+            true
+        }
+    }
+}
+
+fn request_catalog_ability_instant(
+    ctx: &ReducerContext,
+    caster: &GameEntity,
+    ability_id_str: &str,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3>,
+) -> bool {
+    if let Some(cooldown) =
+        fire_catalog_ability(ctx, caster, ability_id_str, target_position, target_entity)
+    {
+        start_cooldown(ctx, caster.entity_id, ability_id_str, cooldown);
+        true
+    } else {
+        false
+    }
 }
 
 /// Drains every `pending_*` list on the context into the database.
@@ -1054,6 +1245,63 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
+
+            (CastSourceRow::Catalog, CastKindRow::CastTime) => {
+                let due = elapsed_seconds >= cast.required_seconds;
+                if due {
+                    match fire_catalog_ability(
+                        ctx,
+                        &caster,
+                        &cast.spell_id,
+                        target_position,
+                        cast.target_entity,
+                    ) {
+                        Some(cd) => {
+                            start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
+                            true
+                        }
+                        None => {
+                            log::info!(
+                                "catalog cast {:?} for entity {} failed at completion; interrupting",
+                                cast.spell_id,
+                                cast.entity_id
+                            );
+                            weapon_cast_failed = true;
+                            true
+                        }
+                    }
+                } else {
+                    false
+                }
+            }
+            (CastSourceRow::Catalog, CastKindRow::Channeling) => {
+                channel_tick_accumulator += dt;
+                let interval = if cast.tick_interval_seconds > 0.0 {
+                    cast.tick_interval_seconds
+                } else {
+                    dt.max(f32::EPSILON)
+                };
+                while channel_tick_accumulator >= interval {
+                    channel_tick_accumulator -= interval;
+                    if fire_catalog_ability(
+                        ctx,
+                        &caster,
+                        &cast.spell_id,
+                        target_position,
+                        cast.target_entity,
+                    )
+                    .is_none()
+                    {
+                        log::debug!(
+                            "catalog channel tick {:?} for entity {} failed to resolve",
+                            cast.spell_id,
+                            cast.entity_id
+                        );
+                    }
+                }
+                cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
+            }
+
             // Defensive: an instant spell/ability never opens a `cast_state`.
             (_, CastKindRow::Instant) => true,
         };

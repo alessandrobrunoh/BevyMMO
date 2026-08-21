@@ -40,11 +40,11 @@ pub struct UiButton {
 }
 
 /// Play / primary CTA at rest.
-pub const BAR_BUTTON_DEFAULT_PATH: &str = "ui/extracted_065811/bar_blue_left_01.png";
+pub const BAR_BUTTON_DEFAULT_PATH: &str = "ui/hud/bar_blue_left_01.png";
 /// Hover / pressed glow.
-pub const BAR_BUTTON_HOVER_PATH: &str = "ui/extracted_065811/bar_blue_right_active.png";
+pub const BAR_BUTTON_HOVER_PATH: &str = "ui/hud/bar_blue_right_active.png";
 /// Neutral / secondary (Close, Unequip, Delete-like) at rest.
-pub const BAR_BUTTON_NEUTRAL_PATH: &str = "ui/extracted_065811/bar_neutral_right_01.png";
+pub const BAR_BUTTON_NEUTRAL_PATH: &str = "ui/hud/bar_neutral_right_01.png";
 
 const BUTTON_WIDTH: f32 = 230.0;
 const BUTTON_HEIGHT: f32 = 44.0;

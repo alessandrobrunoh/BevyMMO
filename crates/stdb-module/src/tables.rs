@@ -195,6 +195,15 @@ pub struct Npc {
     pub market_id: Option<String>,
 }
 
+/// Runtime enemy profile. Re-seeded with `game_entity` because entity ids
+/// change every `init`. `kind_id` is the placeable catalog key (`mob_goblin`).
+#[table(accessor = enemy_ai, public)]
+pub struct EnemyAi {
+    #[primary_key]
+    pub entity_id: u64,
+    pub kind_id: String,
+}
+
 /// One listed item instance, escrowed out of the seller's inventory.
 #[table(
     accessor = market_sell_order,
@@ -532,6 +541,8 @@ pub enum CastSourceRow {
     Armor,
     /// Primary ability from the equipped boots/shoes.
     Shoes,
+    /// Catalog `BaseAbility` fired by AI (enemy/boss/NPC kit). No equipment.
+    Catalog,
 }
 
 /// A cast in progress. At most one per caster: starting another cancels it.

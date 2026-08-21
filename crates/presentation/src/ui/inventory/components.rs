@@ -29,6 +29,12 @@ pub struct ItemSlotText {
     pub index: u8,
 }
 
+/// Item icon drawn on top of an inventory-grid slot frame.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct ItemSlotIcon {
+    pub index: u8,
+}
+
 /// Button component attached to one of the equipment slots (Weapon, Helmet, ...).
 #[derive(Component, Debug, Clone, Copy)]
 pub struct EquipSlotButton {
@@ -39,6 +45,12 @@ pub struct EquipSlotButton {
 /// (or a placeholder dash when empty).
 #[derive(Component, Debug)]
 pub struct EquipSlotText {
+    pub slot: EquipSlot,
+}
+
+/// Item icon drawn on top of an equipment slot frame.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EquipSlotIcon {
     pub slot: EquipSlot,
 }
 
@@ -53,6 +65,36 @@ pub struct EquipButton {
 pub struct UnequipButton {
     pub slot: EquipSlot,
 }
+
+/// Peels the amount in [`SplitAmountField`] off this inventory slot.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct SplitButton {
+    pub slot_index: u8,
+}
+
+/// Pulls other piles of the same Material into this inventory slot.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct CombineButton {
+    pub slot_index: u8,
+}
+
+/// − / + stepper for the split amount. `delta` is −1 or +1.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct SplitAmountStep {
+    pub delta: i32,
+}
+
+/// Digits-only split amount. `focused` is read by `sync_typing_focus`.
+#[derive(Component, Debug)]
+pub struct SplitAmountField {
+    pub value: String,
+    pub focused: bool,
+    pub quantity: u32,
+}
+
+/// Text node showing [`SplitAmountField::value`].
+#[derive(Component, Debug)]
+pub struct SplitAmountText;
 
 /// Origin of a dragged item: either a generic inventory slot or an equipment
 /// slot. Used by the drag-and-drop systems to decide which network command

@@ -3,10 +3,10 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 
-use crate::app_state::{PauseOverlay, Screen, in_gameplay};
+use crate::app_state::{in_gameplay, PauseOverlay, Screen};
 use crate::local_player::LocalPlayer;
-use crate::pointer::{PointerOnHud, hud_wants_pointer};
-use bevymmo_gameplay::gathering::{Harvestable, in_interact_range};
+use crate::pointer::{hud_wants_pointer, PointerOnHud};
+use bevymmo_gameplay::gathering::{in_interact_range, Harvestable};
 use bevymmo_gameplay::placeables::{KindId, PlaceableRegistry};
 use bevymmo_network::world_components::{NetworkEntityId, Position};
 use bevymmo_world::CollisionShape;

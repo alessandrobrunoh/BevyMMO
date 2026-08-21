@@ -135,7 +135,8 @@
 
           <!-- Listing & Fee Calculator Component -->
           <app-market-calculator
-            [currentPrice]="lowestAsk() > 0 ? lowestAsk() : 100"
+            [currentPrice]="lowestAskUnit() > 0 ? lowestAskUnit() : 100"
+            [suggestedQuantity]="isolatedSells().length > 0 ? offerQuantity(isolatedSells()[0]) : 1"
             [marketFeeBps]="market()?.fee_bps ?? 200"
             [accountFeeBps]="100"
           ></app-market-calculator>
@@ -187,8 +188,11 @@
                   @for (offer of isolatedSells(); track offer.id) {
                     <li>
                       <div class="offer-info">
-                        <span class="price">{{ formatGold(offer.price_gold) }}</span>
-                        <span class="seller-id">Seller: {{ offer.seller_character_id.slice(0, 8) }}…</span>
+                        <span class="price">{{ formatOfferPrice(offer.price_gold, offer.quantity) }}</span>
+                        <span class="seller-id">
+                          Qty {{ offerQuantity(offer) }}
+                          · Seller: {{ offer.seller_character_id.slice(0, 8) }}…
+                        </span>
                       </div>
                       <div class="offer-action">
                         @if (auth.isLoggedIn()) {

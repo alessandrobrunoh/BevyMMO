@@ -762,6 +762,7 @@ fn connect(
             "SELECT * FROM party",
             "SELECT * FROM party_member",
             "SELECT * FROM npc",
+            "SELECT * FROM enemy_ai",
             "SELECT * FROM resource_node",
             "SELECT * FROM gather_session",
             "SELECT * FROM gather_yield",

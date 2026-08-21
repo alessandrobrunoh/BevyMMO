@@ -10,6 +10,7 @@ pub(super) struct PlaceSellOrderArgs {
     pub npc_entity_id: u64,
     pub instance_id: u64,
     pub price: u64,
+    pub quantity: u32,
 }
 
 impl From<PlaceSellOrderArgs> for super::Reducer {
@@ -18,6 +19,7 @@ impl From<PlaceSellOrderArgs> for super::Reducer {
             npc_entity_id: args.npc_entity_id,
             instance_id: args.instance_id,
             price: args.price,
+            quantity: args.quantity,
         }
     }
 }
@@ -42,8 +44,9 @@ pub trait place_sell_order {
         npc_entity_id: u64,
         instance_id: u64,
         price: u64,
+        quantity: u32,
     ) -> __sdk::Result<()> {
-        self.place_sell_order_then(npc_entity_id, instance_id, price, |_, _| {})
+        self.place_sell_order_then(npc_entity_id, instance_id, price, quantity, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `place_sell_order` to run as soon as possible,
@@ -57,6 +60,7 @@ pub trait place_sell_order {
         npc_entity_id: u64,
         instance_id: u64,
         price: u64,
+        quantity: u32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -70,6 +74,7 @@ impl place_sell_order for super::RemoteReducers {
         npc_entity_id: u64,
         instance_id: u64,
         price: u64,
+        quantity: u32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -80,6 +85,7 @@ impl place_sell_order for super::RemoteReducers {
                 npc_entity_id,
                 instance_id,
                 price,
+                quantity,
             },
             callback,
         )

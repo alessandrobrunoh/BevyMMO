@@ -29,7 +29,7 @@ The visual identity should be:
 - Modern
 - Immersive
 
-The provided Eivar Online cover artwork is the primary visual reference.
+The provided Eivar Online cover artwork (`design-assets/sheets/cover-official.png`) is the primary visual reference.
 
 ---
 

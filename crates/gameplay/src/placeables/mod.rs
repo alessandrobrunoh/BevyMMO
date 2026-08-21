@@ -34,8 +34,8 @@ pub mod registry;
 
 pub use category::PlaceableCategory;
 pub use config::{
-    BossConfig, EnemyConfig, InteractionKind, ResourceConfig, TriggerConfig, TriggerEvent,
-    TriggerShape,
+    AbilityKitEntry, BossConfig, EnemyConfig, InteractionKind, ResourceConfig, TriggerConfig,
+    TriggerEvent, TriggerShape,
 };
 pub use definition::{
     AssetHint, BossPlaceable, DummyPlaceable, EnemyPlaceable, InteractablePlaceable, NpcPlaceable,

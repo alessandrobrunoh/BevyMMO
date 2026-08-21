@@ -47,7 +47,7 @@ The active routes are `/login` and `/register`. Email/password controls use thei
 
 ## Button
 
-`app-eivar-button` is the only button-like control used by the site. Its visual surfaces are extracted from the approved `buttons_components.png` sheet, while the component keeps native HTML semantics: actions render a `<button>`, Angular navigation renders an `<a>` with `RouterLink`, and external destinations render an `<a href>`.
+`app-eivar-button` is the only button-like control used by the site. Its visual surfaces are extracted from the approved `design-assets/sheets/buttons.png` sheet, while the component keeps native HTML semantics: actions render a `<button>`, Angular navigation renders an `<a>` with `RouterLink`, and external destinations render an `<a href>`.
 
 | Variant | Use |
 | --- | --- |
@@ -95,7 +95,7 @@ Interactive visuals are mapped to real CSS states: default, `:hover`, `:active`,
 The 77 transparent runtime assets live in `public/assets/ui/buttons`. Regenerate them from the source sheet from `apps/frontend` with:
 
 ```sh
-python3 design-assets/extract-buttons.py ../../buttons_components.png
+python3 design-assets/extract-buttons.py
 ```
 
 ## Checkbox, radio and switch

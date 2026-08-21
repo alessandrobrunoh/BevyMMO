@@ -3,6 +3,7 @@
 pub mod assets;
 pub mod entity;
 pub mod game_state;
+mod harvest;
 pub mod map_loader;
 pub mod renderer;
 pub mod scenes;
@@ -10,7 +11,7 @@ pub mod spells;
 pub mod ui;
 pub mod world;
 
-use assets::{BossDragonAssets, CreatureAssets, MapAssets, PlayerAssets};
+use assets::{BossDragonAssets, CreatureAssets, MapAssets, PlayerAssets, WeaponAssets};
 use bevy::prelude::*;
 use bevy_asset_loader::prelude::*;
 
@@ -39,7 +40,8 @@ impl Plugin for PresentationCorePlugin {
                     .load_collection::<PlayerAssets>()
                     .load_collection::<BossDragonAssets>()
                     .load_collection::<CreatureAssets>()
-                    .load_collection::<MapAssets>(),
+                    .load_collection::<MapAssets>()
+                    .load_collection::<WeaponAssets>(),
             )
             .add_systems(Startup, register_presentation_placeables);
     }
@@ -67,8 +69,8 @@ fn register_presentation_placeables(
 
 pub mod prelude {
     pub use crate::game_state::{
-        validate_player_name, ConnectionFailure, ConnectionIntent, ConnectionRequest,
-        GameStatePlugin, PauseOverlay, PlayerNameError, Screen,
+        ConnectionFailure, ConnectionIntent, ConnectionRequest, GameStatePlugin, PauseOverlay,
+        PlayerNameError, Screen, validate_player_name,
     };
     pub use crate::renderer::RendererPlugin;
     pub use crate::scenes::ScenesPlugin;

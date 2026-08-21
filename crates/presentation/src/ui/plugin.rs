@@ -4,14 +4,14 @@ use bevy::prelude::*;
 
 use super::{
     boss_bar, card, character_roster, chat, connecting, crowd_control_bar, death_screen,
-    debug_position, entity_bar, gather_bar, inventory, login, main_menu, market, notices,
-    npc_sidebar, pause_menu, player_stats, scoreboard, scrollbar, settings, status_bar, systems,
-    target_frame, target_indicator,
+    debug_position, entity_bar, floating_text, gather_bar, inventory, login, main_menu, market,
+    notices, npc_sidebar, pause_menu, player_stats, scoreboard, scrollbar, settings, status_bar,
+    systems, target_frame, target_indicator,
 };
 
-use bevymmo_client::pointer::{world_pointer_blocked, PointerOnHud};
+use bevymmo_client::pointer::{PointerOnHud, world_pointer_blocked};
 
-use crate::game_state::{not_typing, Screen};
+use crate::game_state::{Screen, not_typing};
 use crate::ui::theme::UiTheme;
 
 /// Camera 2D dedicata alla UI. Resta attiva nel menu e durante la partita,
@@ -47,6 +47,7 @@ impl Plugin for UiPlugin {
             crowd_control_bar::CrowdControlBarPlugin,
             inventory::InventoryUiPlugin,
             gather_bar::GatherBarPlugin,
+            floating_text::FloatingTextPlugin,
             boss_bar::BossBarPlugin,
             status_bar::StatusBarPlugin,
             scrollbar::ScrollbarPlugin,

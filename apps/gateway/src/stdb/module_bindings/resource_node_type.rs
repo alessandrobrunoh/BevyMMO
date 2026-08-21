@@ -12,6 +12,7 @@ pub struct ResourceNode {
     pub kind_id: String,
     pub current_pieces: u32,
     pub last_regen_at: __sdk::Timestamp,
+    pub next_regen_at: __sdk::Timestamp,
 }
 
 impl __sdk::InModule for ResourceNode {
@@ -27,6 +28,7 @@ pub struct ResourceNodeCols {
     pub kind_id: __sdk::__query_builder::Col<ResourceNode, String>,
     pub current_pieces: __sdk::__query_builder::Col<ResourceNode, u32>,
     pub last_regen_at: __sdk::__query_builder::Col<ResourceNode, __sdk::Timestamp>,
+    pub next_regen_at: __sdk::__query_builder::Col<ResourceNode, __sdk::Timestamp>,
 }
 
 impl __sdk::__query_builder::HasCols for ResourceNode {
@@ -38,6 +40,7 @@ impl __sdk::__query_builder::HasCols for ResourceNode {
             kind_id: __sdk::__query_builder::Col::new(table_name, "kind_id"),
             current_pieces: __sdk::__query_builder::Col::new(table_name, "current_pieces"),
             last_regen_at: __sdk::__query_builder::Col::new(table_name, "last_regen_at"),
+            next_regen_at: __sdk::__query_builder::Col::new(table_name, "next_regen_at"),
         }
     }
 }
@@ -47,6 +50,7 @@ impl __sdk::__query_builder::HasCols for ResourceNode {
 /// Provides typed access to indexed columns for query building.
 pub struct ResourceNodeIxCols {
     pub entity_id: __sdk::__query_builder::IxCol<ResourceNode, u64>,
+    pub next_regen_at: __sdk::__query_builder::IxCol<ResourceNode, __sdk::Timestamp>,
     pub placement_id: __sdk::__query_builder::IxCol<ResourceNode, String>,
 }
 
@@ -55,6 +59,7 @@ impl __sdk::__query_builder::HasIxCols for ResourceNode {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ResourceNodeIxCols {
             entity_id: __sdk::__query_builder::IxCol::new(table_name, "entity_id"),
+            next_regen_at: __sdk::__query_builder::IxCol::new(table_name, "next_regen_at"),
             placement_id: __sdk::__query_builder::IxCol::new(table_name, "placement_id"),
         }
     }

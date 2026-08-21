@@ -114,7 +114,7 @@ export const MOCK_GAME_UPDATES: GameUpdate[] = [
         category: 'NEW',
         items: [
           'Core networking loop with deterministic tick simulation.',
-          'Basic client HUD with health, energy, and ability bar.'
+          'Basic client HUD with health, mana, and ability bar.'
         ]
       },
       {

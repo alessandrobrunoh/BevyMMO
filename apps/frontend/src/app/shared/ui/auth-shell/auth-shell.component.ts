@@ -7,10 +7,22 @@ export type AuthShellMode = 'login' | 'register';
   standalone: true,
   template: `
     <section class="auth-shell" [class.auth-shell--register]="mode === 'register'">
+      <video
+        class="auth-shell__background-video"
+        autoplay
+        muted
+        loop
+        playsinline
+        preload="auto"
+        poster="assets/images/auth/background-video-poster.webp"
+        tabindex="-1"
+        aria-hidden="true"
+      >
+        <source src="assets/images/auth/background-loop.mp4" type="video/mp4" />
+      </video>
+
       <div class="auth-shell__stage">
         <div class="auth-shell__portal">
-          <img src="assets/images/auth-portal.png" alt="" aria-hidden="true" />
-
           <div class="auth-shell__content">
             <header class="auth-shell__header">
               <p>{{ mode === 'login' ? 'Vanguard access' : 'The first inscription' }}</p>

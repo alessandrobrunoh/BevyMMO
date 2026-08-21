@@ -15,8 +15,8 @@ pub mod components;
 pub mod systems;
 
 pub use builder::{
-    ornate_bar_image, CardBuilder, CardFrameAssets, CardLayout, FRAME_INNER_PADDING,
-    ORNATE_BAR_CONFIRM_PATH, ORNATE_BAR_NEUTRAL_PATH,
+    CardBuilder, CardFrameAssets, CardLayout, FRAME_INNER_PADDING, ORNATE_BAR_CONFIRM_PATH,
+    ORNATE_BAR_NEUTRAL_PATH, ornate_bar_image,
 };
 pub use components::{
     CardBody, CardExclusivityPolicy, CardFooter, CardHeader, CardKind, CardWindow, CloseCardButton,

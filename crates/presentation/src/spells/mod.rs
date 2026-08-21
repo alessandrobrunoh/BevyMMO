@@ -13,7 +13,7 @@ pub mod ui;
 use bevy::prelude::*;
 use bevymmo_network::network::protocol::SpellVisualEffect;
 
-use crate::spells::ability_vfx::{populate_registry, AbilityVfxRegistry, AbilityVfxSpec};
+use crate::spells::ability_vfx::{AbilityVfxRegistry, AbilityVfxSpec, populate_registry};
 
 /// Registers spell HUD, cast-bar and client visual systems.
 pub struct SpellsHudPlugin;
@@ -118,7 +118,7 @@ fn dispatch_visual_effects(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_state::{init_screen_states, PauseOverlay, Screen};
+    use crate::game_state::{PauseOverlay, Screen, init_screen_states};
     use crate::spells::effects::SpellVisual;
 
     #[test]

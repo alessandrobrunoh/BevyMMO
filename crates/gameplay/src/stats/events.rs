@@ -15,6 +15,8 @@ pub enum StatField {
     MaxHealth,
     MaxMana,
     ManaRegeneration,
+    GatheringSpeed,
+    GatheringBonus,
 }
 
 /// Operation applied by the modifier to the base value.

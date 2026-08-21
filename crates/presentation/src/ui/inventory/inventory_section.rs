@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 use bevymmo_gameplay::items::{
-    components::{Inventory, INVENTORY_CAPACITY},
+    components::{INVENTORY_CAPACITY, Inventory},
     registry::ItemRegistry,
 };
 
@@ -33,8 +33,17 @@ pub(super) fn spawn_inventory_section(
                 .slots
                 .get(index)
                 .and_then(|item| item.as_ref())
-                .and_then(|instance| registry.get(&instance.item_id))
-                .map(|item| item.display_name().to_string())
+                .map(|instance| {
+                    let display = registry
+                        .get(&instance.item_id)
+                        .map(|item| item.display_name().to_string())
+                        .unwrap_or_else(|| instance.item_id.as_str().to_string());
+                    if instance.quantity > 1 {
+                        format!("{display} x{}", instance.quantity)
+                    } else {
+                        display
+                    }
+                })
                 .unwrap_or_default()
         })
         .collect();

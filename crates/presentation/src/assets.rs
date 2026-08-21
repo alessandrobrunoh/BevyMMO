@@ -26,3 +26,9 @@ pub struct MapAssets {
     #[asset(path = "models/tree_oak.glb#Scene0")]
     pub tree_oak: Handle<WorldAsset>,
 }
+
+#[derive(AssetCollection, Resource)]
+pub struct WeaponAssets {
+    #[asset(path = "models/weapons/sword.glb#Scene0")]
+    pub sword: Handle<WorldAsset>,
+}

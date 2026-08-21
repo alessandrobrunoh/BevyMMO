@@ -74,11 +74,9 @@
       }
 
       <div class="back-nav-bar">
-        <a routerLink="/news">
-          <app-eivar-button variant="secondary" size="md">
-            <span>← Back to All News</span>
-          </app-eivar-button>
-        </a>
+        <app-eivar-button variant="secondary" size="md" [routerLink]="['/news']">
+          ← Back to All News
+        </app-eivar-button>
       </div>
     </div>
   </article>
@@ -87,11 +85,9 @@
     <div class="container text-center">
       <h2>Chronicle Not Found</h2>
       <p>The requested article could not be located in the archives.</p>
-      <a routerLink="/news">
-        <app-eivar-button variant="primary" size="md">
-          Return to News
-        </app-eivar-button>
-      </a>
+      <app-eivar-button variant="primary" size="md" [routerLink]="['/news']">
+        Return to News
+      </app-eivar-button>
     </div>
   </div>
 }

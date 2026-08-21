@@ -1,16 +1,16 @@
 //! Start and stop a gather channel. The tick completes pieces.
 
-use bevymmo_domain::gathering::{channel_duration, in_interact_range};
+use bevymmo_domain::gathering::in_interact_range;
 use bevymmo_domain::items::components::Inventory;
 use bevymmo_domain::items::registry::ItemId;
-use spacetimedb::{reducer, ReducerContext, Table};
+use spacetimedb::{ReducerContext, Table, reducer};
 
 use crate::reducers::lifecycle::caller_entity;
 use crate::sim::gathering::{self, resource_definition};
 use crate::sim::spells;
 use crate::tables::{
-    cast_state, game_entity, gather_session, resource_node, EntityKindRow, EntityStateRow,
-    GatherSession,
+    EntityKindRow, EntityStateRow, GatherSession, cast_state, game_entity, gather_session,
+    resource_node,
 };
 
 const DEPLETED_MESSAGE: &str = "Questa risorsa è già stata completamente raccolta";
@@ -42,6 +42,7 @@ pub fn start_gather(ctx: &ReducerContext, node_entity_id: u64) -> Result<(), Str
         .entity_id()
         .find(&node_entity_id)
         .ok_or_else(|| "that resource is gone".to_string())?;
+    let node = gathering::regen_node(ctx, node);
     let definition = resource_definition(&node.kind_id)
         .ok_or_else(|| format!("unknown resource {}", node.kind_id))?;
     let config = definition.resource_config();
@@ -79,8 +80,7 @@ pub fn start_gather(ctx: &ReducerContext, node_entity_id: u64) -> Result<(), Str
     }
     gathering::cancel_session(ctx, caller.entity_id);
 
-    let required_seconds =
-        channel_duration(config.channel_seconds, config.min_channel_seconds, 0.0);
+    let required_seconds = gathering::required_channel_seconds(ctx, caller.entity_id, &config);
     ctx.db.gather_session().insert(GatherSession {
         entity_id: caller.entity_id,
         node_entity_id,

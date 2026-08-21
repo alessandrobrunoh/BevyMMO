@@ -198,10 +198,7 @@ fn parse_resource_attrs(input: &str) -> ResourceAttributes {
     attrs
 }
 
-fn expand_resource(
-    input: &DeriveInput,
-    attrs: ResourceAttributes,
-) -> Result<TokenStream2, String> {
+fn expand_resource(input: &DeriveInput, attrs: ResourceAttributes) -> Result<TokenStream2, String> {
     let name = &input.ident;
     let id = attrs
         .props
@@ -223,9 +220,10 @@ fn expand_resource(
         .max_pieces
         .filter(|n| *n >= 1)
         .ok_or_else(|| "#[resource(...)] requires `max_pieces = N` with N >= 1".to_string())?;
-    let channel_seconds = attrs.channel_seconds.filter(|n| *n > 0.0).ok_or_else(|| {
-        "#[resource(...)] requires `channel_seconds = N` with N > 0".to_string()
-    })?;
+    let channel_seconds = attrs
+        .channel_seconds
+        .filter(|n| *n > 0.0)
+        .ok_or_else(|| "#[resource(...)] requires `channel_seconds = N` with N > 0".to_string())?;
     let yield_item = attrs
         .yield_item
         .filter(|s| !s.is_empty())
@@ -236,9 +234,10 @@ fn expand_resource(
         .ok_or_else(|| {
             "#[resource(...)] requires `regen_interval_seconds = N` with N > 0".to_string()
         })?;
-    let regen_amount = attrs.regen_amount.filter(|n| *n >= 1).ok_or_else(|| {
-        "#[resource(...)] requires `regen_amount = N` with N >= 1".to_string()
-    })?;
+    let regen_amount = attrs
+        .regen_amount
+        .filter(|n| *n >= 1)
+        .ok_or_else(|| "#[resource(...)] requires `regen_amount = N` with N >= 1".to_string())?;
     if attrs.yield_amount < 1 {
         return Err("#[resource(...)] `yield_amount` must be >= 1".to_string());
     }
@@ -952,7 +951,6 @@ struct ItemDef {
     rarity: Ident,
     slot: Option<Ident>,
     family: Option<Ident>,
-    execution: Option<Ident>,
     tradable: bool,
     effects: Vec<EffectDef>,
     spells: Option<SpellsDef>,
@@ -969,7 +967,6 @@ impl Parse for ItemDef {
         let mut rarity = None;
         let mut slot = None;
         let mut family = None;
-        let mut execution = None;
         let mut tradable = true;
         let mut effects = Vec::new();
         let mut spells = None;
@@ -1003,7 +1000,6 @@ impl Parse for ItemDef {
                     "rarity" => rarity = Some(input.parse::<Ident>()?),
                     "slot" => slot = Some(input.parse::<Ident>()?),
                     "family" => family = Some(input.parse::<Ident>()?),
-                    "execution" => execution = Some(input.parse::<Ident>()?),
                     "tradable" => tradable = input.parse::<LitBool>()?.value(),
                     "effects" => {
                         let content;
@@ -1016,7 +1012,7 @@ impl Parse for ItemDef {
                             &key,
                             format!(
                                 "unknown key `{other}` in #[item(...)] (expected id, name, description, \
-                                 category, rarity, slot, family, execution, tradable, effects, \
+                                 category, rarity, slot, family, tradable, effects, \
                                  spells, abilities, rune_profile)"
                             ),
                         ))
@@ -1031,11 +1027,9 @@ impl Parse for ItemDef {
             }
         }
 
-        if abilities.is_some() != rune_profile.is_some() {
+        if abilities.is_some() && rune_profile.is_none() {
             return Err(input.error(
-                "#[item(...)] requires `abilities(...)` and `rune_profile(...)` together — an Eidolon \
-                 weapon without a rune profile could never be inscribed, and a rune profile without \
-                 abilities has nothing to inscribe onto",
+                "#[item(...)] items with `abilities(...)` also need `rune_profile(...)` so the gestures can be inscribed",
             ));
         }
 
@@ -1053,7 +1047,6 @@ impl Parse for ItemDef {
             })?,
             slot,
             family,
-            execution,
             tradable,
             effects,
             spells,
@@ -1087,26 +1080,6 @@ impl ItemDef {
                 }
             }
         });
-        let execution_method = self.execution.as_ref().map(|execution| {
-            let execution = match execution.to_string().as_str() {
-                "Charge" => quote! { crate::abilities::BlueprintExecution::Charge },
-                "Echo" => quote! { crate::abilities::BlueprintExecution::Echo },
-                other => {
-                    let message =
-                        format!("unknown item execution `{other}` (expected Charge or Echo)");
-                    return syn::Error::new_spanned(execution, message).to_compile_error();
-                }
-            };
-            quote! {
-                fn transform_ability_blueprint(
-                    &self,
-                    blueprint: &mut crate::abilities::AbilityBlueprint,
-                ) {
-                    blueprint.execution = #execution;
-                }
-            }
-        });
-
         let effect_tokens: Vec<TokenStream2> = self
             .effects
             .iter()
@@ -1211,7 +1184,6 @@ impl ItemDef {
 
                 #spell_kit_method
                 #family_method
-                #execution_method
                 #ability_loadout_method
                 #rune_profile_method
             }
@@ -1387,7 +1359,7 @@ fn require_unit_struct(input: &DeriveInput, macro_name: &str) -> Result<(), Toke
 //     tags = [Ranged, Projectile, SingleTarget],
 //     range = 20.0,
 //     geometry = projectile(speed = 26.0),
-//     potency = 260.0, cast_time = 0.35, cooldown = 4.0, energy_cost = 12.0,
+//     potency = 260.0, cast_time = 0.35, cooldown = 4.0, mana_cost = 12.0,
 //     animation = "staff_bolt_cast", impact_vfx = "bolt_impact_burst",
 // )]
 // pub struct StaffBolt;
@@ -1467,7 +1439,7 @@ struct BaseAbilityDef {
     potency: LitFloat,
     cast_time: LitFloat,
     cooldown: LitFloat,
-    energy_cost: LitFloat,
+    mana_cost: LitFloat,
     animation: LitStr,
     impact_vfx: LitStr,
     /// Opzionali: assenti = impatto immediato e nessun controllo.
@@ -1496,7 +1468,7 @@ impl Parse for BaseAbilityDef {
         let mut potency = None;
         let mut cast_time = None;
         let mut cooldown = None;
-        let mut energy_cost = None;
+        let mut mana_cost = None;
         let mut animation = None;
         let mut impact_vfx = None;
         let mut impact_delay = None;
@@ -1528,7 +1500,7 @@ impl Parse for BaseAbilityDef {
                 "potency" => potency = Some(input.parse::<LitFloat>()?),
                 "cast_time" => cast_time = Some(input.parse::<LitFloat>()?),
                 "cooldown" => cooldown = Some(input.parse::<LitFloat>()?),
-                "energy_cost" => energy_cost = Some(input.parse::<LitFloat>()?),
+                "mana_cost" => mana_cost = Some(input.parse::<LitFloat>()?),
                 "animation" => animation = Some(input.parse::<LitStr>()?),
                 "impact_vfx" => impact_vfx = Some(input.parse::<LitStr>()?),
                 "impact_delay" => impact_delay = Some(input.parse::<LitFloat>()?),
@@ -1572,7 +1544,7 @@ impl Parse for BaseAbilityDef {
                         &key,
                         format!(
                             "unknown key `{other}` in #[base_ability(...)] (expected id, name, tags, range, geometry, \
-                             potency, cast_time, cooldown, energy_cost, animation, impact_vfx, impact_delay, \
+                             potency, cast_time, cooldown, mana_cost, animation, impact_vfx, impact_delay, \
                              stun_seconds, statuses, channeling)"
                         )
                     ))
@@ -1599,8 +1571,8 @@ impl Parse for BaseAbilityDef {
                 .ok_or_else(|| input.error("#[base_ability(...)] requires `cast_time = ...`"))?,
             cooldown: cooldown
                 .ok_or_else(|| input.error("#[base_ability(...)] requires `cooldown = ...`"))?,
-            energy_cost: energy_cost
-                .ok_or_else(|| input.error("#[base_ability(...)] requires `energy_cost = ...`"))?,
+            mana_cost: mana_cost
+                .ok_or_else(|| input.error("#[base_ability(...)] requires `mana_cost = ...`"))?,
             animation: animation.ok_or_else(|| {
                 input.error("#[base_ability(...)] requires `animation = \"...\"`")
             })?,
@@ -1631,7 +1603,7 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
     let potency = &def.potency;
     let cast_time = &def.cast_time;
     let cooldown = &def.cooldown;
-    let energy_cost = &def.energy_cost;
+    let mana_cost = &def.mana_cost;
     let animation = &def.animation;
     let impact_vfx = &def.impact_vfx;
 
@@ -1786,7 +1758,7 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
                     range: #range,
                     cast_time: #cast_time,
                     cooldown: #cooldown,
-                    energy_cost: #energy_cost,
+                    mana_cost: #mana_cost,
                 }
             }
             fn animation(&self) -> &'static str {

@@ -1,10 +1,11 @@
 use bevy::prelude::*;
 
-use crate::assets::{BossDragonAssets, CreatureAssets, PlayerAssets};
+use crate::assets::{BossDragonAssets, CreatureAssets, PlayerAssets, WeaponAssets};
 use crate::game_state::Screen;
 use bevymmo_gameplay::entity::boss::components::Boss;
 use bevymmo_gameplay::entity::components::EntityKind;
 use bevymmo_gameplay::gathering::Harvestable;
+use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::placeables::{AssetHint, KindId, PlaceableRegistry};
 use bevymmo_network::network::protocol::*;
 use bevymmo_network::world_components::AoeZone;
@@ -96,6 +97,17 @@ pub fn camera_view(transform: &Transform) -> GlobalTransform {
 #[derive(Component)]
 struct PlayerModelRoot;
 
+#[derive(Component)]
+struct EquippedWeaponVisual;
+
+fn sword_hold_transform() -> Transform {
+    Transform {
+        translation: Vec3::new(0.38, 0.9, 0.18),
+        rotation: Quat::from_rotation_x(-1.05) * Quat::from_rotation_y(0.35),
+        scale: Vec3::splat(0.35),
+    }
+}
+
 /// Prevents re-normalizing the imported node once its scene is instantiated.
 #[derive(Component)]
 struct PlayerModelAnchored;
@@ -154,9 +166,11 @@ impl Plugin for RendererPlugin {
             Update,
             (
                 spawn_entity_meshes,
+                sync_equipped_weapon,
                 sync_transforms,
                 anchor_player_model,
                 update_colors,
+                crate::harvest::update_harvestable_fill,
             )
                 .chain()
                 .in_set(RenderSync::Transforms)
@@ -302,6 +316,39 @@ fn spawn_entity_meshes(
                     ));
                 }
             }
+        }
+    }
+}
+
+fn sync_equipped_weapon(
+    mut commands: Commands,
+    weapons: Option<Res<WeaponAssets>>,
+    players: Query<(Entity, &Equipment, Option<&Children>), With<PlayerModelRoot>>,
+    visuals: Query<(), With<EquippedWeaponVisual>>,
+) {
+    let Some(weapons) = weapons else {
+        return;
+    };
+    for (entity, equipment, children) in &players {
+        let wants_sword = equipment
+            .weapon
+            .as_ref()
+            .is_some_and(|item| item.item_id.as_str() == "sword");
+        let existing = children.and_then(|kids| kids.iter().find(|child| visuals.contains(*child)));
+        match (wants_sword, existing) {
+            (true, None) => {
+                commands.entity(entity).with_children(|parent| {
+                    parent.spawn((
+                        WorldAssetRoot(weapons.sword.clone()),
+                        sword_hold_transform(),
+                        EquippedWeaponVisual,
+                    ));
+                });
+            }
+            (false, Some(child)) => {
+                commands.entity(child).despawn();
+            }
+            _ => {}
         }
     }
 }

@@ -76,6 +76,10 @@ impl MarketRegistry {
 pub enum MarketError {
     UnknownMarket,
     ItemNotAllowed,
+    /// The item type is flagged `tradable = false`. This market transfers
+    /// ownership between players, so a non-tradable item cannot be listed,
+    /// bid on, or filled here.
+    ItemNotTradable,
     WrongMarket,
     SelfTrade,
     InsufficientGold,
@@ -91,6 +95,7 @@ impl std::fmt::Display for MarketError {
         match self {
             Self::UnknownMarket => write!(f, "unknown market"),
             Self::ItemNotAllowed => write!(f, "that item cannot be traded in this market"),
+            Self::ItemNotTradable => write!(f, "that item cannot be traded"),
             Self::WrongMarket => write!(f, "that order belongs to a different market"),
             Self::SelfTrade => write!(f, "you cannot fill your own order"),
             Self::InsufficientGold => write!(f, "not enough gold"),
@@ -236,6 +241,24 @@ pub fn assert_item_allowed(market: &MarketDefinition, item_id: &ItemId) -> Resul
     }
 }
 
+/// Whether `item_id` may be listed, bid on, or filled in this market.
+///
+/// These halls are player-to-player order books, so the item must be on the
+/// hall allowlist **and** `tradable`. Callers look the flag up from the item
+/// registry; this function stays a pure check so tests do not need a full
+/// `Item` impl.
+pub fn assert_item_marketable(
+    market: &MarketDefinition,
+    item_id: &ItemId,
+    tradable: bool,
+) -> Result<(), MarketError> {
+    assert_item_allowed(market, item_id)?;
+    if !tradable {
+        return Err(MarketError::ItemNotTradable);
+    }
+    Ok(())
+}
+
 pub fn assert_order_cap(open_orders: usize) -> Result<(), MarketError> {
     if open_orders >= MAX_ORDERS_PER_CHARACTER_PER_MARKET {
         Err(MarketError::OrderCap)
@@ -263,6 +286,25 @@ mod tests {
         assert!(market.allows(&ItemId::new("sword")));
         assert_eq!(
             assert_item_allowed(&market, &ItemId::new("simple_helm")),
+            Err(MarketError::ItemNotAllowed)
+        );
+    }
+
+    #[test]
+    fn marketable_requires_allowlist_and_tradable() {
+        let market = market_one();
+        let sword = ItemId::new("sword");
+        assert!(assert_item_marketable(&market, &sword, true).is_ok());
+        assert_eq!(
+            assert_item_marketable(&market, &sword, false),
+            Err(MarketError::ItemNotTradable)
+        );
+        assert_eq!(
+            assert_item_marketable(&market, &ItemId::new("simple_helm"), true),
+            Err(MarketError::ItemNotAllowed)
+        );
+        assert_eq!(
+            assert_item_marketable(&market, &ItemId::new("simple_helm"), false),
             Err(MarketError::ItemNotAllowed)
         );
     }

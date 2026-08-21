@@ -1,12 +1,13 @@
 import { Component, computed, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { EivarButtonComponent } from '../../../../shared/ui/button/button.component';
 import { formatGold } from '../../market.utils';
 
 @Component({
   selector: 'app-market-calculator',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, EivarButtonComponent],
   template: `
     <div class="calc-card">
       <div class="calc-head">
@@ -39,10 +40,10 @@ import { formatGold } from '../../market.utils';
             />
           </div>
           <div class="qty-presets">
-            <button type="button" (click)="quantity.set(1)">1x</button>
-            <button type="button" (click)="quantity.set(5)">5x</button>
-            <button type="button" (click)="quantity.set(10)">10x</button>
-            <button type="button" (click)="quantity.set(25)">25x</button>
+            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 1" [toggle]="true" (onClick)="quantity.set(1)">1x</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 5" [toggle]="true" (onClick)="quantity.set(5)">5x</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 10" [toggle]="true" (onClick)="quantity.set(10)">10x</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" [active]="quantity() === 25" [toggle]="true" (onClick)="quantity.set(25)">25x</app-eivar-button>
           </div>
         </div>
       </div>

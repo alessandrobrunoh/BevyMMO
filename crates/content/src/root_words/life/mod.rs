@@ -1,5 +1,4 @@
-//! Root Word Life — healing and restoration.
-//! Converts damage into healing and applies restoration tags.
+//! Root Word Life — healing.
 
 use bevymmo_props_macro::root_word;
 
@@ -27,12 +26,6 @@ impl LifeRootWord {
 
 impl RootWordEffect for LifeRootWord {
     fn apply_to_blueprint(&self, blueprint: &mut AbilityBlueprint, _params: &AbilityParams) {
-        // Tag as self-buff or friendly target healing
-        blueprint
-            .tags
-            .push(crate::abilities::AbilityTag::SelfTarget);
-
-        // Healing is more potent than equivalent damage
         blueprint.params.potency *= Self::HEALING_EFFICIENCY;
         blueprint.payload = ManifestationPayload::heal([]);
     }
@@ -58,23 +51,24 @@ mod tests {
     }
 
     #[test]
-    fn apply_to_blueprint_converts_to_healing() {
+    fn apply_to_blueprint_converts_to_healing_without_changing_tags() {
         let word = LifeRootWord;
         let mut blueprint = AbilityBlueprint {
             ability_id: crate::abilities::AbilityId::new("test"),
-            tags: vec![],
-            geometry: crate::abilities::AbilityGeometry::SelfBuff {
-                duration_seconds: 3.0,
+            tags: vec![crate::abilities::AbilityTag::Melee],
+            geometry: crate::abilities::AbilityGeometry::Cone {
+                radius: 5.0,
+                angle_deg: 85.0,
             },
-            cast_mode: crate::abilities::AbilityCastMode::Instant,
-            execution: crate::abilities::blueprint::BlueprintExecution::Base,
+            cast_mode: crate::abilities::AbilityCastMode::CastTime,
+            echo: false,
             params: crate::abilities::AbilityParams {
                 potency: 50.0,
-                area: 0.0,
-                range: 0.0,
-                cast_time: 0.0,
+                area: 5.0,
+                range: 5.0,
+                cast_time: 0.25,
                 cooldown: 3.0,
-                energy_cost: 20.0,
+                mana_cost: 9.0,
             },
             animation: "heal",
             impact_vfx: "heal_effect",
@@ -82,20 +76,12 @@ mod tests {
             stun_seconds: 0.0,
             payload: ManifestationPayload::default(),
         };
-        let params = crate::abilities::AbilityParams {
-            potency: 50.0,
-            area: 0.0,
-            range: 0.0,
-            cast_time: 0.0,
-            cooldown: 3.0,
-            energy_cost: 20.0,
-        };
+        let params = blueprint.params;
 
         crate::abilities::RootWordEffect::apply_to_blueprint(&word, &mut blueprint, &params);
 
-        // Life increases potency by 20% (healing efficiency): 50 * 1.2 = 60
         assert!((blueprint.params.potency - 60.0).abs() < 0.001);
-        assert!(blueprint.has_tag(crate::abilities::AbilityTag::SelfTarget));
+        assert_eq!(blueprint.tags, vec![crate::abilities::AbilityTag::Melee]);
         assert_eq!(blueprint.payload, ManifestationPayload::heal([]));
     }
 }

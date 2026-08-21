@@ -32,7 +32,6 @@ pub fn move_to(ctx: &ReducerContext, x: f32, y: f32, z: f32) -> Result<(), Strin
         Some(cast) => match cast.kind {
             CastKindRow::Instant => MovementLock::None,
             CastKindRow::CastTime => MovementLock::CastTime,
-            CastKindRow::Charge => MovementLock::Charge,
             CastKindRow::Channeling => MovementLock::Channel,
         },
         None => MovementLock::None,

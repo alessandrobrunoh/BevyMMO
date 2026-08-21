@@ -1,12 +1,13 @@
 //! Interactive inscription editor embedded in the selected item's detail card.
 
 use bevy::prelude::*;
-use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
+use bevymmo_client::stdb::{StdbConnection, commands as stdb_commands};
 use bevymmo_gameplay::{
     abilities::{
+        AbilitySlot, AncientWordId, AncientWordRegistry, BaseAbilityRegistry, KnownAncientLanguage,
+        RootWordId, RootWordRegistry,
         inscription::{ArmorInscription, SecondaryWord, WeaponInscription},
-        resolve_active_ability, AbilitySlot, AncientWordId, AncientWordRegistry,
-        BaseAbilityRegistry, KnownAncientLanguage, RootWordId, RootWordRegistry,
+        resolve_active_ability,
     },
     items::{
         components::{EquipSlot, Equipment},
@@ -15,9 +16,9 @@ use bevymmo_gameplay::{
     },
 };
 
-use super::{weapon_detail::WeaponSummary, ItemDetailUiState};
+use super::{ItemDetailUiState, weapon_detail::WeaponSummary};
 use crate::ui::{
-    button::{spawn_bar_child, BarButtonKind, UiButtonImages},
+    button::{BarButtonKind, UiButtonImages, spawn_bar_child},
     scrollbar::spawn_scroll_view_scrolled,
     theme::UiTheme,
 };

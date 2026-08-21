@@ -16,7 +16,7 @@ use crate::abilities::BaseAbilityRegistry;
     potency = 115.0,
     cast_time = 0.25,
     cooldown = 3.0,
-    energy_cost = 9.0,
+    mana_cost = 9.0,
     animation = "sword_cleave",
     impact_vfx = "cleave_impact",
 )]

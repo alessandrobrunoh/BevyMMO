@@ -4,9 +4,9 @@ use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::{ButtonInput, ButtonState};
 use bevy::prelude::*;
 use bevymmo_client::server_feed::{ChatLine, ServerNotice};
-use bevymmo_client::stdb::{commands, PartyRoster, StdbConnection};
+use bevymmo_client::stdb::{PartyRoster, StdbConnection, commands};
 
-use crate::game_state::{in_unpaused_gameplay, PauseOverlay, Screen};
+use crate::game_state::{PauseOverlay, Screen, in_unpaused_gameplay};
 use crate::ui::scrollbar::spawn_scroll_view_with_content;
 use crate::ui::theme::UiTheme;
 

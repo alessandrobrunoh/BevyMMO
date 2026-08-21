@@ -1,6 +1,6 @@
 //! Geometric VFX registry and dispatcher for alpha abilities.
 //!
-//! Each of the 12 weapon-family abilities gets a dedicated spawn function
+//! Each sword ability gets a dedicated spawn function
 //! that produces a **distinct geometric manifestation** using Bevy primitive
 //! meshes/materials. The registry maps `AbilityId` → spawn fn; the dispatcher
 //! in `mod.rs` consults it before falling back to the legacy geometry-based
@@ -21,18 +21,9 @@ use crate::spells::effects::SpellVisual;
 // ---------------------------------------------------------------------------
 pub mod lifecycle;
 
-pub mod arcane_bolt;
-pub mod arcane_wave;
 pub mod blade_storm;
-pub mod cataclysm;
 pub mod cleave;
-pub mod crushing_blow;
-pub mod great_manifestation;
-pub mod ground_slam;
 pub mod lunge;
-pub mod piercing_barrage;
-pub mod power_shot;
-pub mod volley;
 
 // ---------------------------------------------------------------------------
 // Registry types
@@ -137,27 +128,11 @@ impl AbilityVfxRegistry {
 // Population – called once during plugin setup
 // ---------------------------------------------------------------------------
 
-/// Fill the registry with all 12 weapon-ability entries.
+/// Fill the registry with the sword-ability entries.
 pub fn populate_registry(registry: &mut AbilityVfxRegistry) {
-    // Staff family
-    registry.register("arcane_bolt", arcane_bolt::spawn);
-    registry.register("arcane_wave", arcane_wave::spawn);
-    registry.register("great_manifestation", great_manifestation::spawn);
-
-    // Bow family
-    registry.register("power_shot", power_shot::spawn);
-    registry.register("volley", volley::spawn);
-    registry.register("piercing_barrage", piercing_barrage::spawn);
-
-    // Sword family
     registry.register("cleave", cleave::spawn);
     registry.register("lunge", lunge::spawn);
     registry.register("blade_storm", blade_storm::spawn);
-
-    // Hammer family
-    registry.register("crushing_blow", crushing_blow::spawn);
-    registry.register("ground_slam", ground_slam::spawn);
-    registry.register("cataclysm", cataclysm::spawn);
 }
 
 // ---------------------------------------------------------------------------
@@ -624,10 +599,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_contains_all_12_abilities() {
+    fn registry_contains_sword_abilities() {
         let mut reg = AbilityVfxRegistry::default();
         populate_registry(&mut reg);
-        assert_eq!(reg.len(), 12);
+        assert_eq!(reg.len(), 3);
     }
 
     #[test]
@@ -635,21 +610,7 @@ mod tests {
         let mut reg = AbilityVfxRegistry::default();
         populate_registry(&mut reg);
 
-        let expected = [
-            "arcane_bolt",
-            "arcane_wave",
-            "great_manifestation",
-            "power_shot",
-            "volley",
-            "piercing_barrage",
-            "cleave",
-            "lunge",
-            "blade_storm",
-            "crushing_blow",
-            "ground_slam",
-            "cataclysm",
-        ];
-        for id in expected {
+        for id in ["cleave", "lunge", "blade_storm"] {
             assert!(reg.get(id).is_some(), "{id} should be registered");
         }
     }
@@ -662,33 +623,33 @@ mod tests {
 
     #[test]
     fn circle_spec_matches_the_preview_radius() {
-        use bevymmo_content::ability_definitions::great_manifestation::GreatManifestation;
+        use bevymmo_content::ability_definitions::blade_storm::BladeStorm;
         use bevymmo_network::network::protocol::SpellVisualEffect;
 
         let effect = SpellVisualEffect {
-            spell_id: "great_manifestation".into(),
+            spell_id: "blade_storm".into(),
             start: Vec3::ZERO,
             end: Vec3::new(5.0, 0.0, 1.0),
         };
-        let spec = AbilityVfxSpec::from_ability(&effect, &GreatManifestation);
-        assert!((spec.radius - 9.0).abs() < f32::EPSILON);
+        let spec = AbilityVfxSpec::from_ability(&effect, &BladeStorm);
+        assert!((spec.radius - 5.5).abs() < f32::EPSILON);
         assert!(spec.cone_angle_deg.is_none());
         assert_eq!(spec.impact(), effect.end);
     }
 
     #[test]
     fn cone_spec_keeps_the_preview_apex_and_angle() {
-        use bevymmo_content::ability_definitions::arcane_wave::ArcaneWave;
+        use bevymmo_content::ability_definitions::cleave::Cleave;
         use bevymmo_network::network::protocol::SpellVisualEffect;
 
         let effect = SpellVisualEffect {
-            spell_id: "arcane_wave".into(),
+            spell_id: "cleave".into(),
             start: Vec3::ZERO,
-            end: Vec3::Z * 8.0,
+            end: Vec3::Z * 5.0,
         };
-        let spec = AbilityVfxSpec::from_ability(&effect, &ArcaneWave);
-        assert!((spec.radius - 8.0).abs() < f32::EPSILON);
-        assert_eq!(spec.cone_angle_deg, Some(55.0));
+        let spec = AbilityVfxSpec::from_ability(&effect, &Cleave);
+        assert!((spec.radius - 5.0).abs() < f32::EPSILON);
+        assert_eq!(spec.cone_angle_deg, Some(85.0));
         assert_eq!(spec.impact(), effect.start);
         assert!((spec.direction() - Vec3::Z).length() < 0.01);
     }
@@ -705,10 +666,7 @@ mod tests {
 
     #[test]
     fn delayed_area_hits_leave_the_footprint_to_the_aoe_region() {
-        use bevymmo_content::ability_definitions::{
-            arcane_wave::ArcaneWave, cataclysm::Cataclysm, cleave::Cleave,
-            great_manifestation::GreatManifestation, ground_slam::GroundSlam, volley::Volley,
-        };
+        use bevymmo_content::ability_definitions::cleave::Cleave;
         use bevymmo_gameplay::abilities::BaseAbility;
         use bevymmo_network::network::protocol::SpellVisualEffect;
 
@@ -717,24 +675,11 @@ mod tests {
             start: Vec3::ZERO,
             end: Vec3::Z,
         };
-        let delayed: [&dyn BaseAbility; 4] =
-            [&ArcaneWave, &GreatManifestation, &Cataclysm, &GroundSlam];
-        for ability in delayed {
-            let spec = AbilityVfxSpec::from_ability(&effect, ability);
-            assert!(
-                spec.footprint_drawn_by_aoe_region(),
-                "{} must not paint a second ground hitbox",
-                ability.id().as_str()
-            );
-        }
-        for ability in [&Cleave as &dyn BaseAbility, &Volley] {
-            let spec = AbilityVfxSpec::from_ability(&effect, ability);
-            assert!(
-                !spec.footprint_drawn_by_aoe_region(),
-                "{} is instant so VFX owns the footprint",
-                ability.id().as_str()
-            );
-        }
+        let spec = AbilityVfxSpec::from_ability(&effect, &Cleave as &dyn BaseAbility);
+        assert!(
+            !spec.footprint_drawn_by_aoe_region(),
+            "cleave is instant so VFX owns the footprint"
+        );
     }
 
     #[test]

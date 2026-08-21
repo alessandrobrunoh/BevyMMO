@@ -24,7 +24,7 @@ impl Plugin for PlayerStatsPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_state::{init_screen_states, Screen};
+    use crate::game_state::{Screen, init_screen_states};
     use crate::ui::theme::UiTheme;
     use bevymmo_client::local_player::LocalPlayer;
     use bevymmo_client::stdb::LocalGold;
@@ -84,7 +84,7 @@ mod tests {
         assert_eq!(root.top, Val::Px(16.0));
         assert_eq!(
             panel_text(&mut app),
-            "HP: 100/100\nMana: 80/80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)\nAttack Power: 10\nMove Speed: 0.15\nGold: 0"
+            "HP: 100/100\nMana: 80/80\nMana Regen: 4.0/s\nArmor: 100 (50% reduction)\nAttack Power: 10\nMove Speed: 0.15\nGather Speed: 0\nGather Bonus: 0%\nGold: 0"
         );
     }
 
@@ -130,7 +130,7 @@ mod tests {
         app.update();
         assert_eq!(
             panel_text(&mut app),
-            "HP: 100/100\nMana: 80/120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15\nGold: 0"
+            "HP: 100/100\nMana: 80/120\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15\nGather Speed: 0\nGather Bonus: 0%\nGold: 0"
         );
     }
 
@@ -156,7 +156,7 @@ mod tests {
         app.update();
         assert_eq!(
             panel_text(&mut app),
-            "HP: 100/100\nMana: 80/80\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15\nGold: 150"
+            "HP: 100/100\nMana: 80/80\nMana Regen: 4.0/s\nArmor: 0 (0% reduction)\nAttack Power: 10\nMove Speed: 0.15\nGather Speed: 0\nGather Bonus: 0%\nGold: 150"
         );
     }
 }

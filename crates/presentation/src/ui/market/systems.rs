@@ -3,19 +3,20 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevymmo_client::local_player::LocalPlayer;
-use bevymmo_client::pointer::{hud_wants_pointer, PointerOnHud};
+use bevymmo_client::pointer::{PointerOnHud, hud_wants_pointer};
 use bevymmo_client::stdb::module_bindings::{MarketBuyOrder, MarketSellOrder};
 use bevymmo_client::stdb::{
-    commands, LocalGold, MarketBuyBook, MarketOrderBook, NpcMarket, StdbConnection,
+    LocalGold, MarketBuyBook, MarketOrderBook, NpcMarket, StdbConnection, commands,
 };
 use bevymmo_gameplay::economy::{
-    quote_fee, FeeQuote, GoldError, BPS_DENOMINATOR, DEFAULT_ACCOUNT_FEE_BPS,
+    BPS_DENOMINATOR, DEFAULT_ACCOUNT_FEE_BPS, FeeQuote, GoldError, quote_fee,
 };
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity};
 use bevymmo_gameplay::items::components::Inventory;
 use bevymmo_gameplay::items::registry::{ItemId, ItemRegistry};
 use bevymmo_gameplay::markets::{
-    MarketRegistry, MARKET_1_FEE_BPS, MARKET_1_ID, MARKET_2_FEE_BPS, MARKET_2_ID,
+    MARKET_1_FEE_BPS, MARKET_1_ID, MARKET_2_FEE_BPS, MARKET_2_ID, MarketError, MarketRegistry,
+    assert_item_marketable,
 };
 use bevymmo_network::network::protocol::Position;
 use bevymmo_network::world_components::NetworkEntityId;
@@ -29,14 +30,14 @@ use super::{
     MarketUiState,
 };
 use crate::renderer;
-use crate::ui::button::{spawn_bar_child, BarButtonKind, UiButtonImages};
+use crate::ui::button::{BarButtonKind, UiButtonImages, spawn_bar_child};
 use crate::ui::card::{
     builder::{CardBuilder, CardFrameAssets},
     components::{CardKind, CardPositioning},
 };
-use crate::ui::inventory::components::InventorySelection;
 use crate::ui::inventory::InventoryUiState;
-use crate::ui::npc_sidebar::systems::{closest_friendly_hit, EntityHit};
+use crate::ui::inventory::components::InventorySelection;
+use crate::ui::npc_sidebar::systems::{EntityHit, closest_friendly_hit};
 use crate::ui::theme::UiTheme;
 
 const NPC_SELECT_RADIUS: f32 = 1.2;
@@ -44,6 +45,11 @@ const NPC_SELECT_RADIUS: f32 = 1.2;
 fn market_catalog() -> &'static MarketRegistry {
     static CATALOG: std::sync::OnceLock<MarketRegistry> = std::sync::OnceLock::new();
     CATALOG.get_or_init(bevymmo_content::market_definitions::default_markets)
+}
+
+fn item_catalog() -> &'static ItemRegistry {
+    static CATALOG: std::sync::OnceLock<ItemRegistry> = std::sync::OnceLock::new();
+    CATALOG.get_or_init(bevymmo_content::item_definitions::default_items)
 }
 
 /// Occupied bag slots as `(index, item_id)`. Empty slots are omitted.
@@ -59,10 +65,28 @@ pub fn occupied_inventory_rows(inventory: &Inventory) -> Vec<(u8, String)> {
         .collect()
 }
 
+/// Occupied slots this hall will actually list: on the allowlist and `tradable`.
+/// Bound items never appear in the sell list.
+pub fn listable_inventory_rows(inventory: &Inventory, market_id: &str) -> Vec<(u8, String)> {
+    occupied_inventory_rows(inventory)
+        .into_iter()
+        .filter(|(_, item_id)| item_allowed_in_open_market(market_id, item_id))
+        .collect()
+}
+
 pub fn item_allowed_in_open_market(market_id: &str, item_id: &str) -> bool {
-    market_catalog()
+    item_market_status(market_id, item_id).is_ok()
+}
+
+fn item_market_status(market_id: &str, item_id: &str) -> Result<(), MarketError> {
+    let market = market_catalog()
         .get(market_id)
-        .is_some_and(|market| market.allows(&ItemId::new(item_id.to_string())))
+        .ok_or(MarketError::UnknownMarket)?;
+    let item_id = ItemId::new(item_id.to_string());
+    let item = item_catalog()
+        .get(&item_id)
+        .ok_or(MarketError::ItemNotAllowed)?;
+    assert_item_marketable(market, &item_id, item.tradable())
 }
 
 pub fn fee_bps_for_market(market_id: &str) -> u16 {
@@ -674,17 +698,29 @@ pub fn refresh_bag_rows(
     let Ok(inventory) = inventory.single() else {
         return;
     };
-    let rows = occupied_inventory_rows(inventory);
-    if fingerprint.rows == rows {
+    let occupied = occupied_inventory_rows(inventory);
+    if fingerprint.rows == occupied {
         return;
     }
-    fingerprint.rows = rows.clone();
+    fingerprint.rows = occupied.clone();
+    let rows = listable_inventory_rows(inventory, market_id);
     for list in lists.iter() {
         commands.entity(list).despawn_related::<Children>();
         commands.entity(list).with_children(|parent| {
-            if rows.is_empty() {
+            if occupied.is_empty() {
                 parent.spawn((
                     Text::new("Your bag is empty."),
+                    TextFont {
+                        font_size: FontSize::Px(16.0),
+                        ..default()
+                    },
+                    TextColor(theme.text_color.with_alpha(0.75)),
+                ));
+                return;
+            }
+            if rows.is_empty() {
+                parent.spawn((
+                    Text::new("Nothing you can sell here."),
                     TextFont {
                         font_size: FontSize::Px(16.0),
                         ..default()
@@ -698,7 +734,6 @@ pub fn refresh_bag_rows(
                     .get(&ItemId::new(item_id.clone()))
                     .map(|item| item.display_name().to_string())
                     .unwrap_or_else(|| item_id.clone());
-                let allowed = item_allowed_in_open_market(market_id, item_id);
                 parent
                     .spawn(Node {
                         width: Val::Percent(100.0),
@@ -722,30 +757,19 @@ pub fn refresh_bag_rows(
                             },
                             TextColor(theme.text_color),
                         ));
-                        if allowed {
-                            spawn_bar_child(
-                                row,
-                                "Sell",
-                                14.0,
-                                theme.text_color,
-                                Val::Px(96.0),
-                                Val::Px(30.0),
-                                BarButtonKind::Primary,
-                                MarketSellFromBag {
-                                    slot: *slot,
-                                    item_id: item_id.clone(),
-                                },
-                            );
-                        } else {
-                            row.spawn((
-                                Text::new("Not traded here"),
-                                TextFont {
-                                    font_size: FontSize::Px(14.0),
-                                    ..default()
-                                },
-                                TextColor(theme.text_color.with_alpha(0.55)),
-                            ));
-                        }
+                        spawn_bar_child(
+                            row,
+                            "Sell",
+                            14.0,
+                            theme.text_color,
+                            Val::Px(96.0),
+                            Val::Px(30.0),
+                            BarButtonKind::Primary,
+                            MarketSellFromBag {
+                                slot: *slot,
+                                item_id: item_id.clone(),
+                            },
+                        );
                     });
             }
         });
@@ -1174,6 +1198,7 @@ pub fn refresh_market_ticket(
 pub fn buy_market_offer(
     interactions: Query<(&Interaction, &MarketOfferButton), Changed<Interaction>>,
     ui: Res<MarketUiState>,
+    book: Res<MarketOrderBook>,
     npcs: Query<&NetworkEntityId>,
     connection: Option<Res<StdbConnection>>,
 ) {
@@ -1186,8 +1211,17 @@ pub fn buy_market_offer(
     let Ok(network_id) = npcs.get(npc) else {
         return;
     };
+    let Some(market_id) = ui.open_market_id.as_deref() else {
+        return;
+    };
     for (interaction, button) in interactions.iter() {
         if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let Some(order) = book.orders.get(&button.order_id) else {
+            continue;
+        };
+        if !item_allowed_in_open_market(market_id, &order.item_id) {
             continue;
         }
         let _ = commands::market_buy(&connection, network_id.0, button.order_id);
@@ -1251,6 +1285,9 @@ pub fn create_ticket_order(
     let Some(market_id) = ui.open_market_id.as_deref() else {
         return;
     };
+    if !item_allowed_in_open_market(market_id, &ticket.item_id) {
+        return;
+    }
     match ui.ticket_action {
         MarketTicketAction::Buy => {
             let Some(order) = offers_for_item(book.orders.values(), market_id, &ticket.item_id)
@@ -1430,6 +1467,14 @@ mod tests {
         assert_eq!(
             rows,
             vec![(2, "sword".to_string()), (5, "simple_helm".to_string())]
+        );
+        assert_eq!(
+            listable_inventory_rows(&inventory, MARKET_1_ID),
+            vec![(2, "sword".to_string())]
+        );
+        assert_eq!(
+            listable_inventory_rows(&inventory, MARKET_2_ID),
+            vec![(5, "simple_helm".to_string())]
         );
     }
 

@@ -47,30 +47,56 @@ The active routes are `/login` and `/register`. Email/password controls use thei
 
 ## Button
 
-`app-eivar-button` is the standard action control. It is keyboard accessible and exposes the native button's `type`, `disabled` and loading state.
+`app-eivar-button` is the only button-like control used by the site. Its visual surfaces are extracted from the approved `buttons_components.png` sheet, while the component keeps native HTML semantics: actions render a `<button>`, Angular navigation renders an `<a>` with `RouterLink`, and external destinations render an `<a href>`.
 
 | Variant | Use |
 | --- | --- |
-| `primary` / `gold` | Main action: dark metal with warm gold activation |
-| `secondary` / `navigation` | Header and compact navigation actions |
-| `outline` | Low-emphasis action on a dark surface |
-| `tag` | Filter and selectable tag, set `[active]="true"` when selected |
+| `primary` / `gold` | Main warm-gold action |
 | `cta` | Large hero or campaign action |
-| `icon-square` | Compact utility icon |
-| `icon-circle` | Circular rune action |
+| `secondary` / `navigation` | Lower-emphasis and navigation actions |
+| `cyan` / `info` / `ornate` | Blue magical, market, and auth actions |
+| `success` | Positive or confirmatory action |
+| `danger` | Destructive or sign-out action |
+| `tag` | Filter or selectable option; pair with `[toggle]="true"` and `[active]` |
+| `icon-square` / `icon-circle` | Compact icon-only utility action |
+| `arrow-left` / `arrow-right` | Pagination and directional navigation |
 | `social` | Social destination icon |
-| `cyan` | Reserved for magic or Essence interactions |
-| `ghost` | Text-only tertiary action |
+| `outline` / `ghost` | Tertiary action using the dark engraved frame |
+
+The available `tone` values are `blue`, `green`, `red`, and `gold`. They select the matching extracted sheet family for `tag`, square, circle, and social controls. Sizes are `sm`, `md`, and `lg`.
 
 ```html
-<app-eivar-button variant="tag" [active]="isSelected" (onClick)="select()">
+<app-eivar-button
+  variant="tag"
+  size="sm"
+  tone="gold"
+  [toggle]="true"
+  [active]="isSelected"
+  (onClick)="select()"
+>
   Weapons
 </app-eivar-button>
 
-<app-eivar-button variant="icon-circle" icon="search" ariaLabel="Search"></app-eivar-button>
+<app-eivar-button
+  variant="icon-circle"
+  [iconOnly]="true"
+  icon="search"
+  ariaLabel="Search"
+  (onClick)="openSearch()"
+></app-eivar-button>
+
+<app-eivar-button variant="secondary" routerLink="/news">
+  View all news
+</app-eivar-button>
 ```
 
-Use `iconSet="glyph"` for a rune or character instead of a Material Symbol. Use `[iconOnly]="true"` with an `ariaLabel` whenever the icon has no visible text.
+Interactive visuals are mapped to real CSS states: default, `:hover`, `:active`, `.is-active`, and disabled. Keyboard focus uses a separate high-contrast `:focus-visible` ring, loading sets `aria-busy`, and reduced-motion users do not receive transitions or spinner animation. Use `iconSet="glyph"` for a rune or character instead of a Material Symbol. Always provide `ariaLabel` with `[iconOnly]="true"`.
+
+The 77 transparent runtime assets live in `public/assets/ui/buttons`. Regenerate them from the source sheet from `apps/frontend` with:
+
+```sh
+python3 design-assets/extract-buttons.py ../../buttons_components.png
+```
 
 ## Checkbox, radio and switch
 

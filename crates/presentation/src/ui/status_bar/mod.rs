@@ -3,5 +3,5 @@
 
 mod systems;
 
-pub(crate) use systems::spawn_target_status_row;
 pub use systems::StatusBarPlugin;
+pub(crate) use systems::spawn_target_status_row;

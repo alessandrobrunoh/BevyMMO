@@ -4,7 +4,9 @@
 //! (backfill), and testing. The values mirror those currently defined
 //! in respective `impl EntityDefinition`.
 
-use crate::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
+use crate::stats::components::{
+    CombatStats, GatheringStats, MovementStats, StatsBundleData, VitalStats,
+};
 
 /// Default statistical profile for Player.
 pub fn player_defaults() -> StatsBundleData {
@@ -20,6 +22,10 @@ pub fn player_defaults() -> StatsBundleData {
             current_mana: 100.0,
             max_mana: 100.0,
             mana_regeneration: 5.0,
+        },
+        gathering: GatheringStats {
+            speed: 0.0,
+            bonus: 0.0,
         },
     }
 }
@@ -38,6 +44,10 @@ pub fn enemy_defaults() -> StatsBundleData {
             current_mana: 40.0,
             max_mana: 40.0,
             mana_regeneration: 2.0,
+        },
+        gathering: GatheringStats {
+            speed: 0.0,
+            bonus: 0.0,
         },
     }
 }
@@ -60,6 +70,10 @@ pub fn boss_defaults() -> StatsBundleData {
             max_mana: 0.0,
             mana_regeneration: 0.0,
         },
+        gathering: GatheringStats {
+            speed: 0.0,
+            bonus: 0.0,
+        },
     }
 }
 
@@ -81,6 +95,10 @@ pub fn dummy_defaults() -> StatsBundleData {
             max_mana: 0.0,
             mana_regeneration: 0.0,
         },
+        gathering: GatheringStats {
+            speed: 0.0,
+            bonus: 0.0,
+        },
     }
 }
 
@@ -95,6 +113,8 @@ mod tests {
         assert_eq!(stats.vital.current_mana, stats.vital.max_mana);
         assert_eq!(stats.vital.max_mana, 100.0);
         assert_eq!(stats.vital.mana_regeneration, 5.0);
+        assert_eq!(stats.gathering.speed, 0.0);
+        assert_eq!(stats.gathering.bonus, 0.0);
     }
 
     #[test]

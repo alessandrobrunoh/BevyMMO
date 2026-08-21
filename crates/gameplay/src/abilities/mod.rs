@@ -29,12 +29,10 @@ pub use base_ability::{
     AbilityCastMode, AbilityGeometry, AbilityId, AbilityParams, AbilityTag, ArcBaseAbility,
     BaseAbility, BaseAbilityRegistry, ChannelMovementPolicy,
 };
-pub use blueprint::{
-    AbilityBlueprint, BlueprintExecution, ManifestationKind, ManifestationPayload,
-};
+pub use blueprint::{AbilityBlueprint, ManifestationKind, ManifestationPayload};
 pub use cast_intent::{
-    charge_release_aim, flush_queued_release, movement_lock_for_ability,
-    queue_release_until_observed, weapon_cast_intent, WeaponCastIntent,
+    flush_queued_release, movement_lock_for_ability, queue_release_until_observed,
+    weapon_cast_intent, WeaponCastIntent,
 };
 pub use cooldowns::AbilityCooldowns;
 

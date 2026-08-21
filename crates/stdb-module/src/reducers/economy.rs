@@ -8,9 +8,7 @@ use spacetimedb::{reducer, ReducerContext, Table};
 
 use bevymmo_domain::economy::{Gold, GoldError, DEFAULT_ACCOUNT_FEE_BPS};
 
-use crate::tables::{
-    account_economy, character_wallet, player, AccountEconomy, CharacterWallet,
-};
+use crate::tables::{account_economy, character_wallet, player, AccountEconomy, CharacterWallet};
 use crate::{normalize_name, world};
 
 /// Inserts a zero-Gold wallet if this character does not have one yet.

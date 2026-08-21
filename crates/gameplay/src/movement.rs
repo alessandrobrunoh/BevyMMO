@@ -56,38 +56,33 @@ pub fn step_towards(position: Vec3, target: Vec3, speed: f32, dt: f32) -> Step {
 
 /// Why a `move_to` request should be accepted or refused.
 ///
-/// Charge freezes the character. CastTime and Channeling still accept a
-/// destination so movement can cancel the wind-up or an InterruptOnMove
-/// channel — the tick, not the reducer, ends that cast.
+/// CastTime and Channeling still accept a destination so movement can cancel
+/// the wind-up or an InterruptOnMove channel — the tick, not the reducer,
+/// ends that cast.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MovementLock {
     None,
     CastTime,
-    Charge,
     Channel,
 }
 
 /// Whether the player may issue a new destination.
 ///
 /// `cc_blocks` covers Stun/Root. CastTime and Channel are allowed so a
-/// click can interrupt; Charge is not, or the starter staff cancels itself.
+/// click can interrupt.
 pub fn movement_intent_allowed(lock: MovementLock, cc_blocks: bool) -> bool {
     if cc_blocks {
         return false;
     }
     match lock {
         MovementLock::None | MovementLock::Channel | MovementLock::CastTime => true,
-        MovementLock::Charge => false,
     }
 }
 
 /// Destination the local client should step towards this frame.
 ///
-/// Charge freezes the character on the server (`stop_movement`). If the
-/// client keeps walking to a stale click — or to the last replicated dest,
-/// which lags the reducer by a tick — prediction walks past the root and
-/// then rubber-bands back. A lock or crowd-control block therefore returns
-/// `None` immediately, even when the server dest has not cleared yet.
+/// A crowd-control block returns `None` immediately, even when the server
+/// dest has not cleared yet.
 ///
 /// While unlocked and the player is click-moving, prefer the pending click.
 /// Otherwise follow the server so a cancelled dest is not resumed.
@@ -171,7 +166,7 @@ pub fn should_face_cast_target(moving: bool, lock: MovementLock) -> bool {
     if !moving {
         return true;
     }
-    matches!(lock, MovementLock::CastTime | MovementLock::Charge)
+    matches!(lock, MovementLock::CastTime)
 }
 
 /// Horizontal facing implied by moving from `position` to `target`.
@@ -792,8 +787,7 @@ mod tests {
     }
 
     #[test]
-    fn only_charge_blocks_movement_intent() {
-        assert!(!movement_intent_allowed(MovementLock::Charge, false));
+    fn cast_modes_do_not_block_movement_intent() {
         assert!(movement_intent_allowed(MovementLock::CastTime, false));
         assert!(movement_intent_allowed(MovementLock::None, false));
         assert!(movement_intent_allowed(MovementLock::Channel, false));
@@ -806,28 +800,7 @@ mod tests {
     }
 
     #[test]
-    fn charge_is_not_treated_as_channel() {
-        assert_ne!(
-            movement_intent_allowed(MovementLock::Charge, false),
-            movement_intent_allowed(MovementLock::Channel, false)
-        );
-    }
-
-    #[test]
-    fn charge_lock_ignores_a_stale_click_dest() {
-        let click = Some(Vec3::new(10.0, 0.0, 0.0));
-        assert_eq!(
-            predicted_move_dest(click, None, MovementLock::Charge, false, false),
-            None
-        );
-        assert_eq!(
-            predicted_move_dest(click, None, MovementLock::Charge, true, false),
-            None
-        );
-    }
-
-    #[test]
-    fn after_charge_a_stale_click_is_not_resumed() {
+    fn after_cast_a_stale_click_is_not_resumed() {
         let click = Some(Vec3::new(10.0, 0.0, 0.0));
         assert_eq!(
             predicted_move_dest(click, None, MovementLock::None, false, false),
@@ -854,11 +827,11 @@ mod tests {
     }
 
     #[test]
-    fn rooted_charge_drops_a_live_server_dest() {
+    fn stun_drops_a_live_server_dest() {
         let click = Some(Vec3::new(10.0, 0.0, 0.0));
         let server = Some(Vec3::new(4.0, 0.0, 1.0));
         assert_eq!(
-            predicted_move_dest(click, server, MovementLock::Charge, true, false),
+            predicted_move_dest(click, server, MovementLock::None, true, true),
             None
         );
     }
@@ -968,7 +941,6 @@ mod tests {
     #[test]
     fn rooted_or_standing_casts_still_face_the_target() {
         assert!(should_face_cast_target(true, MovementLock::CastTime));
-        assert!(should_face_cast_target(true, MovementLock::Charge));
         assert!(should_face_cast_target(false, MovementLock::None));
     }
 }

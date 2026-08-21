@@ -194,9 +194,7 @@
                         @if (auth.isLoggedIn()) {
                           <app-eivar-button variant="cyan" size="sm" [disabled]="true">Buy</app-eivar-button>
                         } @else {
-                          <a [routerLink]="['/login']" [queryParams]="{ returnUrl: loginReturnUrl() }">
-                            <app-eivar-button variant="cyan" size="sm">Login to Buy</app-eivar-button>
-                          </a>
+                          <app-eivar-button variant="cyan" size="sm" [routerLink]="['/login']" [queryParams]="{ returnUrl: loginReturnUrl() }">Login to Buy</app-eivar-button>
                         }
                       </div>
                     </li>

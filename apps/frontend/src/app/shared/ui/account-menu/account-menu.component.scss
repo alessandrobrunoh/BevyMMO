@@ -84,34 +84,12 @@
     flex-direction: column;
     gap: 0.2rem;
 
-    .menu-link-btn {
+    app-eivar-button {
+      display: block;
       width: 100%;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 0.65rem 0.85rem;
-      border-radius: var(--radius-xs);
-      font-size: 0.85rem;
-      color: var(--text-stone);
-      text-align: left;
-      transition: all var(--transition-fast);
-
-      &:hover {
-        background: rgba(221, 212, 195, 0.1);
-        color: #ffffff;
-        transform: translateX(3px);
-      }
 
       &.logout-btn {
-        border-top: 1px solid rgba(221, 212, 195, 0.08);
         margin-top: 0.3rem;
-        padding-top: 0.75rem;
-        color: #e57373;
-
-        &:hover {
-          background: rgba(229, 115, 115, 0.12);
-          color: #ff8a80;
-        }
       }
     }
   }

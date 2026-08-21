@@ -76,14 +76,15 @@
         <span class="cat-label">Category:</span>
         <div class="cat-buttons">
           @for (cat of categories; track cat) {
-            <button
-              type="button"
-              class="cat-btn"
-              [class.active]="selectedCategory() === cat"
-              (click)="selectedCategory.set(cat)"
+            <app-eivar-button
+              variant="tag"
+              size="sm"
+              [active]="selectedCategory() === cat"
+              [toggle]="true"
+              (onClick)="selectedCategory.set(cat)"
             >
               {{ cat }}
-            </button>
+            </app-eivar-button>
           }
         </div>
       </div>
@@ -100,7 +101,7 @@
         <div class="active-market-tag">
           <span>Filtered by:</span>
           <strong>{{ filteredItems().length > 0 ? filteredItems()[0].marketName : selectedMarketId() }}</strong>
-          <button type="button" class="reset-hall-btn" (click)="selectedMarketId.set('All')">✕ Show All</button>
+          <app-eivar-button variant="tag" size="sm" tone="red" (onClick)="selectedMarketId.set('All')">✕ Show All</app-eivar-button>
         </div>
       }
     </div>

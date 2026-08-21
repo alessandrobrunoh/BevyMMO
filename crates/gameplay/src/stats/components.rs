@@ -1,10 +1,11 @@
 //! Runtime components for game stats.
 //!
-//! Stats are split into three separate ECS components to keep
-//! queries granular and reduce coupling:
+//! Stats are split into separate ECS components to keep queries granular
+//! and reduce coupling:
 //! - [`MovementStats`] — movement speed and parameters
 //! - [`CombatStats`] — attack power and armor
 //! - [`VitalStats`] — health, mana, and regeneration
+//! - [`GatheringStats`] — gathering speed and bonus
 //!
 //! [`StatsBundleData`] is a DTO aggregate used at spawn boundaries,
 //! configuration, and persistence; it does not replace runtime ECS components.
@@ -101,6 +102,21 @@ impl VitalStats {
     }
 }
 
+/// Gathering stats: channel speed rating and extra-piece bonus.
+///
+/// `speed` 0 is the authored channel duration; 100 halves it.
+/// `bonus` 0.15 is a 15% chance of +1 extra piece.
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::component::Component, bevy_reflect::Reflect)
+)]
+#[cfg_attr(feature = "bevy", reflect(Component))]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+pub struct GatheringStats {
+    pub speed: f32,
+    pub bonus: f32,
+}
+
 /// Aggregate DTO for all stats.
 ///
 /// Used for:
@@ -108,7 +124,7 @@ impl VitalStats {
 /// - serialization/persistence
 /// - spawn helpers
 ///
-/// At runtime, values live in three separate ECS components; use
+/// At runtime, values live in separate ECS components; use
 /// [`StatsBundleData::into_components`] to get the tuple of components
 /// to insert into an entity.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -116,25 +132,28 @@ pub struct StatsBundleData {
     pub movement: MovementStats,
     pub combat: CombatStats,
     pub vital: VitalStats,
+    pub gathering: GatheringStats,
 }
 
 impl StatsBundleData {
-    /// Constructs the bundle from the three runtime components.
+    /// Constructs the bundle from the runtime components.
     pub fn from_components(
         movement: &MovementStats,
         combat: &CombatStats,
         vital: &VitalStats,
+        gathering: &GatheringStats,
     ) -> Self {
         Self {
             movement: *movement,
             combat: *combat,
             vital: *vital,
+            gathering: *gathering,
         }
     }
 
     /// Decomposes the DTO into the tuple of ECS components.
-    pub fn into_components(self) -> (MovementStats, CombatStats, VitalStats) {
-        (self.movement, self.combat, self.vital)
+    pub fn into_components(self) -> (MovementStats, CombatStats, VitalStats, GatheringStats) {
+        (self.movement, self.combat, self.vital, self.gathering)
     }
 }
 
@@ -197,11 +216,17 @@ mod tests {
             mana_regeneration: 5.0,
         };
 
-        let bundle = StatsBundleData::from_components(&movement, &combat, &vital);
-        let (m, c, v) = bundle.into_components();
+        let gathering = GatheringStats {
+            speed: 10.0,
+            bonus: 0.15,
+        };
+
+        let bundle = StatsBundleData::from_components(&movement, &combat, &vital, &gathering);
+        let (m, c, v, g) = bundle.into_components();
         assert_eq!(m, movement);
         assert_eq!(c, combat);
         assert_eq!(v, vital);
+        assert_eq!(g, gathering);
     }
 
     fn sample_vital() -> VitalStats {

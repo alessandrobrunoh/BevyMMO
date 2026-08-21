@@ -8,7 +8,7 @@
 
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
-use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
+use bevymmo_client::stdb::{StdbConnection, commands as stdb_commands};
 use bevymmo_gameplay::abilities::KnownAncientLanguage;
 use bevymmo_gameplay::items::{
     components::{Equipment, Inventory},

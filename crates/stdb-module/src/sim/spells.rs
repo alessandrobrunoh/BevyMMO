@@ -261,7 +261,7 @@ pub fn validate_cast_target(
 }
 
 /// Spends `cost` current mana, or refuses the cast.
-pub fn spend_energy(ctx: &ReducerContext, entity_id: u64, cost: f32) -> Result<(), String> {
+pub fn spend_mana(ctx: &ReducerContext, entity_id: u64, cost: f32) -> Result<(), String> {
     if cost <= 0.0 {
         return Ok(());
     }
@@ -895,7 +895,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
         // which was captured from SpellConfig (legacy) or AbilityCastMode (Eidolon)
         // at cast start time.
         let movement_cancels = match cast.kind {
-            CastKindRow::CastTime | CastKindRow::Charge => true,
+            CastKindRow::CastTime => true,
             CastKindRow::Channeling => cast.channel_movement_interrupts,
             CastKindRow::Instant => false,
         };
@@ -943,15 +943,6 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                     }
                 }
                 due
-            }
-            (CastSourceRow::Spell, CastKindRow::Charge) => {
-                // Charge is an Eidolon-only execution. A legacy spell carrying
-                // this state is invalid, so close it without firing.
-                log::warn!(
-                    "legacy spell {:?} entered charge state; cancelling",
-                    cast.spell_id
-                );
-                true
             }
             (CastSourceRow::Spell, CastKindRow::Channeling) => {
                 let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
@@ -1063,20 +1054,6 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
-            (
-                CastSourceRow::Eidolon
-                | CastSourceRow::Helmet
-                | CastSourceRow::Armor
-                | CastSourceRow::Shoes,
-                CastKindRow::Charge,
-            ) => {
-                // Charge accumulates while held but does NOT auto-fire.
-                // The ability fires when the player releases (release_cast reducer).
-                // If elapsed exceeds required_seconds, the charge is "full" but
-                // we still wait for release.
-                false
-            }
-
             // Defensive: an instant spell/ability never opens a `cast_state`.
             (_, CastKindRow::Instant) => true,
         };

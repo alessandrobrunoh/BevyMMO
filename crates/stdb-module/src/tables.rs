@@ -25,7 +25,7 @@
 //! scan. `game_entity` carries a `cell_x`/`cell_z` grid index for exactly that:
 //! a linear scan per mob per tick does not survive contact with a populated map.
 
-use spacetimedb::{table, Identity, SpacetimeType, Timestamp, Uuid};
+use spacetimedb::{Identity, SpacetimeType, Timestamp, Uuid, table};
 
 use crate::rows::{EffectPayloadRow, HotbarRow, ItemInstanceRow, StatsRow, Vec3Row};
 
@@ -516,9 +516,6 @@ pub struct EntityStats {
 pub enum CastKindRow {
     Instant,
     CastTime,
-    /// Hold-to-charge: accumulates while held, fires on release (not auto-fire).
-    /// Only valid for Eidolon abilities with BlueprintExecution::Charge.
-    Charge,
     Channeling,
 }
 
@@ -850,7 +847,12 @@ pub struct GatherYieldEvent {
 // ---------------------------------------------------------------------------
 
 /// Persistent harvest state, keyed by the map placement id.
-#[table(accessor = resource_node, public)]
+#[table(
+    accessor = resource_node,
+    public,
+    index(accessor = next_regen, btree(columns = [next_regen_at]))
+)]
+#[derive(Clone)]
 pub struct ResourceNode {
     #[primary_key]
     pub placement_id: String,
@@ -859,6 +861,7 @@ pub struct ResourceNode {
     pub kind_id: String,
     pub current_pieces: u32,
     pub last_regen_at: Timestamp,
+    pub next_regen_at: Timestamp,
 }
 
 /// One player gathering at a time. Runtime: cleared on init.

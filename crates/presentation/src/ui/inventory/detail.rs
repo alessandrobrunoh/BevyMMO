@@ -13,13 +13,13 @@ use bevymmo_gameplay::{
 };
 
 use super::{
-    components::*,
-    inscription_editor::{spawn_item_editor, ItemEditorContext, ItemEditorRegistries},
-    weapon_detail::{meta_line, summarize_weapon, GlyphRegistries},
     InventoryUiState, ItemDetailUiState,
+    components::*,
+    inscription_editor::{ItemEditorContext, ItemEditorRegistries, spawn_item_editor},
+    weapon_detail::{GlyphRegistries, meta_line, summarize_weapon},
 };
 use crate::ui::{
-    button::{spawn_bar_child, BarButtonKind},
+    button::{BarButtonKind, spawn_bar_child},
     card::{CardBuilder, CardFrameAssets, CardKind, CardWindow},
     scrollbar::ScrollView,
     theme::UiTheme,
@@ -310,6 +310,8 @@ fn effect_label(effect: &ItemEffect) -> String {
                 StatField::AttackPower => "Attack Power",
                 StatField::Armor => "Armor",
                 StatField::ManaRegeneration => "Mana Regen",
+                StatField::GatheringSpeed => "Gather Speed",
+                StatField::GatheringBonus => "Gather Bonus",
             };
             let op = match op {
                 ModifierOp::Add => "+",

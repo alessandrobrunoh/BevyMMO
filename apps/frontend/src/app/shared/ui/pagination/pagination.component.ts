@@ -1,31 +1,32 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { EivarButtonComponent } from '../button/button.component';
 
 @Component({
   selector: 'app-eivar-pagination',
   standalone: true,
+  imports: [EivarButtonComponent],
   template: `
     @if (totalPages > 1) {
       <nav class="eivar-pagination" aria-label="Pagination">
-        <button type="button" class="eivar-pagination__arrow" [disabled]="currentPage === 1" aria-label="Previous page" (click)="selectPage(currentPage - 1)">
-          <span aria-hidden="true">‹</span>
-        </button>
+        <app-eivar-button variant="arrow-left" class="eivar-pagination__arrow" [iconOnly]="true" [disabled]="currentPage === 1" ariaLabel="Previous page" (onClick)="selectPage(currentPage - 1)"></app-eivar-button>
         @for (item of visibleItems(); track $index) {
           @if (item === 'ellipsis') {
             <span class="eivar-pagination__ellipsis" aria-hidden="true">…</span>
           } @else {
-            <button
-              type="button"
+            <app-eivar-button
+              variant="icon-square"
+              tone="gold"
               class="eivar-pagination__page"
-              [class.is-current]="item === currentPage"
-              [attr.aria-current]="item === currentPage ? 'page' : null"
-              [attr.aria-label]="'Page ' + item"
-              (click)="selectPage(item)"
-            >{{ item }}</button>
+              [iconOnly]="true"
+              [active]="item === currentPage"
+              [toggle]="true"
+              [ariaCurrent]="item === currentPage ? 'page' : undefined"
+              [ariaLabel]="'Page ' + item"
+              (onClick)="selectPage(item)"
+            >{{ item }}</app-eivar-button>
           }
         }
-        <button type="button" class="eivar-pagination__arrow" [disabled]="currentPage === totalPages" aria-label="Next page" (click)="selectPage(currentPage + 1)">
-          <span aria-hidden="true">›</span>
-        </button>
+        <app-eivar-button variant="arrow-right" class="eivar-pagination__arrow" [iconOnly]="true" [disabled]="currentPage === totalPages" ariaLabel="Next page" (onClick)="selectPage(currentPage + 1)"></app-eivar-button>
       </nav>
     }
   `,

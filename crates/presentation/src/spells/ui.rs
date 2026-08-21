@@ -12,7 +12,7 @@ use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::server_feed::SpellCooldownState;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::{
-    resolve_active_ability, AbilityId, AbilitySlot, BaseAbilityRegistry,
+    AbilityId, AbilitySlot, BaseAbilityRegistry, resolve_active_ability,
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -79,7 +79,7 @@ struct SpellHudEntry {
     display_name: String,
     key_label: String,
     /// Base ability mana cost. Empty slots are 0 (always affordable).
-    energy_cost: f32,
+    mana_cost: f32,
 }
 
 #[derive(Component)]
@@ -221,7 +221,7 @@ const HOTBAR_SLOTS: [HotbarSlotDef; 6] = [
 
 /// Resolves the active ability for one equipped item + ability-slot pair.
 ///
-/// Returns `(AbilityId, display_name, energy_cost)` if the item exists, has an
+/// Returns `(AbilityId, display_name, mana_cost)` if the item exists, has an
 /// ability loadout, and a valid ability can be resolved through its selection.
 fn resolve_equipment_entry(
     equipped: &Option<bevymmo_gameplay::items::instance::ItemInstance>,
@@ -245,7 +245,7 @@ fn resolve_equipment_entry(
     Some((
         ability_id.clone(),
         ability.display_name().to_string(),
-        ability.base_params().energy_cost,
+        ability.base_params().mana_cost,
     ))
 }
 
@@ -279,7 +279,7 @@ fn sync_spell_hud(
             &ability_registry,
         );
 
-        let (cooldown_key, display_name, energy_cost) = match &resolved {
+        let (cooldown_key, display_name, mana_cost) = match &resolved {
             Some((id, name, cost)) => (
                 Some(HudCooldownKey::Ability(id.clone())),
                 name.clone(),
@@ -299,7 +299,7 @@ fn sync_spell_hud(
             cooldown_key,
             display_name,
             key_label,
-            energy_cost,
+            mana_cost,
         });
     }
 
@@ -543,7 +543,7 @@ fn update_spell_hud(
             .as_ref()
             .is_some_and(|key| state.remaining(key) > 0.0);
         let unaffordable =
-            !bevymmo_gameplay::stats::formulas::can_afford_mana(current_mana, entry.energy_cost);
+            !bevymmo_gameplay::stats::formulas::can_afford_mana(current_mana, entry.mana_cost);
         image.color = spell_icon_color(cooling, unaffordable);
     }
 
@@ -630,7 +630,7 @@ mod tests {
             cooldown_key: Some(HudCooldownKey::Ability(AbilityId::new(id))),
             display_name: name.to_string(),
             key_label: key.to_string(),
-            energy_cost: 0.0,
+            mana_cost: 0.0,
         }
     }
 
@@ -639,7 +639,7 @@ mod tests {
             cooldown_key: None,
             display_name: "Empty".to_string(),
             key_label: key.to_string(),
-            energy_cost: 0.0,
+            mana_cost: 0.0,
         }
     }
 
@@ -669,8 +669,8 @@ mod tests {
     #[test]
     fn spell_icon_path_uses_the_ability_id() {
         assert_eq!(
-            spell_icon_path(&AbilityId::new("arcane_bolt")),
-            "abilities/icons/arcane_bolt.png"
+            spell_icon_path(&AbilityId::new("cleave")),
+            "abilities/icons/cleave.png"
         );
         assert_eq!(
             spell_icon_path(&AbilityId::new("lunge")),

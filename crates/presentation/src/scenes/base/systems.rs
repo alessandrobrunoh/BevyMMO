@@ -184,7 +184,7 @@ fn spawn_game_scene_root(commands: &mut Commands) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_state::{init_screen_states, PauseOverlay, Screen};
+    use crate::game_state::{PauseOverlay, Screen, init_screen_states};
     use crate::renderer::RendererPlugin;
     use crate::scenes::base::BaseScenePlugin;
     use bevymmo_network::network::protocol::{EntityColor, Position};

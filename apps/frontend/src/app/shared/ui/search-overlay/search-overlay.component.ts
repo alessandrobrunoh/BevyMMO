@@ -1,12 +1,13 @@
 import { Component, inject, ElementRef, ViewChild, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { EivarButtonComponent } from '../button/button.component';
 import { SearchService, SearchResultItem } from '../../../core/services/search.service';
 
 @Component({
   selector: 'app-search-overlay',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, EivarButtonComponent],
   template: `
     @if (searchService.isOpen()) {
       <div class="search-overlay-backdrop" (click)="onBackdropClick($event)">
@@ -23,18 +24,18 @@ import { SearchService, SearchResultItem } from '../../../core/services/search.s
               (input)="onInputChange($event)"
               (keydown.escape)="searchService.close()"
             />
-            <button class="close-search-btn" (click)="searchService.close()">
+            <app-eivar-button variant="tag" size="sm" class="close-search-btn" (onClick)="searchService.close()">
               ESC
-            </button>
+            </app-eivar-button>
           </div>
 
           <!-- Quick category pills -->
           <div class="quick-tags">
             <span class="tag-label">QUICK JUMP:</span>
-            <button class="quick-tag" (click)="searchService.setQuery('staff')">Channeling Staff</button>
-            <button class="quick-tag" (click)="searchService.setQuery('essence')">Essences</button>
-            <button class="quick-tag" (click)="searchService.setQuery('echo')">Ancient Word: Echo</button>
-            <button class="quick-tag" (click)="searchService.setQuery('alpha')">Alpha 0.2.1</button>
+            <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('staff')">Channeling Staff</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('essence')">Essences</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('echo')">Ancient Word: Echo</app-eivar-button>
+            <app-eivar-button variant="tag" size="sm" class="quick-tag" (onClick)="searchService.setQuery('alpha')">Alpha 0.2.1</app-eivar-button>
           </div>
 
           <!-- Search Results List -->

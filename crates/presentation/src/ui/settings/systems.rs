@@ -12,9 +12,9 @@
 //!   `Window` when they change.
 //! - **`persist_settings_when_changed`** → JSON save when the resource mutates.
 
-use bevy::input::keyboard::{KeyCode, KeyboardInput};
 use bevy::input::ButtonInput;
 use bevy::input::ButtonState;
+use bevy::input::keyboard::{KeyCode, KeyboardInput};
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, Window};
 
@@ -25,8 +25,8 @@ use super::widgets::key_capture::{KeyBindingChanged, KeyCapture};
 use super::widgets::toggle::{Toggle, ToggleDisplay};
 use crate::ui::button::UiButtonAction;
 use crate::ui::settings::state::{
-    save_settings, GameSettings, GameSettingsResource, KeyBinding, KeyModifiers, Resolution,
-    WindowMode,
+    GameSettings, GameSettingsResource, KeyBinding, KeyModifiers, Resolution, WindowMode,
+    save_settings,
 };
 use crate::ui::theme::UiTheme;
 

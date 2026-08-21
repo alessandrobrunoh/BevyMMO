@@ -9,8 +9,8 @@ pub mod key_capture;
 pub mod toggle;
 
 pub use dropdown::{
-    spawn_dropdown, spawn_select, Dropdown, DropdownChanged, DropdownItem, DropdownValueText,
-    Select,
+    Dropdown, DropdownChanged, DropdownItem, DropdownValueText, Select, spawn_dropdown,
+    spawn_select,
 };
-pub use key_capture::{spawn_key_capture, KeyCapture, KeyCaptureDisplay, KeyCaptureLabel};
-pub use toggle::{spawn_checkbox, spawn_toggle, CheckBox, Toggle, ToggleDisplay, ToggleLabel};
+pub use key_capture::{KeyCapture, KeyCaptureDisplay, KeyCaptureLabel, spawn_key_capture};
+pub use toggle::{CheckBox, Toggle, ToggleDisplay, ToggleLabel, spawn_checkbox, spawn_toggle};

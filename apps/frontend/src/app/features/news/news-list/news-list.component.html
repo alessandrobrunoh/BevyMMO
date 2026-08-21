@@ -13,13 +13,15 @@
       <!-- Category Tabs -->
       <div class="category-tabs">
         @for (cat of categories; track cat) {
-          <button
-            class="cat-tab-btn"
-            [class.active]="activeCategory() === cat"
-            (click)="setCategory(cat)"
+          <app-eivar-button
+            variant="tag"
+            size="sm"
+            [active]="activeCategory() === cat"
+            [toggle]="true"
+            (onClick)="setCategory(cat)"
           >
             {{ cat }}
-          </button>
+          </app-eivar-button>
         }
       </div>
 
@@ -34,9 +36,14 @@
           class="news-input"
         />
         @if (searchQuery()) {
-          <button class="clear-btn" (click)="searchQuery.set('')">
-            <span class="material-symbols-outlined">close</span>
-          </button>
+          <app-eivar-button
+            variant="icon-square"
+            size="sm"
+            [iconOnly]="true"
+            icon="close"
+            ariaLabel="Clear search"
+            (onClick)="searchQuery.set('')"
+          ></app-eivar-button>
         }
       </div>
     </div>

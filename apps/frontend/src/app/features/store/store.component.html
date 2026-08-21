@@ -27,13 +27,15 @@
     <div class="store-toolbar stone-panel">
       <div class="category-tabs">
         @for (cat of categories; track cat) {
-          <button
-            class="cat-btn"
-            [class.active]="activeCategory() === cat"
-            (click)="setCategory(cat)"
+          <app-eivar-button
+            variant="tag"
+            size="sm"
+            [active]="activeCategory() === cat"
+            [toggle]="true"
+            (onClick)="setCategory(cat)"
           >
             {{ cat }}
-          </button>
+          </app-eivar-button>
         }
       </div>
     </div>

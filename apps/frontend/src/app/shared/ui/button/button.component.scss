@@ -1,87 +1,75 @@
 @use '../../../../styles/variables' as *;
 
+:host {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+:host(.full-width) {
+  display: block;
+  width: 100%;
+}
+
 .eivar-btn {
-  --button-edge: var(--gold-dark);
-  --button-face: #101315;
-  --button-ink: var(--gold-light);
-  --button-glow: transparent;
+  --button-default: url('/assets/ui/buttons/wide-dark-default.png');
+  --button-hover: url('/assets/ui/buttons/wide-dark-hover.png');
+  --button-pressed: url('/assets/ui/buttons/wide-dark-pressed.png');
+  --button-disabled: url('/assets/ui/buttons/wide-dark-disabled.png');
+  --button-image: var(--button-default);
 
   position: relative;
   isolation: isolate;
-  display: inline-grid;
-  min-width: 132px;
-  min-height: 42px;
-  place-items: center;
-  padding: 0 24px;
-  overflow: hidden;
-  border: 1px solid var(--button-edge);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 10rem;
+  height: 3.25rem;
+  max-width: 100%;
+  padding: 0.45rem 2rem;
+  overflow: visible;
+  border: 0;
   border-radius: 0;
-  background: var(--button-face);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.74), inset 0 1px 0 rgba(255, 236, 182, 0.11), 0 4px 12px rgba(0, 0, 0, 0.38);
-  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px);
-  color: var(--button-ink);
+  background: var(--button-image) center / 100% 100% no-repeat;
+  box-shadow: none;
+  color: #f2d58f;
   cursor: pointer;
   font-family: var(--font-serif);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.115em;
-  line-height: 1;
+  letter-spacing: 0.105em;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  text-shadow: 0 1px 2px rgba(2, 7, 11, 0.96), 0 0 0.45rem rgba(231, 197, 126, 0.28);
   text-transform: uppercase;
-  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition), color var(--transition), background var(--transition);
+  transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), filter 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  -webkit-tap-highlight-color: transparent;
 
-  &::before,
-  &::after {
-    position: absolute;
-    z-index: 0;
-    width: 9px;
-    height: 9px;
-    border-color: var(--gold-light);
-    content: '';
-    opacity: 0.76;
-    transition: opacity var(--transition), transform var(--transition);
-  }
-
-  &::before {
-    top: 3px;
-    left: 3px;
-    border-top: 1px solid;
-    border-left: 1px solid;
-  }
-
-  &::after {
-    right: 3px;
-    bottom: 3px;
-    border-right: 1px solid;
-    border-bottom: 1px solid;
-  }
-
-  &:hover:not(:disabled),
-  &.is-active:not(:disabled) {
+  &:hover:not(:disabled, [aria-disabled='true']) {
+    --button-image: var(--button-hover);
     z-index: 1;
-    border-color: var(--gold-light);
-    box-shadow: inset 0 0 0 1px rgba(255, 225, 154, 0.17), inset 0 1px 0 rgba(255, 244, 208, 0.27), 0 0 0 1px rgba(112, 75, 24, 0.48), 0 0 22px var(--button-glow);
-
-    &::before,
-    &::after {
-      opacity: 1;
-    }
+    transform: translateY(-1px);
   }
 
-  &:hover:not(:disabled) {
-    transform: translateY(-2px);
-  }
-
-  &:active:not(:disabled) {
+  &:active:not(:disabled, [aria-disabled='true']),
+  &.is-active:not(:disabled, [aria-disabled='true']) {
+    --button-image: var(--button-pressed);
     transform: translateY(1px);
-    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7), 0 1px 5px rgba(0, 0, 0, 0.42);
   }
 
-  &:disabled {
-    border-color: #3a3b3a;
-    color: #74736f;
+  &:focus-visible {
+    outline: 3px solid #a4eeff;
+    outline-offset: 3px;
+  }
+
+  &:disabled,
+  &[aria-disabled='true'] {
+    --button-image: var(--button-disabled);
+    color: #9d9a91;
     cursor: not-allowed;
-    filter: grayscale(1);
-    opacity: 0.62;
+    text-shadow: 0 1px 1px rgba(2, 4, 5, 0.9);
   }
 
   &.full-width {
@@ -89,189 +77,233 @@
   }
 
   &.size-sm {
-    min-width: 96px;
-    min-height: 34px;
-    padding: 0 16px;
-    font-size: 0.61rem;
+    min-width: 7.5rem;
+    height: 2.7rem;
+    padding-inline: 1.35rem;
+    font-size: 0.64rem;
   }
 
   &.size-lg {
-    min-width: 228px;
-    min-height: 62px;
-    padding: 0 38px;
-    font-size: 0.82rem;
-    letter-spacing: 0.14em;
+    min-width: min(19rem, 100%);
+    height: 5.35rem;
+    padding-inline: 3.4rem;
+    font-size: 0.86rem;
+    letter-spacing: 0.13em;
   }
 
   &.variant-primary,
   &.variant-gold,
   &.variant-cta {
-    --button-edge: #a97a32;
-    --button-face: linear-gradient(145deg, #211b13 0%, #121313 52%, #1b1710 100%);
-    --button-ink: #f2d58f;
-    --button-glow: rgba(215, 159, 64, 0.46);
+    --button-default: url('/assets/ui/buttons/large-gold-default.png');
+    --button-hover: url('/assets/ui/buttons/large-gold-hover.png');
+    --button-pressed: url('/assets/ui/buttons/large-gold-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/large-gold-disabled.png');
+    color: #fff0bd;
+  }
 
-    &.is-active,
-    &:hover:not(:disabled) {
-      --button-face: linear-gradient(145deg, #5a3d18 0%, #2d2112 52%, #4f3416 100%);
-    }
+  &.variant-primary.size-sm,
+  &.variant-gold.size-sm {
+    --button-default: url('/assets/ui/buttons/compact-gold-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-gold-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-gold-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-gold-disabled.png');
   }
 
   &.variant-secondary,
-  &.variant-navigation {
-    --button-edge: #725b39;
-    --button-face: linear-gradient(145deg, #181919, #0d0f10 54%, #161515);
-    --button-ink: #cfb27b;
-    --button-glow: rgba(211, 161, 80, 0.28);
-    min-width: 120px;
-    min-height: 36px;
-  }
-
-  &.variant-cyan {
-    --button-edge: #4288a3;
-    --button-face: linear-gradient(145deg, #143447, #0d1e29 55%, #102c3b);
-    --button-ink: #b7edff;
-    --button-glow: rgba(60, 203, 255, 0.42);
-  }
-
-  &.variant-ornate {
-    min-height: 4.25rem;
-    padding: 0 2.6rem;
-    border: 0;
-    clip-path: none;
-    color: #d9f6ff;
-    background: url('/assets/images/auth-button.png') center / 100% 100% no-repeat;
-    box-shadow: none;
-    text-shadow: 0 1px 0 rgba(3, 15, 25, 0.9), 0 0 0.6rem rgba(164, 238, 255, 0.42);
-
-    &::before,
-    &::after,
-    .eivar-btn__metal,
-    .eivar-btn__rune {
-      display: none;
-    }
-
-    &:hover:not(:disabled),
-    &.is-active:not(:disabled) {
-      background-image: url('/assets/images/auth-button-hover.png');
-      box-shadow: none;
-      filter: drop-shadow(0 0 0.7rem rgba(60, 203, 255, 0.42));
-    }
-
-    &:active:not(:disabled) {
-      box-shadow: none;
-      filter: brightness(0.92) drop-shadow(0 0 0.4rem rgba(60, 203, 255, 0.35));
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--cyan-light);
-      outline-offset: 2px;
-    }
-  }
-
-  &.variant-outline {
-    --button-edge: #9e7c43;
-    --button-face: transparent;
-    --button-ink: #dfc188;
-    --button-glow: rgba(211, 161, 80, 0.26);
-    border-width: 1px;
-  }
-
+  &.variant-navigation,
+  &.variant-outline,
   &.variant-ghost {
-    --button-edge: transparent;
-    --button-face: transparent;
-    --button-ink: var(--gold-light);
-    box-shadow: none;
-    clip-path: none;
-
-    &::before,
-    &::after,
-    .eivar-btn__metal,
-    .eivar-btn__rune {
-      display: none;
-    }
+    --button-default: url('/assets/ui/buttons/wide-dark-default.png');
+    --button-hover: url('/assets/ui/buttons/wide-dark-hover.png');
+    --button-pressed: url('/assets/ui/buttons/wide-dark-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/wide-dark-disabled.png');
+    color: #e8cf98;
   }
 
   &.variant-tag {
-    --button-edge: #85652f;
-    --button-face: #171411;
-    --button-ink: #d7bd83;
-    min-width: 0;
-    min-height: 32px;
-    padding: 0 18px;
-    font-size: 0.62rem;
+    --button-default: url('/assets/ui/buttons/compact-blue-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-blue-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-blue-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-blue-disabled.png');
+    color: #d9f7ff;
+  }
 
-    .eivar-btn__rune {
-      display: none;
-    }
+  &.variant-tag.size-sm {
+    min-width: 5.75rem;
+    padding-inline: 1rem;
+  }
+
+  &.variant-tag.tone-green {
+    --button-default: url('/assets/ui/buttons/compact-green-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-green-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-green-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-green-disabled.png');
+    color: #eef2b8;
+  }
+
+  &.variant-tag.tone-red {
+    --button-default: url('/assets/ui/buttons/compact-red-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-red-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-red-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-red-disabled.png');
+    color: #ffd5b5;
+  }
+
+  &.variant-tag.tone-gold {
+    --button-default: url('/assets/ui/buttons/compact-gold-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-gold-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-gold-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-gold-disabled.png');
+    color: #fff0bd;
+  }
+
+  &.variant-cyan,
+  &.variant-info {
+    --button-default: url('/assets/ui/buttons/compact-blue-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-blue-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-blue-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-blue-disabled.png');
+    color: #d9f7ff;
+  }
+
+  &.variant-cyan.size-lg,
+  &.variant-info.size-lg,
+  &.variant-ornate {
+    --button-default: url('/assets/ui/buttons/large-blue-default.png');
+    --button-hover: url('/assets/ui/buttons/large-blue-hover.png');
+    --button-pressed: url('/assets/ui/buttons/large-blue-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/large-blue-disabled.png');
+    color: #d9f7ff;
+  }
+
+  &.variant-success {
+    --button-default: url('/assets/ui/buttons/compact-green-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-green-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-green-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-green-disabled.png');
+    color: #eef2b8;
+  }
+
+  &.variant-danger {
+    --button-default: url('/assets/ui/buttons/compact-red-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-red-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-red-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-red-disabled.png');
+    color: #ffd5b5;
+  }
+
+  &.variant-icon-square,
+  &.variant-social,
+  &.variant-icon-circle,
+  &.variant-arrow-left,
+  &.variant-arrow-right {
+    min-width: 3.25rem;
+    width: 3.25rem;
+    height: 3.25rem;
+    padding: 0;
+  }
+
+  &.variant-icon-square.size-sm,
+  &.variant-social.size-sm,
+  &.variant-icon-circle.size-sm,
+  &.variant-arrow-left.size-sm,
+  &.variant-arrow-right.size-sm {
+    min-width: 2.75rem;
+    width: 2.75rem;
+    height: 2.75rem;
   }
 
   &.variant-icon-square,
   &.variant-social {
-    min-width: 46px;
-    width: 46px;
-    min-height: 46px;
-    padding: 0;
-
-    .eivar-btn__rune {
-      display: none;
-    }
+    --button-default: url('/assets/ui/buttons/square-blue-blank.png');
+    --button-hover: url('/assets/ui/buttons/square-blue-blank.png');
+    --button-pressed: url('/assets/ui/buttons/square-blue-blank.png');
+    --button-disabled: url('/assets/ui/buttons/square-blue-blank.png');
   }
 
   &.variant-icon-circle {
-    min-width: 48px;
-    width: 48px;
-    min-height: 48px;
-    padding: 0;
-    border-radius: 50%;
-    clip-path: none;
+    --button-default: url('/assets/ui/buttons/circle-blue-blank.png');
+    --button-hover: url('/assets/ui/buttons/circle-blue-blank.png');
+    --button-pressed: url('/assets/ui/buttons/circle-blue-blank.png');
+    --button-disabled: url('/assets/ui/buttons/circle-blue-blank.png');
+  }
 
-    &::before,
-    &::after {
-      display: none;
+  &.variant-icon-square.tone-green,
+  &.variant-social.tone-green {
+    --button-default: url('/assets/ui/buttons/square-green-blank.png');
+    --button-hover: url('/assets/ui/buttons/square-green-blank.png');
+    --button-pressed: url('/assets/ui/buttons/square-green-blank.png');
+    --button-disabled: url('/assets/ui/buttons/square-green-blank.png');
+  }
+
+  &.variant-icon-circle.tone-green {
+    --button-default: url('/assets/ui/buttons/circle-green-blank.png');
+    --button-hover: url('/assets/ui/buttons/circle-green-blank.png');
+    --button-pressed: url('/assets/ui/buttons/circle-green-blank.png');
+    --button-disabled: url('/assets/ui/buttons/circle-green-blank.png');
+  }
+
+  &.variant-icon-square.tone-red,
+  &.variant-social.tone-red {
+    --button-default: url('/assets/ui/buttons/square-red-blank.png');
+    --button-hover: url('/assets/ui/buttons/square-red-blank.png');
+    --button-pressed: url('/assets/ui/buttons/square-red-blank.png');
+    --button-disabled: url('/assets/ui/buttons/square-red-blank.png');
+  }
+
+  &.variant-icon-circle.tone-red {
+    --button-default: url('/assets/ui/buttons/circle-red-blank.png');
+    --button-hover: url('/assets/ui/buttons/circle-red-blank.png');
+    --button-pressed: url('/assets/ui/buttons/circle-red-blank.png');
+    --button-disabled: url('/assets/ui/buttons/circle-red-blank.png');
+  }
+
+  &.variant-icon-square.tone-gold,
+  &.variant-social.tone-gold {
+    --button-default: url('/assets/ui/buttons/square-gold-blank.png');
+    --button-hover: url('/assets/ui/buttons/square-gold-blank.png');
+    --button-pressed: url('/assets/ui/buttons/square-gold-blank.png');
+    --button-disabled: url('/assets/ui/buttons/square-gold-blank.png');
+  }
+
+  &.variant-icon-circle.tone-gold {
+    --button-default: url('/assets/ui/buttons/circle-gold-blank.png');
+    --button-hover: url('/assets/ui/buttons/circle-gold-blank.png');
+    --button-pressed: url('/assets/ui/buttons/circle-gold-blank.png');
+    --button-disabled: url('/assets/ui/buttons/circle-gold-blank.png');
+  }
+
+  // Default/hover sprites include a baked emblem. These variants overlay a custom icon on the empty frame.
+  &:is(.variant-icon-square, .variant-icon-circle, .variant-social) {
+    &:hover:not(:disabled, [aria-disabled='true']) {
+      filter: brightness(1.14);
     }
 
-    .eivar-btn__rune {
-      display: grid;
-      place-items: center;
-      border: 1px solid rgba(243, 220, 152, 0.5);
-      border-radius: 50%;
+    &:disabled,
+    &[aria-disabled='true'] {
+      filter: grayscale(0.28) brightness(0.78);
     }
+  }
+
+  &.variant-arrow-left {
+    --button-default: url('/assets/ui/buttons/arrow-left-default.png');
+    --button-hover: url('/assets/ui/buttons/arrow-left-hover.png');
+    --button-pressed: url('/assets/ui/buttons/arrow-left-hover.png');
+    --button-disabled: url('/assets/ui/buttons/arrow-left-disabled.png');
+  }
+
+  &.variant-arrow-right {
+    --button-default: url('/assets/ui/buttons/arrow-right-default.png');
+    --button-hover: url('/assets/ui/buttons/arrow-right-hover.png');
+    --button-pressed: url('/assets/ui/buttons/arrow-right-hover.png');
+    --button-disabled: url('/assets/ui/buttons/arrow-right-disabled.png');
   }
 
   &.icon-only {
-    min-width: 42px;
-    width: 42px;
-    min-height: 42px;
+    min-width: 3.25rem;
+    width: 3.25rem;
     padding: 0;
-
-    .eivar-btn__rune {
-      display: none;
-    }
   }
-}
-
-.eivar-btn__metal {
-  position: absolute;
-  z-index: -1;
-  inset: 3px;
-  background-image: radial-gradient(circle at 18% 25%, rgba(255, 240, 195, 0.1) 0 1px, transparent 2px), radial-gradient(circle at 74% 60%, rgba(255, 240, 195, 0.06) 0 1px, transparent 2px), linear-gradient(120deg, transparent 24%, rgba(255, 255, 255, 0.035) 25%, transparent 27%);
-  opacity: 0.82;
-  pointer-events: none;
-}
-
-.eivar-btn__rune {
-  position: absolute;
-  z-index: 0;
-  left: 50%;
-  width: 18px;
-  height: 18px;
-  color: rgba(235, 197, 122, 0.36);
-  font-family: Georgia, serif;
-  font-size: 0.95rem;
-  line-height: 18px;
-  pointer-events: none;
-  transform: translateX(-50%);
 }
 
 .eivar-btn__content {
@@ -280,12 +312,23 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 0.55rem;
+  max-width: 100%;
 }
 
 .eivar-btn__icon {
   display: inline-grid;
   place-items: center;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.icon-only .eivar-btn__content,
+.variant-icon-square .eivar-btn__content,
+.variant-icon-circle .eivar-btn__content,
+.variant-social .eivar-btn__content,
+.variant-arrow-left .eivar-btn__content,
+.variant-arrow-right .eivar-btn__content {
   font-size: 1.15rem;
   line-height: 1;
 }
@@ -296,14 +339,18 @@
 }
 
 @keyframes eivar-button-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 550px) {
+  .eivar-btn.size-lg,
   .eivar-btn.variant-ornate {
-    min-height: 3.25rem;
-    padding: 0 2rem;
-    font-size: 0.68rem;
+    min-width: min(16rem, 100%);
+    height: 4.4rem;
+    padding-inline: 2.6rem;
+    font-size: 0.74rem;
   }
 }
 

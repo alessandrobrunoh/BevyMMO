@@ -14,6 +14,8 @@ pub struct StatsRow {
     pub armor: f32,
     pub movement_speed: f32,
     pub attack_power: f32,
+    pub gathering_speed: f32,
+    pub gathering_bonus: f32,
 }
 
 impl __sdk::InModule for StatsRow {

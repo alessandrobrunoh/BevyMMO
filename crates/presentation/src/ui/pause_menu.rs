@@ -7,7 +7,7 @@
 use bevy::prelude::*;
 
 use crate::game_state::{PauseOverlay, Screen};
-use crate::ui::button::{spawn_button, UiButtonAction};
+use crate::ui::button::{UiButtonAction, spawn_button};
 use crate::ui::text::spawn_text;
 use crate::ui::theme::UiTheme;
 

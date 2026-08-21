@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, HostListener, inject, signal } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { AccountMenuComponent } from '../../../shared/ui/account-menu/account-menu.component';
+import { EivarButtonComponent } from '../../../shared/ui/button/button.component';
 import { AuthService } from '../../services/auth.service';
 import { SearchService } from '../../services/search.service';
 import { ToastService } from '../../services/toast.service';
@@ -9,7 +10,7 @@ import { ToastService } from '../../services/toast.service';
 @Component({
   selector: 'app-header',
   standalone: true,
-  imports: [CommonModule, RouterModule, AccountMenuComponent],
+  imports: [CommonModule, RouterModule, AccountMenuComponent, EivarButtonComponent],
   template: `
     <header class="navbar" [class.scrolled]="isScrolled()">
       <div class="ornamental-shell">
@@ -48,66 +49,57 @@ import { ToastService } from '../../services/toast.service';
           </nav>
 
           <div class="nav-actions">
-            <button type="button" class="nav-action" aria-label="Search" (click)="searchService.open()">
+            <app-eivar-button variant="icon-square" class="nav-action" [iconOnly]="true" ariaLabel="Search" (onClick)="searchService.open()">
               <svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="10.8" cy="10.8" r="6.3"></circle>
                 <path d="m15.5 15.5 4.2 4.2"></path>
               </svg>
-              <span class="action-label">Search</span>
-            </button>
+            </app-eivar-button>
 
-            <button type="button" class="nav-action community-action" aria-label="Community" (click)="onCommunityClick()">
+            <app-eivar-button variant="icon-square" class="nav-action" [iconOnly]="true" ariaLabel="Community" (onClick)="onCommunityClick()">
               <svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="9" cy="8" r="3"></circle>
                 <circle cx="17" cy="9" r="2.3"></circle>
                 <path d="M3.5 19c.4-3.6 2.2-5.4 5.5-5.4s5.1 1.8 5.5 5.4M14.2 14.4c3.8-.7 5.8.8 6.3 4.1"></path>
               </svg>
-              <span class="action-label">Community</span>
-            </button>
+            </app-eivar-button>
 
             @if (authService.isLoggedIn()) {
               <div class="account-wrapper">
-                <button
-                  type="button"
-                  class="nav-action account-btn account-action"
-                  aria-label="Open account menu"
-                  [attr.aria-expanded]="isAccountMenuOpen()"
-                  (click)="toggleAccountMenu()"
+                <app-eivar-button
+                  variant="icon-square"
+                  class="nav-action"
+                  [iconOnly]="true"
+                  ariaLabel="Open account menu"
+                  [ariaExpanded]="isAccountMenuOpen()"
+                  (onClick)="toggleAccountMenu()"
                 >
                   <svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
                     <circle cx="12" cy="8" r="3.4"></circle>
                     <path d="M5.2 20c.5-4.2 2.8-6.3 6.8-6.3s6.3 2.1 6.8 6.3"></path>
                   </svg>
-                  <span class="action-label">Account</span>
-                </button>
+                </app-eivar-button>
                 @if (isAccountMenuOpen()) {
                   <app-account-menu (closeMenu)="isAccountMenuOpen.set(false)"></app-account-menu>
                 }
               </div>
             } @else {
-              <a routerLink="/login" class="nav-action account-action" aria-label="Login">
+              <app-eivar-button variant="icon-square" routerLink="/login" class="nav-action" [iconOnly]="true" ariaLabel="Login">
                 <svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M13.5 5H19v14h-5.5M4 12h10M10.5 8.5 14 12l-3.5 3.5"></path>
                 </svg>
-                <span class="action-label">Login</span>
-              </a>
+              </app-eivar-button>
             }
 
-            <a routerLink="/" fragment="world" class="header-cta" aria-label="Discover Eivar">
-              <picture aria-hidden="true">
-                <source srcset="assets/images/header/header-cta-frame.webp" type="image/webp" />
-                <img src="assets/images/header/header-cta-frame.png" alt="" width="882" height="150" decoding="async" />
-              </picture>
-              <span>Discover Eivar</span>
-            </a>
-
-            <button
-              type="button"
+            <app-eivar-button
+              variant="icon-circle"
+              [tone]="isMobileMenuOpen() ? 'red' : 'blue'"
               class="mobile-menu-button"
-              [attr.aria-label]="isMobileMenuOpen() ? 'Close navigation menu' : 'Open navigation menu'"
-              [attr.aria-expanded]="isMobileMenuOpen()"
-              aria-controls="mobile-navigation"
-              (click)="toggleMobileMenu()"
+              [iconOnly]="true"
+              [ariaLabel]="isMobileMenuOpen() ? 'Close navigation menu' : 'Open navigation menu'"
+              [ariaExpanded]="isMobileMenuOpen()"
+              ariaControls="mobile-navigation"
+              (onClick)="toggleMobileMenu()"
             >
               @if (isMobileMenuOpen()) {
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -118,7 +110,7 @@ import { ToastService } from '../../services/toast.service';
                   <path d="M5 7h14M5 12h14M5 17h14"></path>
                 </svg>
               }
-            </button>
+            </app-eivar-button>
           </div>
         </div>
 
@@ -140,10 +132,10 @@ import { ToastService } from '../../services/toast.service';
         <li><a routerLink="/wiki" (click)="closeMobileMenu()">Wiki</a></li>
         <li><a routerLink="/store" (click)="closeMobileMenu()">Store</a></li>
         <li><a routerLink="/market" (click)="closeMobileMenu()">Market</a></li>
-        <li><button type="button" (click)="searchService.open(); closeMobileMenu()">Search</button></li>
-        <li><button type="button" (click)="onCommunityClick(); closeMobileMenu()">Community</button></li>
+        <li><app-eivar-button variant="navigation" [fullWidth]="true" (onClick)="searchService.open(); closeMobileMenu()">Search</app-eivar-button></li>
+        <li><app-eivar-button variant="navigation" [fullWidth]="true" (onClick)="onCommunityClick(); closeMobileMenu()">Community</app-eivar-button></li>
         @if (authService.isLoggedIn()) {
-          <li><button type="button" (click)="authService.logout(); closeMobileMenu()">Logout</button></li>
+          <li><app-eivar-button variant="danger" [fullWidth]="true" (onClick)="authService.logout(); closeMobileMenu()">Logout</app-eivar-button></li>
         } @else {
           <li><a routerLink="/login" (click)="closeMobileMenu()">Login</a></li>
         }

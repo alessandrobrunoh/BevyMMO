@@ -10,7 +10,7 @@ use crate::ui::theme::UiTheme;
 
 use super::SettingsPanel;
 use crate::ui::settings::state::{GameSettingsResource, Resolution, WindowMode};
-use crate::ui::settings::widgets::dropdown::{spawn_select, DropdownItem};
+use crate::ui::settings::widgets::dropdown::{DropdownItem, spawn_select};
 use crate::ui::settings::widgets::toggle::spawn_checkbox;
 
 #[derive(Component)]

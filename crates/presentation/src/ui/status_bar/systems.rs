@@ -6,7 +6,7 @@ use bevymmo_gameplay::effects::{
     ActiveStatusSnapshot, ActiveStatuses, StatusCategory, StatusId, StatusRegistry,
 };
 
-use crate::game_state::{in_gameplay, Screen};
+use crate::game_state::{Screen, in_gameplay};
 use crate::ui::target_frame::components::{TargetFrame, TargetFrameTarget};
 
 /// Sits just above the ability hotbar (`bottom: 86`) so personal buffs are in

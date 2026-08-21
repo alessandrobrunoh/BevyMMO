@@ -99,7 +99,7 @@ export const MOCK_WIKI_ARTICLES: WikiArticle[] = [
         baseType: 'Linear Projectile',
         description: 'Hurls a concentrated sphere of energy that bursts on impact, dealing kinetic damage to the target.',
         cooldown: '3.5s',
-        energyCost: '25 Mana',
+        manaCost: '25 Mana',
         recommendedEssence: 'Fire (converts burst to explosive burning blast)',
         recommendedModifiers: ['Expand (increases explosion radius by 40%)']
       },
@@ -109,7 +109,7 @@ export const MOCK_WIKI_ARTICLES: WikiArticle[] = [
         baseType: 'Protective Ward',
         description: 'Projects a stationary prism field in front of the caster that absorbs incoming hostile projectiles.',
         cooldown: '12.0s',
-        energyCost: '45 Mana',
+        manaCost: '45 Mana',
         recommendedEssence: 'Life (causes barrier to heal allies standing within)',
         recommendedModifiers: ['Persistence (extends field duration by 3.5s)']
       },
@@ -119,7 +119,7 @@ export const MOCK_WIKI_ARTICLES: WikiArticle[] = [
         baseType: 'Ground Cataclysm',
         description: 'Strikes the staff to the earth, creating a shockwave that knocks back nearby adversaries and fractures the ground.',
         cooldown: '22.0s',
-        energyCost: '80 Mana',
+        manaCost: '80 Mana',
         recommendedEssence: 'Life or Fire',
         recommendedModifiers: ['Expand', 'Persistence'],
         recommendedAncientWord: 'Echo (re-triggers the shockwave after 1.5s delay)'

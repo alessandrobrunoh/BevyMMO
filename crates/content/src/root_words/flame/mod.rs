@@ -1,5 +1,4 @@
-//! Root Word Flame — fire damage with burning potential.
-//! Applies fire tag and increases potency scaling for damage-over-time effects.
+//! Root Word Flame — fire damage with burning.
 
 use bevymmo_props_macro::root_word;
 
@@ -27,13 +26,6 @@ impl FlameRootWord {
 
 impl RootWordEffect for FlameRootWord {
     fn apply_to_blueprint(&self, blueprint: &mut AbilityBlueprint, _params: &AbilityParams) {
-        // Tag as ranged fire damage
-        blueprint.tags.push(crate::abilities::AbilityTag::Ranged);
-        blueprint
-            .tags
-            .push(crate::abilities::AbilityTag::Projectile);
-
-        // Increase potency for fire scaling
         blueprint.params.potency *= Self::FLAME_SCALING;
         blueprint.payload = ManifestationPayload::damage(["burn"]);
     }
@@ -59,42 +51,37 @@ mod tests {
     }
 
     #[test]
-    fn apply_to_blueprint_increases_potency() {
+    fn apply_to_blueprint_writes_burn_without_changing_tags() {
         let word = FlameRootWord;
         let mut blueprint = AbilityBlueprint {
             ability_id: crate::abilities::AbilityId::new("test"),
-            tags: vec![],
-            geometry: crate::abilities::AbilityGeometry::Projectile { speed: 10.0 },
-            cast_mode: crate::abilities::AbilityCastMode::Instant,
-            execution: crate::abilities::blueprint::BlueprintExecution::Base,
+            tags: vec![crate::abilities::AbilityTag::Melee],
+            geometry: crate::abilities::AbilityGeometry::Cone {
+                radius: 5.0,
+                angle_deg: 85.0,
+            },
+            cast_mode: crate::abilities::AbilityCastMode::CastTime,
+            echo: false,
             params: crate::abilities::AbilityParams {
                 potency: 100.0,
-                area: 0.0,
-                range: 20.0,
-                cast_time: 0.0,
-                cooldown: 1.0,
-                energy_cost: 10.0,
+                area: 5.0,
+                range: 5.0,
+                cast_time: 0.25,
+                cooldown: 3.0,
+                mana_cost: 9.0,
             },
             animation: "cast",
             impact_vfx: "fire_impact",
-            impact_delay: 0.5,
+            impact_delay: 0.0,
             stun_seconds: 0.0,
             payload: ManifestationPayload::default(),
         };
-        let params = crate::abilities::AbilityParams {
-            potency: 100.0,
-            area: 0.0,
-            range: 20.0,
-            cast_time: 0.0,
-            cooldown: 1.0,
-            energy_cost: 10.0,
-        };
+        let params = blueprint.params;
 
         crate::abilities::RootWordEffect::apply_to_blueprint(&word, &mut blueprint, &params);
 
         assert!((blueprint.params.potency - 115.0).abs() < f32::EPSILON);
-        assert!(blueprint.has_tag(crate::abilities::AbilityTag::Ranged));
-        assert!(blueprint.has_tag(crate::abilities::AbilityTag::Projectile));
+        assert_eq!(blueprint.tags, vec![crate::abilities::AbilityTag::Melee]);
         assert_eq!(blueprint.payload, ManifestationPayload::damage(["burn"]));
     }
 }

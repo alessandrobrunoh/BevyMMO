@@ -112,6 +112,7 @@ mod tests {
                     rarity: ItemRarity::Common,
                     equippable_into: Some(EquipSlot::Weapon),
                     weight: 0.0,
+                    tradable: true,
                 },
             }
         }

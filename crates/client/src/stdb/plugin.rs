@@ -27,26 +27,27 @@
 //! long as they hold the button.
 
 use crate::app_state::{
-    screen_after_connection_loss, AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus,
-    ConnectionFailure, ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, Screen,
+    AuthFailure, AuthIntent, AuthRequest, AuthState, AuthStatus, ConnectionFailure,
+    ConnectionIntent, ConnectionRequest, DeleteCharacterRequest, Screen,
+    screen_after_connection_loss,
 };
 use crate::local_player::LocalPlayer;
 use crate::movement::{
-    snap_to_ground, step_on_terrain, ClientCollision, ClientSurfaceQuery, LocalMovementFreeze,
-    MoveTarget, TerrainStep,
+    ClientCollision, ClientSurfaceQuery, LocalMovementFreeze, MoveTarget, TerrainStep,
+    snap_to_ground, step_on_terrain,
 };
-use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
+use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState, WorldTextCue};
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
-use bevymmo_domain::movement::{self, predicted_move_dest, reconcile_offset, Reconcile, Step};
-use bevymmo_domain::movement::{movement_intent_allowed, MovementLock};
+use bevymmo_domain::EntityId;
+use bevymmo_domain::movement::{self, Reconcile, Step, predicted_move_dest, reconcile_offset};
+use bevymmo_domain::movement::{MovementLock, movement_intent_allowed};
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
 use bevymmo_domain::stats::events::{ModifierKind, ModifierOp, StatField};
 use bevymmo_domain::stats::modifiers::{
     ActiveStatModifiers, ModifierEffectInstance, ModifierId as StatModifierId, StatModifierInstance,
 };
-use bevymmo_domain::EntityId;
 use bevymmo_gameplay::abilities::{AbilityAim, AncientWordId, KnownAncientLanguage};
 use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
 use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
@@ -54,16 +55,17 @@ use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
 use bevymmo_gameplay::entity::components::{EntityKind, EntityState, GameEntity, PlayerName};
 use bevymmo_gameplay::gathering::{ActiveGather, Harvestable};
 use bevymmo_gameplay::items::components::{Equipment, Inventory};
-use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
+use bevymmo_gameplay::items::{ItemId, ItemRegistry};
+use bevymmo_gameplay::stats::components::{CombatStats, GatheringStats, MovementStats, VitalStats};
 use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
 use bevymmo_network::world_components::{
     AoeZone, EntityColor, LookDirection, NetworkEntityId, Position, ProjectileFlight,
     ProjectileVisual,
 };
 use bevymmo_world::{CollisionGrid, SurfaceQuery};
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use spacetimedb_sdk::{
-    credentials, DbContext, EventTable, Identity, Table, TableWithPrimaryKey, Uuid,
+    DbContext, EventTable, Identity, Table, TableWithPrimaryKey, Uuid, credentials,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -534,6 +536,22 @@ struct AuthResources<'w> {
     failure: ResMut<'w, AuthFailure>,
 }
 
+/// Player-facing messages and the world anchors they need, bundled so adding
+/// [`WorldTextCue`] does not push [`drain_events`] over the argument threshold.
+#[derive(bevy::ecs::system::SystemParam)]
+struct PlayerFacingMessages<'w, 's> {
+    notices: MessageWriter<'w, ServerNotice>,
+    chat_lines: MessageWriter<'w, ChatLine>,
+    world_text: MessageWriter<'w, WorldTextCue>,
+    local_player: Query<'w, 's, (Entity, &'static Position), With<LocalPlayer>>,
+    positions: Query<'w, 's, &'static Position>,
+    items: Option<Res<'w, ItemRegistry>>,
+}
+
+/// Amber for a normal gather tick; brighter gold when the roll granted extra.
+const GATHER_AMBER: Color = Color::srgb(1.0, 0.72, 0.18);
+const GATHER_BONUS_GOLD: Color = Color::srgb(1.0, 0.88, 0.32);
+
 impl LocalCharacter {
     /// Whether `character_id` (from a `game_entity` row's `owner_character_id`,
     /// or a `player` row's own id) is this connection's active character.
@@ -555,6 +573,7 @@ impl Plugin for StdbPlugin {
         app.add_message::<SpellCastEnded>();
         app.add_message::<ServerNotice>();
         app.add_message::<SpellCooldownState>();
+        app.add_message::<WorldTextCue>();
 
         let uri = self.uri.clone();
         let module = self.module.clone();
@@ -944,8 +963,7 @@ fn drain_events(
     mut cast_ended: MessageWriter<SpellCastEnded>,
     mut visual_effects: MessageWriter<SpellVisualEffect>,
     mut cooldowns: MessageWriter<SpellCooldownState>,
-    mut notices: MessageWriter<ServerNotice>,
-    mut chat_lines: MessageWriter<ChatLine>,
+    mut feed: PlayerFacingMessages,
     mut failure: ResMut<ConnectionFailure>,
     mut next_screen: ResMut<NextState<Screen>>,
 ) {
@@ -1118,6 +1136,7 @@ fn drain_events(
                     "gathered {} {} extra={} depleted={}",
                     row.amount, row.item_id, row.extra, row.node_depleted
                 );
+                emit_gather_yield_cue(&row, &state.map, &state.pending, &mut feed);
             }
             RowEvent::SellOrder(row) => {
                 state.markets.orders.insert(row.id, row);
@@ -1319,11 +1338,11 @@ fn drain_events(
                 // through the notice toast too made every message render
                 // twice in the same screen corner (chat.rs + notices/systems.rs).
                 if row.target.is_none() || row.target == local_identity {
-                    chat_lines.write(ChatLine { text: row.text });
+                    feed.chat_lines.write(ChatLine { text: row.text });
                 }
             }
             RowEvent::ReducerRejected(message) => {
-                notices.write(ServerNotice::error(message));
+                feed.notices.write(ServerNotice::error(message));
             }
             RowEvent::JoinRejected(message) => {
                 failure.0 = Some(message);
@@ -1468,6 +1487,10 @@ fn apply_stats(commands: &mut Commands, entity: Entity, row: &EntityStats) {
         MovementStats {
             speed: row.stats.movement_speed,
         },
+        GatheringStats {
+            speed: row.stats.gathering_speed,
+            bonus: row.stats.gathering_bonus,
+        },
     ));
 }
 
@@ -1517,7 +1540,6 @@ fn movement_lock_from_cast(kind: CastKindRow) -> MovementLock {
     match kind {
         CastKindRow::Instant => MovementLock::None,
         CastKindRow::CastTime => MovementLock::CastTime,
-        CastKindRow::Charge => MovementLock::Charge,
         CastKindRow::Channeling => MovementLock::Channel,
     }
 }
@@ -1528,8 +1550,6 @@ fn cast_progress_from(row: &CastState) -> SpellCastProgress {
         spell_id: row.spell_id.clone(),
         kind: match row.kind {
             CastKindRow::Instant | CastKindRow::CastTime => 0,
-            CastKindRow::Charge => 2,
-            // Preserve SpellCastProgress' existing public contract.
             CastKindRow::Channeling => 1,
         },
         elapsed_seconds: row.elapsed_seconds,
@@ -1739,6 +1759,8 @@ fn stat_field_from(name: &str) -> StatField {
         "MaxHealth" => StatField::MaxHealth,
         "MaxMana" => StatField::MaxMana,
         "ManaRegeneration" => StatField::ManaRegeneration,
+        "GatheringSpeed" => StatField::GatheringSpeed,
+        "GatheringBonus" => StatField::GatheringBonus,
         other => {
             warn!("unknown stat field {other:?} from the module; treating it as Speed");
             StatField::Speed
@@ -2488,6 +2510,65 @@ fn to_vec3(v: &Vec3Row) -> Vec3 {
     Vec3::new(v.x, v.y, v.z)
 }
 
+fn item_display_or_id(items: Option<&ItemRegistry>, item_id: &str) -> String {
+    items
+        .and_then(|items| items.get(&ItemId::new(item_id.to_string())))
+        .map(|item| item.display_name().to_string())
+        .unwrap_or_else(|| item_id.to_string())
+}
+
+fn gather_yield_label(amount: u32, extra: u32, item_label: &str) -> (String, Color) {
+    if extra > 0 {
+        (format!("+{amount} {item_label} Bonus!"), GATHER_BONUS_GOLD)
+    } else {
+        (format!("+{amount} {item_label}"), GATHER_AMBER)
+    }
+}
+
+fn gather_yield_world_position(
+    is_local_gatherer: bool,
+    local_position: Option<Vec3>,
+    node_position: Option<Vec3>,
+) -> Option<Vec3> {
+    if is_local_gatherer {
+        local_position
+            .map(|position| position + Vec3::Y * 2.0)
+            .or(node_position)
+    } else {
+        node_position
+    }
+}
+
+fn emit_gather_yield_cue(
+    row: &GatherYieldEvent,
+    map: &StdbEntityMap,
+    pending: &PendingRows,
+    feed: &mut PlayerFacingMessages,
+) {
+    let local = feed.local_player.iter().next();
+    let is_local_gatherer = local.is_some_and(|(entity, _)| map.get(row.entity_id) == Some(entity));
+    let local_position = local.map(|(_, position)| position.0);
+    let node_position = map
+        .get(row.node_entity_id)
+        .and_then(|entity| feed.positions.get(entity).ok().map(|position| position.0))
+        .or_else(|| {
+            pending
+                .entities
+                .get(&row.node_entity_id)
+                .map(|entity| to_vec3(&entity.position))
+        });
+    let Some(world_position) =
+        gather_yield_world_position(is_local_gatherer, local_position, node_position)
+    else {
+        return;
+    };
+
+    let label = item_display_or_id(feed.items.as_deref(), &row.item_id);
+    let (text, color) = gather_yield_label(row.amount, row.extra, &label);
+    feed.world_text
+        .write(WorldTextCue::new(world_position, text).with_color(color));
+}
+
 // ---------------------------------------------------------------------------
 // Party roster
 // ---------------------------------------------------------------------------
@@ -2672,6 +2753,8 @@ mod tests {
                 armor: 10.0,
                 movement_speed: 0.15,
                 attack_power: 12.0,
+                gathering_speed: 0.0,
+                gathering_bonus: 0.0,
             },
             current_mana: 17.0,
         };
@@ -2718,13 +2801,17 @@ mod tests {
 
         let language = known_ancient_language_from(&row);
 
-        assert!(language
-            .root_words
-            .contains(&bevymmo_gameplay::abilities::RootWordId::new("damage")));
+        assert!(
+            language
+                .root_words
+                .contains(&bevymmo_gameplay::abilities::RootWordId::new("damage"))
+        );
         assert!(language.ancient_words.contains(&AncientWordId::new("echo")));
-        assert!(language
-            .base_abilities
-            .contains(&bevymmo_gameplay::abilities::AbilityId::new("arcane_orb")));
+        assert!(
+            language
+                .base_abilities
+                .contains(&bevymmo_gameplay::abilities::AbilityId::new("arcane_orb"))
+        );
     }
 
     #[test]
@@ -2800,14 +2887,18 @@ mod tests {
         let state = crowd_control_state_for(7, &pending);
 
         assert_eq!(state.effects.len(), 2);
-        assert!(state
-            .effects
-            .iter()
-            .any(|e| e.kind == CrowdControlKind::Stun));
-        assert!(state
-            .effects
-            .iter()
-            .any(|e| e.kind == CrowdControlKind::Root));
+        assert!(
+            state
+                .effects
+                .iter()
+                .any(|e| e.kind == CrowdControlKind::Stun)
+        );
+        assert!(
+            state
+                .effects
+                .iter()
+                .any(|e| e.kind == CrowdControlKind::Root)
+        );
         let stun = state
             .effects
             .iter()
@@ -2887,5 +2978,43 @@ mod tests {
                 time_since_last_tick: 0.1,
             }]
         );
+    }
+
+    #[test]
+    fn gather_yield_without_extra_is_amber_amount_and_name() {
+        let (text, color) = gather_yield_label(2, 0, "Wood");
+        assert_eq!(text, "+2 Wood");
+        assert_eq!(color, GATHER_AMBER);
+    }
+
+    #[test]
+    fn gather_yield_with_extra_is_gold_bonus() {
+        let (text, color) = gather_yield_label(3, 1, "wood");
+        assert_eq!(text, "+3 wood Bonus!");
+        assert_eq!(color, GATHER_BONUS_GOLD);
+    }
+
+    #[test]
+    fn gather_yield_anchor_prefers_local_player_then_node() {
+        let local = Vec3::new(1.0, 0.0, 2.0);
+        let node = Vec3::new(4.0, 1.0, 4.0);
+        assert_eq!(
+            gather_yield_world_position(true, Some(local), Some(node)),
+            Some(local + Vec3::Y * 2.0)
+        );
+        assert_eq!(
+            gather_yield_world_position(true, None, Some(node)),
+            Some(node)
+        );
+        assert_eq!(
+            gather_yield_world_position(false, Some(local), Some(node)),
+            Some(node)
+        );
+        assert_eq!(gather_yield_world_position(false, Some(local), None), None);
+    }
+
+    #[test]
+    fn item_label_falls_back_to_id_when_registry_misses() {
+        assert_eq!(item_display_or_id(None, "copper_ore"), "copper_ore");
     }
 }

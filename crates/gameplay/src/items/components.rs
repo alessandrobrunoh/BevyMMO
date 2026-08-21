@@ -332,7 +332,7 @@ mod tests {
             id
         };
         for slot in &mut inv.slots {
-            let mut instance = ItemInstance::new(ItemId::new("mage_staff"));
+            let mut instance = ItemInstance::new(ItemId::new("sword"));
             instance.instance_id = mint();
             *slot = Some(instance);
         }

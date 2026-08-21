@@ -3,9 +3,9 @@
 //! convenience and adds the UI-only [`SettingsTab`] enum (sidebar tabs).
 
 pub use bevymmo_client::user_settings::{
-    load_settings, save_settings, settings_path, GameSettings, GameSettingsResource,
-    GeneralSettings, GraphicsSettings, KeyAction, KeyBinding, KeyModifiers, KeybindSettings,
-    Resolution, WindowMode,
+    GameSettings, GameSettingsResource, GeneralSettings, GraphicsSettings, KeyAction, KeyBinding,
+    KeyModifiers, KeybindSettings, Resolution, WindowMode, load_settings, save_settings,
+    settings_path,
 };
 
 /// Identifies one of the panels shown in the settings sidebar.

@@ -21,13 +21,15 @@ use bevymmo_domain::abilities::root_word::RootWordId;
 use bevymmo_domain::abilities::weapon_abilities::AbilitySelection;
 use bevymmo_domain::abilities::{AbilityId, AncientWordId};
 use bevymmo_domain::effects::{ApplyStatusEffect, EffectSpec};
+use bevymmo_domain::items::EquipSlot;
 use bevymmo_domain::items::components::{Equipment, Inventory};
 use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId};
 use bevymmo_domain::items::registry::ItemId;
-use bevymmo_domain::items::EquipSlot;
 use bevymmo_domain::spells::components::SpellHotbar;
 use bevymmo_domain::spells::registry::SpellId;
-use bevymmo_domain::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
+use bevymmo_domain::stats::components::{
+    CombatStats, GatheringStats, MovementStats, StatsBundleData, VitalStats,
+};
 use glam::Vec3;
 use spacetimedb::SpacetimeType;
 
@@ -162,7 +164,7 @@ impl From<Vec3Row> for Vec3 {
     }
 }
 
-/// The seven numbers that make up a character's stats.
+/// The numbers that make up a character's stats.
 ///
 /// Stored as *base* values, without equipment bonuses. The Bevy server was
 /// careful about this too — it persisted `base_stats_without_equipment` so that
@@ -177,6 +179,8 @@ pub struct StatsRow {
     pub armor: f32,
     pub movement_speed: f32,
     pub attack_power: f32,
+    pub gathering_speed: f32,
+    pub gathering_bonus: f32,
 }
 
 impl From<&StatsBundleData> for StatsRow {
@@ -189,6 +193,8 @@ impl From<&StatsBundleData> for StatsRow {
             armor: s.combat.armor,
             movement_speed: s.movement.speed,
             attack_power: s.combat.attack_power,
+            gathering_speed: s.gathering.speed,
+            gathering_bonus: s.gathering.bonus,
         }
     }
 }
@@ -209,6 +215,10 @@ impl From<StatsRow> for StatsBundleData {
             },
             movement: MovementStats {
                 speed: s.movement_speed,
+            },
+            gathering: GatheringStats {
+                speed: s.gathering_speed,
+                bonus: s.gathering_bonus,
             },
         }
     }

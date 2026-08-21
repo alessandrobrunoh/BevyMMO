@@ -40,12 +40,12 @@ use bevymmo_domain::stats::events::{ModifierOp, StatField};
 use bevymmo_domain::stats::formulas::damage_after_armor;
 use spacetimedb::{ReducerContext, Table, Uuid};
 
-use crate::rows::{equipment_from_rows, StatsRow, EQUIP_SLOTS};
+use crate::rows::{EQUIP_SLOTS, StatsRow, equipment_from_rows};
 use crate::tables::{
-    boss_state, crowd_control, damage_event, entity_stats, equipment, game_entity, party_member,
-    periodic_effect, player_stats, stat_modifier, threat, BossPhaseRow, BossState, DamageEventRow,
-    EntityKindRow, EntityStateRow, EntityStats, GameEntity, ModifierKindRow, PeriodicEffect,
-    StatModifier,
+    BossPhaseRow, BossState, DamageEventRow, EntityKindRow, EntityStateRow, EntityStats,
+    GameEntity, ModifierKindRow, PeriodicEffect, StatModifier, boss_state, crowd_control,
+    damage_event, entity_stats, equipment, game_entity, party_member, periodic_effect,
+    player_stats, stat_modifier, threat,
 };
 
 static NON_PLAYER_BASE_STATS: Mutex<Option<HashMap<u64, StatsRow>>> = Mutex::new(None);
@@ -404,6 +404,8 @@ pub fn apply_damage(ctx: &ReducerContext, target: u64, source: Option<u64>, amou
     let effective = damage_after_armor(amount, &bundle.combat);
     let current_health = (row.stats.current_health - effective).max(0.0);
     let killed = current_health <= 0.0;
+    let interrupt_gather =
+        entity.kind == EntityKindRow::Player && entity.owner_character_id.is_some();
 
     ctx.db.entity_stats().entity_id().update(EntityStats {
         stats: StatsRow {
@@ -414,6 +416,10 @@ pub fn apply_damage(ctx: &ReducerContext, target: u64, source: Option<u64>, amou
     });
     if killed {
         kill(ctx, entity);
+    }
+
+    if interrupt_gather {
+        crate::sim::gathering::cancel_session(ctx, target);
     }
 
     // Threat is proportional to damage actually dealt, not damage attempted, so
@@ -598,7 +604,8 @@ pub fn apply_healing(ctx: &ReducerContext, target: u64, amount: f32) {
 /// Applies a timed buff or debuff to one stat field of `target`.
 ///
 /// `field` is a [`StatField`] debug name — `"Speed"`, `"Armor"`,
-/// `"AttackPower"`, `"MaxHealth"`, `"MaxMana"`, `"ManaRegeneration"` — matching how
+/// `"AttackPower"`, `"MaxHealth"`, `"MaxMana"`, `"ManaRegeneration"`,
+/// `"GatheringSpeed"`, `"GatheringBonus"` — matching how
 /// `stat_modifier.field` is stored. An unrecognised name is logged and ignored
 /// rather than panicking: the caller is gameplay code, and a typo in a spell
 /// definition should not take down the tick.
@@ -985,6 +992,8 @@ fn apply_stat_op(stats: &mut StatsRow, field: StatField, op: ModifierOp, value: 
         StatField::MaxHealth => &mut stats.max_health,
         StatField::MaxMana => &mut stats.max_mana,
         StatField::ManaRegeneration => &mut stats.mana_regeneration,
+        StatField::GatheringSpeed => &mut stats.gathering_speed,
+        StatField::GatheringBonus => &mut stats.gathering_bonus,
     };
     match op {
         ModifierOp::Add => *slot += value,
@@ -1002,6 +1011,8 @@ fn parse_stat_field(field: &str) -> Option<StatField> {
         "MaxHealth" => Some(StatField::MaxHealth),
         "MaxMana" => Some(StatField::MaxMana),
         "ManaRegeneration" => Some(StatField::ManaRegeneration),
+        "GatheringSpeed" => Some(StatField::GatheringSpeed),
+        "GatheringBonus" => Some(StatField::GatheringBonus),
         _ => None,
     }
 }
@@ -1015,6 +1026,8 @@ fn stat_field_name(field: StatField) -> &'static str {
         StatField::MaxHealth => "MaxHealth",
         StatField::MaxMana => "MaxMana",
         StatField::ManaRegeneration => "ManaRegeneration",
+        StatField::GatheringSpeed => "GatheringSpeed",
+        StatField::GatheringBonus => "GatheringBonus",
     }
 }
 

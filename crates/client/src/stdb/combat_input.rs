@@ -96,5 +96,5 @@ fn armor_cast_info(
     let ability_id =
         bevymmo_gameplay::abilities::resolve_armor_ability(loadout, &instance.ability_selection)?;
     let ability = abilities.get(ability_id)?;
-    Some((ability.base_params().energy_cost, ability.geometry()))
+    Some((ability.base_params().mana_cost, ability.geometry()))
 }

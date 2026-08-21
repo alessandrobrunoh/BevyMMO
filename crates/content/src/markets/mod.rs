@@ -13,12 +13,7 @@ pub fn default_markets() -> MarketRegistry {
         id: MarketId::new(MARKET_1_ID),
         display_name: "Market 1".into(),
         fee_bps: MARKET_1_FEE_BPS,
-        allowed_item_ids: vec![
-            ItemId::new("bow"),
-            ItemId::new("sword"),
-            ItemId::new("hammer"),
-            ItemId::new("mage_staff"),
-        ],
+        allowed_item_ids: vec![ItemId::new("sword")],
     });
     registry.register(MarketDefinition {
         id: MarketId::new(MARKET_2_ID),
@@ -46,5 +41,23 @@ mod tests {
         assert!(!two.allows(&ItemId::new("sword")));
         assert!(two.allows(&ItemId::new("simple_helm")));
         assert!(!one.allows(&ItemId::new("simple_helm")));
+    }
+
+    #[test]
+    fn allowlisted_items_are_tradable() {
+        let items = crate::item_definitions::default_items();
+        for market in default_markets().iter() {
+            for item_id in &market.allowed_item_ids {
+                let item = items.get(item_id).unwrap_or_else(|| {
+                    panic!("allowlist id {} is not a registered item", item_id.as_str())
+                });
+                assert!(
+                    item.tradable(),
+                    "{} is on {} but tradable = false",
+                    item_id.as_str(),
+                    market.id.as_str()
+                );
+            }
+        }
     }
 }

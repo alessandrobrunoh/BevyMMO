@@ -12,7 +12,7 @@ use crate::ui::theme::UiTheme;
 use super::SettingsPanel;
 use crate::ui::settings::state::GameSettingsResource;
 use crate::ui::settings::widgets::{
-    dropdown::{spawn_select, DropdownItem},
+    dropdown::{DropdownItem, spawn_select},
     toggle::spawn_checkbox,
 };
 #[derive(Component)]

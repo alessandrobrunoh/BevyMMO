@@ -128,30 +128,6 @@
     display: flex;
     gap: 0.45rem;
     flex-wrap: wrap;
-
-    .cat-btn {
-      padding: 0.35rem 0.85rem;
-      background: rgba(16, 45, 71, 0.08);
-      border: 1px solid rgba(117, 107, 90, 0.3);
-      border-radius: var(--radius-xs);
-      font-family: var(--font-serif);
-      font-size: 0.78rem;
-      font-weight: 700;
-      color: var(--text-dark);
-      cursor: pointer;
-      transition: all var(--transition);
-
-      &:hover {
-        background: var(--blue-800);
-        color: #ffffff;
-      }
-
-      &.active {
-        background: var(--blue-850);
-        color: var(--gold-light);
-        border-color: var(--gold);
-      }
-    }
   }
 }
 
@@ -193,19 +169,7 @@
       color: var(--blue-850);
     }
 
-    .reset-hall-btn {
-      background: none;
-      border: none;
-      color: var(--color-danger);
-      cursor: pointer;
-      font-size: 0.75rem;
-      font-weight: 700;
-      padding-left: 0.35rem;
 
-      &:hover {
-        text-decoration: underline;
-      }
-    }
   }
 }
 

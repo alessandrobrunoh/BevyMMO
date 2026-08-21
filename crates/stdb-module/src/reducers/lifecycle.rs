@@ -293,7 +293,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         gold: 0,
     });
     crate::reducers::economy::ensure_account_economy(ctx, account_id);
-    crate::reducers::items::grant_item(ctx, character_id, "mage_staff")?;
+    crate::reducers::items::grant_item(ctx, character_id, "sword")?;
     ctx.db.equipment().insert(EquipmentTable {
         character_id,
         slots: equipment_to_rows(&Default::default()),
@@ -303,15 +303,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         .known_ancient_language()
         .insert(KnownAncientLanguageTable {
             character_id,
-            root_words: vec![
-                "damage".to_string(),
-                "flame".to_string(),
-                "frost".to_string(),
-                "storm".to_string(),
-                "life".to_string(),
-                "void".to_string(),
-                "stone".to_string(),
-            ],
+            root_words: vec!["flame".to_string(), "life".to_string()],
             ancient_words: vec![
                 "echo".to_string(),
                 "twin".to_string(),
@@ -321,9 +313,9 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
                 "reversal".to_string(),
             ],
             base_abilities: vec![
-                "arcane_bolt".to_string(),
-                "arcane_wave".to_string(),
-                "great_manifestation".to_string(),
+                "cleave".to_string(),
+                "lunge".to_string(),
+                "blade_storm".to_string(),
             ],
         });
 

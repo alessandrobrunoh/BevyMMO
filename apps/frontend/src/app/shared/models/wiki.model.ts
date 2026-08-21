@@ -27,7 +27,7 @@ export interface AbilityDefinition {
   baseType: string;
   description: string;
   cooldown: string;
-  energyCost: string;
+  manaCost: string;
   recommendedEssence?: string;
   recommendedModifiers?: string[];
   recommendedAncientWord?: string;

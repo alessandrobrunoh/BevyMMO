@@ -16,7 +16,8 @@ use crate::abilities::BaseAbilityRegistry;
     potency = 235.0,
     cast_time = 0.7,
     cooldown = 22.0,
-    energy_cost = 40.0,
+    mana_cost = 40.0,
+    channeling = (tick_interval = 0.2, movement = InterruptOnMove),
     animation = "sword_ultimate",
     impact_vfx = "blade_storm_impact",
 )]
@@ -25,4 +26,24 @@ pub struct BladeStorm;
 /// Adds this content package to the base-ability registry.
 pub fn register(registry: &mut BaseAbilityRegistry) {
     BladeStorm::register(registry);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevymmo_gameplay::abilities::{AbilityCastMode, BaseAbility, ChannelMovementPolicy};
+
+    #[test]
+    fn blade_storm_is_channeling() {
+        match BladeStorm.cast_mode() {
+            AbilityCastMode::Channeling {
+                tick_interval_seconds,
+                movement_policy,
+            } => {
+                assert!((tick_interval_seconds - 0.2).abs() < f32::EPSILON);
+                assert_eq!(movement_policy, ChannelMovementPolicy::InterruptOnMove);
+            }
+            other => panic!("expected Channeling, got {other:?}"),
+        }
+    }
 }

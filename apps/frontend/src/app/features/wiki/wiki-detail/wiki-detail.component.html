@@ -205,13 +205,13 @@
             </div>
             <ul class="toc-list">
               @if (art.abilities && art.abilities.length > 0) {
-                <li><button class="toc-link" (click)="scrollToSection('abilities-section')">Weapon Abilities</button></li>
+                <li><app-eivar-button variant="ghost" size="sm" (onClick)="scrollToSection('abilities-section')">Weapon Abilities</app-eivar-button></li>
               }
               @if (art.runeFormulas && art.runeFormulas.length > 0) {
-                <li><button class="toc-link" (click)="scrollToSection('formulas-section')">Harmonic Builds</button></li>
+                <li><app-eivar-button variant="ghost" size="sm" (onClick)="scrollToSection('formulas-section')">Harmonic Builds</app-eivar-button></li>
               }
               @for (sec of art.sections; track sec.id) {
-                <li><button class="toc-link" (click)="scrollToSection(sec.id)">{{ sec.title }}</button></li>
+                <li><app-eivar-button variant="ghost" size="sm" (onClick)="scrollToSection(sec.id)">{{ sec.title }}</app-eivar-button></li>
               }
             </ul>
           </div>

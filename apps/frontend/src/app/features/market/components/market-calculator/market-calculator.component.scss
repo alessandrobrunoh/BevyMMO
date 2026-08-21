@@ -95,24 +95,6 @@
   display: flex;
   gap: 0.3rem;
   margin-top: 0.3rem;
-
-  button {
-    background: rgba(16, 45, 71, 0.08);
-    border: 1px solid rgba(117, 107, 90, 0.3);
-    color: var(--text-dark);
-    font-family: var(--font-serif);
-    font-size: 0.7rem;
-    font-weight: 700;
-    padding: 0.15rem 0.5rem;
-    border-radius: 2px;
-    cursor: pointer;
-    transition: all 120ms ease;
-
-    &:hover {
-      background: var(--blue-800);
-      color: #ffffff;
-    }
-  }
 }
 
 .calc-summary-panel {

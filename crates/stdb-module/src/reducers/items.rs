@@ -1004,14 +1004,14 @@ mod greeter_stock_tests {
     use super::*;
 
     #[test]
-    fn greeter_accepts_the_four_alpha_weapons() {
-        assert!(is_greeter_stock("bow"));
+    fn greeter_accepts_the_sword_and_simple_armor() {
         assert!(is_greeter_stock("sword"));
-        assert!(is_greeter_stock("hammer"));
-        assert!(is_greeter_stock("mage_staff"));
         assert!(is_greeter_stock("simple_helm"));
         assert!(is_greeter_stock("simple_cuirass"));
         assert!(is_greeter_stock("simple_buckler"));
+        assert!(!is_greeter_stock("bow"));
+        assert!(!is_greeter_stock("hammer"));
+        assert!(!is_greeter_stock("mage_staff"));
     }
 
     #[test]

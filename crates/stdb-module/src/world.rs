@@ -39,13 +39,14 @@ use std::sync::OnceLock;
 use bevymmo_domain::content::placeables::register_all;
 use bevymmo_domain::placeables::{InteractionKind, PlaceableRegistry};
 use bevymmo_domain::world::{CollisionGrid, GroundContact, MapManifest, Prop, SurfaceQuery};
-use spacetimedb::{reducer, ReducerContext, Table};
+use spacetimedb::{ReducerContext, Table, reducer};
 
 use crate::rows::{StatsRow, Vec3Row};
+use crate::sim::gathering::far_future;
 use crate::tables::{
-    boss_state, entity_stats, game_entity, grid_cell, npc, player, prop_override, resource_node,
     BossPhaseRow, BossState, ColorRow, EntityKindRow, EntityStateRow, EntityStats, GameEntity, Npc,
-    PropOverride, ResourceNode,
+    PropOverride, ResourceNode, boss_state, entity_stats, game_entity, grid_cell, npc, player,
+    prop_override, resource_node,
 };
 
 // `EMBEDDED_MAPS: &[(&str, &[u8])]`, one entry per authored map.
@@ -342,9 +343,15 @@ fn upsert_resource_node(
 ) {
     let placement_id = prop.id.clone();
     if let Some(existing) = ctx.db.resource_node().placement_id().find(&placement_id) {
+        let next_regen_at = if existing.current_pieces >= config.max_pieces {
+            far_future()
+        } else {
+            existing.next_regen_at
+        };
         ctx.db.resource_node().placement_id().update(ResourceNode {
             entity_id,
             kind_id: prop.kind.as_str().to_string(),
+            next_regen_at,
             ..existing
         });
         return;
@@ -355,6 +362,7 @@ fn upsert_resource_node(
         kind_id: prop.kind.as_str().to_string(),
         current_pieces: config.max_pieces,
         last_regen_at: ctx.timestamp,
+        next_regen_at: far_future(),
     });
 }
 

@@ -21,10 +21,10 @@
 //!   is the same function the hotbar path ends in.
 
 use bevymmo_domain::abilities::{
-    cast_armor_inscribed_ability, cast_root_inscribed_slot, charge_release_aim,
-    movement_lock_for_ability, resolve_active_ability, resolve_armor_ability,
-    resolve_armor_inscribed_ability, resolve_root_inscribed_slot, AbilityCastMode, AbilitySlot,
-    BlueprintExecution, CastBlockedReason, ChannelMovementPolicy as EidolonChannelMovementPolicy,
+    cast_armor_inscribed_ability, cast_root_inscribed_slot, movement_lock_for_ability,
+    resolve_active_ability, resolve_armor_ability, resolve_armor_inscribed_ability,
+    resolve_root_inscribed_slot, AbilityCastMode, AbilitySlot, CastBlockedReason,
+    ChannelMovementPolicy as EidolonChannelMovementPolicy,
 };
 use bevymmo_domain::movement::{should_face_cast_target, MovementLock};
 // Legacy spell channeling uses spells::context::ChannelMovementPolicy.
@@ -39,7 +39,7 @@ use spacetimedb::{reducer, ReducerContext, Table};
 
 use crate::reducers::lifecycle::{caller_character, caller_entity};
 use crate::rows::{equipment_from_rows, known_ancient_language_from_rows, Vec3Row};
-use crate::sim::spells::{self, ability_loadout_for_item, fire_eidolon_ability};
+use crate::sim::spells::{self, ability_loadout_for_item};
 use crate::tables::{
     cast_state, equipment, game_entity, hotbar, known_ancient_language, CastKindRow, CastSourceRow,
     CastState, EntityStateRow, GameEntity,
@@ -175,9 +175,8 @@ pub fn cast_spell(
 /// a cast that already ended is not an error: the tick may well have finished it
 /// between the key going up and this reducer running.
 ///
-/// For Charge, `target_position` / `target_entity` are the aim at release (the
-/// cursor may have moved during the hold). Missing values fall back to the
-/// aim stored when the charge started.
+/// Ends a running Channeling cast. Instant never opens `cast_state`; CastTime
+/// auto-fires in `advance_casts`.
 #[reducer]
 pub fn release_cast(
     ctx: &ReducerContext,
@@ -185,6 +184,7 @@ pub fn release_cast(
     target_entity: Option<u64>,
     target_position: Option<Vec3Row>,
 ) -> Result<(), String> {
+    let _ = (target_entity, target_position);
     let caster = caller_entity(ctx)?;
     let Some(cast) = ctx.db.cast_state().entity_id().find(&caster.entity_id) else {
         return Ok(());
@@ -198,47 +198,7 @@ pub fn release_cast(
             // Channeling ends without interruption (ran full duration or player released).
             spells::end_cast(ctx, caster.entity_id, cast.spell_id, false);
         }
-        CastKindRow::Charge => {
-            // Charge fires on release. Resolve and fire the ability now.
-            if let Some(caster_entity) = ctx.db.game_entity().entity_id().find(&caster.entity_id) {
-                let (aim_position, aim_entity) = charge_release_aim(
-                    cast.target_position.map(Vec3::from),
-                    cast.target_entity,
-                    target_position.map(Vec3::from),
-                    target_entity,
-                );
-                let caster_entity =
-                    face_target(ctx, caster_entity, aim_position, MovementLock::Charge);
-                let charged = if cast.required_seconds > 0.0 {
-                    (cast.elapsed_seconds / cast.required_seconds).clamp(0.25, 1.0)
-                } else {
-                    1.0
-                };
-                match fire_eidolon_ability(
-                    ctx,
-                    &caster_entity,
-                    &cast.spell_id,
-                    aim_position,
-                    aim_entity,
-                    cast.source,
-                    charged,
-                ) {
-                    Some(cd) => {
-                        spells::start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
-                        spells::end_cast(ctx, caster.entity_id, cast.spell_id, false);
-                    }
-                    None => {
-                        // Resolution failed (equipment changed, etc.) — interrupt.
-                        spells::end_cast(ctx, caster.entity_id, cast.spell_id, true);
-                    }
-                }
-            } else {
-                spells::end_cast(ctx, caster.entity_id, cast.spell_id, true);
-            }
-        }
-        // CastTime or Instant should not normally receive release_cast (Instant
-        // doesn't open a cast_state; CastTime auto-fires in advance_casts). Treat
-        // as interruption for safety.
+        // Instant does not open a cast_state. CastTime auto-fires in advance_casts.
         _ => {
             spells::end_cast(ctx, caster.entity_id, cast.spell_id, true);
         }
@@ -334,20 +294,18 @@ pub fn eidolon_cast(
         target_entity,
         target_position.map(Vec3::from),
     )?;
-    spells::spend_energy(ctx, caster.entity_id, preview.params.energy_cost)?;
-    // Branch on the resolved ability's cast mode and execution.
+    spells::spend_mana(ctx, caster.entity_id, preview.params.mana_cost)?;
     let cast_mode = preview.ability.cast_mode();
-    let is_charge = preview.blueprint.execution == BlueprintExecution::Charge;
     let caster = face_target(
         ctx,
         caster,
         target_position.map(Vec3::from),
-        movement_lock_for_ability(cast_mode, is_charge),
+        movement_lock_for_ability(cast_mode),
     );
     cancel_active_cast(ctx, caster.entity_id);
 
-    match (cast_mode, is_charge) {
-        (AbilityCastMode::Instant, _) => {
+    match cast_mode {
+        AbilityCastMode::Instant => {
             // Original path: execute immediately.
             let combat = spells::combat_stats(ctx, caster.entity_id)
                 .ok_or_else(|| "caster has no stats".to_string())?;
@@ -411,8 +369,7 @@ pub fn eidolon_cast(
             );
             Ok(())
         }
-        (AbilityCastMode::CastTime, false) => {
-            // Standard CastTime wind-up (auto-fires when elapsed >= required).
+        AbilityCastMode::CastTime => {
             let required_seconds = preview.params.cast_time;
             let target_position = target_position.map(Vec3::from);
 
@@ -429,44 +386,14 @@ pub fn eidolon_cast(
                 target_entity,
                 channel_tick_accumulator: 0.0,
                 tick_interval_seconds: 0.0,
-                // CastTime always interrupts on movement; this field is
-                // only meaningful for Channeling.
                 channel_movement_interrupts: true,
             });
             Ok(())
         }
-        (AbilityCastMode::CastTime, true) => {
-            // Charge execution: hold-to-charge, fires on release (not auto-fire).
-            // required_seconds is the max charge duration; the ability scales with
-            // how long the player held before releasing.
-            let required_seconds = preview.params.cast_time;
-            let target_position = target_position.map(Vec3::from);
-
-            let caster = stop_movement(ctx, caster);
-            ctx.db.cast_state().insert(CastState {
-                entity_id: caster.entity_id,
-                spell_id: ability_id.as_str().to_string(),
-                kind: CastKindRow::Charge,
-                source: CastSourceRow::Eidolon,
-                elapsed_seconds: 0.0,
-                required_seconds,
-                start_position: caster.position,
-                target_position: target_position.map(Vec3Row::from),
-                target_entity,
-                channel_tick_accumulator: 0.0,
-                tick_interval_seconds: 0.0,
-                // Charge interrupts on movement (same as CastTime).
-                channel_movement_interrupts: true,
-            });
-            Ok(())
-        }
-        (
-            AbilityCastMode::Channeling {
-                tick_interval_seconds,
-                movement_policy,
-            },
-            _,
-        ) => {
+        AbilityCastMode::Channeling {
+            tick_interval_seconds,
+            movement_policy,
+        } => {
             let required_seconds = preview.params.cast_time.max(0.1);
             let target_position = target_position.map(Vec3::from);
 
@@ -588,9 +515,8 @@ pub fn armor_cast(
         target_entity,
         target_position.map(Vec3::from),
     )?;
-    spells::spend_energy(ctx, caster.entity_id, preview.params.energy_cost)?;
+    spells::spend_mana(ctx, caster.entity_id, preview.params.mana_cost)?;
     let cast_mode = preview.ability.cast_mode();
-    let is_charge = preview.blueprint.execution == BlueprintExecution::Charge;
     let source = match target_slot {
         EquipSlot::Helmet => CastSourceRow::Helmet,
         EquipSlot::Armor => CastSourceRow::Armor,
@@ -602,7 +528,7 @@ pub fn armor_cast(
         ctx,
         caster,
         target_position.map(Vec3::from),
-        movement_lock_for_ability(cast_mode, is_charge),
+        movement_lock_for_ability(cast_mode),
     );
     cancel_active_cast(ctx, caster.entity_id);
     if matches!(cast_mode, AbilityCastMode::Instant) {
@@ -623,9 +549,6 @@ pub fn armor_cast(
     let caster = stop_movement(ctx, caster);
     let (kind, required_seconds, tick_interval_seconds, channel_movement_interrupts) =
         match cast_mode {
-            AbilityCastMode::CastTime if is_charge => {
-                (CastKindRow::Charge, preview.params.cast_time, 0.0, true)
-            }
             AbilityCastMode::CastTime => {
                 (CastKindRow::CastTime, preview.params.cast_time, 0.0, true)
             }

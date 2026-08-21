@@ -14,7 +14,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
-use crate::game_state::{not_typing, Screen};
+use crate::game_state::{Screen, not_typing};
 use crate::renderer::RenderSync;
 
 pub struct BaseScenePlugin;

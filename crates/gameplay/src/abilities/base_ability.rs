@@ -164,7 +164,7 @@ pub struct AbilityParams {
     pub range: f32,
     pub cast_time: f32,
     pub cooldown: f32,
-    pub energy_cost: f32,
+    pub mana_cost: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -540,7 +540,7 @@ mod tests {
                 range: 0.0,
                 cast_time: 0.5,
                 cooldown: 5.0,
-                energy_cost: 10.0,
+                mana_cost: 10.0,
             }
         }
         fn animation(&self) -> &'static str {
@@ -591,7 +591,7 @@ mod tests {
                 range: 2.0,
                 cast_time: 0.0,
                 cooldown: 1.0,
-                energy_cost: 5.0,
+                mana_cost: 5.0,
             }
         }
         fn animation(&self) -> &'static str {
@@ -623,7 +623,7 @@ mod tests {
                 range: 20.0,
                 cast_time: 0.8,
                 cooldown: 6.0,
-                energy_cost: 15.0,
+                mana_cost: 15.0,
             }
         }
         fn animation(&self) -> &'static str {
@@ -655,7 +655,7 @@ mod tests {
                 range: 0.0,
                 cast_time: 3.0,
                 cooldown: 10.0,
-                energy_cost: 30.0,
+                mana_cost: 30.0,
             }
         }
         fn animation(&self) -> &'static str {

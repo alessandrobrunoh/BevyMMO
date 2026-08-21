@@ -44,9 +44,14 @@
   </div>
 
   <!-- Floating Scroll Rune Indicator -->
-  <button class="scroll-rune" (click)="scrollToSection('world')" aria-label="Scroll down">
-    ◇
-  </button>
+  <app-eivar-button
+    variant="icon-circle"
+    class="scroll-rune"
+    [iconOnly]="true"
+    icon="arrow_downward"
+    ariaLabel="Scroll down"
+    (onClick)="scrollToSection('world')"
+  ></app-eivar-button>
 </section>
 
 <!-- =======================================================
@@ -334,11 +339,9 @@
         </div>
 
         <div class="news-more">
-          <a routerLink="/news">
-            <button class="eivar-button secondary">
-              View All News
-            </button>
-          </a>
+          <app-eivar-button variant="secondary" size="md" [routerLink]="['/news']">
+            View All News
+          </app-eivar-button>
         </div>
       </section>
 
@@ -381,9 +384,9 @@
           <p>
             Eivar Online is in active development. Many features, regions, and systems are still being crafted. Your feedback helps shape the world.
           </p>
-          <a (click)="onLearnMore()" class="read-more-light">
+          <app-eivar-button variant="secondary" size="sm" (onClick)="onLearnMore()">
             Learn More →
-          </a>
+          </app-eivar-button>
         </div>
       </article>
 
@@ -399,9 +402,9 @@
           <p>
             Share ideas, get updates, and connect with fellow adventurers. Join our Discord and be part of building Eivar.
           </p>
-          <a (click)="onJoinDiscord()" class="read-more-light">
+          <app-eivar-button variant="info" size="sm" (onClick)="onJoinDiscord()">
             Join Discord →
-          </a>
+          </app-eivar-button>
         </div>
       </article>
     </div>

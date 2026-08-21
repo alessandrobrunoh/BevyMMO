@@ -13,6 +13,7 @@ pub mod crowd_control_bar;
 pub mod death_screen;
 pub mod debug_position;
 pub mod entity_bar;
+pub mod floating_text;
 pub mod gather_bar;
 
 pub mod inventory;

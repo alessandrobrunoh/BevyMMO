@@ -134,177 +134,24 @@
         display: none;
       }
     }
-
-    .hero-btn {
-      position: relative;
-      isolation: isolate;
-      min-height: 52px;
-      padding: 0 28px;
-      border-radius: var(--radius-xs);
-      font-family: var(--font-serif);
-      font-size: 0.86rem;
-      font-weight: 700;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      cursor: pointer;
-      overflow: hidden;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      transition: all var(--transition);
-
-      .btn-shimmer {
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(
-          105deg,
-          transparent 20%,
-          rgba(255, 255, 255, 0.32) 50%,
-          transparent 80%
-        );
-        transform: translateX(-100%);
-        transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
-        pointer-events: none;
-        z-index: 2;
-      }
-
-      .btn-text {
-        position: relative;
-        z-index: 3;
-        white-space: nowrap;
-      }
-
-      &:hover {
-        transform: translateY(-2px);
-
-        .btn-shimmer {
-          transform: translateX(100%);
-        }
-      }
-
-      &:active {
-        transform: translateY(1px);
-      }
-
-      // Primary Hero Discover Button
-      &.hero-btn-discover {
-        color: #14212e;
-        background: linear-gradient(180deg, #fce6a6 0%, #d8ae53 45%, #a87920 100%);
-        border: 1px solid #fff0c7;
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.9),
-          inset 0 -1px 0 rgba(0, 0, 0, 0.35),
-          0 8px 24px rgba(0, 0, 0, 0.6),
-          0 0 22px rgba(212, 173, 87, 0.45);
-        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
-
-        .btn-rune-spark {
-          position: relative;
-          z-index: 3;
-          font-size: 0.95rem;
-          color: #6a4406;
-          transition: transform var(--transition), color var(--transition);
-        }
-
-        &:hover {
-          background: linear-gradient(180deg, #fff3cd 0%, #e6c06a 45%, #be8e2c 100%);
-          border-color: #ffffff;
-          box-shadow:
-            inset 0 1px 0 #ffffff,
-            inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-            0 12px 30px rgba(0, 0, 0, 0.7),
-            0 0 32px rgba(243, 220, 152, 0.75);
-          color: #0b1723;
-
-          .btn-rune-spark {
-            transform: scale(1.3) rotate(45deg);
-            color: #4a2d02;
-          }
-        }
-
-        &:active {
-          box-shadow:
-            inset 0 2px 4px rgba(0, 0, 0, 0.4),
-            0 4px 12px rgba(0, 0, 0, 0.5);
-        }
-      }
-
-      // Secondary Hero News Button
-      &.hero-btn-news {
-        color: #ffffff;
-        background: linear-gradient(180deg, #1c6291 0%, #12476e 45%, #0b324f 100%);
-        border: 1px solid #71d8ff;
-        box-shadow:
-          inset 0 1px 0 rgba(164, 238, 255, 0.7),
-          inset 0 -1px 0 rgba(0, 0, 0, 0.4),
-          0 8px 24px rgba(0, 0, 0, 0.6),
-          0 0 20px rgba(60, 203, 255, 0.35);
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-
-        .btn-arrow {
-          position: relative;
-          z-index: 3;
-          font-size: 1rem;
-          color: var(--cyan-light);
-          transition: transform var(--transition);
-        }
-
-        &:hover {
-          background: linear-gradient(180deg, #267ab2 0%, #175787 45%, #0f3f63 100%);
-          border-color: #a4eeff;
-          box-shadow:
-            inset 0 1px 0 #ffffff,
-            inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-            0 12px 30px rgba(0, 0, 0, 0.7),
-            0 0 30px rgba(60, 203, 255, 0.65);
-
-          .btn-arrow {
-            transform: translateX(4px);
-            color: #ffffff;
-          }
-        }
-
-        &:active {
-          box-shadow:
-            inset 0 2px 4px rgba(0, 0, 0, 0.45),
-            0 4px 12px rgba(0, 0, 0, 0.5);
-        }
-      }
-    }
   }
 
   .scroll-rune {
     position: absolute;
     z-index: 4;
-    bottom: 40px;
+    bottom: 1.5rem;
     left: 50%;
-    color: var(--gold-light);
-    font-size: 1.6rem;
+    animation: floatRune 2.4s ease-in-out infinite;
     transform: translateX(-50%);
-    cursor: pointer;
-    background: transparent;
-    border: none;
-    animation: floatRune 2s ease-in-out infinite;
-    text-shadow: 0 0 12px rgba(208, 174, 97, 0.8);
+  }
 
-    &::after {
-      content: '';
-      display: block;
-      width: 1px;
-      height: 18px;
-      margin: 4px auto 0 auto;
-      background: linear-gradient(180deg, var(--gold-light), transparent);
+  @keyframes floatRune {
+    0%, 100% {
+      transform: translate(-50%, 0);
     }
-  }
-}
-
-@keyframes floatRune {
-  0%, 100% {
-    transform: translate(-50%, 0);
-  }
-  50% {
-    transform: translate(-50%, 10px);
+    50% {
+      transform: translate(-50%, 10px);
+    }
   }
 }
 
@@ -991,19 +838,5 @@
       line-height: 1.6;
     }
 
-    .read-more-light {
-      color: var(--cyan);
-      font-size: 0.72rem;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      cursor: pointer;
-      display: inline-block;
-      transition: color var(--transition);
-
-      &:hover {
-        color: #ffffff;
-      }
-    }
   }
 }

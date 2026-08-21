@@ -171,17 +171,11 @@
   .nav-action {
     position: relative;
     display: inline-flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    width: clamp(66px, 4.6vw, 84px);
-    min-height: 58px;
-    padding: 4px;
+    padding-inline: 8px;
     color: #e8ddc0;
-    font-family: var(--font-ui);
     text-decoration: none;
-    text-transform: uppercase;
     transition: color var(--transition), filter var(--transition), transform var(--transition);
 
     &::before {
@@ -195,8 +189,8 @@
     }
 
     .nav-ico {
-      width: clamp(21px, 1.45vw, 27px);
-      height: clamp(21px, 1.45vw, 27px);
+      width: clamp(22px, 1.55vw, 28px);
+      height: clamp(22px, 1.55vw, 28px);
       color: #d4a44e;
       fill: none;
       stroke: currentColor;
@@ -204,17 +198,6 @@
       stroke-linejoin: round;
       stroke-width: 1.8;
       transition: color var(--transition), filter var(--transition), transform var(--transition);
-    }
-
-    .action-label {
-      overflow: hidden;
-      max-width: 100%;
-      font-size: clamp(0.58rem, 0.6vw, 0.68rem);
-      font-weight: 600;
-      letter-spacing: 0.035em;
-      line-height: 1;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     &:hover {
@@ -230,65 +213,13 @@
     }
   }
 
-  .community-action {
-    width: 86px;
-  }
-
-  .account-action {
-    width: 72px;
-  }
-
   .account-wrapper {
     position: relative;
     display: flex;
     align-items: center;
   }
 
-  .header-cta {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: clamp(126px, 9.2vw, 174px);
-    height: clamp(44px, 3.25vw, 58px);
-    margin-left: clamp(4px, 0.6vw, 12px);
-    color: #f6e7bc;
-    font-family: var(--font-serif);
-    font-size: clamp(0.58rem, 0.59vw, 0.72rem);
-    font-weight: 600;
-    letter-spacing: 0.025em;
-    text-align: center;
-    text-shadow: 0 2px 2px rgba(55, 31, 5, 0.85);
-    text-transform: uppercase;
-    transition: filter var(--transition), transform var(--transition);
-
-    picture,
-    img {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      display: block;
-      pointer-events: none;
-    }
-
-    img {
-      object-fit: fill;
-    }
-
-    span {
-      position: relative;
-      z-index: 1;
-      padding: 0 17px;
-    }
-
-    &:hover {
-      filter: brightness(1.14) drop-shadow(0 0 8px rgba(228, 181, 86, 0.5));
-      transform: translateY(-1px);
-    }
-  }
-
-  .mobile-menu-button {
+  app-eivar-button.mobile-menu-button {
     display: none;
   }
 }
@@ -324,7 +255,8 @@
   }
 
   a,
-  button {
+  button,
+  app-eivar-button {
     display: flex;
     align-items: center;
     width: 100%;
@@ -362,19 +294,6 @@
     }
   }
 
-  .nav-actions {
-    .nav-action {
-      width: 66px;
-    }
-
-    .community-action {
-      width: 78px;
-    }
-
-    .account-action {
-      width: 70px;
-    }
-  }
 }
 
 @media (max-width: 1280px) {
@@ -420,8 +339,7 @@
   }
 
   .desktop-nav,
-  .nav-actions .nav-action,
-  .nav-actions .header-cta {
+  .nav-actions .nav-action {
     display: none;
   }
 
@@ -432,27 +350,19 @@
       display: none;
     }
 
-    .mobile-menu-button {
+    app-eivar-button.mobile-menu-button {
       position: absolute;
       z-index: 6;
       top: 50%;
       right: 24px;
       display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 44px;
-      height: 44px;
-      border: 1px solid rgba(229, 189, 105, 0.7);
-      border-radius: 50%;
       color: #f0d58a;
-      background: rgba(4, 25, 45, 0.82);
-      box-shadow: inset 0 0 0 2px rgba(4, 25, 45, 0.9), 0 0 0 1px rgba(117, 76, 20, 0.72);
       filter: drop-shadow(0 2px 4px rgba(2, 8, 16, 0.85));
       transform: translateY(-50%);
 
       svg {
-        width: 27px;
-        height: 27px;
+        width: 22px;
+        height: 22px;
         fill: none;
         stroke: currentColor;
         stroke-linecap: round;
@@ -493,7 +403,6 @@
   .brand-link,
   .desktop-nav .nav-link,
   .nav-actions .nav-action,
-  .nav-actions .header-cta,
   .mobile-menu {
     transition-duration: 0.01ms;
   }

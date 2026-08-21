@@ -5,7 +5,7 @@ use super::systems;
 
 use bevy::prelude::*;
 
-use crate::game_state::{not_in_gameplay, Screen};
+use crate::game_state::{Screen, not_in_gameplay};
 use crate::renderer::RenderSync;
 use crate::ui::{bar::spawn_bar, text::spawn_text, theme::UiTheme};
 

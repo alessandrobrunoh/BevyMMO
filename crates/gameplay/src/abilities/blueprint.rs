@@ -9,14 +9,6 @@ use super::base_ability::{
 };
 use crate::effects::{ApplyStatusEffect, DamageEffect, EffectSpec, HealEffect, StatusId};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlueprintExecution {
-    Base,
-    Charge,
-    /// The item repeats an eligible manifestation once after the original.
-    Echo,
-}
-
 /// What the Root Word makes the gesture *do*. Geometry stays on the ability;
 /// this is the payload written by `RootWordEffect::apply_to_blueprint`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -72,7 +64,8 @@ pub struct AbilityBlueprint {
     pub tags: Vec<AbilityTag>,
     pub geometry: AbilityGeometry,
     pub cast_mode: AbilityCastMode,
-    pub execution: BlueprintExecution,
+    /// Ancient Word Echo repeats the manifestation once. Not a cast mode.
+    pub echo: bool,
     pub params: AbilityParams,
     pub animation: &'static str,
     pub impact_vfx: &'static str,
@@ -89,7 +82,7 @@ impl AbilityBlueprint {
             tags: ability.tags().to_vec(),
             geometry: ability.geometry(),
             cast_mode: ability.cast_mode(),
-            execution: BlueprintExecution::Base,
+            echo: false,
             params: ability.base_params(),
             animation: ability.animation(),
             impact_vfx: ability.impact_vfx(),
@@ -160,14 +153,14 @@ mod tests {
             tags: vec![],
             geometry: AbilityGeometry::Circle { radius: 4.0 },
             cast_mode: AbilityCastMode::Instant,
-            execution: BlueprintExecution::Base,
+            echo: false,
             params: AbilityParams {
                 potency: 50.0,
                 area: 4.0,
                 range: 0.0,
                 cast_time: 0.0,
                 cooldown: 1.0,
-                energy_cost: 0.0,
+                mana_cost: 0.0,
             },
             animation: "a",
             impact_vfx: "v",

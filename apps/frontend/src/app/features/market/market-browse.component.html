@@ -51,7 +51,7 @@
             (input)="onSearch($event)"
           />
           @if (search()) {
-            <button type="button" class="clear-btn" (click)="clearSearch()">✕</button>
+            <app-eivar-button variant="icon-square" size="sm" [iconOnly]="true" icon="close" (onClick)="clearSearch()" ariaLabel="Clear search"></app-eivar-button>
           }
         </div>
       </div>
@@ -123,7 +123,7 @@
                   {{ item.lowestPrice > 0 ? formatGold(item.lowestPrice) : 'No asks yet' }}
                 </td>
                 <td class="actions">
-                  <app-eivar-button variant="cyan" size="sm" (click)="$event.stopPropagation(); openTicket(item.itemId)">
+                  <app-eivar-button variant="cyan" size="sm" (onClick)="$event.stopPropagation(); openTicket(item.itemId)">
                     View Orders
                   </app-eivar-button>
                 </td>

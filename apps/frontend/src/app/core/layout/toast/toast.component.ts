@@ -1,11 +1,12 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { EivarButtonComponent } from '../../../shared/ui/button/button.component';
 import { ToastService, ToastMessage } from '../../services/toast.service';
 
 @Component({
   selector: 'app-toast-container',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, EivarButtonComponent],
   template: `
     <div class="toast-wrapper" aria-live="polite">
       @for (toast of toastService.toasts(); track toast.id) {
@@ -28,9 +29,9 @@ import { ToastService, ToastMessage } from '../../services/toast.service';
             }
             <p class="toast-msg">{{ toast.message }}</p>
           </div>
-          <button class="toast-close" (click)="toastService.dismiss(toast.id); $event.stopPropagation()" aria-label="Close notification">
+          <app-eivar-button variant="icon-square" class="toast-close" ariaLabel="Close notification" (onClick)="toastService.dismiss(toast.id); $event.stopPropagation()">
             <span class="material-symbols-outlined">close</span>
-          </button>
+          </app-eivar-button>
         </div>
       }
     </div>

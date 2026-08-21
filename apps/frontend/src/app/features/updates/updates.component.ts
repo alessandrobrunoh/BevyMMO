@@ -9,7 +9,7 @@ import { GameUpdate } from '../../shared/models/update.model';
 @Component({
   selector: 'app-updates',
   standalone: true,
-  imports: [CommonModule, RouterModule, PageHeaderComponent],
+  imports: [CommonModule, RouterModule, PageHeaderComponent, EivarButtonComponent],
   templateUrl: './updates.component.html',
   styleUrls: ['./updates.component.scss']
 })

@@ -9,9 +9,9 @@ use super::{
     systems, target_frame, target_indicator,
 };
 
-use bevymmo_client::pointer::{world_pointer_blocked, PointerOnHud};
+use bevymmo_client::pointer::{PointerOnHud, world_pointer_blocked};
 
-use crate::game_state::{not_typing, Screen};
+use crate::game_state::{Screen, not_typing};
 use crate::ui::theme::UiTheme;
 
 /// Camera 2D dedicata alla UI. Resta attiva nel menu e durante la partita,
@@ -81,10 +81,16 @@ impl Plugin for UiPlugin {
 /// Copies UI `Interaction` into [`PointerOnHud`] before world-click systems
 /// run, so a hovered inventory / chat / hotbar / inscription node blocks
 /// move, targeting and NPC pick on the same frame.
-fn refresh_pointer_on_hud(interactions: Query<&Interaction>, mut pointer: ResMut<PointerOnHud>) {
+fn refresh_pointer_on_hud(
+    interactions: Query<(&Interaction, Option<&Pickable>)>,
+    mut pointer: ResMut<PointerOnHud>,
+) {
     let mut pressed = false;
     let mut hovered = false;
-    for interaction in &interactions {
+    for (interaction, pickable) in &interactions {
+        if pickable.is_some_and(|pickable| *pickable == Pickable::IGNORE) {
+            continue;
+        }
         match *interaction {
             Interaction::Pressed => pressed = true,
             Interaction::Hovered => hovered = true,

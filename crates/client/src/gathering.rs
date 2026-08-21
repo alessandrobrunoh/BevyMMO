@@ -165,6 +165,24 @@ pub fn pick_height_for(kind_id: &str, registry: Option<&PlaceableRegistry>) -> f
         .unwrap_or(DEFAULT_PICK_HEIGHT)
 }
 
+/// Closest harvestable the player can actually channel, ignoring the ray.
+/// Used when the click hits the local nametag sitting on the trunk.
+pub fn nearest_harvestable_in_range(
+    player: Vec3,
+    nodes: impl Iterator<Item = (Vec3, u64, u32, f32)>,
+) -> Option<(u64, u32)> {
+    nodes
+        .filter(|(position, _, _, range)| {
+            in_interact_range(player.x, player.z, position.x, position.z, *range)
+        })
+        .min_by(|a, b| {
+            let da = (a.0.x - player.x).hypot(a.0.z - player.z);
+            let db = (b.0.x - player.x).hypot(b.0.z - player.z);
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(_, node_id, pieces, _)| (node_id, pieces))
+}
+
 pub fn interact_range_for(kind_id: &str, registry: Option<&PlaceableRegistry>) -> f32 {
     registry
         .and_then(|registry| registry.resources.get(&KindId::new(kind_id.to_owned())))
@@ -364,6 +382,20 @@ mod tests {
         let base = Vec3::ZERO;
         let ray = downward_ray_through(base + Vec3::X * 4.0);
         assert!(pick_harvestable(ray, [(base, 7, 12, 5.5)].into_iter()).is_none());
+    }
+
+    #[test]
+    fn standing_next_to_a_tree_selects_it_without_a_ray_hit() {
+        let player = Vec3::ZERO;
+        let next_to = nearest_harvestable_in_range(
+            player,
+            [
+                (Vec3::new(2.0, 0.0, 0.0), 1, 10, 6.0),
+                (Vec3::new(40.0, 0.0, 0.0), 2, 10, 6.0),
+            ]
+            .into_iter(),
+        );
+        assert_eq!(next_to, Some((1, 10)));
     }
 
     #[test]

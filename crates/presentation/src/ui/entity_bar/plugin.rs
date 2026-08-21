@@ -5,7 +5,7 @@ use super::systems;
 
 use bevy::prelude::*;
 
-use crate::game_state::{not_in_gameplay, Screen};
+use crate::game_state::{Screen, not_in_gameplay};
 use crate::renderer::RenderSync;
 use crate::ui::{bar::spawn_bar, text::spawn_text, theme::UiTheme};
 
@@ -103,6 +103,7 @@ pub fn spawn_entity_bar(
                 offset: Vec3::new(0.0, 2.0, 0.0),
                 last_viewport: None,
             },
+            Pickable::IGNORE,
         ))
         .id();
 
@@ -117,6 +118,7 @@ pub fn spawn_entity_bar(
                 ..default()
             },
             BackgroundColor(theme.panel_bg),
+            Pickable::IGNORE,
         ))
         .id();
     commands.entity(container).add_child(name_backdrop);
@@ -128,7 +130,9 @@ pub fn spawn_entity_bar(
         theme.name_font_size,
         theme.text_color,
     );
-    commands.entity(name_text).insert(NameText);
+    commands
+        .entity(name_text)
+        .insert((NameText, Pickable::IGNORE));
 
     let (bar, fill) = spawn_bar(
         commands,
@@ -139,10 +143,13 @@ pub fn spawn_entity_bar(
         theme.bar_bg,
         theme.hp_fill,
     );
-    commands.entity(fill).insert(HpBarFill);
+    commands.entity(bar).insert(Pickable::IGNORE);
+    commands.entity(fill).insert((HpBarFill, Pickable::IGNORE));
 
     let hp_text = spawn_text(commands, bar, "?/?", theme.hp_font_size, theme.text_color);
-    commands.entity(hp_text).insert(HpBarText);
+    commands
+        .entity(hp_text)
+        .insert((HpBarText, Pickable::IGNORE));
 
     commands
         .entity(container)

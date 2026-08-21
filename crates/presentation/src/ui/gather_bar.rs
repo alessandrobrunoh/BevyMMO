@@ -8,7 +8,7 @@ use crate::ui::npc_sidebar::systems::cursor_ray;
 use crate::ui::theme::UiTheme;
 use bevymmo_client::gathering::{
     GatherClick, GatherClickAction, TOO_FAR_MESSAGE, gather_click_action, interact_range_for,
-    pick_harvestable, pick_height_for,
+    nearest_harvestable_in_range, pick_harvestable, pick_height_for,
 };
 use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::pointer::{PointerOnHud, hud_wants_pointer};
@@ -71,7 +71,20 @@ fn harvestable_on_click(
         }),
     );
     let already_gathering = local_gather.iter().next().is_some();
-    let hit_node = pick.map(|pick| (pick.node_id, pick.pieces));
+    let hit_node = pick.map(|pick| (pick.node_id, pick.pieces)).or_else(|| {
+        let player_pos = player.single().ok()?.0;
+        nearest_harvestable_in_range(
+            player_pos,
+            nodes.iter().map(|(position, network_id, harvestable)| {
+                (
+                    position.0,
+                    network_id.0,
+                    harvestable.current_pieces,
+                    interact_range_for(harvestable.kind_id.as_str(), placeables.as_deref()),
+                )
+            }),
+        )
+    });
 
     match gather_click_action(GatherClick {
         hit_node,

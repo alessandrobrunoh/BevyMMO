@@ -12,8 +12,15 @@ use bevymmo_network::world_components::{NetworkEntityId, Position};
 use bevymmo_world::CollisionShape;
 
 /// Half-width of the click volume around the trunk. Wider than the greeter's
-/// 1.2 m sphere because the oak canopy is the thing you actually click.
-const GATHER_PICK_HALF_XZ: f32 = 2.0;
+/// 1.2 m sphere because the oak canopy is the thing you actually click, and
+/// `tree_oak_medium`'s crown reaches roughly 4 m out from the trunk.
+const GATHER_PICK_HALF_XZ: f32 = 3.0;
+
+/// The authored collider describes the trunk a character walks into (the oak's
+/// is 0.4 m across and 5.5 m tall), not the silhouette on screen: the same oak
+/// is 11.9 m tall, and everything above 5.5 m is canopy. Clicks land on the
+/// canopy, so the pick volume covers twice the collider's height.
+const PICK_HEIGHT_TO_COLLIDER: f32 = 2.0;
 const DEFAULT_INTERACT_RANGE: f32 = 6.0;
 const DEFAULT_PICK_HEIGHT: f32 = 5.5;
 pub const TOO_FAR_MESSAGE: &str = "Avvicinati all'albero per raccogliere";
@@ -162,6 +169,7 @@ pub fn pick_height_for(kind_id: &str, registry: Option<&PlaceableRegistry>) -> f
             CollisionShape::Sphere { radius } => radius * 2.0,
         })
         .filter(|height| *height > 0.0)
+        .map(|height| height * PICK_HEIGHT_TO_COLLIDER)
         .unwrap_or(DEFAULT_PICK_HEIGHT)
 }
 

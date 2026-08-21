@@ -97,6 +97,21 @@ pub fn camera_view(transform: &Transform) -> GlobalTransform {
 #[derive(Component)]
 struct PlayerModelRoot;
 
+/// Marks an entity whose instantiated glTF scene still carries the layout
+/// offset the asset was exported with, and whose own `Transform` is therefore
+/// the position the model should be drawn at. See [`anchor_scene_layout`].
+///
+/// Deliberately not put on the map's own GLB (`MapSceneVisual` in
+/// [`crate::world`]): that scene's root nodes are the map, and their offsets
+/// *are* where the cliffs and ramps belong.
+#[derive(Component)]
+pub(crate) struct AnchorSceneLayout;
+
+/// Set once an [`AnchorSceneLayout`] scene has been put back on its position,
+/// so the walk runs once per model instead of every frame.
+#[derive(Component)]
+struct SceneLayoutAnchored;
+
 #[derive(Component)]
 struct EquippedWeaponVisual;
 
@@ -170,6 +185,7 @@ impl Plugin for RendererPlugin {
                 sync_equipped_weapon,
                 sync_transforms,
                 anchor_player_model,
+                anchor_scene_layout,
                 update_colors,
                 crate::harvest::update_harvestable_fill,
             )
@@ -219,9 +235,12 @@ fn spawn_entity_meshes(
             if let Some((handle, transform)) =
                 harvestable_scene(harvestable, placeables, asset_server, position.0)
             {
-                commands
-                    .entity(entity)
-                    .insert((WorldAssetRoot(handle), transform, RenderedEntity));
+                commands.entity(entity).insert((
+                    WorldAssetRoot(handle),
+                    transform,
+                    AnchorSceneLayout,
+                    RenderedEntity,
+                ));
                 continue;
             }
         }
@@ -363,7 +382,7 @@ fn upgrade_harvestable_visual(
             .entity(entity)
             .remove::<Mesh3d>()
             .remove::<MeshMaterial3d<StandardMaterial>>()
-            .insert((WorldAssetRoot(handle), transform));
+            .insert((WorldAssetRoot(handle), transform, AnchorSceneLayout));
     }
 }
 
@@ -633,6 +652,54 @@ fn anchor_player_model(
     }
 }
 
+/// Puts an instantiated scene back onto the position its entity was spawned at.
+///
+/// The `models/new/*.glb` models were exported from one Blender scene laid out
+/// in a grid, and each kept that layout in its glTF root node: `tree_oak_medium`
+/// carries `(95, 0, 20)`, `rock_medium` `(110, 0, -20)`. Instantiated under the
+/// entity that positions them, those offsets draw the model tens of metres from
+/// the thing it represents — the harvestable oak was drawn 95 m east of the
+/// `resource_node` the gather click tests against, so clicking the tree on
+/// screen did nothing. Static map props from the same export are off by the
+/// same amount, and their colliders stay at the authored placement.
+///
+/// Only the outermost offset node of each branch is zeroed: parts placed
+/// relative to it (a canopy sitting over a trunk) must keep their own offsets.
+/// The vertical offset is kept for the same reason `anchor_player_model` keeps
+/// it — a model authored to sit above its origin is doing that on purpose.
+fn anchor_scene_layout(
+    mut commands: Commands,
+    roots: Query<Entity, (With<AnchorSceneLayout>, Without<SceneLayoutAnchored>)>,
+    children: Query<&Children>,
+    mut transforms: Query<&mut Transform>,
+) {
+    for root in roots.iter() {
+        // The scene spawner attaches the whole hierarchy at once, so no
+        // children yet means the glTF is still loading: retry next frame.
+        let Ok(kids) = children.get(root) else {
+            continue;
+        };
+        let mut stack: Vec<Entity> = kids.iter().collect();
+        while let Some(entity) = stack.pop() {
+            let mut corrected = false;
+            if let Ok(mut transform) = transforms.get_mut(entity) {
+                if transform.translation.x.abs() > 1e-4 || transform.translation.z.abs() > 1e-4 {
+                    transform.translation.x = 0.0;
+                    transform.translation.z = 0.0;
+                    corrected = true;
+                }
+            }
+            if corrected {
+                continue;
+            }
+            if let Ok(kids) = children.get(entity) {
+                stack.extend(kids.iter());
+            }
+        }
+        commands.entity(root).insert(SceneLayoutAnchored);
+    }
+}
+
 fn is_descendant_of(entity: Entity, root: Entity, parents: &Query<&ChildOf>) -> bool {
     let mut current = entity;
     while let Ok(parent) = parents.get(current) {
@@ -688,6 +755,8 @@ fn cleanup_entity_render(
             .remove::<RenderSmoothing>()
             .remove::<PlayerModelRoot>()
             .remove::<PlayerModelAnchored>()
+            .remove::<AnchorSceneLayout>()
+            .remove::<SceneLayoutAnchored>()
             .remove::<Transform>();
     }
 }
@@ -703,6 +772,85 @@ mod tests {
     /// One fixed tick of travel for a player at the default
     /// `MovementStats::speed` (0.15 world units per tick).
     const TICK_STEP: f32 = 0.15;
+
+    /// `tree_oak_medium.glb` keeps the (95, 0, 20) place it had in the Blender
+    /// scene every `models/new` prop was exported from. Left alone, the oak is
+    /// drawn 95 m from the `resource_node` the gather click tests against, so
+    /// the tree on screen is not the tree you can harvest.
+    #[test]
+    fn imported_scene_offset_does_not_move_the_harvestable() {
+        let mut app = App::new();
+        app.add_systems(Update, anchor_scene_layout);
+
+        let root = app
+            .world_mut()
+            .spawn((AnchorSceneLayout, Transform::from_xyz(-48.0, 0.0, 4.0)))
+            .id();
+        let offset_node = app
+            .world_mut()
+            .spawn(Transform::from_xyz(95.0, 0.0, 20.0))
+            .id();
+        // The canopy sits above the trunk in the same node: a part placed
+        // relative to the corrected root keeps its own offset.
+        let canopy = app
+            .world_mut()
+            .spawn(Transform::from_xyz(0.0, 7.5, 0.0))
+            .id();
+        app.world_mut().entity_mut(offset_node).add_child(canopy);
+        app.world_mut().entity_mut(root).add_child(offset_node);
+
+        app.update();
+
+        let node = app.world().entity(offset_node).get::<Transform>().unwrap();
+        assert_eq!(
+            node.translation,
+            Vec3::ZERO,
+            "layout offset must be dropped"
+        );
+        let canopy = app.world().entity(canopy).get::<Transform>().unwrap();
+        assert_eq!(
+            canopy.translation,
+            Vec3::new(0.0, 7.5, 0.0),
+            "parts under the corrected node keep their authored placement"
+        );
+        assert!(
+            app.world().entity(root).contains::<SceneLayoutAnchored>(),
+            "an anchored node is not walked again"
+        );
+    }
+
+    /// Bevy may insert its own entity between the marked root and the glTF's
+    /// root node, so the correction cannot assume a direct child.
+    #[test]
+    fn offset_is_found_below_an_intermediate_scene_entity() {
+        let mut app = App::new();
+        app.add_systems(Update, anchor_scene_layout);
+
+        let root = app
+            .world_mut()
+            .spawn((AnchorSceneLayout, Transform::from_xyz(4.0, 0.0, -2.0)))
+            .id();
+        let intermediate = app.world_mut().spawn(Transform::default()).id();
+        let offset_node = app
+            .world_mut()
+            .spawn(Transform::from_xyz(110.0, 0.0, -20.0))
+            .id();
+        app.world_mut()
+            .entity_mut(intermediate)
+            .add_child(offset_node);
+        app.world_mut().entity_mut(root).add_child(intermediate);
+
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .entity(offset_node)
+                .get::<Transform>()
+                .unwrap()
+                .translation,
+            Vec3::ZERO
+        );
+    }
 
     fn smoothing_app() -> (App, Entity) {
         let mut app = App::new();

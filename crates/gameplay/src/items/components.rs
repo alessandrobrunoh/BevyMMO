@@ -6,7 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::definition::ItemCategory;
 use super::instance::{ItemInstance, ItemInstanceId};
+use super::registry::ItemId;
 
 /// Dedicated equipment slot.
 ///
@@ -84,6 +86,74 @@ pub struct Inventory {
     pub slots: [Option<ItemInstance>; INVENTORY_CAPACITY],
 }
 
+impl Inventory {
+    /// Maximum quantity in one occupied slot. The bag owns this cap, not the item.
+    pub const MAX_STACK: u32 = 200;
+
+    /// Materials stack. Everything else stays unique (one instance per slot).
+    pub fn stacks_category(category: ItemCategory) -> bool {
+        matches!(category, ItemCategory::Material)
+    }
+
+    /// How many more pieces of `item_id` this bag can accept.
+    pub fn space_for(&self, item_id: &ItemId, stacks: bool) -> u32 {
+        if !stacks {
+            return self.slots.iter().filter(|slot| slot.is_none()).count() as u32;
+        }
+        let mut space = 0u32;
+        for slot in &self.slots {
+            match slot {
+                Some(item) if item.item_id == *item_id && item.is_stack_mergeable() => {
+                    space = space.saturating_add(Self::MAX_STACK.saturating_sub(item.quantity));
+                }
+                None => space = space.saturating_add(Self::MAX_STACK),
+                _ => {}
+            }
+        }
+        space
+    }
+
+    /// Adds up to `amount` of a stackable item. Returns how many were placed.
+    pub fn add_stackable(
+        &mut self,
+        item_id: ItemId,
+        amount: u32,
+        mut mint: impl FnMut() -> ItemInstanceId,
+    ) -> u32 {
+        if amount == 0 {
+            return 0;
+        }
+        let mut remaining = amount;
+        for slot in &mut self.slots {
+            if remaining == 0 {
+                break;
+            }
+            let Some(item) = slot.as_mut() else {
+                continue;
+            };
+            if item.item_id != item_id || !item.is_stack_mergeable() {
+                continue;
+            }
+            let room = Self::MAX_STACK.saturating_sub(item.quantity);
+            let add = remaining.min(room);
+            item.quantity += add;
+            remaining -= add;
+        }
+        while remaining > 0 {
+            let Some(index) = self.slots.iter().position(Option::is_none) else {
+                break;
+            };
+            let add = remaining.min(Self::MAX_STACK);
+            let mut instance = ItemInstance::new(item_id.clone());
+            instance.instance_id = mint();
+            instance.quantity = add;
+            self.slots[index] = Some(instance);
+            remaining -= add;
+        }
+        amount - remaining
+    }
+}
+
 /// Current equipment of a player: one optional item instance per [`EquipSlot`].
 ///
 /// The component is replicated and predicted, same as [`Inventory`]. The
@@ -151,6 +221,7 @@ impl Equipment {
 
 #[cfg(test)]
 mod tests {
+    use super::super::definition::ItemCategory;
     use super::super::registry::ItemId;
     use super::*;
 
@@ -224,5 +295,48 @@ mod tests {
         let json = serde_json::to_string(&eq).expect("serialize");
         let back: Equipment = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(eq, back);
+    }
+
+    #[test]
+    fn materials_stack_in_the_bag_not_on_the_item() {
+        assert!(Inventory::stacks_category(ItemCategory::Material));
+        assert!(!Inventory::stacks_category(ItemCategory::Weapon));
+        assert_eq!(Inventory::MAX_STACK, 200);
+    }
+
+    #[test]
+    fn add_stackable_fills_existing_then_opens_a_new_slot() {
+        let mut inv = Inventory::default();
+        let mut next_id = 1u64;
+        let mut mint = || {
+            let id = ItemInstanceId(next_id);
+            next_id += 1;
+            id
+        };
+        let wood = ItemId::new("wood");
+        assert_eq!(inv.add_stackable(wood.clone(), 3, &mut mint), 3);
+        assert_eq!(inv.slots[0].as_ref().map(|i| i.quantity), Some(3));
+        assert_eq!(inv.add_stackable(wood.clone(), 2, &mut mint), 2);
+        assert_eq!(inv.slots[0].as_ref().map(|i| i.quantity), Some(5));
+        assert!(inv.slots[1].is_none());
+    }
+
+    #[test]
+    fn add_stackable_stops_when_the_bag_is_full() {
+        let mut inv = Inventory::default();
+        let wood = ItemId::new("wood");
+        let mut next_id = 1u64;
+        let mut mint = || {
+            let id = ItemInstanceId(next_id);
+            next_id += 1;
+            id
+        };
+        for slot in &mut inv.slots {
+            let mut instance = ItemInstance::new(ItemId::new("mage_staff"));
+            instance.instance_id = mint();
+            *slot = Some(instance);
+        }
+        assert_eq!(inv.space_for(&wood, true), 0);
+        assert_eq!(inv.add_stackable(wood, 1, &mut mint), 0);
     }
 }

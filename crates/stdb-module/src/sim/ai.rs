@@ -132,7 +132,8 @@ fn collect_actors(ctx: &ReducerContext) -> Actors {
             EntityKindRow::Player
             | EntityKindRow::Dummy
             | EntityKindRow::AllyDummy
-            | EntityKindRow::Npc => {}
+            | EntityKindRow::Npc
+            | EntityKindRow::ResourceNode => {}
         }
     }
 
@@ -159,15 +160,13 @@ fn enemy_profiles() -> std::sync::MutexGuard<'static, Option<HashMap<u64, EnemyP
 
 /// Records the placeable's aggro radius and Q-slot attack for this spawn.
 pub fn remember_enemy(entity_id: u64, aggro_range: f32, attack_spell: SpellId) {
-    enemy_profiles()
-        .get_or_insert_with(HashMap::new)
-        .insert(
-            entity_id,
-            EnemyProfile {
-                aggro_range,
-                attack_spell,
-            },
-        );
+    enemy_profiles().get_or_insert_with(HashMap::new).insert(
+        entity_id,
+        EnemyProfile {
+            aggro_range,
+            attack_spell,
+        },
+    );
 }
 
 fn profile_for(entity_id: u64) -> EnemyProfile {

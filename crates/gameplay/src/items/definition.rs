@@ -42,9 +42,8 @@ pub enum ItemRarity {
 
 /// Static metadata shared by every item.
 ///
-/// `max_stack` is intentionally absent: 1 item = 1 slot (decision #1 of
-/// `plans/inventory-system.md`). It can be reintroduced later without breaking
-/// saved data because the inventory layout is a fixed-size array of ids.
+/// Stack size is not an item property: [`super::components::Inventory::MAX_STACK`]
+/// is the bag cap, and only [`ItemCategory::Material`] stacks.
 #[derive(Debug, Clone)]
 pub struct ItemConfig {
     /// Player-facing name shown in the inventory and detail cards.
@@ -59,6 +58,11 @@ pub struct ItemConfig {
     pub equippable_into: Option<EquipSlot>,
     /// Reserved for a future encumbrance system. 0 for now.
     pub weight: f32,
+    /// Whether this item can change owner via the player market.
+    ///
+    /// Defaults to `true` in `#[item(...)]`. Soulbound / quest items set
+    /// `tradable = false` and never appear in a hall's sell list.
+    pub tradable: bool,
 }
 
 /// Contract every concrete item implements.
@@ -85,6 +89,11 @@ pub trait Item: Send + Sync + 'static {
     /// Player-facing display name. Defaults to `config().display_name`.
     fn display_name(&self) -> &str {
         &self.config().display_name
+    }
+
+    /// Whether this item can change owner via the player market.
+    fn tradable(&self) -> bool {
+        self.config().tradable
     }
 
     /// Effects applied while equipped (StatBonus), or on use for consumables.
@@ -180,6 +189,7 @@ mod tests {
             rarity: ItemRarity::Common,
             equippable_into: Some(EquipSlot::Weapon),
             weight: 0.0,
+            tradable: true,
         }
     }
 
@@ -189,6 +199,22 @@ mod tests {
             config: sample_config(),
         };
         assert_eq!(item.display_name(), "Dummy");
+    }
+
+    #[test]
+    fn tradable_defaults_to_config_value() {
+        let item = Dummy {
+            config: sample_config(),
+        };
+        assert!(item.tradable());
+
+        let bound = Dummy {
+            config: ItemConfig {
+                tradable: false,
+                ..sample_config()
+            },
+        };
+        assert!(!bound.tradable());
     }
 
     #[test]

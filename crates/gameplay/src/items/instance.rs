@@ -43,10 +43,17 @@ impl ItemInstanceId {
     }
 }
 
+fn default_quantity() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ItemInstance {
     pub instance_id: ItemInstanceId,
     pub item_id: ItemId,
+    /// Stack size. Unique items stay at 1; the bag cap lives on [`super::components::Inventory`].
+    #[serde(default = "default_quantity")]
+    pub quantity: u32,
     /// Which of `Item::ability_loadout()`'s Primary/Secondary options is
     /// active on THIS esemplare — `Default` (nothing picked yet) resolves to
     /// the first offered option via `abilities::resolve_active_ability`.
@@ -75,6 +82,7 @@ impl ItemInstance {
         Self {
             instance_id: ItemInstanceId::unassigned(),
             item_id,
+            quantity: 1,
             ability_selection: AbilitySelection::default(),
             root_inscription: None,
             armor_inscription: None,
@@ -95,6 +103,13 @@ impl ItemInstance {
             secondary: SlotInscription::default(),
             ultimate: SlotInscription::default(),
         });
+    }
+
+    /// Whether this copy can merge with another of the same `item_id`.
+    ///
+    /// Inscribed weapons/armor are unique esemplari and never stack.
+    pub fn is_stack_mergeable(&self) -> bool {
+        self.root_inscription.is_none() && self.armor_inscription.is_none()
     }
 }
 

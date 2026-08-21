@@ -1298,10 +1298,15 @@ mod tests {
         );
 
         let grid = bevymmo_world::CollisionGrid::build(&manifest);
+        let blocking_props = manifest
+            .props
+            .iter()
+            .filter(|prop| prop.blocks_movement && prop.collision.is_some())
+            .count();
         assert_eq!(
             grid.obstacle_count(),
-            manifest.blockers.len(),
-            "every blocking blocker must produce exactly one obstacle"
+            manifest.blockers.len() + blocking_props,
+            "every blocking blocker and blocking prop must produce exactly one obstacle"
         );
     }
 

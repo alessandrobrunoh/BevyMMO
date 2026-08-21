@@ -113,12 +113,22 @@ pub enum TriggerEvent {
 /// [`super::definition::ResourceNodePlaceable::resource_config`].
 #[derive(Debug, Clone)]
 pub struct ResourceConfig {
-    /// How much harvesting damage the node can take before depleting.
-    pub max_health: f32,
-    /// Seconds before the node respawns after depletion.
-    pub respawn_seconds: f32,
-    /// Item id yielded when harvested (resolved by the item system).
-    pub yield_item: String,
-    /// Quantity yielded per harvest tick.
+    /// Maximum pieces the node can hold.
+    pub max_pieces: u32,
+    /// Base seconds to channel one piece, before gathering speed.
+    pub channel_seconds: f32,
+    /// Floor on channel duration (anti-exploit).
+    pub min_channel_seconds: f32,
+    /// Item granted on a completed channel.
+    pub yield_item: crate::items::ItemId,
+    /// Base pieces granted per completed channel.
     pub yield_amount: u32,
+    /// Seconds between regen pulses.
+    pub regen_interval_seconds: f32,
+    /// Pieces restored each regen pulse.
+    pub regen_amount: u32,
+    /// Horizontal gather range in world units.
+    pub interact_range: f32,
+    /// Optional tool required to start a gather. `None` in v1.
+    pub required_item_id: Option<crate::items::ItemId>,
 }

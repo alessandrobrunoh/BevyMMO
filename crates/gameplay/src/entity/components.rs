@@ -83,4 +83,6 @@ pub enum EntityKind {
     Neutral,
     /// Hostile enemies (enemy, boss, aggressive creatures).
     Hostile,
+    /// Harvestable world node.
+    Resource,
 }

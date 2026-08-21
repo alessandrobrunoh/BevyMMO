@@ -9,6 +9,7 @@ pub mod account;
 pub mod chat;
 pub mod combat;
 pub mod economy;
+pub mod gathering;
 pub mod items;
 pub mod lifecycle;
 pub mod market;

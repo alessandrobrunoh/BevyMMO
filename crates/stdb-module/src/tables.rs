@@ -11,12 +11,13 @@
 //!
 //! - **Persistent**: `player`, `player_stats`, `hotbar`, `inventory`,
 //!   `equipment`, `known_glyphs`, `character_wallet`, `account_economy`,
-//!   `market`, `market_sell_order`, `market_buy_order`, `prop_override`. These
-//!   outlive a session and must survive a republish.
+//!   `market`, `market_sell_order`, `market_buy_order`, `prop_override`,
+//!   `resource_node`. These outlive a session and must survive a republish.
 //! - **Runtime**: `game_entity`, `entity_stats`, `cast_state`, `cooldown`,
-//!   `projectile`, `aoe_region`, `crowd_control`, `threat`, `stat_modifier`.
-//!   Conceptually these die with the session, so `init` clears and re-seeds
-//!   them — otherwise a republish inherits yesterday's projectiles mid-flight.
+//!   `projectile`, `aoe_region`, `crowd_control`, `threat`, `stat_modifier`,
+//!   `gather_session`. Conceptually these die with the session, so `init`
+//!   clears and re-seeds them — otherwise a republish inherits yesterday's
+//!   projectiles mid-flight.
 //!
 //! # Spatial queries
 //!
@@ -416,6 +417,8 @@ pub enum EntityKindRow {
     Npc,
     /// Training dummy that receives heals the way a party member would.
     AllyDummy,
+    /// Harvestable world node. Not a combatant.
+    ResourceNode,
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
@@ -443,6 +446,7 @@ impl ColorRow {
             EntityKindRow::Dummy => Self::srgb(0.7, 0.1, 0.1),
             EntityKindRow::AllyDummy => Self::srgb(0.2, 0.75, 0.35),
             EntityKindRow::Npc => Self::srgb(0.5, 0.5, 0.5),
+            EntityKindRow::ResourceNode => Self::srgb(0.45, 0.7, 0.3),
         }
     }
 
@@ -828,6 +832,45 @@ pub struct CastEndedEvent {
 pub struct PlayerMessageEvent {
     pub target: Option<Identity>,
     pub text: String,
+}
+
+/// One completed gather channel. Floating text / VFX on the client.
+#[table(accessor = gather_yield, public, event)]
+pub struct GatherYieldEvent {
+    pub entity_id: u64,
+    pub node_entity_id: u64,
+    pub item_id: String,
+    pub amount: u32,
+    pub extra: u32,
+    pub node_depleted: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Gathering
+// ---------------------------------------------------------------------------
+
+/// Persistent harvest state, keyed by the map placement id.
+#[table(accessor = resource_node, public)]
+pub struct ResourceNode {
+    #[primary_key]
+    pub placement_id: String,
+    #[unique]
+    pub entity_id: u64,
+    pub kind_id: String,
+    pub current_pieces: u32,
+    pub last_regen_at: Timestamp,
+}
+
+/// One player gathering at a time. Runtime: cleared on init.
+#[table(accessor = gather_session, public)]
+pub struct GatherSession {
+    #[primary_key]
+    pub entity_id: u64,
+    pub node_entity_id: u64,
+    pub placement_id: String,
+    pub elapsed_seconds: f32,
+    pub required_seconds: f32,
+    pub start_position: Vec3Row,
 }
 
 // ---------------------------------------------------------------------------

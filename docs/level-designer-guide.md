@@ -128,6 +128,8 @@ object. Names are case-sensitive and use `UPPERCASE_PREFIX_SnakeCase`.
 | `WALKABLE_*` | A walkable surface mesh | GLB + JSON `surfaces[].object` | Sampled by the height query system; player walks on it. |
 | `BLOCKING_*` | An invisible collision volume | GLB + JSON `blockers[].object` | Stops movement; not rendered by the client. |
 | `TRAVERSAL_*` | A ramp or stairwell segment | GLB + JSON `traversals` | Lets the player transition between two surfaces. |
+| `PLACEABLE_*` | Creature / NPC / spawn marker | JSON `props[]` | Seeded as a `game_entity`. |
+| `RESOURCE_*` | Gatherable node | JSON `props[]` | Requires `bevymmo_kind` (e.g. `resource_oak_tree`). Seeded as a harvestable node. |
 | *(any other name)* | A regular prop | GLB only (extras) | Rendered + optional collision via `bevymmo_*` extras. |
 
 ### 3.1 Rules
@@ -220,6 +222,7 @@ Examples of valid kinds:
 | `merchant` | `placeables_impl/npcs/merchant.rs` | NPC |
 | `treasure_chest`, `wooden_door` | `placeables_impl/interactables/` | Interactable |
 | `copper_vein` | `placeables_impl/resources/copper_vein.rs` | Resource node |
+| `resource_oak_tree` | `placeables/resources/oak_tree.rs` | Gatherable oak (Wood) |
 | `pvp_zone`, `safe_zone`, `teleport_*` | `placeables_impl/triggers/` | Trigger |
 
 > If you need a kind that does not exist yet, ask a programmer to add a

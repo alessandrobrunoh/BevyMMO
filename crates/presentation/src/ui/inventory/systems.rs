@@ -80,8 +80,17 @@ pub fn update_inventory_ui(
             .slots
             .get(slot_text.index as usize)
             .and_then(|opt| opt.as_ref())
-            .and_then(|instance| registry.get(&instance.item_id))
-            .map(|item| item.display_name().to_string())
+            .map(|instance| {
+                let display = registry
+                    .get(&instance.item_id)
+                    .map(|item| item.display_name().to_string())
+                    .unwrap_or_else(|| instance.item_id.as_str().to_string());
+                if instance.quantity > 1 {
+                    format!("{display} x{}", instance.quantity)
+                } else {
+                    display
+                }
+            })
             .unwrap_or_default();
 
         text.0 = name;

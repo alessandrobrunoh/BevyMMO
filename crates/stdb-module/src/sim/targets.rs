@@ -40,6 +40,9 @@ pub fn is_valid_spell_target(
     if kind == EntityKindRow::Player {
         return online == Some(true);
     }
+    if kind == EntityKindRow::ResourceNode {
+        return false;
+    }
     true
 }
 
@@ -101,6 +104,11 @@ mod tests {
         assert!(!is_valid_spell_target(
             EntityKindRow::Dummy,
             EntityStateRow::Dead,
+            None,
+        ));
+        assert!(!is_valid_spell_target(
+            EntityKindRow::ResourceNode,
+            EntityStateRow::Idle,
             None,
         ));
     }

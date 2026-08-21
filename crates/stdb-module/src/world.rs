@@ -43,8 +43,9 @@ use spacetimedb::{reducer, ReducerContext, Table};
 
 use crate::rows::{StatsRow, Vec3Row};
 use crate::tables::{
-    boss_state, entity_stats, game_entity, grid_cell, npc, player, prop_override, BossPhaseRow,
-    BossState, ColorRow, EntityKindRow, EntityStateRow, EntityStats, GameEntity, Npc, PropOverride,
+    boss_state, entity_stats, game_entity, grid_cell, npc, player, prop_override, resource_node,
+    BossPhaseRow, BossState, ColorRow, EntityKindRow, EntityStateRow, EntityStats, GameEntity, Npc,
+    PropOverride, ResourceNode,
 };
 
 // `EMBEDDED_MAPS: &[(&str, &[u8])]`, one entry per authored map.
@@ -230,7 +231,8 @@ pub fn seed(ctx: &ReducerContext) {
     apply_prop_overrides(ctx, DEFAULT_MAP_ID, &mut props);
 
     let registry = placeables();
-    let (mut enemies, mut bosses, mut npcs, mut unbound) = (0u32, 0u32, 0u32, 0u32);
+    let (mut enemies, mut bosses, mut npcs, mut resources, mut unbound) =
+        (0u32, 0u32, 0u32, 0u32, 0u32);
 
     for prop in &props {
         if let Some(definition) = registry.dummies.get(&prop.kind) {
@@ -304,23 +306,56 @@ pub fn seed(ctx: &ReducerContext) {
                 market_id,
             });
             npcs += 1;
+        } else if let Some(definition) = registry.resources.get(&prop.kind) {
+            let entity = spawn_entity(
+                ctx,
+                prop,
+                EntityKindRow::ResourceNode,
+                definition.display_name(),
+                0.0,
+            );
+            upsert_resource_node(ctx, prop, entity.entity_id, definition.resource_config());
+            resources += 1;
         } else if registry.player_spawns.contains_key(&prop.kind) {
             // Read on demand by `player_spawn_point`, not turned into an entity.
         } else if registry.props.contains_key(&prop.kind) {
             // Static scenery. It reaches the simulation through
             // `MapData::collision`, never as a row.
         } else {
-            // Triggers, resource nodes and interactables are registered kinds
-            // with no table to live in yet, as are kinds the registry does not
-            // know at all.
+            // Triggers and interactables are registered kinds with no table
+            // to live in yet, as are kinds the registry does not know at all.
             unbound += 1;
         }
     }
 
     log::info!(
         "seeded {DEFAULT_MAP_ID}: {enemies} enemies, {bosses} bosses, {npcs} npcs, \
-         {unbound} placements with no runtime binding"
+         {resources} resource nodes, {unbound} placements with no runtime binding"
     );
+}
+
+fn upsert_resource_node(
+    ctx: &ReducerContext,
+    prop: &Prop,
+    entity_id: u64,
+    config: bevymmo_domain::placeables::ResourceConfig,
+) {
+    let placement_id = prop.id.clone();
+    if let Some(existing) = ctx.db.resource_node().placement_id().find(&placement_id) {
+        ctx.db.resource_node().placement_id().update(ResourceNode {
+            entity_id,
+            kind_id: prop.kind.as_str().to_string(),
+            ..existing
+        });
+        return;
+    }
+    ctx.db.resource_node().insert(ResourceNode {
+        placement_id,
+        entity_id,
+        kind_id: prop.kind.as_str().to_string(),
+        current_pieces: config.max_pieces,
+        last_regen_at: ctx.timestamp,
+    });
 }
 
 /// Where a newly created character appears.

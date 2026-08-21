@@ -119,6 +119,199 @@ pub fn props(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+/// Attribute macro to define a harvestable resource node.
+///
+/// Automatically implements:
+/// - `PlaceableDefinition`
+/// - `ResourceNodePlaceable`
+/// - `register()` function
+#[proc_macro_attribute]
+pub fn resource(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    let attr_str = attr.to_string();
+    let attrs = parse_resource_attrs(&attr_str);
+    match expand_resource(&input, attrs) {
+        Ok(tokens) => tokens.into(),
+        Err(message) => syn::Error::new_spanned(&input.ident, message)
+            .to_compile_error()
+            .into(),
+    }
+}
+
+struct ResourceAttributes {
+    props: PropsAttributes,
+    max_pieces: Option<u32>,
+    channel_seconds: Option<f32>,
+    min_channel_seconds: f32,
+    yield_item: Option<String>,
+    yield_amount: u32,
+    regen_interval_seconds: Option<f32>,
+    regen_amount: Option<u32>,
+    interact_range: f32,
+}
+
+fn parse_resource_attrs(input: &str) -> ResourceAttributes {
+    let mut attrs = ResourceAttributes {
+        props: parse_attrs(input),
+        max_pieces: None,
+        channel_seconds: None,
+        min_channel_seconds: 0.25,
+        yield_item: None,
+        yield_amount: 1,
+        regen_interval_seconds: None,
+        regen_amount: None,
+        interact_range: 2.5,
+    };
+
+    for pair in split_top_level_commas(input) {
+        let pair = pair.trim();
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+        match key {
+            "max_pieces" => attrs.max_pieces = value.parse().ok(),
+            "channel_seconds" => attrs.channel_seconds = value.parse().ok(),
+            "min_channel_seconds" => {
+                if let Ok(min) = value.parse() {
+                    attrs.min_channel_seconds = min;
+                }
+            }
+            "yield_item" => attrs.yield_item = Some(clean_string(value)),
+            "yield_amount" => {
+                if let Ok(amount) = value.parse() {
+                    attrs.yield_amount = amount;
+                }
+            }
+            "regen_interval_seconds" => attrs.regen_interval_seconds = value.parse().ok(),
+            "regen_amount" => attrs.regen_amount = value.parse().ok(),
+            "interact_range" => {
+                if let Ok(range) = value.parse() {
+                    attrs.interact_range = range;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    attrs
+}
+
+fn expand_resource(
+    input: &DeriveInput,
+    attrs: ResourceAttributes,
+) -> Result<TokenStream2, String> {
+    let name = &input.ident;
+    let id = attrs
+        .props
+        .id
+        .clone()
+        .unwrap_or_else(|| name.to_string().to_lowercase());
+    let display_name = attrs
+        .props
+        .display_name
+        .clone()
+        .unwrap_or_else(|| id.clone());
+    let icon = attrs.props.icon.clone().unwrap_or_else(|| "⛏".to_string());
+    let asset = attrs
+        .props
+        .asset
+        .clone()
+        .ok_or_else(|| "#[resource(...)] requires `asset = \"...\"`".to_string())?;
+    let max_pieces = attrs
+        .max_pieces
+        .filter(|n| *n >= 1)
+        .ok_or_else(|| "#[resource(...)] requires `max_pieces = N` with N >= 1".to_string())?;
+    let channel_seconds = attrs.channel_seconds.filter(|n| *n > 0.0).ok_or_else(|| {
+        "#[resource(...)] requires `channel_seconds = N` with N > 0".to_string()
+    })?;
+    let yield_item = attrs
+        .yield_item
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "#[resource(...)] requires `yield_item = \"...\"`".to_string())?;
+    let regen_interval_seconds = attrs
+        .regen_interval_seconds
+        .filter(|n| *n > 0.0)
+        .ok_or_else(|| {
+            "#[resource(...)] requires `regen_interval_seconds = N` with N > 0".to_string()
+        })?;
+    let regen_amount = attrs.regen_amount.filter(|n| *n >= 1).ok_or_else(|| {
+        "#[resource(...)] requires `regen_amount = N` with N >= 1".to_string()
+    })?;
+    if attrs.yield_amount < 1 {
+        return Err("#[resource(...)] `yield_amount` must be >= 1".to_string());
+    }
+
+    let (scale_x, scale_y, scale_z) = attrs.props.scale.unwrap_or((1.0, 1.0, 1.0));
+    let tint = attrs.props.tint.map(|(r, g, b)| quote!(Some([#r, #g, #b])));
+    let tint_tokens = tint.unwrap_or_else(|| quote!(None));
+    let blocks_movement = attrs.props.blocks_movement;
+    let collision_tokens = build_collision_tokens(attrs.props.collision);
+    let min_channel_seconds = attrs.min_channel_seconds;
+    let yield_amount = attrs.yield_amount;
+    let interact_range = attrs.interact_range;
+
+    Ok(quote! {
+        #input
+
+        impl crate::placeables::PlaceableDefinition for #name {
+            fn id(&self) -> crate::placeables::KindId {
+                crate::placeables::KindId::new(#id)
+            }
+
+            fn display_name(&self) -> &'static str {
+                #display_name
+            }
+
+            fn icon(&self) -> &'static str {
+                #icon
+            }
+
+            fn asset_hint(&self) -> crate::placeables::AssetHint {
+                crate::placeables::AssetHint::Scene(#asset)
+            }
+
+            fn defaults(&self) -> crate::placeables::PlaceableDefaults {
+                crate::placeables::PlaceableDefaults {
+                    transform: crate::world::TransformData {
+                        translation: [0.0_f32, 0.0_f32, 0.0_f32],
+                        rotation_deg: [0.0_f32, 0.0_f32, 0.0_f32],
+                        scale: [#scale_x, #scale_y, #scale_z],
+                    },
+                    tint: #tint_tokens,
+                    collision: #collision_tokens,
+                    blocks_movement: #blocks_movement,
+                }
+            }
+        }
+
+        impl crate::placeables::ResourceNodePlaceable for #name {
+            fn resource_config(&self) -> crate::placeables::ResourceConfig {
+                crate::placeables::ResourceConfig {
+                    max_pieces: #max_pieces,
+                    channel_seconds: #channel_seconds,
+                    min_channel_seconds: #min_channel_seconds,
+                    yield_item: crate::items::ItemId::new(#yield_item),
+                    yield_amount: #yield_amount,
+                    regen_interval_seconds: #regen_interval_seconds,
+                    regen_amount: #regen_amount,
+                    interact_range: #interact_range,
+                    required_item_id: None,
+                }
+            }
+        }
+
+        impl #name {
+            pub const ID: &'static str = #id;
+        }
+
+        pub fn register(registry: &mut crate::placeables::PlaceableRegistry) {
+            registry.register_resource(std::sync::Arc::new(#name))
+        }
+    })
+}
+
 /// Parsed `collision = ...` clause.
 ///
 /// Kept as a small enum (instead of pre-rendering tokens) so that the macro
@@ -374,6 +567,7 @@ fn parse_triple_f32(s: &str) -> Option<(f32, f32, f32)> {
 //     category = Weapon,
 //     rarity = Rare,
 //     slot = Weapon,
+//     tradable = true,
 //     effects = [stat_bonus(field = AttackPower, op = Add, value = 25.0)],
 //     spells(
 //         q = [AttackSpell, FireballSpell],
@@ -759,6 +953,7 @@ struct ItemDef {
     slot: Option<Ident>,
     family: Option<Ident>,
     execution: Option<Ident>,
+    tradable: bool,
     effects: Vec<EffectDef>,
     spells: Option<SpellsDef>,
     abilities: Option<AbilitiesDef>,
@@ -775,6 +970,7 @@ impl Parse for ItemDef {
         let mut slot = None;
         let mut family = None;
         let mut execution = None;
+        let mut tradable = true;
         let mut effects = Vec::new();
         let mut spells = None;
         let mut abilities = None;
@@ -808,6 +1004,7 @@ impl Parse for ItemDef {
                     "slot" => slot = Some(input.parse::<Ident>()?),
                     "family" => family = Some(input.parse::<Ident>()?),
                     "execution" => execution = Some(input.parse::<Ident>()?),
+                    "tradable" => tradable = input.parse::<LitBool>()?.value(),
                     "effects" => {
                         let content;
                         bracketed!(content in input);
@@ -819,7 +1016,8 @@ impl Parse for ItemDef {
                             &key,
                             format!(
                                 "unknown key `{other}` in #[item(...)] (expected id, name, description, \
-                                 category, rarity, slot, family, execution, effects, spells, abilities, rune_profile)"
+                                 category, rarity, slot, family, execution, tradable, effects, \
+                                 spells, abilities, rune_profile)"
                             ),
                         ))
                     }
@@ -856,6 +1054,7 @@ impl Parse for ItemDef {
             slot,
             family,
             execution,
+            tradable,
             effects,
             spells,
             abilities,
@@ -875,6 +1074,7 @@ impl ItemDef {
             .unwrap_or_else(|| LitStr::new("", proc_macro2::Span::call_site()));
         let category = &self.category;
         let rarity = &self.rarity;
+        let tradable = self.tradable;
         let equippable_into = match &self.slot {
             Some(slot) => quote! { Some(crate::items::EquipSlot::#slot) },
             None => quote! { None },
@@ -1000,6 +1200,7 @@ impl ItemDef {
                         rarity: crate::items::ItemRarity::#rarity,
                         equippable_into: #equippable_into,
                         weight: 0.0,
+                        tradable: #tradable,
                     })
                 }
 

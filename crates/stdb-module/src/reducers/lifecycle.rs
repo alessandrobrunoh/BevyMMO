@@ -7,12 +7,11 @@ use crate::reducers::account::caller_session;
 use crate::rows::{equipment_to_rows, inventory_to_rows, HotbarRow, StatsRow, Vec3Row};
 use crate::tables::{
     active_status, aoe_region, boss_state, cast_state, character_wallet, cooldown, crowd_control,
-    entity_stats, equipment, game_entity, grid_cell, hotbar, inventory, known_ancient_language,
-    npc,
-    periodic_effect, player, player_stats, projectile, resonance, session, stat_modifier, threat,
-    tick_schedule, tick_stats, CharacterWallet, ColorRow, EntityKindRow, EntityStateRow,
-    EquipmentTable, GameEntity, Hotbar, InventoryTable, KnownAncientLanguageTable, Player,
-    PlayerStats, Session, TickSchedule,
+    entity_stats, equipment, game_entity, gather_session, grid_cell, hotbar, inventory,
+    known_ancient_language, npc, periodic_effect, player, player_stats, projectile, resonance,
+    session, stat_modifier, threat, tick_schedule, tick_stats, CharacterWallet, ColorRow,
+    EntityKindRow, EntityStateRow, EquipmentTable, GameEntity, Hotbar, InventoryTable,
+    KnownAncientLanguageTable, Player, PlayerStats, Session, TickSchedule,
 };
 use crate::{
     normalize_name, world, DEFAULT_SPEED_PER_SECOND, MAX_CHARACTERS_PER_ACCOUNT, TICK_INTERVAL_MS,
@@ -72,6 +71,12 @@ fn clear_runtime_state(ctx: &ReducerContext) {
         .collect();
     let tick_stat_ids: Vec<_> = ctx.db.tick_stats().iter().map(|row| row.id).collect();
     let npc_ids: Vec<_> = ctx.db.npc().iter().map(|row| row.entity_id).collect();
+    let gather_entity_ids: Vec<_> = ctx
+        .db
+        .gather_session()
+        .iter()
+        .map(|row| row.entity_id)
+        .collect();
 
     for id in projectile_ids {
         ctx.db.projectile().id().delete(&id);
@@ -110,6 +115,9 @@ fn clear_runtime_state(ctx: &ReducerContext) {
     }
     for entity_id in npc_ids {
         ctx.db.npc().entity_id().delete(&entity_id);
+    }
+    for entity_id in gather_entity_ids {
+        ctx.db.gather_session().entity_id().delete(&entity_id);
     }
 }
 
@@ -192,8 +200,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         // connection's active character — unless another live session already
         // owns it.
         let already_played = ctx.db.session().iter().any(|session| {
-            session.character_id == Some(existing.character_id)
-                && session.identity != ctx.sender()
+            session.character_id == Some(existing.character_id) && session.identity != ctx.sender()
         });
         if already_played {
             return Err(format!(

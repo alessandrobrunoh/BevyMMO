@@ -526,7 +526,8 @@ pub fn can_receive_heal(
         EntityKindRow::Dummy
         | EntityKindRow::Enemy
         | EntityKindRow::Boss
-        | EntityKindRow::Npc => false,
+        | EntityKindRow::Npc
+        | EntityKindRow::ResourceNode => false,
     }
 }
 
@@ -537,7 +538,9 @@ pub fn heal_allowed_for(ctx: &ReducerContext, target: u64, source: Option<u64>) 
         return false;
     };
     let source_entity = source.and_then(|id| ctx.db.game_entity().entity_id().find(&id));
-    let source_character_id = source_entity.as_ref().and_then(|entity| entity.owner_character_id);
+    let source_character_id = source_entity
+        .as_ref()
+        .and_then(|entity| entity.owner_character_id);
     can_receive_heal(
         target_entity.kind,
         target_entity.owner_character_id,
@@ -894,7 +897,7 @@ fn base_stats(ctx: &ReducerContext, entity: &GameEntity) -> Option<StatsRow> {
         EntityKindRow::Enemy => defaults::enemy_defaults(),
         EntityKindRow::Boss => defaults::boss_defaults(),
         EntityKindRow::Dummy | EntityKindRow::AllyDummy => defaults::dummy_defaults(),
-        EntityKindRow::Npc => return None,
+        EntityKindRow::Npc | EntityKindRow::ResourceNode => return None,
     };
     Some(StatsRow::from(&defaults))
 }

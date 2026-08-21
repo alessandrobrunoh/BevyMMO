@@ -1,6 +1,7 @@
 //! Item content and its registry.
 
 pub mod armor;
+pub mod materials;
 
 pub mod purity_charm;
 pub mod weapons;
@@ -31,6 +32,7 @@ pub fn default_items() -> ItemRegistry {
     armor::register(&mut registry);
 
     purity_charm::register(&mut registry);
+    materials::register(&mut registry);
     weapons::staff::mage_staff::register(&mut registry);
     weapons::bow::bow::register(&mut registry);
     weapons::sword::sword::register(&mut registry);
@@ -82,7 +84,23 @@ mod tests {
         assert!(registry.contains(&ItemId::new(armor::simple::SimpleBuckler::ID)));
         assert!(registry.contains(&ItemId::new(armor::simple::SimpleBoots::ID)));
 
-        assert_eq!(registry.len(), 13); // 4 weapons + 3 fancy armor + 5 simple + charm
+        assert!(registry.contains(&ItemId::new(materials::wood::Wood::ID)));
+        assert_eq!(registry.len(), 14); // 4 weapons + 3 fancy armor + 5 simple + charm + wood
+    }
+
+    #[test]
+    fn wood_is_the_oak_tree_yield() {
+        use crate::placeables::{PlaceableRegistry, ResourceNodePlaceable};
+        let items = default_items();
+        let mut placeables = PlaceableRegistry::default();
+        crate::placeable_definitions::register_all(&mut placeables);
+        let oak = placeables
+            .resources
+            .get(&crate::placeables::KindId::new("resource_oak_tree"))
+            .expect("oak tree is registered");
+        let yield_item = ResourceNodePlaceable::resource_config(oak.as_ref()).yield_item;
+        assert_eq!(yield_item.as_str(), "wood");
+        assert!(items.contains(&yield_item));
     }
 
     #[test]

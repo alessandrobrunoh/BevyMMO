@@ -13,6 +13,7 @@ use super::weapon_inscription_row_type::WeaponInscriptionRow;
 pub struct ItemInstanceRow {
     pub instance_id: u64,
     pub item_id: String,
+    pub quantity: u32,
     pub ability_selection: AbilitySelectionRow,
     pub root_inscription: Option<WeaponInscriptionRow>,
     pub armor_inscription: Option<ArmorInscriptionRow>,

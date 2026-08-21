@@ -58,6 +58,10 @@ pub mod equipment_table;
 pub mod equipment_table_type;
 pub mod game_entity_table;
 pub mod game_entity_type;
+pub mod gather_session_table;
+pub mod gather_session_type;
+pub mod gather_yield_event_type;
+pub mod gather_yield_table;
 pub mod gm_clear_prop_override_reducer;
 pub mod gm_grant_gold_reducer;
 pub mod gm_reseed_world_reducer;
@@ -118,6 +122,8 @@ pub mod register_reducer;
 pub mod release_cast_reducer;
 pub mod resonance_table;
 pub mod resonance_type;
+pub mod resource_node_table;
+pub mod resource_node_type;
 pub mod respawn_reducer;
 pub mod role_row_type;
 pub mod secondary_word_row_type;
@@ -132,9 +138,11 @@ pub mod set_root_inscription_reducer;
 pub mod slot_inscription_row_type;
 pub mod spell_visual_effect_event_type;
 pub mod spell_visual_effect_table;
+pub mod start_gather_reducer;
 pub mod stat_modifier_table;
 pub mod stat_modifier_type;
 pub mod stats_row_type;
+pub mod stop_gather_reducer;
 pub mod stop_reducer;
 pub mod threat_table;
 pub mod threat_type;
@@ -197,6 +205,10 @@ pub use equipment_table::*;
 pub use equipment_table_type::EquipmentTable;
 pub use game_entity_table::*;
 pub use game_entity_type::GameEntity;
+pub use gather_session_table::*;
+pub use gather_session_type::GatherSession;
+pub use gather_yield_event_type::GatherYieldEvent;
+pub use gather_yield_table::*;
 pub use gm_clear_prop_override_reducer::gm_clear_prop_override;
 pub use gm_grant_gold_reducer::gm_grant_gold;
 pub use gm_reseed_world_reducer::gm_reseed_world;
@@ -257,6 +269,8 @@ pub use register_reducer::register;
 pub use release_cast_reducer::release_cast;
 pub use resonance_table::*;
 pub use resonance_type::Resonance;
+pub use resource_node_table::*;
+pub use resource_node_type::ResourceNode;
 pub use respawn_reducer::respawn;
 pub use role_row_type::RoleRow;
 pub use secondary_word_row_type::SecondaryWordRow;
@@ -271,9 +285,11 @@ pub use set_root_inscription_reducer::set_root_inscription;
 pub use slot_inscription_row_type::SlotInscriptionRow;
 pub use spell_visual_effect_event_type::SpellVisualEffectEvent;
 pub use spell_visual_effect_table::*;
+pub use start_gather_reducer::start_gather;
 pub use stat_modifier_table::*;
 pub use stat_modifier_type::StatModifier;
 pub use stats_row_type::StatsRow;
+pub use stop_gather_reducer::stop_gather;
 pub use stop_reducer::stop;
 pub use threat_table::*;
 pub use threat_type::Threat;
@@ -436,7 +452,11 @@ pub enum Reducer {
         secondary_words: Vec<String>,
         ultimate_words: Vec<String>,
     },
+    StartGather {
+        node_entity_id: u64,
+    },
     Stop,
+    StopGather,
     UnequipItem {
         slot: String,
     },
@@ -488,7 +508,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetHotbarSpell { .. } => "set_hotbar_spell",
             Reducer::SetResonanceXp { .. } => "set_resonance_xp",
             Reducer::SetRootInscription { .. } => "set_root_inscription",
+            Reducer::StartGather { .. } => "start_gather",
             Reducer::Stop => "stop",
+            Reducer::StopGather => "stop_gather",
             Reducer::UnequipItem { .. } => "unequip_item",
             _ => unreachable!(),
         }
@@ -733,7 +755,13 @@ impl __sdk::Reducer for Reducer {
                 secondary_words: secondary_words.clone(),
                 ultimate_words: ultimate_words.clone(),
             }),
+            Reducer::StartGather { node_entity_id } => {
+                __sats::bsatn::to_vec(&start_gather_reducer::StartGatherArgs {
+                    node_entity_id: node_entity_id.clone(),
+                })
+            }
             Reducer::Stop => __sats::bsatn::to_vec(&stop_reducer::StopArgs {}),
+            Reducer::StopGather => __sats::bsatn::to_vec(&stop_gather_reducer::StopGatherArgs {}),
             Reducer::UnequipItem { slot } => {
                 __sats::bsatn::to_vec(&unequip_item_reducer::UnequipItemArgs { slot: slot.clone() })
             }
@@ -759,6 +787,8 @@ pub struct DbUpdate {
     entity_stats: __sdk::TableUpdate<EntityStats>,
     equipment: __sdk::TableUpdate<EquipmentTable>,
     game_entity: __sdk::TableUpdate<GameEntity>,
+    gather_session: __sdk::TableUpdate<GatherSession>,
+    gather_yield: __sdk::TableUpdate<GatherYieldEvent>,
     hotbar: __sdk::TableUpdate<Hotbar>,
     inventory: __sdk::TableUpdate<InventoryTable>,
     known_ancient_language: __sdk::TableUpdate<KnownAncientLanguageTable>,
@@ -776,6 +806,7 @@ pub struct DbUpdate {
     projectile: __sdk::TableUpdate<Projectile>,
     prop_override: __sdk::TableUpdate<PropOverride>,
     resonance: __sdk::TableUpdate<Resonance>,
+    resource_node: __sdk::TableUpdate<ResourceNode>,
     session: __sdk::TableUpdate<Session>,
     spell_visual_effect: __sdk::TableUpdate<SpellVisualEffectEvent>,
     stat_modifier: __sdk::TableUpdate<StatModifier>,
@@ -828,6 +859,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "game_entity" => db_update
                     .game_entity
                     .append(game_entity_table::parse_table_update(table_update)?),
+                "gather_session" => db_update
+                    .gather_session
+                    .append(gather_session_table::parse_table_update(table_update)?),
+                "gather_yield" => db_update
+                    .gather_yield
+                    .append(gather_yield_table::parse_table_update(table_update)?),
                 "hotbar" => db_update
                     .hotbar
                     .append(hotbar_table::parse_table_update(table_update)?),
@@ -879,6 +916,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "resonance" => db_update
                     .resonance
                     .append(resonance_table::parse_table_update(table_update)?),
+                "resource_node" => db_update
+                    .resource_node
+                    .append(resource_node_table::parse_table_update(table_update)?),
                 "session" => db_update
                     .session
                     .append(session_table::parse_table_update(table_update)?),
@@ -955,6 +995,10 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.game_entity = cache
             .apply_diff_to_table::<GameEntity>("game_entity", &self.game_entity)
             .with_updates_by_pk(|row| &row.entity_id);
+        diff.gather_session = cache
+            .apply_diff_to_table::<GatherSession>("gather_session", &self.gather_session)
+            .with_updates_by_pk(|row| &row.entity_id);
+        diff.gather_yield = self.gather_yield.into_event_diff();
         diff.hotbar = cache
             .apply_diff_to_table::<Hotbar>("hotbar", &self.hotbar)
             .with_updates_by_pk(|row| &row.character_id);
@@ -1007,6 +1051,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.resonance = cache
             .apply_diff_to_table::<Resonance>("resonance", &self.resonance)
             .with_updates_by_pk(|row| &row.id);
+        diff.resource_node = cache
+            .apply_diff_to_table::<ResourceNode>("resource_node", &self.resource_node)
+            .with_updates_by_pk(|row| &row.placement_id);
         diff.session = cache
             .apply_diff_to_table::<Session>("session", &self.session)
             .with_updates_by_pk(|row| &row.identity);
@@ -1066,6 +1113,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "game_entity" => db_update
                     .game_entity
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "gather_session" => db_update
+                    .gather_session
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "gather_yield" => db_update
+                    .gather_yield
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "hotbar" => db_update
                     .hotbar
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -1116,6 +1169,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "resonance" => db_update
                     .resonance
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "resource_node" => db_update
+                    .resource_node
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "session" => db_update
                     .session
@@ -1184,6 +1240,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "game_entity" => db_update
                     .game_entity
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "gather_session" => db_update
+                    .gather_session
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "gather_yield" => db_update
+                    .gather_yield
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "hotbar" => db_update
                     .hotbar
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -1235,6 +1297,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "resonance" => db_update
                     .resonance
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "resource_node" => db_update
+                    .resource_node
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "session" => db_update
                     .session
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -1278,6 +1343,8 @@ pub struct AppliedDiff<'r> {
     entity_stats: __sdk::TableAppliedDiff<'r, EntityStats>,
     equipment: __sdk::TableAppliedDiff<'r, EquipmentTable>,
     game_entity: __sdk::TableAppliedDiff<'r, GameEntity>,
+    gather_session: __sdk::TableAppliedDiff<'r, GatherSession>,
+    gather_yield: __sdk::TableAppliedDiff<'r, GatherYieldEvent>,
     hotbar: __sdk::TableAppliedDiff<'r, Hotbar>,
     inventory: __sdk::TableAppliedDiff<'r, InventoryTable>,
     known_ancient_language: __sdk::TableAppliedDiff<'r, KnownAncientLanguageTable>,
@@ -1295,6 +1362,7 @@ pub struct AppliedDiff<'r> {
     projectile: __sdk::TableAppliedDiff<'r, Projectile>,
     prop_override: __sdk::TableAppliedDiff<'r, PropOverride>,
     resonance: __sdk::TableAppliedDiff<'r, Resonance>,
+    resource_node: __sdk::TableAppliedDiff<'r, ResourceNode>,
     session: __sdk::TableAppliedDiff<'r, Session>,
     spell_visual_effect: __sdk::TableAppliedDiff<'r, SpellVisualEffectEvent>,
     stat_modifier: __sdk::TableAppliedDiff<'r, StatModifier>,
@@ -1354,6 +1422,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         );
         callbacks.invoke_table_row_callbacks::<EquipmentTable>("equipment", &self.equipment, event);
         callbacks.invoke_table_row_callbacks::<GameEntity>("game_entity", &self.game_entity, event);
+        callbacks.invoke_table_row_callbacks::<GatherSession>(
+            "gather_session",
+            &self.gather_session,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<GatherYieldEvent>(
+            "gather_yield",
+            &self.gather_yield,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<Hotbar>("hotbar", &self.hotbar, event);
         callbacks.invoke_table_row_callbacks::<InventoryTable>("inventory", &self.inventory, event);
         callbacks.invoke_table_row_callbacks::<KnownAncientLanguageTable>(
@@ -1407,6 +1485,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<Resonance>("resonance", &self.resonance, event);
+        callbacks.invoke_table_row_callbacks::<ResourceNode>(
+            "resource_node",
+            &self.resource_node,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<Session>("session", &self.session, event);
         callbacks.invoke_table_row_callbacks::<SpellVisualEffectEvent>(
             "spell_visual_effect",
@@ -2093,6 +2176,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         entity_stats_table::register_table(client_cache);
         equipment_table::register_table(client_cache);
         game_entity_table::register_table(client_cache);
+        gather_session_table::register_table(client_cache);
+        gather_yield_table::register_table(client_cache);
         hotbar_table::register_table(client_cache);
         inventory_table::register_table(client_cache);
         known_ancient_language_table::register_table(client_cache);
@@ -2110,6 +2195,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         projectile_table::register_table(client_cache);
         prop_override_table::register_table(client_cache);
         resonance_table::register_table(client_cache);
+        resource_node_table::register_table(client_cache);
         session_table::register_table(client_cache);
         spell_visual_effect_table::register_table(client_cache);
         stat_modifier_table::register_table(client_cache);
@@ -2130,6 +2216,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "entity_stats",
         "equipment",
         "game_entity",
+        "gather_session",
+        "gather_yield",
         "hotbar",
         "inventory",
         "known_ancient_language",
@@ -2147,6 +2235,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "projectile",
         "prop_override",
         "resonance",
+        "resource_node",
         "session",
         "spell_visual_effect",
         "stat_modifier",

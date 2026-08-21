@@ -70,6 +70,7 @@ WALKABLE_PREFIX = "WALKABLE_"
 BLOCKING_PREFIX = "BLOCKING_"
 TRAVERSAL_PREFIX = "TRAVERSAL_"
 PLACEABLE_PREFIX = "PLACEABLE_"
+RESOURCE_PREFIX = "RESOURCE_"
 
 # Custom-property key that tags an object as a placeable marker.
 # Recognised values are the catalog KindIds authored in
@@ -718,7 +719,14 @@ def collect_props(report: ExportReport) -> list[dict]:
 
         kind = custom_prop_str(obj, KIND_PROP_KEY, "")
         is_placeable_prefixed = obj.name.startswith(PLACEABLE_PREFIX)
-        if not kind and not is_placeable_prefixed:
+        is_resource_prefixed = obj.name.startswith(RESOURCE_PREFIX)
+        if not kind and not is_placeable_prefixed and not is_resource_prefixed:
+            continue
+
+        if is_resource_prefixed and not kind:
+            report.warn(
+                f"{obj.name} uses RESOURCE_ prefix but has no {KIND_PROP_KEY}; skipped"
+            )
             continue
 
         if not kind:

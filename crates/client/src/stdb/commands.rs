@@ -53,6 +53,8 @@ use super::module_bindings::set_ability_selection_reducer::set_ability_selection
 use super::module_bindings::set_armor_inscription_reducer::set_armor_inscription as set_armor_inscription_reducer;
 
 use super::module_bindings::set_root_inscription_reducer::set_root_inscription as set_root_inscription_reducer;
+use super::module_bindings::start_gather_reducer::start_gather as start_gather_reducer;
+use super::module_bindings::stop_gather_reducer::stop_gather as stop_gather_reducer;
 use super::module_bindings::unequip_item_reducer::unequip_item as unequip_item_reducer;
 use super::module_bindings::Vec3Row;
 use super::plugin::StdbConnection;
@@ -213,6 +215,18 @@ pub fn set_ability_selection(conn: &StdbConnection, slot: AbilitySlot, ability_i
         ability_id,
         conn.report_rejection("could not choose that ability"),
     )
+}
+
+/// Starts gathering the targeted resource node.
+pub fn start_gather(conn: &StdbConnection, node_entity_id: u64) -> Sent {
+    conn.reducers()
+        .start_gather_then(node_entity_id, conn.report_rejection("could not gather"))
+}
+
+/// Stops the local gather channel, if any.
+pub fn stop_gather(conn: &StdbConnection) -> Sent {
+    conn.reducers()
+        .stop_gather_then(conn.report_rejection("could not stop gathering"))
 }
 
 /// Ends a channelled or charged cast. Naming the spell stops a stale release

@@ -29,15 +29,14 @@ pub fn game_tick(ctx: &ReducerContext, _schedule: TickSchedule) {
         return;
     }
 
-    if !ALLY_DUMMY_SEEDED.load(Ordering::Relaxed)
-        && crate::world::ensure_ally_dummy(ctx)
-    {
+    if !ALLY_DUMMY_SEEDED.load(Ordering::Relaxed) && crate::world::ensure_ally_dummy(ctx) {
         ALLY_DUMMY_SEEDED.store(true, Ordering::Relaxed);
     }
 
     sim::status::step(ctx, dt);
     sim::crowd_control::step(ctx, dt);
     sim::movement::step(ctx, dt);
+    sim::gathering::step(ctx, dt);
     sim::spells::step(ctx, dt);
     sim::combat::step(ctx, dt);
     sim::ai::step(ctx, dt);

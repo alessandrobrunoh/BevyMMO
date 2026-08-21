@@ -52,6 +52,7 @@ use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, Crow
 use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
 use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
 use bevymmo_gameplay::entity::components::{EntityKind, EntityState, GameEntity, PlayerName};
+use bevymmo_gameplay::gathering::{ActiveGather, Harvestable};
 use bevymmo_gameplay::items::components::{Equipment, Inventory};
 use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
 use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
@@ -79,6 +80,8 @@ use super::module_bindings::delete_character_reducer::delete_character;
 use super::module_bindings::entity_stats_table::EntityStatsTableAccess;
 use super::module_bindings::equipment_table::EquipmentTableAccess;
 use super::module_bindings::game_entity_table::GameEntityTableAccess;
+use super::module_bindings::gather_session_table::GatherSessionTableAccess;
+use super::module_bindings::gather_yield_table::GatherYieldTableAccess;
 use super::module_bindings::heartbeat_reducer::heartbeat;
 use super::module_bindings::hotbar_table::HotbarTableAccess;
 use super::module_bindings::inventory_table::InventoryTableAccess;
@@ -96,16 +99,18 @@ use super::module_bindings::player_message_table::PlayerMessageTableAccess;
 use super::module_bindings::player_table::PlayerTableAccess;
 use super::module_bindings::projectile_table::ProjectileTableAccess;
 use super::module_bindings::register_reducer::register;
+use super::module_bindings::resource_node_table::ResourceNodeTableAccess;
 use super::module_bindings::session_table::SessionTableAccess;
 use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAccess;
 use super::module_bindings::stat_modifier_table::StatModifierTableAccess;
 use super::module_bindings::{
     ActiveStatus, AoeRegion, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState,
     CharacterWallet, ColorRow, Cooldown, CrowdControl, CrowdControlKindRow, DbConnection,
-    EntityKindRow, EntityStateRow, EntityStats, EquipmentTable, GameEntity as EntityRow, Hotbar,
-    InventoryTable, ItemInstanceRow, KnownAncientLanguageTable, MarketBuyOrder, MarketSellOrder,
-    ModifierKindRow, Npc, PeriodicEffect, Player, PlayerMessageEvent, Projectile,
-    ReducerEventContext, RemoteReducers, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
+    EntityKindRow, EntityStateRow, EntityStats, EquipmentTable, GameEntity as EntityRow,
+    GatherSession, GatherYieldEvent, Hotbar, InventoryTable, ItemInstanceRow,
+    KnownAncientLanguageTable, MarketBuyOrder, MarketSellOrder, ModifierKindRow, Npc,
+    PeriodicEffect, Player, PlayerMessageEvent, Projectile, ReducerEventContext, RemoteReducers,
+    ResourceNode, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
 };
 
 /// How fast predicted position is pulled back towards the authoritative one, as
@@ -190,6 +195,10 @@ enum RowEvent {
     AoeRegion(AoeRegion),
     AoeRegionRemoved(u64),
     Npc(Npc),
+    ResourceNode(ResourceNode),
+    GatherSession(GatherSession),
+    GatherSessionRemoved(u64),
+    GatherYield(GatherYieldEvent),
     SellOrder(MarketSellOrder),
     SellOrderRemoved(u64),
     BuyOrder(MarketBuyOrder),
@@ -225,6 +234,8 @@ struct PendingRows {
     hotbar: HashMap<Uuid, Hotbar>,
     known_ancient_language: HashMap<Uuid, KnownAncientLanguageTable>,
     npcs: HashMap<u64, Npc>,
+    resource_nodes: HashMap<u64, ResourceNode>,
+    gather_sessions: HashMap<u64, GatherSession>,
     boss_state: HashMap<u64, BossState>,
     /// Keyed by `active_status.id`, not by entity: one entity can carry several.
     active_status: HashMap<u64, ActiveStatus>,
@@ -733,6 +744,9 @@ fn connect(
             "SELECT * FROM party",
             "SELECT * FROM party_member",
             "SELECT * FROM npc",
+            "SELECT * FROM resource_node",
+            "SELECT * FROM gather_session",
+            "SELECT * FROM gather_yield",
             "SELECT * FROM market",
             "SELECT * FROM market_sell_order",
             "SELECT * FROM market_buy_order",
@@ -820,6 +834,8 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(projectile, Projectile);
     mirror!(aoe_region, AoeRegion);
     mirror!(npc, Npc);
+    mirror!(resource_node, ResourceNode);
+    mirror!(gather_session, GatherSession);
     mirror!(market_sell_order, SellOrder);
     mirror!(market_buy_order, BuyOrder);
 
@@ -869,6 +885,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror_event!(cast_ended, CastEnded);
     mirror_event!(spell_visual_effect, SpellVisualEffect);
     mirror_event!(player_message, PlayerMessage);
+    mirror_event!(gather_yield, GatherYield);
 
     let projectile_removed = tx.clone();
     conn.db().projectile().on_delete(move |_ctx, row| {
@@ -882,6 +899,10 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     let removed = tx.clone();
     conn.db().game_entity().on_delete(move |_ctx, row| {
         let _ = removed.send(RowEvent::EntityRemoved(row.entity_id));
+    });
+    let gather_removed = tx.clone();
+    conn.db().gather_session().on_delete(move |_ctx, row| {
+        let _ = gather_removed.send(RowEvent::GatherSessionRemoved(row.entity_id));
     });
 }
 
@@ -1073,6 +1094,30 @@ fn drain_events(
                     }
                 }
                 state.pending.npcs.insert(row.entity_id, row);
+            }
+            RowEvent::ResourceNode(row) => {
+                if let Some(entity) = state.map.get(row.entity_id) {
+                    commands.entity(entity).insert(harvestable_from(&row));
+                }
+                state.pending.resource_nodes.insert(row.entity_id, row);
+            }
+            RowEvent::GatherSession(row) => {
+                if let Some(entity) = state.map.get(row.entity_id) {
+                    commands.entity(entity).insert(active_gather_from(&row));
+                }
+                state.pending.gather_sessions.insert(row.entity_id, row);
+            }
+            RowEvent::GatherSessionRemoved(entity_id) => {
+                if let Some(entity) = state.map.get(entity_id) {
+                    commands.entity(entity).remove::<ActiveGather>();
+                }
+                state.pending.gather_sessions.remove(&entity_id);
+            }
+            RowEvent::GatherYield(row) => {
+                debug!(
+                    "gathered {} {} extra={} depleted={}",
+                    row.amount, row.item_id, row.extra, row.node_depleted
+                );
             }
             RowEvent::SellOrder(row) => {
                 state.markets.orders.insert(row.id, row);
@@ -1312,7 +1357,29 @@ fn replay_entity(
     if let Some(row) = pending.boss_state.get(&entity_id) {
         apply_boss_state(commands, entity, row);
     }
+    if let Some(row) = pending.resource_nodes.get(&entity_id) {
+        commands.entity(entity).insert(harvestable_from(row));
+    }
+    if let Some(row) = pending.gather_sessions.get(&entity_id) {
+        commands.entity(entity).insert(active_gather_from(row));
+    }
     apply_effects(commands, entity, entity_id, pending);
+}
+
+fn harvestable_from(row: &ResourceNode) -> Harvestable {
+    Harvestable {
+        placement_id: row.placement_id.clone(),
+        kind_id: row.kind_id.clone(),
+        current_pieces: row.current_pieces,
+    }
+}
+
+fn active_gather_from(row: &GatherSession) -> ActiveGather {
+    ActiveGather {
+        node_entity_id: row.node_entity_id,
+        elapsed_seconds: row.elapsed_seconds,
+        required_seconds: row.required_seconds,
+    }
 }
 
 /// Rewrites `CrowdControlState` and `ActiveStatModifiers` — but only when the
@@ -1798,6 +1865,9 @@ fn apply_entity(
             cmd.insert(NpcMarket { market_id });
         }
     }
+    if let Some(node) = pending.resource_nodes.get(&row.entity_id) {
+        cmd.insert(harvestable_from(node));
+    }
 }
 
 fn entity_color(color: &ColorRow) -> EntityColor {
@@ -1821,6 +1891,7 @@ fn entity_kind(kind: EntityKindRow) -> EntityKind {
         EntityKindRow::AllyDummy => EntityKind::Ally,
         EntityKindRow::Dummy => EntityKind::Neutral,
         EntityKindRow::Enemy | EntityKindRow::Boss => EntityKind::Hostile,
+        EntityKindRow::ResourceNode => EntityKind::Resource,
     }
 }
 
@@ -1884,6 +1955,7 @@ fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instanc
     ItemInstance {
         instance_id: ItemInstanceId(row.instance_id),
         item_id: ItemId::new(row.item_id.clone()),
+        quantity: row.quantity.max(1),
         ability_selection: AbilitySelection {
             primary: row.ability_selection.primary.clone().map(AbilityId::new),
             secondary: row.ability_selection.secondary.clone().map(AbilityId::new),
@@ -2233,6 +2305,7 @@ fn send_move_commands(
         return;
     };
 
+    let _ = super::commands::stop_gather(&conn);
     if let Err(err) = conn.reducers().move_to(point.x, point.y, point.z) {
         error!("move_to failed: {err}");
     }

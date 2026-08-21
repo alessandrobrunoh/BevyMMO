@@ -10292,6 +10292,34 @@
       "blocks_movement": false
     },
     {
+      "id": "oak_spawn_west",
+      "kind": "resource_oak_tree",
+      "transform": {
+        "translation": [
+          -48.0,
+          0.0,
+          4.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "blocks_movement": true,
+      "collision": {
+        "Cylinder": {
+          "radius": 0.4,
+          "height": 5.5
+        }
+      }
+    },
+    {
       "id": "PLACEABLE_player_spawn_east",
       "kind": "player_spawn",
       "transform": {

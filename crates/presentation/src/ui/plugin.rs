@@ -4,9 +4,9 @@ use bevy::prelude::*;
 
 use super::{
     boss_bar, card, character_roster, chat, connecting, crowd_control_bar, death_screen,
-    debug_position, entity_bar, inventory, login, main_menu, market, notices, npc_sidebar,
-    pause_menu, player_stats, scoreboard, scrollbar, settings, status_bar, systems, target_frame,
-    target_indicator,
+    debug_position, entity_bar, gather_bar, inventory, login, main_menu, market, notices,
+    npc_sidebar, pause_menu, player_stats, scoreboard, scrollbar, settings, status_bar, systems,
+    target_frame, target_indicator,
 };
 
 use bevymmo_client::pointer::{world_pointer_blocked, PointerOnHud};
@@ -46,6 +46,7 @@ impl Plugin for UiPlugin {
             death_screen::DeathScreenPlugin,
             crowd_control_bar::CrowdControlBarPlugin,
             inventory::InventoryUiPlugin,
+            gather_bar::GatherBarPlugin,
             boss_bar::BossBarPlugin,
             status_bar::StatusBarPlugin,
             scrollbar::ScrollbarPlugin,

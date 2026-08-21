@@ -45,4 +45,4 @@ pub use definition::{
 pub use registry::{KindId, PlaceableRegistry};
 
 // Re-export the procedural macro for ergonomic prop definition
-pub use bevymmo_props_macro::props;
+pub use bevymmo_props_macro::{props, resource};

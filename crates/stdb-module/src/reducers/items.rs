@@ -49,7 +49,7 @@ use bevymmo_domain::abilities::{
     BaseAbilityRegistry, RootWordId, RootWordRegistry,
 };
 use bevymmo_domain::items::components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY};
-use bevymmo_domain::items::definition::EquipRequirement;
+use bevymmo_domain::items::definition::{EquipRequirement, ItemCategory};
 use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId, STARTER_WEAPON_ITEM_ID};
 use bevymmo_domain::items::registry::{ItemId, ItemRegistry};
 use bevymmo_domain::items::{compute_available_choices, AvailableSpellChoices};
@@ -773,23 +773,63 @@ fn is_greeter_stock(item_id: &str) -> bool {
 /// The `item_id` is checked against the registry: an inventory holding an id
 /// nothing can look up is a slot the player can never equip or drop.
 pub fn grant_item(ctx: &ReducerContext, character_id: Uuid, item_id: &str) -> Result<u8, String> {
-    let id = ItemId::new(item_id.to_string());
-    if !item_registry().contains(&id) {
-        return Err(format!("unknown item {item_id:?}"));
+    grant_items(ctx, character_id, item_id, 1)?;
+    Ok(0)
+}
+
+pub(crate) fn item_category(item_id: &str) -> Option<ItemCategory> {
+    item_registry()
+        .get(&ItemId::new(item_id.to_string()))
+        .map(|item| item.config().category)
+}
+
+/// Puts `amount` of `item_id` into the inventory, stacking Materials in the bag.
+///
+/// Returns how many pieces were actually placed. A short grant still persists:
+/// callers that must not debit a node for undelivered pieces should check
+/// `space_for` first (gathering does).
+pub fn grant_items(
+    ctx: &ReducerContext,
+    character_id: Uuid,
+    item_id: &str,
+    amount: u32,
+) -> Result<u32, String> {
+    if amount == 0 {
+        return Ok(0);
     }
+    let id = ItemId::new(item_id.to_string());
+    let item = item_registry()
+        .get(&id)
+        .ok_or_else(|| format!("unknown item {item_id:?}"))?;
 
     let mut inventory = load_inventory(ctx, character_id)?;
-    let free = inventory
-        .slots
-        .iter()
-        .position(Option::is_none)
-        .ok_or_else(|| "inventory is full".to_string())?;
+    let mut next_id = next_instance_id(ctx);
+    let added = if Inventory::stacks_category(item.config().category) {
+        inventory.add_stackable(id, amount, || {
+            let minted = ItemInstanceId(next_id);
+            next_id += 1;
+            minted
+        })
+    } else {
+        let mut added = 0u32;
+        for _ in 0..amount {
+            let Some(free) = inventory.slots.iter().position(Option::is_none) else {
+                break;
+            };
+            let mut instance = ItemInstance::new(id.clone());
+            instance.instance_id = ItemInstanceId(next_id);
+            next_id += 1;
+            inventory.slots[free] = Some(instance);
+            added += 1;
+        }
+        added
+    };
 
-    let mut instance = ItemInstance::new(id);
-    instance.instance_id = ItemInstanceId(next_instance_id(ctx));
-    inventory.slots[free] = Some(instance);
+    if added == 0 {
+        return Err("inventory is full".to_string());
+    }
     store_inventory(ctx, character_id, &inventory);
-    Ok(free as u8)
+    Ok(added)
 }
 
 /// Moves the granted starter staff from inventory onto the weapon slot and
@@ -879,7 +919,10 @@ fn check_equip_requirements(requirements: &[EquipRequirement]) -> Result<(), Str
 // Row access
 // ---------------------------------------------------------------------------
 
-pub(crate) fn load_inventory(ctx: &ReducerContext, character_id: Uuid) -> Result<Inventory, String> {
+pub(crate) fn load_inventory(
+    ctx: &ReducerContext,
+    character_id: Uuid,
+) -> Result<Inventory, String> {
     ctx.db
         .inventory()
         .character_id()

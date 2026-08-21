@@ -1,5 +1,6 @@
 //! Copper ore vein resource node with a GLB model.
 
+use crate::items::ItemId;
 use crate::placeables::{
     AssetHint, KindId, PlaceableDefaults, PlaceableDefinition, PlaceableRegistry, ResourceConfig,
     ResourceNodePlaceable,
@@ -39,10 +40,15 @@ impl PlaceableDefinition for CopperVeinDefinition {
 impl ResourceNodePlaceable for CopperVeinDefinition {
     fn resource_config(&self) -> ResourceConfig {
         ResourceConfig {
-            max_health: 3.0,
-            respawn_seconds: 30.0,
-            yield_item: "copper_ore".to_string(),
+            max_pieces: 3,
+            channel_seconds: 2.0,
+            min_channel_seconds: 0.25,
+            yield_item: ItemId::new("copper_ore"),
             yield_amount: 2,
+            regen_interval_seconds: 30.0,
+            regen_amount: 3,
+            interact_range: 2.5,
+            required_item_id: None,
         }
     }
 }

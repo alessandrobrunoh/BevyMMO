@@ -197,6 +197,7 @@ pub fn update_target_frame_content(
                 EntityKind::Ally => "Ally".to_string(),
                 EntityKind::Neutral => "Neutral".to_string(),
                 EntityKind::Hostile => "Hostile".to_string(),
+                EntityKind::Resource => "Resource".to_string(),
             },
         );
         if parts.last_kind_text != kind_name {

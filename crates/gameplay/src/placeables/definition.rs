@@ -175,9 +175,9 @@ pub trait TriggerPlaceable: PlaceableDefinition {
     fn trigger_config(&self) -> TriggerConfig;
 }
 
-/// Harvestable node (ore vein, herb).
+/// Harvestable node (ore vein, tree, herb).
 pub trait ResourceNodePlaceable: PlaceableDefinition {
-    /// Health, respawn timer and yield for this resource kind.
+    /// Piece count, channel time, regen and yield for this resource kind.
     fn resource_config(&self) -> ResourceConfig;
 }
 

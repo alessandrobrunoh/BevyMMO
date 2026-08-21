@@ -766,6 +766,7 @@ fn cancel_active_cast(ctx: &ReducerContext, entity_id: u64) {
     if let Some(active) = ctx.db.cast_state().entity_id().find(&entity_id) {
         spells::end_cast(ctx, entity_id, active.spell_id, true);
     }
+    crate::sim::gathering::cancel_session(ctx, entity_id);
 }
 
 /// Clears the leftover dest when a wind-up starts so a previous click does

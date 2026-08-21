@@ -376,6 +376,7 @@ pub struct ItemInstanceRow {
     /// Zero means "not stored yet"; see [`ItemInstanceId`].
     pub instance_id: u64,
     pub item_id: String,
+    pub quantity: u32,
     pub ability_selection: AbilitySelectionRow,
     /// New RootWord-based weapon inscription model.
     pub root_inscription: Option<WeaponInscriptionRow>,
@@ -388,6 +389,7 @@ impl From<&ItemInstance> for ItemInstanceRow {
         Self {
             instance_id: i.instance_id.0,
             item_id: i.item_id.as_str().to_string(),
+            quantity: i.quantity.max(1),
             ability_selection: (&i.ability_selection).into(),
             root_inscription: i.root_inscription.as_ref().map(Into::into),
             armor_inscription: i.armor_inscription.as_ref().map(Into::into),
@@ -400,6 +402,7 @@ impl From<&ItemInstanceRow> for ItemInstance {
         ItemInstance {
             instance_id: ItemInstanceId(i.instance_id),
             item_id: ItemId::new(i.item_id.clone()),
+            quantity: i.quantity.max(1),
             ability_selection: (&i.ability_selection).into(),
             root_inscription: i.root_inscription.as_ref().map(Into::into),
             armor_inscription: i.armor_inscription.as_ref().map(Into::into),

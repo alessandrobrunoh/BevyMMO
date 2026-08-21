@@ -4,6 +4,8 @@ use crate::assets::{BossDragonAssets, CreatureAssets, PlayerAssets};
 use crate::game_state::Screen;
 use bevymmo_gameplay::entity::boss::components::Boss;
 use bevymmo_gameplay::entity::components::EntityKind;
+use bevymmo_gameplay::gathering::Harvestable;
+use bevymmo_gameplay::placeables::{AssetHint, KindId, PlaceableRegistry};
 use bevymmo_network::network::protocol::*;
 use bevymmo_network::world_components::AoeZone;
 use std::collections::HashMap;
@@ -119,7 +121,9 @@ pub(crate) fn visual_prefab(kind: Option<EntityKind>, is_boss: bool) -> VisualPr
         Some(EntityKind::Hostile) if is_boss => VisualPrefab::Dragon,
         Some(EntityKind::Hostile) => VisualPrefab::Goblin,
         Some(EntityKind::Friendly) => VisualPrefab::Merchant,
-        Some(EntityKind::Ally) | Some(EntityKind::Neutral) | None => VisualPrefab::Cube,
+        Some(EntityKind::Ally) | Some(EntityKind::Neutral) | Some(EntityKind::Resource) | None => {
+            VisualPrefab::Cube
+        }
     }
 }
 
@@ -178,6 +182,8 @@ fn spawn_entity_meshes(
     dragon_assets: Option<Res<BossDragonAssets>>,
     creature_assets: Option<Res<CreatureAssets>>,
     mut renderer_assets: Option<ResMut<RendererAssets>>,
+    placeables: Option<Res<PlaceableRegistry>>,
+    asset_server: Option<Res<AssetServer>>,
     entities: Query<
         (
             Entity,
@@ -186,11 +192,30 @@ fn spawn_entity_meshes(
             Option<&EntityKind>,
             Option<&ProjectileVisual>,
             Option<&Boss>,
+            Option<&Harvestable>,
         ),
         Without<RenderedEntity>,
     >,
 ) {
-    for (entity, position, color, kind, projectile_visual, boss) in entities.iter() {
+    for (entity, position, color, kind, projectile_visual, boss, harvestable) in entities.iter() {
+        if let (Some(harvestable), Some(placeables), Some(asset_server)) =
+            (harvestable, placeables.as_ref(), asset_server.as_ref())
+        {
+            if let Some(definition) = placeables
+                .resources
+                .get(&KindId::new(harvestable.kind_id.clone()))
+            {
+                if let AssetHint::Scene(path) = definition.asset_hint() {
+                    let handle = asset_server.load::<WorldAsset>(format!("{path}#Scene0"));
+                    commands.entity(entity).insert((
+                        WorldAssetRoot(handle),
+                        Transform::from_translation(position.0),
+                        RenderedEntity,
+                    ));
+                    continue;
+                }
+            }
+        }
         let is_projectile = projectile_visual.is_some();
         if is_projectile {
             let (mesh, material) = if let Some(ra) = renderer_assets.as_ref() {

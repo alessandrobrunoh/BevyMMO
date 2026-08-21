@@ -93,6 +93,7 @@ pub fn get_or_spawn_root<M: Component + Default>(
                 position_type: PositionType::Absolute,
                 ..default()
             },
+            Pickable::IGNORE,
             M::default(),
         ))
         .id()

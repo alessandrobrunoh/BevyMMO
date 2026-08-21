@@ -3,8 +3,8 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevymmo_client::pointer::{hud_wants_pointer, PointerOnHud};
-use bevymmo_client::stdb::{commands, StdbConnection};
+use bevymmo_client::pointer::{PointerOnHud, hud_wants_pointer};
+use bevymmo_client::stdb::{StdbConnection, commands};
 use bevymmo_content::item_definitions::greeter_stock;
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -13,7 +13,7 @@ use bevymmo_network::world_components::NetworkEntityId;
 
 use crate::ui::card::components::CardPositioning;
 use crate::ui::card::{
-    ornate_bar_image, CardBuilder, CardFrameAssets, CardKind, ORNATE_BAR_NEUTRAL_PATH,
+    CardBuilder, CardFrameAssets, CardKind, ORNATE_BAR_NEUTRAL_PATH, ornate_bar_image,
 };
 use crate::ui::npc_sidebar::components::{NpcSidebar, VendorItemButton};
 use crate::ui::theme::UiTheme;
@@ -142,7 +142,7 @@ pub fn npc_sidebar_on_click(
 ///
 /// Restituisce la distanza perpendicolare dal punto al raggio, non la
 /// distanza lungo il raggio. Questo favorisce i NPC vicini alla linea di mira.
-fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> f32 {
+pub(crate) fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> f32 {
     let to_point = point - ray_origin;
     let projection = to_point.dot(ray_direction);
     let closest_on_ray = ray_origin + ray_direction * projection.clamp(0.0, f32::MAX);
@@ -150,7 +150,7 @@ fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> 
 }
 
 /// Ottiene il raggio dalla Camera3d attraverso il cursore nella PrimaryWindow.
-fn cursor_ray(
+pub(crate) fn cursor_ray(
     windows: &Query<&Window, With<PrimaryWindow>>,
     cameras: &Query<(&Camera, &Transform), With<Camera3d>>,
 ) -> Option<Ray3d> {

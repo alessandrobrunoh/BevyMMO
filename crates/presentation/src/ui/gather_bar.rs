@@ -1,18 +1,117 @@
-//! Local gather progress bar.
+//! Local gather progress bar and left-click to start gathering.
 
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 
-use crate::game_state::in_gameplay;
+use crate::game_state::Screen;
+use crate::ui::npc_sidebar::systems::cursor_ray;
 use crate::ui::theme::UiTheme;
+use bevymmo_client::gathering::{
+    GatherClick, GatherClickAction, TOO_FAR_MESSAGE, gather_click_action, interact_range_for,
+    pick_harvestable, pick_height_for,
+};
 use bevymmo_client::local_player::LocalPlayer;
-use bevymmo_gameplay::gathering::ActiveGather;
+use bevymmo_client::pointer::{PointerOnHud, hud_wants_pointer};
+use bevymmo_client::server_feed::ServerNotice;
+use bevymmo_client::stdb::{StdbConnection, commands};
+use bevymmo_gameplay::gathering::{ActiveGather, Harvestable, in_interact_range};
+use bevymmo_gameplay::placeables::PlaceableRegistry;
+use bevymmo_network::world_components::{NetworkEntityId, Position};
 
 pub struct GatherBarPlugin;
 
 impl Plugin for GatherBarPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_gather_bar);
-        app.add_systems(Update, update_gather_bar.run_if(in_gameplay));
+        app.add_systems(
+            Update,
+            (harvestable_on_click, update_gather_bar)
+                .chain()
+                .run_if(in_state(Screen::InGame)),
+        );
+    }
+}
+
+/// Same entry point as [`crate::ui::market::systems::npc_market_on_click`]:
+/// left click, HUD check, camera ray, closest harvestable, then a reducer.
+fn harvestable_on_click(
+    mouse: Res<ButtonInput<MouseButton>>,
+    pointer_on_hud: Res<PointerOnHud>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    cameras: Query<(&Camera, &Transform), With<Camera3d>>,
+    conn: Option<Res<StdbConnection>>,
+    placeables: Option<Res<PlaceableRegistry>>,
+    player: Query<&Position, With<LocalPlayer>>,
+    nodes: Query<(&Position, &NetworkEntityId, &Harvestable)>,
+    local_gather: Query<&ActiveGather, With<LocalPlayer>>,
+    mut notices: MessageWriter<ServerNotice>,
+) {
+    if !mouse.just_pressed(MouseButton::Left) {
+        return;
+    }
+    if hud_wants_pointer(&pointer_on_hud) {
+        return;
+    }
+    let Some(conn) = conn else {
+        return;
+    };
+    let Some(ray) = cursor_ray(&windows, &cameras) else {
+        return;
+    };
+
+    let pick = pick_harvestable(
+        ray,
+        nodes.iter().map(|(position, network_id, harvestable)| {
+            (
+                position.0,
+                network_id.0,
+                harvestable.current_pieces,
+                pick_height_for(harvestable.kind_id.as_str(), placeables.as_deref()),
+            )
+        }),
+    );
+    let already_gathering = local_gather.iter().next().is_some();
+    let hit_node = pick.map(|pick| (pick.node_id, pick.pieces));
+
+    match gather_click_action(GatherClick {
+        hit_node,
+        already_gathering,
+    }) {
+        GatherClickAction::Start(node_id) => {
+            if let Some(pick) = pick {
+                if let Ok(player_pos) = player.single() {
+                    let kind_id = nodes.iter().find_map(|(_, network_id, harvestable)| {
+                        (network_id.0 == node_id).then_some(harvestable.kind_id.as_str())
+                    });
+                    if let Some(kind_id) = kind_id {
+                        let range = interact_range_for(kind_id, placeables.as_deref());
+                        if !in_interact_range(
+                            player_pos.0.x,
+                            player_pos.0.z,
+                            pick.position.x,
+                            pick.position.z,
+                            range,
+                        ) {
+                            notices.write(ServerNotice::error(TOO_FAR_MESSAGE));
+                        }
+                    }
+                }
+            }
+            if let Err(err) = commands::start_gather(&conn, node_id) {
+                error!("start_gather failed: {err}");
+            }
+        }
+        GatherClickAction::Stop => {
+            if let Err(err) = commands::stop_gather(&conn) {
+                error!("stop_gather failed: {err}");
+            }
+        }
+        GatherClickAction::DepletedNotice => {
+            notices.write(ServerNotice::error(
+                "Questa risorsa è già stata completamente raccolta",
+            ));
+        }
+        GatherClickAction::None => {}
     }
 }
 
@@ -41,6 +140,7 @@ fn setup_gather_bar(mut commands: Commands, theme: Res<UiTheme>) {
             },
             BackgroundColor(Color::srgba(0.05, 0.05, 0.05, 0.8)),
             BorderColor::all(theme.input_border),
+            Pickable::IGNORE,
             GatherBarRoot,
         ))
         .with_children(|parent| {

@@ -3,24 +3,20 @@
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 
-use crate::app_state::{PauseOverlay, Screen, in_gameplay, in_unpaused_gameplay};
+use crate::app_state::{PauseOverlay, Screen, in_gameplay};
 use crate::local_player::LocalPlayer;
-use crate::movement::cursor_ray;
 use crate::pointer::{PointerOnHud, hud_wants_pointer};
-use crate::server_feed::ServerNotice;
-use crate::stdb::{StdbConnection, commands};
-use bevymmo_gameplay::entity::components::{EntityKind, GameEntity};
-use bevymmo_gameplay::gathering::{ActiveGather, Harvestable, in_interact_range};
+use bevymmo_gameplay::gathering::{Harvestable, in_interact_range};
 use bevymmo_gameplay::placeables::{KindId, PlaceableRegistry};
 use bevymmo_network::world_components::{NetworkEntityId, Position};
 use bevymmo_world::CollisionShape;
 
-/// Same click radius as greeter / market NPC pick (`NPC_SELECT_RADIUS`).
-const GATHER_SELECT_RADIUS: f32 = 1.2;
+/// Half-width of the click volume around the trunk. Wider than the greeter's
+/// 1.2 m sphere because the oak canopy is the thing you actually click.
+const GATHER_PICK_HALF_XZ: f32 = 2.0;
 const DEFAULT_INTERACT_RANGE: f32 = 6.0;
 const DEFAULT_PICK_HEIGHT: f32 = 5.5;
-const PICK_HEIGHT_STEPS: u32 = 4;
-const DEPLETED_MESSAGE: &str = "Questa risorsa è già stata completamente raccolta";
+pub const TOO_FAR_MESSAGE: &str = "Avvicinati all'albero per raccogliere";
 
 /// World click → `start_gather` / `stop_gather`, plus hover cursor.
 pub struct GatheringPlugin;
@@ -28,8 +24,7 @@ pub struct GatheringPlugin;
 impl Plugin for GatheringPlugin {
     fn build(&self, app: &mut App) {
         crate::pointer::PointerPlugin::ensure(app);
-        app.add_systems(Update, click_resource_node.run_if(in_unpaused_gameplay))
-            .add_systems(Update, hover_gather_cursor.run_if(in_gameplay))
+        app.add_systems(Update, hover_gather_cursor.run_if(in_gameplay))
             .add_systems(OnExit(Screen::InGame), reset_gather_cursor);
     }
 }
@@ -82,48 +77,26 @@ pub fn gather_hover_cursor(hit_in_range: Option<u32>) -> GatherHoverCursor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct HarvestablePick {
-    node_id: u64,
-    pieces: u32,
-    position: Vec3,
+pub struct HarvestablePick {
+    pub node_id: u64,
+    pub pieces: u32,
+    pub position: Vec3,
 }
 
-/// Perpendicular distance from `point` to the camera ray. Same helper the
-/// greeter sidebar and market NPC click use.
-fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> f32 {
-    let to_point = point - ray_origin;
-    let projection = to_point.dot(ray_direction);
-    let closest_on_ray = ray_origin + ray_direction * projection.clamp(0.0, f32::MAX);
-    point.distance(closest_on_ray)
-}
-
-/// Min distance from the ray to a vertical segment `[base, base + height]`.
-///
-/// Greeter/market test a point at the feet. A tree is 5 m tall, so a click on
-/// the canopy would miss that point; sampling along the trunk keeps the same
-/// radius and the same metric.
-fn ray_to_trunk_distance(base: Vec3, height: f32, ray: Ray3d) -> f32 {
-    let height = height.max(0.0);
-    (0..=PICK_HEIGHT_STEPS)
-        .map(|step| {
-            let y = height * (step as f32 / PICK_HEIGHT_STEPS as f32);
-            point_to_ray_distance(base + Vec3::Y * y, ray.origin, *ray.direction)
-        })
-        .fold(f32::MAX, f32::min)
-}
-
-fn pick_harvestable(
+/// Ray vs the click volume of a harvestable: a tall AABB around the trunk so
+/// clicking the canopy counts, the same way greeter/market count a click near
+/// the NPC's origin.
+pub fn pick_harvestable(
     ray: Ray3d,
     nodes: impl Iterator<Item = (Vec3, u64, u32, f32)>,
 ) -> Option<HarvestablePick> {
     let mut closest: Option<(u64, f32, u32, Vec3)> = None;
     for (position, node_id, pieces, height) in nodes {
-        let distance = ray_to_trunk_distance(position, height, ray);
-        if distance > GATHER_SELECT_RADIUS {
+        let Some(t) = ray_hits_gather_aabb(ray, position, height) else {
             continue;
-        }
-        if closest.is_none_or(|(_, best, _, _)| distance < best) {
-            closest = Some((node_id, distance, pieces, position));
+        };
+        if closest.is_none_or(|(_, best, _, _)| t < best) {
+            closest = Some((node_id, t, pieces, position));
         }
     }
     closest.map(|(node_id, _, pieces, position)| HarvestablePick {
@@ -133,68 +106,70 @@ fn pick_harvestable(
     })
 }
 
-fn click_resource_node(
-    mouse: Res<ButtonInput<MouseButton>>,
-    pointer_on_hud: Res<PointerOnHud>,
-    windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &Transform), With<Camera3d>>,
-    conn: Option<Res<StdbConnection>>,
-    placeables: Option<Res<PlaceableRegistry>>,
-    nodes: Query<
-        (&Position, &NetworkEntityId, &Harvestable, &EntityKind),
-        (With<GameEntity>, Without<LocalPlayer>),
-    >,
-    local_gather: Query<&ActiveGather, With<LocalPlayer>>,
-    mut notices: MessageWriter<ServerNotice>,
-) {
-    if !mouse.just_pressed(MouseButton::Left) {
-        return;
-    }
-    if hud_wants_pointer(&pointer_on_hud) {
-        return;
-    }
-    let Some(conn) = conn else {
-        return;
-    };
-    let Some(ray) = cursor_ray(&windows, &cameras) else {
-        return;
-    };
+fn ray_hits_gather_aabb(ray: Ray3d, base: Vec3, height: f32) -> Option<f32> {
+    let height = height.max(1.0);
+    let min = Vec3::new(
+        base.x - GATHER_PICK_HALF_XZ,
+        base.y - 0.5,
+        base.z - GATHER_PICK_HALF_XZ,
+    );
+    let max = Vec3::new(
+        base.x + GATHER_PICK_HALF_XZ,
+        base.y + height,
+        base.z + GATHER_PICK_HALF_XZ,
+    );
+    ray_aabb_t(ray, min, max)
+}
 
-    let hit_node = pick_harvestable(
-        ray,
-        nodes
-            .iter()
-            .filter_map(|(position, network_id, harvestable, kind)| {
-                (*kind == EntityKind::Resource).then_some((
-                    position.0,
-                    network_id.0,
-                    harvestable.current_pieces,
-                    pick_height_for(harvestable.kind_id.as_str(), placeables.as_deref()),
-                ))
-            }),
-    )
-    .map(|pick| (pick.node_id, pick.pieces));
-    let already_gathering = local_gather.iter().next().is_some();
-
-    match gather_click_action(GatherClick {
-        hit_node,
-        already_gathering,
-    }) {
-        GatherClickAction::Start(node_id) => {
-            if let Err(err) = commands::start_gather(&conn, node_id) {
-                error!("start_gather failed: {err}");
+fn ray_aabb_t(ray: Ray3d, min: Vec3, max: Vec3) -> Option<f32> {
+    let origin = ray.origin;
+    let dir = *ray.direction;
+    let mut tmin = 0.0f32;
+    let mut tmax = f32::MAX;
+    for i in 0..3 {
+        let d = dir[i];
+        let o = origin[i];
+        if d.abs() < 1e-8 {
+            if o < min[i] || o > max[i] {
+                return None;
             }
+            continue;
         }
-        GatherClickAction::Stop => {
-            if let Err(err) = commands::stop_gather(&conn) {
-                error!("stop_gather failed: {err}");
-            }
+        let mut t1 = (min[i] - o) / d;
+        let mut t2 = (max[i] - o) / d;
+        if t1 > t2 {
+            core::mem::swap(&mut t1, &mut t2);
         }
-        GatherClickAction::DepletedNotice => {
-            notices.write(ServerNotice::error(DEPLETED_MESSAGE));
+        tmin = tmin.max(t1);
+        tmax = tmax.min(t2);
+        if tmin > tmax {
+            return None;
         }
-        GatherClickAction::None => {}
     }
+    if tmax < 0.0 {
+        return None;
+    }
+    Some(tmin.max(0.0))
+}
+
+pub fn pick_height_for(kind_id: &str, registry: Option<&PlaceableRegistry>) -> f32 {
+    registry
+        .and_then(|registry| registry.resources.get(&KindId::new(kind_id.to_owned())))
+        .and_then(|definition| definition.defaults().collision)
+        .map(|shape| match shape {
+            CollisionShape::Cylinder { height, .. } => height,
+            CollisionShape::Box { half_extents } => half_extents[1] * 2.0,
+            CollisionShape::Sphere { radius } => radius * 2.0,
+        })
+        .filter(|height| *height > 0.0)
+        .unwrap_or(DEFAULT_PICK_HEIGHT)
+}
+
+pub fn interact_range_for(kind_id: &str, registry: Option<&PlaceableRegistry>) -> f32 {
+    registry
+        .and_then(|registry| registry.resources.get(&KindId::new(kind_id.to_owned())))
+        .map(|definition| definition.resource_config().interact_range)
+        .unwrap_or(DEFAULT_INTERACT_RANGE)
 }
 
 fn hover_gather_cursor(
@@ -205,10 +180,7 @@ fn hover_gather_cursor(
     cameras: Query<(&Camera, &Transform), With<Camera3d>>,
     placeables: Option<Res<PlaceableRegistry>>,
     player: Query<&Position, With<LocalPlayer>>,
-    nodes: Query<
-        (&Position, &NetworkEntityId, &Harvestable, &EntityKind),
-        (With<GameEntity>, Without<LocalPlayer>),
-    >,
+    nodes: Query<(&Position, &NetworkEntityId, &Harvestable), Without<LocalPlayer>>,
 ) {
     let Ok((window_entity, window, current_icon)) = windows.single() else {
         return;
@@ -235,10 +207,7 @@ fn hover_pieces_in_range(
     cameras: &Query<(&Camera, &Transform), With<Camera3d>>,
     placeables: Option<&PlaceableRegistry>,
     player: &Query<&Position, With<LocalPlayer>>,
-    nodes: &Query<
-        (&Position, &NetworkEntityId, &Harvestable, &EntityKind),
-        (With<GameEntity>, Without<LocalPlayer>),
-    >,
+    nodes: &Query<(&Position, &NetworkEntityId, &Harvestable), Without<LocalPlayer>>,
 ) -> Option<u32> {
     let cursor_position = window.cursor_position()?;
     let (camera, camera_transform) = cameras.iter().next()?;
@@ -246,19 +215,17 @@ fn hover_pieces_in_range(
     let ray = camera.viewport_to_world(&view, cursor_position).ok()?;
     let pick = pick_harvestable(
         ray,
-        nodes
-            .iter()
-            .filter_map(|(position, network_id, harvestable, kind)| {
-                (*kind == EntityKind::Resource).then_some((
-                    position.0,
-                    network_id.0,
-                    harvestable.current_pieces,
-                    pick_height_for(harvestable.kind_id.as_str(), placeables),
-                ))
-            }),
+        nodes.iter().map(|(position, network_id, harvestable)| {
+            (
+                position.0,
+                network_id.0,
+                harvestable.current_pieces,
+                pick_height_for(harvestable.kind_id.as_str(), placeables),
+            )
+        }),
     )?;
     let player_pos = player.single().ok()?;
-    let kind_id = nodes.iter().find_map(|(_, network_id, harvestable, _)| {
+    let kind_id = nodes.iter().find_map(|(_, network_id, harvestable)| {
         (network_id.0 == pick.node_id).then_some(harvestable.kind_id.as_str())
     })?;
     let range = interact_range_for(kind_id, placeables);
@@ -270,26 +237,6 @@ fn hover_pieces_in_range(
         range,
     )
     .then_some(pick.pieces)
-}
-
-fn interact_range_for(kind_id: &str, registry: Option<&PlaceableRegistry>) -> f32 {
-    registry
-        .and_then(|registry| registry.resources.get(&KindId::new(kind_id.to_owned())))
-        .map(|definition| definition.resource_config().interact_range)
-        .unwrap_or(DEFAULT_INTERACT_RANGE)
-}
-
-fn pick_height_for(kind_id: &str, registry: Option<&PlaceableRegistry>) -> f32 {
-    registry
-        .and_then(|registry| registry.resources.get(&KindId::new(kind_id.to_owned())))
-        .and_then(|definition| definition.defaults().collision)
-        .map(|shape| match shape {
-            CollisionShape::Cylinder { height, .. } => height,
-            CollisionShape::Box { half_extents } => half_extents[1] * 2.0,
-            CollisionShape::Sphere { radius } => radius * 2.0,
-        })
-        .filter(|height| *height > 0.0)
-        .unwrap_or(DEFAULT_PICK_HEIGHT)
 }
 
 fn apply_gather_cursor(
@@ -420,11 +367,11 @@ mod tests {
     }
 
     #[test]
-    fn tighter_aim_wins_between_two_trees() {
-        let ray = downward_ray_through(Vec3::ZERO);
+    fn nearer_tree_along_the_ray_wins() {
+        let ray = Ray3d::new(Vec3::new(0.0, 2.0, -4.0), Dir3::Z);
         let pick = pick_harvestable(
             ray,
-            [(Vec3::X, 2, 1, 5.5), (Vec3::X * 0.2, 1, 1, 5.5)].into_iter(),
+            [(Vec3::Z * 8.0, 2, 1, 5.5), (Vec3::ZERO, 1, 1, 5.5)].into_iter(),
         );
         assert_eq!(pick.map(|pick| pick.node_id), Some(1));
     }

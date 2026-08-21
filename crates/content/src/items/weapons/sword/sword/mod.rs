@@ -22,6 +22,13 @@ use crate::items::ItemRegistry;
         ultimate = [BladeStorm],
     ),
     rune_profile(capacity = 11, stability = 0.86),
+    crafting(
+        channel_seconds = 3.0,
+        ingredients = [
+            ingredient(id = "wood", amount = 2),
+            ingredient(id = "copper", amount = 4),
+        ],
+    ),
 )]
 pub struct Sword;
 
@@ -40,5 +47,16 @@ mod tests {
         assert_eq!(loadout.primary.len(), 1);
         assert_eq!(loadout.secondary.len(), 1);
         assert_eq!(loadout.ultimate.len(), 1);
+    }
+
+    #[test]
+    fn sword_recipe_is_two_wood_and_four_copper() {
+        let recipe = Sword.craft_recipe().expect("sword is craftable");
+        assert_eq!(recipe.channel_seconds, 3.0);
+        assert_eq!(recipe.ingredients.len(), 2);
+        assert_eq!(recipe.ingredients[0].item_id.as_str(), "wood");
+        assert_eq!(recipe.ingredients[0].amount, 2);
+        assert_eq!(recipe.ingredients[1].item_id.as_str(), "copper");
+        assert_eq!(recipe.ingredients[1].amount, 4);
     }
 }

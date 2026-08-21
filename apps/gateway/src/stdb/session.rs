@@ -50,14 +50,21 @@ impl SessionStore {
     /// connection nobody can use.
     pub async fn create(&self, connection: GatewayConnection) -> SessionId {
         let id = Uuid::new_v4().to_string();
+        self.insert(id.clone(), connection).await;
+        id
+    }
+
+    /// Stores `connection` under a caller-chosen `id`. Cookie sessions use a
+    /// random UUID from [`Self::create`]; API-key sessions reuse this with a
+    /// stable `ak:{sha256}` id so later Bearer requests reuse the socket.
+    pub async fn insert(&self, id: SessionId, connection: GatewayConnection) {
         self.entries.write().await.insert(
-            id.clone(),
+            id,
             Entry {
                 connection,
                 last_seen: Instant::now(),
             },
         );
-        id
     }
 
     /// The connection for `id`, refreshing its idle timer. `None` if `id` is

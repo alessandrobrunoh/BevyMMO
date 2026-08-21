@@ -6,6 +6,16 @@ export interface CatalogAbilityLoadout {
   ultimate: string[];
 }
 
+export interface CatalogCraftIngredient {
+  id: string;
+  amount: number;
+}
+
+export interface CatalogCraftRecipe {
+  channel_seconds: number;
+  ingredients: CatalogCraftIngredient[];
+}
+
 export interface CatalogRuneProfile {
   capacity: number;
   stability: number;
@@ -28,6 +38,7 @@ export interface CatalogItem {
   rune_profile?: CatalogRuneProfile;
   abilities?: CatalogAbilityLoadout;
   icon?: string;
+  crafting?: CatalogCraftRecipe;
 }
 
 export interface Catalog {

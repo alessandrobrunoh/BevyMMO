@@ -46,6 +46,9 @@ postcard = { version = "1.1", default-features = false, features = ["alloc"] }
 # `ctx.rng()` instead — see `reducers::account`.
 argon2 = "0.5"
 password-hash = "0.5"
+# SHA-256 for API keys (high-entropy tokens). Pure Rust, no OS RNG, fine on
+# wasm32-unknown-unknown. Passwords stay on Argon2id — see `reducers::account`.
+sha2 = "0.10"
 
 [build-dependencies]
 # The build script runs on the host, where a filesystem and a JSON parser exist.

@@ -111,8 +111,8 @@ fn cors_layer(cors_origin: HeaderValue) -> CorsLayer {
             origin == cors_origin || is_local_dev_origin(origin)
         }))
         .allow_credentials(true)
-        .allow_methods([Method::GET, Method::POST])
-        .allow_headers([header::CONTENT_TYPE])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
 }
 
 fn is_local_dev_origin(origin: &HeaderValue) -> bool {

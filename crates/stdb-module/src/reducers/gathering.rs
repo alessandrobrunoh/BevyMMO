@@ -3,14 +3,14 @@
 use bevymmo_domain::gathering::in_interact_range;
 use bevymmo_domain::items::components::Inventory;
 use bevymmo_domain::items::registry::ItemId;
-use spacetimedb::{ReducerContext, Table, reducer};
+use spacetimedb::{reducer, ReducerContext, Table};
 
 use crate::reducers::lifecycle::caller_entity;
 use crate::sim::gathering::{self, resource_definition};
 use crate::sim::spells;
 use crate::tables::{
-    EntityKindRow, EntityStateRow, GatherSession, cast_state, game_entity, gather_session,
-    resource_node,
+    cast_state, game_entity, gather_session, resource_node, EntityKindRow, EntityStateRow,
+    GatherSession,
 };
 
 const DEPLETED_MESSAGE: &str = "Questa risorsa è già stata completamente raccolta";
@@ -79,6 +79,7 @@ pub fn start_gather(ctx: &ReducerContext, node_entity_id: u64) -> Result<(), Str
         spells::end_cast(ctx, caller.entity_id, active.spell_id, true);
     }
     gathering::cancel_session(ctx, caller.entity_id);
+    crate::sim::crafting::cancel_session(ctx, caller.entity_id);
 
     let required_seconds = gathering::required_channel_seconds(ctx, caller.entity_id, &config);
     ctx.db.gather_session().insert(GatherSession {

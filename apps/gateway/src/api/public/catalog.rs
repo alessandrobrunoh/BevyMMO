@@ -107,6 +107,13 @@ mod tests {
             .expect("sword is in the catalog");
         assert_eq!(item.name, "Spada");
         assert_eq!(item.category, "Weapon");
+        let crafting = item.crafting.expect("sword has a recipe");
+        assert!((crafting.channel_seconds - 3.0).abs() < f32::EPSILON);
+        assert_eq!(crafting.ingredients.len(), 2);
+        assert_eq!(crafting.ingredients[0].id, "wood");
+        assert_eq!(crafting.ingredients[0].amount, 2);
+        assert_eq!(crafting.ingredients[1].id, "copper");
+        assert_eq!(crafting.ingredients[1].amount, 4);
     }
 
     #[tokio::test]

@@ -17,8 +17,8 @@ pub mod commands;
 pub mod plugin;
 
 pub use plugin::{
-    CharacterRoster, ClientSimulation, LocalGold, MarketBuyBook, MarketOrderBook, NpcMarket,
-    PartyMemberView, PartyRoster, RosterCharacter, StdbAuthoritative, StdbConnection,
+    CharacterRoster, ClientSimulation, LocalGold, MarketBuyBook, MarketOrderBook, NpcKind,
+    NpcMarket, PartyMemberView, PartyRoster, RosterCharacter, StdbAuthoritative, StdbConnection,
     StdbEntityMap, StdbPlugin,
 };
 

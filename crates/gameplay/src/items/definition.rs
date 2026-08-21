@@ -13,6 +13,7 @@ use crate::abilities::{AbilityBlueprint, AbilityLoadout, BaseAbility, RuneProfil
 
 use super::components::EquipSlot;
 use super::effects::ItemEffect;
+use super::recipe::CraftRecipe;
 use super::registry::ItemId;
 use super::spell_kit::SpellKit;
 use super::weapon_family::WeaponFamilyId;
@@ -155,6 +156,12 @@ pub trait Item: Send + Sync + 'static {
     fn rune_profile(&self) -> Option<&RuneProfile> {
         None
     }
+
+    /// How to craft this item. `None` (the default) means it is unique and
+    /// never appears in a crafter NPC's list.
+    fn craft_recipe(&self) -> Option<&CraftRecipe> {
+        None
+    }
 }
 
 /// Dyn-compatible alias used when storing items inside the registry.
@@ -235,6 +242,14 @@ mod tests {
             config: sample_config(),
         };
         assert!(item.equip_requirements().is_empty());
+    }
+
+    #[test]
+    fn craft_recipe_defaults_to_none() {
+        let item = Dummy {
+            config: sample_config(),
+        };
+        assert!(item.craft_recipe().is_none());
     }
 
     #[test]

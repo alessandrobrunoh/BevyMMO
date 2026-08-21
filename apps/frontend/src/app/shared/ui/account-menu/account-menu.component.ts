@@ -60,6 +60,11 @@ export class AccountMenuComponent {
       this.router.navigate(['/profile']);
       return;
     }
+    if (actionName === 'Account') {
+      this.closeMenu.emit();
+      this.router.navigate(['/account/api-keys']);
+      return;
+    }
     this.toastService.showInfo(`${actionName} screen is for prototype demonstration.`, 'Eivar Account');
     this.closeMenu.emit();
   }

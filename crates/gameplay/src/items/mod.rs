@@ -11,6 +11,7 @@ pub mod definition;
 pub mod effects;
 pub mod events;
 pub mod instance;
+pub mod recipe;
 pub mod registry;
 pub mod spell_kit;
 pub mod weapon_family;
@@ -23,6 +24,7 @@ pub use events::{EquipItemCommand, MoveItemCommand, UnequipItemCommand};
 pub use instance::{
     ItemInstance, ItemInstanceId, STARTER_WEAPON_ITEM_ID, STARTER_WEAPON_ROOT_WORD,
 };
+pub use recipe::{CraftIngredient, CraftRecipe};
 pub use registry::{ItemId, ItemRegistry};
 pub use spell_kit::SpellKit;
 pub use weapon_family::{WeaponFamily, WeaponFamilyId, WeaponFamilyMetadata, WeaponFamilyRegistry};

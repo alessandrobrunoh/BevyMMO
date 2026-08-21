@@ -62,7 +62,8 @@ mod tests {
         assert!(registry.contains(&ItemId::new(armor::simple::SimpleBuckler::ID)));
         assert!(registry.contains(&ItemId::new(armor::simple::SimpleBoots::ID)));
         assert!(registry.contains(&ItemId::new(materials::wood::Wood::ID)));
-        assert_eq!(registry.len(), 11); // 1 weapon + 3 fancy armor + 5 simple + charm + wood
+        assert!(registry.contains(&ItemId::new(materials::copper::Copper::ID)));
+        assert_eq!(registry.len(), 12); // 1 weapon + 3 fancy armor + 5 simple + charm + wood + copper
     }
 
     #[test]
@@ -77,6 +78,21 @@ mod tests {
             .expect("oak tree is registered");
         let yield_item = ResourceNodePlaceable::resource_config(oak.as_ref()).yield_item;
         assert_eq!(yield_item.as_str(), "wood");
+        assert!(items.contains(&yield_item));
+    }
+
+    #[test]
+    fn copper_is_the_copper_vein_yield() {
+        use crate::placeables::{PlaceableRegistry, ResourceNodePlaceable};
+        let items = default_items();
+        let mut placeables = PlaceableRegistry::default();
+        crate::placeable_definitions::register_all(&mut placeables);
+        let vein = placeables
+            .resources
+            .get(&crate::placeables::KindId::new("resource_copper_vein"))
+            .expect("copper vein is registered");
+        let yield_item = ResourceNodePlaceable::resource_config(vein.as_ref()).yield_item;
+        assert_eq!(yield_item.as_str(), "copper");
         assert!(items.contains(&yield_item));
     }
 
@@ -119,5 +135,39 @@ mod tests {
         let registry = default_weapon_families();
         assert!(registry.contains(&crate::items::WeaponFamilyId::new("sword")));
         assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn wood_is_not_craftable() {
+        use crate::items::Item;
+        assert!(materials::wood::Wood.craft_recipe().is_none());
+    }
+
+    #[test]
+    fn only_the_sword_is_a_craftable_weapon() {
+        use crate::items::definition::ItemCategory;
+        let registry = default_items();
+        let weapons = registry.craftable_in(ItemCategory::Weapon);
+        assert_eq!(weapons.len(), 1);
+        assert_eq!(weapons[0].0.as_str(), weapons::sword::sword::Sword::ID);
+        assert!(registry.craftable_in(ItemCategory::Armor).is_empty());
+    }
+
+    #[test]
+    fn every_recipe_ingredient_is_in_the_catalogue() {
+        let registry = default_items();
+        for (_, item) in registry.sorted_items() {
+            let Some(recipe) = item.craft_recipe() else {
+                continue;
+            };
+            for ingredient in &recipe.ingredients {
+                assert!(
+                    registry.contains(&ingredient.item_id),
+                    "{} recipe names unknown ingredient {}",
+                    item.id().as_str(),
+                    ingredient.item_id.as_str()
+                );
+            }
+        }
     }
 }

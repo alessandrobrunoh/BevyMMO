@@ -77,6 +77,13 @@ export const routes: Routes = [
     title: 'Your Profile — Eivar Online'
   },
   {
+    path: 'account/api-keys',
+    loadComponent: () =>
+      import('./features/account/api-keys/api-keys.component').then(m => m.ApiKeysComponent),
+    canActivate: [authGuard],
+    title: 'API Keys — Eivar Online'
+  },
+  {
     path: '**',
     redirectTo: ''
   }

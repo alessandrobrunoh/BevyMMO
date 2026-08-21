@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use bevymmo_domain::content::placeables::register_all;
 use bevymmo_domain::gathering::{
-    GatherAttempt, bonus_extra_pieces, channel_duration, in_interact_range, regen_catchup,
-    resolve_gather,
+    bonus_extra_pieces, channel_duration, in_interact_range, regen_catchup, resolve_gather,
+    GatherAttempt,
 };
 use bevymmo_domain::items::components::Inventory;
 use bevymmo_domain::items::registry::ItemId;
@@ -18,8 +18,8 @@ use spacetimedb::{ReducerContext, Table, Timestamp};
 use crate::reducers::items::{grant_items, item_category, load_inventory};
 use crate::reducers::parties::notify_character;
 use crate::tables::{
-    EntityStateRow, GatherSession, GatherYieldEvent, ResourceNode, cast_state, entity_stats,
-    game_entity, gather_session, gather_yield, resource_node,
+    cast_state, entity_stats, game_entity, gather_session, gather_yield, resource_node,
+    EntityStateRow, GatherSession, GatherYieldEvent, ResourceNode,
 };
 
 const DEPLETED_MESSAGE: &str = "Questa risorsa è già stata completamente raccolta";

@@ -1,58 +1,40 @@
-//! Copper ore vein resource node with a GLB model.
+//! Harvestable copper vein. The visual is `models/resources/copper_vein.glb`.
 
-use crate::items::ItemId;
-use crate::placeables::{
-    AssetHint, KindId, PlaceableDefaults, PlaceableDefinition, PlaceableRegistry, ResourceConfig,
-    ResourceNodePlaceable,
-};
-use crate::world::TransformData;
-use std::sync::Arc;
+use crate::placeables::resource;
 
-pub struct CopperVeinDefinition;
+#[resource(
+    id = "resource_copper_vein",
+    name = "Copper Vein",
+    icon = "🪨",
+    asset = "models/resources/copper_vein.glb",
+    blocks_movement = true,
+    collision = cylinder(radius = 0.6, height = 1.2),
+    max_pieces = 8,
+    channel_seconds = 2.0,
+    min_channel_seconds = 0.25,
+    yield_item = "copper",
+    yield_amount = 1,
+    regen_interval_seconds = 60.0,
+    regen_amount = 2,
+    interact_range = 2.5,
+)]
+pub struct CopperVeinResource;
 
-impl PlaceableDefinition for CopperVeinDefinition {
-    fn id(&self) -> KindId {
-        KindId::new("resource_copper_vein")
-    }
-    fn display_name(&self) -> &'static str {
-        "Copper Vein"
-    }
-    fn icon(&self) -> &'static str {
-        "🪨"
-    }
-    fn asset_hint(&self) -> AssetHint {
-        AssetHint::Scene("models/resources/copper_vein.glb")
-    }
-    fn defaults(&self) -> PlaceableDefaults {
-        PlaceableDefaults {
-            transform: TransformData {
-                translation: [0.0, 0.0, 0.0],
-                rotation_deg: [0.0, 0.0, 0.0],
-                scale: [1.0, 1.0, 1.0],
-            },
-            tint: Some([0.6, 0.4, 0.25]),
-            collision: None,
-            blocks_movement: false,
-        }
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::placeables::{PlaceableDefinition, PlaceableRegistry, ResourceNodePlaceable};
 
-impl ResourceNodePlaceable for CopperVeinDefinition {
-    fn resource_config(&self) -> ResourceConfig {
-        ResourceConfig {
-            max_pieces: 3,
-            channel_seconds: 2.0,
-            min_channel_seconds: 0.25,
-            yield_item: ItemId::new("copper_ore"),
-            yield_amount: 2,
-            regen_interval_seconds: 30.0,
-            regen_amount: 3,
-            interact_range: 2.5,
-            required_item_id: None,
-        }
+    #[test]
+    fn copper_vein_is_a_resource_that_yields_copper() {
+        let def = CopperVeinResource;
+        assert_eq!(def.id().as_str(), "resource_copper_vein");
+        let config = def.resource_config();
+        assert_eq!(config.max_pieces, 8);
+        assert_eq!(config.yield_item.as_str(), "copper");
+        assert_eq!(config.yield_amount, 1);
+        let mut registry = PlaceableRegistry::default();
+        register(&mut registry);
+        assert!(registry.resources.contains_key(&def.id()));
     }
-}
-
-pub fn register(registry: &mut PlaceableRegistry) {
-    registry.register_resource(Arc::new(CopperVeinDefinition));
 }

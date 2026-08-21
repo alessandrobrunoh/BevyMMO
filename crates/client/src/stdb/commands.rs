@@ -55,7 +55,9 @@ use super::module_bindings::set_armor_inscription_reducer::set_armor_inscription
 
 use super::module_bindings::set_root_inscription_reducer::set_root_inscription as set_root_inscription_reducer;
 use super::module_bindings::split_item_reducer::split_item as split_item_reducer;
+use super::module_bindings::start_craft_reducer::start_craft as start_craft_reducer;
 use super::module_bindings::start_gather_reducer::start_gather as start_gather_reducer;
+use super::module_bindings::stop_craft_reducer::stop_craft as stop_craft_reducer;
 use super::module_bindings::stop_gather_reducer::stop_gather as stop_gather_reducer;
 use super::module_bindings::unequip_item_reducer::unequip_item as unequip_item_reducer;
 use super::module_bindings::Vec3Row;
@@ -254,6 +256,27 @@ pub fn start_gather(conn: &StdbConnection, node_entity_id: u64) -> Sent {
 pub fn stop_gather(conn: &StdbConnection) -> Sent {
     conn.reducers()
         .stop_gather_then(conn.report_rejection("could not stop gathering"))
+}
+
+/// Starts crafting `quantity` of `item_id` at a nearby crafter NPC.
+pub fn start_craft(
+    conn: &StdbConnection,
+    npc_entity_id: u64,
+    item_id: String,
+    quantity: u32,
+) -> Sent {
+    conn.reducers().start_craft_then(
+        npc_entity_id,
+        item_id,
+        quantity,
+        conn.report_rejection("could not craft"),
+    )
+}
+
+/// Stops the local craft channel, if any.
+pub fn stop_craft(conn: &StdbConnection) -> Sent {
+    conn.reducers()
+        .stop_craft_then(conn.report_rejection("could not stop crafting"))
 }
 
 /// Ends a channelled or charged cast. Naming the spell stops a stale release

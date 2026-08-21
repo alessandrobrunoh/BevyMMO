@@ -50,6 +50,25 @@ pub struct CatalogItem {
     /// Bevy asset path under `assets/` for the inventory icon.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Present only on craftable items.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crafting: Option<CatalogCraftRecipe>,
+}
+
+/// One recipe ingredient as the public catalog exposes it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CatalogCraftIngredient {
+    pub id: String,
+    pub amount: u32,
+}
+
+/// How to craft one copy of an item.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CatalogCraftRecipe {
+    pub channel_seconds: f32,
+    pub ingredients: Vec<CatalogCraftIngredient>,
 }
 
 /// Gameplay effect, tagged for a stable HTTP contract.
@@ -133,6 +152,17 @@ fn catalog_item(item: &dyn Item) -> CatalogItem {
                 .collect(),
         }),
         icon: item.icon().map(str::to_string),
+        crafting: item.craft_recipe().map(|recipe| CatalogCraftRecipe {
+            channel_seconds: recipe.channel_seconds,
+            ingredients: recipe
+                .ingredients
+                .iter()
+                .map(|ingredient| CatalogCraftIngredient {
+                    id: ingredient.item_id.as_str().to_string(),
+                    amount: ingredient.amount,
+                })
+                .collect(),
+        }),
     }
 }
 
@@ -207,6 +237,21 @@ mod tests {
         assert_eq!(abilities.primary, vec!["cleave"]);
         assert_eq!(abilities.secondary, vec!["lunge"]);
         assert_eq!(abilities.ultimate, vec!["blade_storm"]);
+        let crafting = sword.crafting.expect("sword has a recipe");
+        assert!((crafting.channel_seconds - 3.0).abs() < f32::EPSILON);
+        assert_eq!(
+            crafting.ingredients,
+            vec![
+                CatalogCraftIngredient {
+                    id: "wood".into(),
+                    amount: 2,
+                },
+                CatalogCraftIngredient {
+                    id: "copper".into(),
+                    amount: 4,
+                },
+            ]
+        );
     }
 
     #[test]
@@ -218,6 +263,21 @@ mod tests {
         assert!(wood.abilities.is_none());
         assert!(wood.rune_profile.is_none());
         assert!(wood.icon.is_none());
+        assert!(wood.crafting.is_none());
+    }
+
+    #[test]
+    fn copper_is_an_inventory_only_material() {
+        let catalog = snapshot();
+        let copper = catalog.item("copper").expect("copper is registered");
+        assert_eq!(copper.name, "Copper");
+        assert_eq!(copper.category, "Material");
+        assert_eq!(copper.rarity, "Common");
+        assert!(copper.tradable);
+        assert!(copper.slot.is_none());
+        assert!(copper.abilities.is_none());
+        assert!(copper.rune_profile.is_none());
+        assert!(copper.icon.is_none());
     }
 
     #[test]
@@ -233,5 +293,12 @@ mod tests {
         let back: Catalog = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(catalog, back);
         assert!(json.contains("\"kind\":\"stat_bonus\""));
+        assert!(json.contains("\"crafting\""));
+        let wood_json =
+            serde_json::to_string(catalog.item("wood").expect("wood")).expect("wood json");
+        assert!(
+            !wood_json.contains("\"crafting\""),
+            "non-craftable items omit the crafting field"
+        );
     }
 }

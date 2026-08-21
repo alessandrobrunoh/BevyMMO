@@ -9,13 +9,14 @@
 //! In SpacetimeDB *everything* persists — there is no distinction the database
 //! enforces. The distinction below is one the module has to keep for itself:
 //!
-//! - **Persistent**: `player`, `player_stats`, `hotbar`, `inventory`,
-//!   `equipment`, `known_glyphs`, `character_wallet`, `account_economy`,
-//!   `market`, `market_sell_order`, `market_buy_order`, `prop_override`,
-//!   `resource_node`. These outlive a session and must survive a republish.
+//! - **Persistent**: `account`, `api_key`, `player`, `player_stats`, `hotbar`,
+//!   `inventory`, `equipment`, `known_glyphs`, `character_wallet`,
+//!   `account_economy`, `market`, `market_sell_order`, `market_buy_order`,
+//!   `prop_override`, `resource_node`. These outlive a session and must
+//!   survive a republish.
 //! - **Runtime**: `game_entity`, `entity_stats`, `cast_state`, `cooldown`,
 //!   `projectile`, `aoe_region`, `crowd_control`, `threat`, `stat_modifier`,
-//!   `gather_session`. Conceptually these die with the session, so `init`
+//!   `gather_session`, `craft_session`. Conceptually these die with the session, so `init`
 //!   clears and re-seeds them — otherwise a republish inherits yesterday's
 //!   projectiles mid-flight.
 //!
@@ -25,7 +26,7 @@
 //! scan. `game_entity` carries a `cell_x`/`cell_z` grid index for exactly that:
 //! a linear scan per mob per tick does not survive contact with a populated map.
 
-use spacetimedb::{Identity, SpacetimeType, Timestamp, Uuid, table};
+use spacetimedb::{table, Identity, SpacetimeType, Timestamp, Uuid};
 
 use crate::rows::{EffectPayloadRow, HotbarRow, ItemInstanceRow, StatsRow, Vec3Row};
 
@@ -115,6 +116,47 @@ pub struct Session {
     #[index(btree)]
     pub character_id: Option<Uuid>,
     pub authenticated_at: Timestamp,
+}
+
+/// A long-lived HTTP credential for one [`Account`]. Used by the gateway so a
+/// bot can read the owner's profile, wallet and stats without a browser cookie.
+///
+/// Deliberately **not** `public`, for the same reason as [`Account`]: a public
+/// table would let any connected client subscribe and read every key hash.
+/// The owning client sees metadata (name, prefix, dates — never the hash)
+/// through the `my_api_keys` view, which filters by the caller's session.
+///
+/// The plaintext secret is never stored. The gateway mints it, the reducer
+/// hashes it with SHA-256, and the HTTP create response is the only time the
+/// caller sees the secret.
+#[table(accessor = api_key)]
+pub struct ApiKey {
+    #[primary_key]
+    pub id: Uuid,
+    #[index(btree)]
+    pub account_id: u64,
+    /// SHA-256 hex of the full secret (`eiv_` + 64 hex chars). Unique so
+    /// `authenticate_api_key` is a point lookup, not a scan.
+    #[unique]
+    pub key_hash: String,
+    pub name: String,
+    /// First 12 characters of the secret (`eiv_` + 8 hex), shown in the UI
+    /// so the owner can tell keys apart after the secret is gone.
+    pub prefix: String,
+    pub created_at: Timestamp,
+    pub last_used_at: Option<Timestamp>,
+}
+
+/// What the `my_api_keys` view returns: everything an owner may see, and
+/// nothing they must not (the hash). Named fields because `SpacetimeType`
+/// panics on tuple structs.
+#[derive(SpacetimeType, Clone, Debug, PartialEq, Eq)]
+pub struct ApiKeyMeta {
+    pub id: Uuid,
+    pub name: String,
+    pub prefix: String,
+    pub created_at: Timestamp,
+    pub last_used_at: Option<Timestamp>,
 }
 
 // ---------------------------------------------------------------------------
@@ -881,6 +923,19 @@ pub struct GatherSession {
     pub entity_id: u64,
     pub node_entity_id: u64,
     pub placement_id: String,
+    pub elapsed_seconds: f32,
+    pub required_seconds: f32,
+    pub start_position: Vec3Row,
+}
+
+/// One player crafting at a time. Runtime: cleared on init.
+#[table(accessor = craft_session, public)]
+pub struct CraftSession {
+    #[primary_key]
+    pub entity_id: u64,
+    pub npc_entity_id: u64,
+    pub item_id: String,
+    pub quantity: u32,
     pub elapsed_seconds: f32,
     pub required_seconds: f32,
     pub start_position: Vec3Row,

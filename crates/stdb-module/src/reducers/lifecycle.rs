@@ -7,7 +7,8 @@ use crate::reducers::account::caller_session;
 use crate::rows::{equipment_to_rows, inventory_to_rows, HotbarRow, StatsRow, Vec3Row};
 use crate::tables::{
     active_status, aoe_region, boss_state, cast_state, character_wallet, cooldown, crowd_control,
-    enemy_ai, entity_stats, equipment, game_entity, gather_session, grid_cell, hotbar, inventory,
+    craft_session, enemy_ai, entity_stats, equipment, game_entity, gather_session, grid_cell,
+    hotbar, inventory,
     known_ancient_language, npc, periodic_effect, player, player_stats, projectile, resonance,
     session, stat_modifier, threat, tick_schedule, tick_stats, CharacterWallet, ColorRow,
     EntityKindRow, EntityStateRow, EquipmentTable, GameEntity, Hotbar, InventoryTable,
@@ -78,6 +79,12 @@ fn clear_runtime_state(ctx: &ReducerContext) {
         .iter()
         .map(|row| row.entity_id)
         .collect();
+    let craft_entity_ids: Vec<_> = ctx
+        .db
+        .craft_session()
+        .iter()
+        .map(|row| row.entity_id)
+        .collect();
 
     for id in projectile_ids {
         ctx.db.projectile().id().delete(&id);
@@ -122,6 +129,9 @@ fn clear_runtime_state(ctx: &ReducerContext) {
     }
     for entity_id in gather_entity_ids {
         ctx.db.gather_session().entity_id().delete(&entity_id);
+    }
+    for entity_id in craft_entity_ids {
+        ctx.db.craft_session().entity_id().delete(&entity_id);
     }
 }
 

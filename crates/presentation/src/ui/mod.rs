@@ -9,6 +9,7 @@ pub mod card;
 pub mod character_roster;
 pub mod chat;
 pub mod connecting;
+pub mod crafting;
 pub mod crowd_control_bar;
 pub mod death_screen;
 pub mod debug_position;

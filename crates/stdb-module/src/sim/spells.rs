@@ -30,8 +30,8 @@ use std::sync::OnceLock;
 
 use bevymmo_domain::abilities::{
     cast_ability_preview, resolve_ability, AbilityCastMode, AbilityId, AbilityLoadout,
-    AncientWordRegistry, BaseAbilityRegistry, ChannelMovementPolicy as AbilityChannelMovementPolicy,
-    KitInscription,
+    AncientWordRegistry, BaseAbilityRegistry,
+    ChannelMovementPolicy as AbilityChannelMovementPolicy, KitInscription,
 };
 
 use bevymmo_domain::effects::{
@@ -641,9 +641,7 @@ pub fn fire_catalog_ability(
     ) {
         Ok(preview) => preview,
         Err(reason) => {
-            log::warn!(
-                "catalog ability {ability_id_str} failed to resolve: {reason:?}"
-            );
+            log::warn!("catalog ability {ability_id_str} failed to resolve: {reason:?}");
             return None;
         }
     };
@@ -1196,7 +1194,8 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                             // Equipment changed or weapon removed during cast.
                             log::info!(
                                 "weapon cast {:?} for entity {} failed at completion; interrupting",
-                                cast.spell_id, cast.entity_id
+                                cast.spell_id,
+                                cast.entity_id
                             );
                             weapon_cast_failed = true;
                             true // End the cast (will be marked as interrupted below)

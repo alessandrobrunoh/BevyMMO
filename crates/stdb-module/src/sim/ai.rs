@@ -231,12 +231,7 @@ fn step_enemy(
 /// `attack` only lands within its three-unit radius, so every enemy in the zone
 /// burned its cooldown swinging at air the whole way in. The gate here is the
 /// spell's own radius.
-fn try_attack(
-    ctx: &ReducerContext,
-    enemy: &GameEntity,
-    target: &PlayerRef,
-    config: &EnemyConfig,
-) {
+fn try_attack(ctx: &ReducerContext, enemy: &GameEntity, target: &PlayerRef, config: &EnemyConfig) {
     let Some(entry) = config.abilities.first() else {
         return;
     };

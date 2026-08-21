@@ -40,12 +40,12 @@ use bevymmo_domain::stats::events::{ModifierOp, StatField};
 use bevymmo_domain::stats::formulas::damage_after_armor;
 use spacetimedb::{ReducerContext, Table, Uuid};
 
-use crate::rows::{EQUIP_SLOTS, StatsRow, equipment_from_rows};
+use crate::rows::{equipment_from_rows, StatsRow, EQUIP_SLOTS};
 use crate::tables::{
-    BossPhaseRow, BossState, DamageEventRow, EntityKindRow, EntityStateRow, EntityStats,
-    GameEntity, ModifierKindRow, PeriodicEffect, StatModifier, boss_state, crowd_control,
-    damage_event, entity_stats, equipment, game_entity, party_member, periodic_effect,
-    player_stats, stat_modifier, threat,
+    boss_state, crowd_control, damage_event, entity_stats, equipment, game_entity, party_member,
+    periodic_effect, player_stats, stat_modifier, threat, BossPhaseRow, BossState, DamageEventRow,
+    EntityKindRow, EntityStateRow, EntityStats, GameEntity, ModifierKindRow, PeriodicEffect,
+    StatModifier,
 };
 
 static NON_PLAYER_BASE_STATS: Mutex<Option<HashMap<u64, StatsRow>>> = Mutex::new(None);

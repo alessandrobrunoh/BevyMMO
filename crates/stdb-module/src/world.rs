@@ -39,14 +39,14 @@ use std::sync::OnceLock;
 use bevymmo_domain::content::placeables::register_all;
 use bevymmo_domain::placeables::{InteractionKind, PlaceableRegistry};
 use bevymmo_domain::world::{CollisionGrid, GroundContact, MapManifest, Prop, SurfaceQuery};
-use spacetimedb::{ReducerContext, Table, reducer};
+use spacetimedb::{reducer, ReducerContext, Table};
 
 use crate::rows::{StatsRow, Vec3Row};
 use crate::sim::gathering::far_future;
 use crate::tables::{
-    BossPhaseRow, BossState, ColorRow, EnemyAi, EntityKindRow, EntityStateRow, EntityStats,
-    GameEntity, Npc, PropOverride, ResourceNode, boss_state, enemy_ai, entity_stats, game_entity,
-    grid_cell, npc, player, prop_override, resource_node,
+    boss_state, enemy_ai, entity_stats, game_entity, grid_cell, npc, player, prop_override,
+    resource_node, BossPhaseRow, BossState, ColorRow, EnemyAi, EntityKindRow, EntityStateRow,
+    EntityStats, GameEntity, Npc, PropOverride, ResourceNode,
 };
 
 // `EMBEDDED_MAPS: &[(&str, &[u8])]`, one entry per authored map.
@@ -136,11 +136,12 @@ pub(crate) fn placeables() -> &'static PlaceableRegistry {
 }
 
 /// Catalog config for a spawned enemy, keyed by the placeable `kind_id`.
-pub(crate) fn enemy_config_for(
-    kind_id: &str,
-) -> Option<bevymmo_domain::placeables::EnemyConfig> {
+pub(crate) fn enemy_config_for(kind_id: &str) -> Option<bevymmo_domain::placeables::EnemyConfig> {
     let id = bevymmo_domain::placeables::KindId::new(kind_id.to_string());
-    placeables().enemies.get(&id).map(|definition| definition.enemy_config())
+    placeables()
+        .enemies
+        .get(&id)
+        .map(|definition| definition.enemy_config())
 }
 
 /// Reverses `build.rs`'s encoding.
@@ -491,6 +492,49 @@ pub fn ensure_resource_nodes(ctx: &ReducerContext) -> bool {
             "seeded resource {} ({}) at entity {}",
             prop.id,
             prop.kind.as_str(),
+            entity.entity_id
+        );
+    }
+    true
+}
+
+/// Spawns NPC placements missing from a live database.
+///
+/// `seed` only runs on an empty DB. A new crafter added to the map would
+/// otherwise never appear until a reset.
+pub fn ensure_npcs(ctx: &ReducerContext) -> bool {
+    let Some(map) = default_map() else {
+        return false;
+    };
+    let registry = placeables();
+    for prop in &map.manifest.props {
+        let Some(definition) = registry.npcs.get(&prop.kind) else {
+            continue;
+        };
+        let kind = prop.kind.as_str();
+        if ctx.db.npc().iter().any(|row| row.kind_id == kind) {
+            continue;
+        }
+        let entity = spawn_entity(
+            ctx,
+            prop,
+            EntityKindRow::Npc,
+            definition.display_name(),
+            0.0,
+        );
+        let market_id = match definition.interaction() {
+            InteractionKind::Market { market_id } => Some(market_id),
+            _ => None,
+        };
+        ctx.db.npc().insert(Npc {
+            entity_id: entity.entity_id,
+            kind_id: kind.to_string(),
+            market_id,
+        });
+        log::info!(
+            "seeded npc {} ({}) at entity {}",
+            prop.id,
+            kind,
             entity.entity_id
         );
     }

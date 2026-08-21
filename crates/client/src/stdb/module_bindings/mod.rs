@@ -16,8 +16,11 @@ pub mod aoe_region_table;
 pub mod aoe_region_type;
 pub mod aoe_shape_row_type;
 pub mod aoe_targeting_row_type;
+pub mod api_key_meta_type;
+pub mod api_key_type;
 pub mod armor_cast_reducer;
 pub mod armor_inscription_row_type;
+pub mod authenticate_api_key_reducer;
 pub mod award_resonance_xp_reducer;
 pub mod boss_phase_row_type;
 pub mod boss_state_table;
@@ -39,6 +42,9 @@ pub mod color_row_type;
 pub mod combine_item_reducer;
 pub mod cooldown_table;
 pub mod cooldown_type;
+pub mod craft_session_table;
+pub mod craft_session_type;
+pub mod create_api_key_reducer;
 pub mod crowd_control_kind_row_type;
 pub mod crowd_control_table;
 pub mod crowd_control_type;
@@ -93,6 +99,7 @@ pub mod market_type;
 pub mod modifier_kind_row_type;
 pub mod move_item_reducer;
 pub mod move_to_reducer;
+pub mod my_api_keys_table;
 pub mod npc_table;
 pub mod npc_type;
 pub mod party_accept_reducer;
@@ -128,6 +135,7 @@ pub mod resonance_type;
 pub mod resource_node_table;
 pub mod resource_node_type;
 pub mod respawn_reducer;
+pub mod revoke_api_key_reducer;
 pub mod role_row_type;
 pub mod secondary_word_row_type;
 pub mod send_chat_message_reducer;
@@ -142,10 +150,12 @@ pub mod slot_inscription_row_type;
 pub mod spell_visual_effect_event_type;
 pub mod spell_visual_effect_table;
 pub mod split_item_reducer;
+pub mod start_craft_reducer;
 pub mod start_gather_reducer;
 pub mod stat_modifier_table;
 pub mod stat_modifier_type;
 pub mod stats_row_type;
+pub mod stop_craft_reducer;
 pub mod stop_gather_reducer;
 pub mod stop_reducer;
 pub mod threat_table;
@@ -167,8 +177,11 @@ pub use aoe_region_table::*;
 pub use aoe_region_type::AoeRegion;
 pub use aoe_shape_row_type::AoeShapeRow;
 pub use aoe_targeting_row_type::AoeTargetingRow;
+pub use api_key_meta_type::ApiKeyMeta;
+pub use api_key_type::ApiKey;
 pub use armor_cast_reducer::armor_cast;
 pub use armor_inscription_row_type::ArmorInscriptionRow;
+pub use authenticate_api_key_reducer::authenticate_api_key;
 pub use award_resonance_xp_reducer::award_resonance_xp;
 pub use boss_phase_row_type::BossPhaseRow;
 pub use boss_state_table::*;
@@ -190,6 +203,9 @@ pub use color_row_type::ColorRow;
 pub use combine_item_reducer::combine_item;
 pub use cooldown_table::*;
 pub use cooldown_type::Cooldown;
+pub use craft_session_table::*;
+pub use craft_session_type::CraftSession;
+pub use create_api_key_reducer::create_api_key;
 pub use crowd_control_kind_row_type::CrowdControlKindRow;
 pub use crowd_control_table::*;
 pub use crowd_control_type::CrowdControl;
@@ -244,6 +260,7 @@ pub use market_type::Market;
 pub use modifier_kind_row_type::ModifierKindRow;
 pub use move_item_reducer::move_item;
 pub use move_to_reducer::move_to;
+pub use my_api_keys_table::*;
 pub use npc_table::*;
 pub use npc_type::Npc;
 pub use party_accept_reducer::party_accept;
@@ -279,6 +296,7 @@ pub use resonance_type::Resonance;
 pub use resource_node_table::*;
 pub use resource_node_type::ResourceNode;
 pub use respawn_reducer::respawn;
+pub use revoke_api_key_reducer::revoke_api_key;
 pub use role_row_type::RoleRow;
 pub use secondary_word_row_type::SecondaryWordRow;
 pub use send_chat_message_reducer::send_chat_message;
@@ -293,10 +311,12 @@ pub use slot_inscription_row_type::SlotInscriptionRow;
 pub use spell_visual_effect_event_type::SpellVisualEffectEvent;
 pub use spell_visual_effect_table::*;
 pub use split_item_reducer::split_item;
+pub use start_craft_reducer::start_craft;
 pub use start_gather_reducer::start_gather;
 pub use stat_modifier_table::*;
 pub use stat_modifier_type::StatModifier;
 pub use stats_row_type::StatsRow;
+pub use stop_craft_reducer::stop_craft;
 pub use stop_gather_reducer::stop_gather;
 pub use stop_reducer::stop;
 pub use threat_table::*;
@@ -321,6 +341,9 @@ pub enum Reducer {
         ability_slot: String,
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
+    },
+    AuthenticateApiKey {
+        secret: String,
     },
     AwardResonanceXp {
         root_word_id: String,
@@ -348,6 +371,12 @@ pub enum Reducer {
     },
     CombineItem {
         slot_index: u8,
+    },
+    CreateApiKey {
+        id: __sdk::Uuid,
+        name: String,
+        prefix: String,
+        secret: String,
     },
     DeleteCharacter {
         character_id: __sdk::Uuid,
@@ -438,6 +467,9 @@ pub enum Reducer {
         target_position: Option<Vec3Row>,
     },
     Respawn,
+    RevokeApiKey {
+        id: __sdk::Uuid,
+    },
     SendChatMessage {
         text: String,
     },
@@ -469,10 +501,16 @@ pub enum Reducer {
         slot_index: u8,
         amount: u32,
     },
+    StartCraft {
+        npc_entity_id: u64,
+        item_id: String,
+        quantity: u32,
+    },
     StartGather {
         node_entity_id: u64,
     },
     Stop,
+    StopCraft,
     StopGather,
     UnequipItem {
         slot: String,
@@ -487,6 +525,7 @@ impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
             Reducer::ArmorCast { .. } => "armor_cast",
+            Reducer::AuthenticateApiKey { .. } => "authenticate_api_key",
             Reducer::AwardResonanceXp { .. } => "award_resonance_xp",
             Reducer::CancelBuyOrder { .. } => "cancel_buy_order",
             Reducer::CancelSellOrder { .. } => "cancel_sell_order",
@@ -494,6 +533,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::CastWeapon { .. } => "cast_weapon",
             Reducer::ClaimNpcItem { .. } => "claim_npc_item",
             Reducer::CombineItem { .. } => "combine_item",
+            Reducer::CreateApiKey { .. } => "create_api_key",
             Reducer::DeleteCharacter { .. } => "delete_character",
             Reducer::DestroyItem { .. } => "destroy_item",
             Reducer::EquipItem { .. } => "equip_item",
@@ -520,6 +560,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::Register { .. } => "register",
             Reducer::ReleaseCast { .. } => "release_cast",
             Reducer::Respawn => "respawn",
+            Reducer::RevokeApiKey { .. } => "revoke_api_key",
             Reducer::SendChatMessage { .. } => "send_chat_message",
             Reducer::SetAbilitySelection { .. } => "set_ability_selection",
             Reducer::SetArmorInscription { .. } => "set_armor_inscription",
@@ -527,8 +568,10 @@ impl __sdk::Reducer for Reducer {
             Reducer::SetResonanceXp { .. } => "set_resonance_xp",
             Reducer::SetRootInscription { .. } => "set_root_inscription",
             Reducer::SplitItem { .. } => "split_item",
+            Reducer::StartCraft { .. } => "start_craft",
             Reducer::StartGather { .. } => "start_gather",
             Reducer::Stop => "stop",
+            Reducer::StopCraft => "stop_craft",
             Reducer::StopGather => "stop_gather",
             Reducer::UnequipItem { .. } => "unequip_item",
             _ => unreachable!(),
@@ -548,6 +591,11 @@ impl __sdk::Reducer for Reducer {
                 target_entity: target_entity.clone(),
                 target_position: target_position.clone(),
             }),
+            Reducer::AuthenticateApiKey { secret } => {
+                __sats::bsatn::to_vec(&authenticate_api_key_reducer::AuthenticateApiKeyArgs {
+                    secret: secret.clone(),
+                })
+            }
             Reducer::AwardResonanceXp {
                 root_word_id,
                 xp_amount,
@@ -595,6 +643,17 @@ impl __sdk::Reducer for Reducer {
                     slot_index: slot_index.clone(),
                 })
             }
+            Reducer::CreateApiKey {
+                id,
+                name,
+                prefix,
+                secret,
+            } => __sats::bsatn::to_vec(&create_api_key_reducer::CreateApiKeyArgs {
+                id: id.clone(),
+                name: name.clone(),
+                prefix: prefix.clone(),
+                secret: secret.clone(),
+            }),
             Reducer::DeleteCharacter { character_id } => {
                 __sats::bsatn::to_vec(&delete_character_reducer::DeleteCharacterArgs {
                     character_id: character_id.clone(),
@@ -737,6 +796,9 @@ impl __sdk::Reducer for Reducer {
                 target_position: target_position.clone(),
             }),
             Reducer::Respawn => __sats::bsatn::to_vec(&respawn_reducer::RespawnArgs {}),
+            Reducer::RevokeApiKey { id } => {
+                __sats::bsatn::to_vec(&revoke_api_key_reducer::RevokeApiKeyArgs { id: id.clone() })
+            }
             Reducer::SendChatMessage { text } => {
                 __sats::bsatn::to_vec(&send_chat_message_reducer::SendChatMessageArgs {
                     text: text.clone(),
@@ -789,12 +851,22 @@ impl __sdk::Reducer for Reducer {
                     amount: amount.clone(),
                 })
             }
+            Reducer::StartCraft {
+                npc_entity_id,
+                item_id,
+                quantity,
+            } => __sats::bsatn::to_vec(&start_craft_reducer::StartCraftArgs {
+                npc_entity_id: npc_entity_id.clone(),
+                item_id: item_id.clone(),
+                quantity: quantity.clone(),
+            }),
             Reducer::StartGather { node_entity_id } => {
                 __sats::bsatn::to_vec(&start_gather_reducer::StartGatherArgs {
                     node_entity_id: node_entity_id.clone(),
                 })
             }
             Reducer::Stop => __sats::bsatn::to_vec(&stop_reducer::StopArgs {}),
+            Reducer::StopCraft => __sats::bsatn::to_vec(&stop_craft_reducer::StopCraftArgs {}),
             Reducer::StopGather => __sats::bsatn::to_vec(&stop_gather_reducer::StopGatherArgs {}),
             Reducer::UnequipItem { slot } => {
                 __sats::bsatn::to_vec(&unequip_item_reducer::UnequipItemArgs { slot: slot.clone() })
@@ -816,6 +888,7 @@ pub struct DbUpdate {
     cast_state: __sdk::TableUpdate<CastState>,
     character_wallet: __sdk::TableUpdate<CharacterWallet>,
     cooldown: __sdk::TableUpdate<Cooldown>,
+    craft_session: __sdk::TableUpdate<CraftSession>,
     crowd_control: __sdk::TableUpdate<CrowdControl>,
     damage_event: __sdk::TableUpdate<DamageEventRow>,
     enemy_ai: __sdk::TableUpdate<EnemyAi>,
@@ -830,6 +903,7 @@ pub struct DbUpdate {
     market: __sdk::TableUpdate<Market>,
     market_buy_order: __sdk::TableUpdate<MarketBuyOrder>,
     market_sell_order: __sdk::TableUpdate<MarketSellOrder>,
+    my_api_keys: __sdk::TableUpdate<ApiKeyMeta>,
     npc: __sdk::TableUpdate<Npc>,
     party: __sdk::TableUpdate<PartyRow>,
     party_member: __sdk::TableUpdate<PartyMemberRow>,
@@ -879,6 +953,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "cooldown" => db_update
                     .cooldown
                     .append(cooldown_table::parse_table_update(table_update)?),
+                "craft_session" => db_update
+                    .craft_session
+                    .append(craft_session_table::parse_table_update(table_update)?),
                 "crowd_control" => db_update
                     .crowd_control
                     .append(crowd_control_table::parse_table_update(table_update)?),
@@ -921,6 +998,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "market_sell_order" => db_update
                     .market_sell_order
                     .append(market_sell_order_table::parse_table_update(table_update)?),
+                "my_api_keys" => db_update
+                    .my_api_keys
+                    .append(my_api_keys_table::parse_table_update(table_update)?),
                 "npc" => db_update
                     .npc
                     .append(npc_table::parse_table_update(table_update)?),
@@ -1020,6 +1100,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.cooldown = cache
             .apply_diff_to_table::<Cooldown>("cooldown", &self.cooldown)
             .with_updates_by_pk(|row| &row.id);
+        diff.craft_session = cache
+            .apply_diff_to_table::<CraftSession>("craft_session", &self.craft_session)
+            .with_updates_by_pk(|row| &row.entity_id);
         diff.crowd_control = cache
             .apply_diff_to_table::<CrowdControl>("crowd_control", &self.crowd_control)
             .with_updates_by_pk(|row| &row.id);
@@ -1108,6 +1191,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.tick_stats = cache
             .apply_diff_to_table::<TickStats>("tick_stats", &self.tick_stats)
             .with_updates_by_pk(|row| &row.id);
+        diff.my_api_keys = cache
+            .apply_diff_to_table::<ApiKeyMeta>("my_api_keys", &self.my_api_keys)
+            .with_updates_by_pk(|row| &row.id);
 
         diff
     }
@@ -1138,6 +1224,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "cooldown" => db_update
                     .cooldown
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "craft_session" => db_update
+                    .craft_session
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "crowd_control" => db_update
                     .crowd_control
@@ -1180,6 +1269,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "market_sell_order" => db_update
                     .market_sell_order
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "my_api_keys" => db_update
+                    .my_api_keys
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "npc" => db_update
                     .npc
@@ -1269,6 +1361,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "cooldown" => db_update
                     .cooldown
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "craft_session" => db_update
+                    .craft_session
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "crowd_control" => db_update
                     .crowd_control
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -1310,6 +1405,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "market_sell_order" => db_update
                     .market_sell_order
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "my_api_keys" => db_update
+                    .my_api_keys
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "npc" => db_update
                     .npc
@@ -1385,6 +1483,7 @@ pub struct AppliedDiff<'r> {
     cast_state: __sdk::TableAppliedDiff<'r, CastState>,
     character_wallet: __sdk::TableAppliedDiff<'r, CharacterWallet>,
     cooldown: __sdk::TableAppliedDiff<'r, Cooldown>,
+    craft_session: __sdk::TableAppliedDiff<'r, CraftSession>,
     crowd_control: __sdk::TableAppliedDiff<'r, CrowdControl>,
     damage_event: __sdk::TableAppliedDiff<'r, DamageEventRow>,
     enemy_ai: __sdk::TableAppliedDiff<'r, EnemyAi>,
@@ -1399,6 +1498,7 @@ pub struct AppliedDiff<'r> {
     market: __sdk::TableAppliedDiff<'r, Market>,
     market_buy_order: __sdk::TableAppliedDiff<'r, MarketBuyOrder>,
     market_sell_order: __sdk::TableAppliedDiff<'r, MarketSellOrder>,
+    my_api_keys: __sdk::TableAppliedDiff<'r, ApiKeyMeta>,
     npc: __sdk::TableAppliedDiff<'r, Npc>,
     party: __sdk::TableAppliedDiff<'r, PartyRow>,
     party_member: __sdk::TableAppliedDiff<'r, PartyMemberRow>,
@@ -1453,6 +1553,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<Cooldown>("cooldown", &self.cooldown, event);
+        callbacks.invoke_table_row_callbacks::<CraftSession>(
+            "craft_session",
+            &self.craft_session,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<CrowdControl>(
             "crowd_control",
             &self.crowd_control,
@@ -1499,6 +1604,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.market_sell_order,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<ApiKeyMeta>("my_api_keys", &self.my_api_keys, event);
         callbacks.invoke_table_row_callbacks::<Npc>("npc", &self.npc, event);
         callbacks.invoke_table_row_callbacks::<PartyRow>("party", &self.party, event);
         callbacks.invoke_table_row_callbacks::<PartyMemberRow>(
@@ -2220,6 +2326,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         cast_state_table::register_table(client_cache);
         character_wallet_table::register_table(client_cache);
         cooldown_table::register_table(client_cache);
+        craft_session_table::register_table(client_cache);
         crowd_control_table::register_table(client_cache);
         damage_event_table::register_table(client_cache);
         enemy_ai_table::register_table(client_cache);
@@ -2234,6 +2341,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         market_table::register_table(client_cache);
         market_buy_order_table::register_table(client_cache);
         market_sell_order_table::register_table(client_cache);
+        my_api_keys_table::register_table(client_cache);
         npc_table::register_table(client_cache);
         party_table::register_table(client_cache);
         party_member_table::register_table(client_cache);
@@ -2261,6 +2369,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "cast_state",
         "character_wallet",
         "cooldown",
+        "craft_session",
         "crowd_control",
         "damage_event",
         "enemy_ai",
@@ -2275,6 +2384,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "market",
         "market_buy_order",
         "market_sell_order",
+        "my_api_keys",
         "npc",
         "party",
         "party_member",

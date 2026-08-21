@@ -48,6 +48,7 @@ use bevymmo_domain::stats::modifiers::{
 };
 use bevymmo_domain::EntityId;
 use bevymmo_gameplay::abilities::{AbilityAim, AncientWordId, KnownAncientLanguage};
+use bevymmo_gameplay::crafting::ActiveCraft;
 use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
 use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
 use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
@@ -76,6 +77,7 @@ use super::module_bindings::cast_ended_table::CastEndedTableAccess;
 use super::module_bindings::cast_state_table::CastStateTableAccess;
 use super::module_bindings::character_wallet_table::CharacterWalletTableAccess;
 use super::module_bindings::cooldown_table::CooldownTableAccess;
+use super::module_bindings::craft_session_table::CraftSessionTableAccess;
 use super::module_bindings::crowd_control_table::CrowdControlTableAccess;
 use super::module_bindings::delete_character_reducer::delete_character;
 use super::module_bindings::entity_stats_table::EntityStatsTableAccess;
@@ -106,12 +108,12 @@ use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAcc
 use super::module_bindings::stat_modifier_table::StatModifierTableAccess;
 use super::module_bindings::{
     ActiveStatus, AoeRegion, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState,
-    CharacterWallet, ColorRow, Cooldown, CrowdControl, CrowdControlKindRow, DbConnection,
-    EntityKindRow, EntityStateRow, EntityStats, EquipmentTable, GameEntity as EntityRow,
-    GatherSession, GatherYieldEvent, Hotbar, InventoryTable, ItemInstanceRow,
-    KnownAncientLanguageTable, MarketBuyOrder, MarketSellOrder, ModifierKindRow, Npc,
-    PeriodicEffect, Player, PlayerMessageEvent, Projectile, ReducerEventContext, RemoteReducers,
-    ResourceNode, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
+    CharacterWallet, ColorRow, Cooldown, CraftSession, CrowdControl, CrowdControlKindRow,
+    DbConnection, EntityKindRow, EntityStateRow, EntityStats, EquipmentTable,
+    GameEntity as EntityRow, GatherSession, GatherYieldEvent, Hotbar, InventoryTable,
+    ItemInstanceRow, KnownAncientLanguageTable, MarketBuyOrder, MarketSellOrder, ModifierKindRow,
+    Npc, PeriodicEffect, Player, PlayerMessageEvent, Projectile, ReducerEventContext,
+    RemoteReducers, ResourceNode, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
 };
 
 /// How fast predicted position is pulled back towards the authoritative one, as
@@ -199,6 +201,8 @@ enum RowEvent {
     ResourceNode(ResourceNode),
     GatherSession(GatherSession),
     GatherSessionRemoved(u64),
+    CraftSession(CraftSession),
+    CraftSessionRemoved(u64),
     GatherYield(GatherYieldEvent),
     SellOrder(MarketSellOrder),
     SellOrderRemoved(u64),
@@ -237,6 +241,7 @@ struct PendingRows {
     npcs: HashMap<u64, Npc>,
     resource_nodes: HashMap<u64, ResourceNode>,
     gather_sessions: HashMap<u64, GatherSession>,
+    craft_sessions: HashMap<u64, CraftSession>,
     boss_state: HashMap<u64, BossState>,
     /// Keyed by `active_status.id`, not by entity: one entity can carry several.
     active_status: HashMap<u64, ActiveStatus>,
@@ -455,6 +460,12 @@ pub struct MarketBuyBook {
 #[derive(Component, Debug, Clone)]
 pub struct NpcMarket {
     pub market_id: String,
+}
+
+/// Catalogue kind of a mirrored NPC (`npc_greeter`, `npc_weapon_crafter`, …).
+#[derive(Component, Debug, Clone)]
+pub struct NpcKind {
+    pub kind_id: String,
 }
 
 /// The caller's own characters (from the public `player` table, filtered to
@@ -765,6 +776,7 @@ fn connect(
             "SELECT * FROM enemy_ai",
             "SELECT * FROM resource_node",
             "SELECT * FROM gather_session",
+            "SELECT * FROM craft_session",
             "SELECT * FROM gather_yield",
             "SELECT * FROM market",
             "SELECT * FROM market_sell_order",
@@ -855,6 +867,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(npc, Npc);
     mirror!(resource_node, ResourceNode);
     mirror!(gather_session, GatherSession);
+    mirror!(craft_session, CraftSession);
     mirror!(market_sell_order, SellOrder);
     mirror!(market_buy_order, BuyOrder);
 
@@ -922,6 +935,10 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     let gather_removed = tx.clone();
     conn.db().gather_session().on_delete(move |_ctx, row| {
         let _ = gather_removed.send(RowEvent::GatherSessionRemoved(row.entity_id));
+    });
+    let craft_removed = tx.clone();
+    conn.db().craft_session().on_delete(move |_ctx, row| {
+        let _ = craft_removed.send(RowEvent::CraftSessionRemoved(row.entity_id));
     });
 }
 
@@ -1107,6 +1124,9 @@ fn drain_events(
             }
             RowEvent::Npc(row) => {
                 if let Some(entity) = state.map.get(row.entity_id) {
+                    commands.entity(entity).insert(NpcKind {
+                        kind_id: row.kind_id.clone(),
+                    });
                     if let Some(market_id) = row.market_id.clone() {
                         commands.entity(entity).insert(NpcMarket { market_id });
                     }
@@ -1130,6 +1150,18 @@ fn drain_events(
                     commands.entity(entity).remove::<ActiveGather>();
                 }
                 state.pending.gather_sessions.remove(&entity_id);
+            }
+            RowEvent::CraftSession(row) => {
+                if let Some(entity) = state.map.get(row.entity_id) {
+                    commands.entity(entity).insert(active_craft_from(&row));
+                }
+                state.pending.craft_sessions.insert(row.entity_id, row);
+            }
+            RowEvent::CraftSessionRemoved(entity_id) => {
+                if let Some(entity) = state.map.get(entity_id) {
+                    commands.entity(entity).remove::<ActiveCraft>();
+                }
+                state.pending.craft_sessions.remove(&entity_id);
             }
             RowEvent::GatherYield(row) => {
                 debug!(
@@ -1382,6 +1414,9 @@ fn replay_entity(
     if let Some(row) = pending.gather_sessions.get(&entity_id) {
         commands.entity(entity).insert(active_gather_from(row));
     }
+    if let Some(row) = pending.craft_sessions.get(&entity_id) {
+        commands.entity(entity).insert(active_craft_from(row));
+    }
     apply_effects(commands, entity, entity_id, pending);
 }
 
@@ -1396,6 +1431,16 @@ fn harvestable_from(row: &ResourceNode) -> Harvestable {
 fn active_gather_from(row: &GatherSession) -> ActiveGather {
     ActiveGather {
         node_entity_id: row.node_entity_id,
+        elapsed_seconds: row.elapsed_seconds,
+        required_seconds: row.required_seconds,
+    }
+}
+
+fn active_craft_from(row: &CraftSession) -> ActiveCraft {
+    ActiveCraft {
+        npc_entity_id: row.npc_entity_id,
+        item_id: ItemId::new(row.item_id.clone()),
+        quantity: row.quantity,
         elapsed_seconds: row.elapsed_seconds,
         required_seconds: row.required_seconds,
     }
@@ -1883,6 +1928,9 @@ fn apply_entity(
         cmd.insert(LocalPlayer);
     }
     if let Some(npc) = pending.npcs.get(&row.entity_id) {
+        cmd.insert(NpcKind {
+            kind_id: npc.kind_id.clone(),
+        });
         if let Some(market_id) = npc.market_id.clone() {
             cmd.insert(NpcMarket { market_id });
         }

@@ -6,8 +6,10 @@
 //! handlers needed.
 
 pub mod account;
+pub mod api_keys;
 pub mod chat;
 pub mod combat;
+pub mod crafting;
 pub mod economy;
 pub mod gathering;
 pub mod items;

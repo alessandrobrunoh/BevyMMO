@@ -2419,6 +2419,7 @@ dependencies = [
  "bevymmo_content",
  "serde",
  "serde_json",
+ "sha2",
  "spacetimedb-sdk",
  "thiserror 2.0.19",
  "tokio",

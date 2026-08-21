@@ -4,7 +4,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevymmo_client::pointer::{hud_wants_pointer, PointerOnHud};
-use bevymmo_client::stdb::{commands, StdbConnection};
+use bevymmo_client::stdb::{commands, NpcKind, StdbConnection};
 use bevymmo_content::item_definitions::greeter_stock;
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -71,6 +71,7 @@ pub fn npc_sidebar_on_click(
             &Position,
             &EntityKind,
             Option<&bevymmo_client::stdb::NpcMarket>,
+            Option<&NpcKind>,
         ),
         With<GameEntity>,
     >,
@@ -94,11 +95,14 @@ pub fn npc_sidebar_on_click(
 
     // Costruisci lista di hits per le entità Friendly
     let mut hits: Vec<EntityHit> = Vec::new();
-    for (entity, position, kind, market) in entity_query.iter() {
+    for (entity, position, kind, market, npc_kind) in entity_query.iter() {
         if *kind != EntityKind::Friendly {
             continue;
         }
         if market.is_some() {
+            continue;
+        }
+        if npc_kind.is_some_and(|kind| kind.kind_id.contains("crafter")) {
             continue;
         }
 

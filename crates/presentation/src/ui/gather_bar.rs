@@ -14,7 +14,9 @@ use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::pointer::{hud_wants_pointer, PointerOnHud};
 use bevymmo_client::server_feed::ServerNotice;
 use bevymmo_client::stdb::{commands, StdbConnection};
+use bevymmo_gameplay::crafting::ActiveCraft;
 use bevymmo_gameplay::gathering::{in_interact_range, ActiveGather, Harvestable};
+use bevymmo_gameplay::items::registry::ItemRegistry;
 use bevymmo_gameplay::placeables::PlaceableRegistry;
 use bevymmo_network::world_components::{NetworkEntityId, Position};
 
@@ -188,32 +190,49 @@ fn setup_gather_bar(mut commands: Commands, theme: Res<UiTheme>) {
 
 fn update_gather_bar(
     gather: Query<&ActiveGather, With<LocalPlayer>>,
+    craft: Query<&ActiveCraft, With<LocalPlayer>>,
+    items: Option<Res<ItemRegistry>>,
     mut root: Query<&mut Node, With<GatherBarRoot>>,
     mut fill: Query<&mut Node, (With<GatherBarFill>, Without<GatherBarRoot>)>,
     mut label: Query<&mut Text, With<GatherBarLabel>>,
 ) {
     let gathering = gather.iter().next();
+    let crafting = craft.iter().next();
     let Ok(mut root) = root.single_mut() else {
         return;
     };
-    match gathering {
-        None => {
-            root.display = Display::None;
-        }
-        Some(gather) => {
-            root.display = Display::Flex;
-            let pct = if gather.required_seconds <= 0.0 {
-                1.0
-            } else {
-                (gather.elapsed_seconds / gather.required_seconds).clamp(0.0, 1.0)
-            };
-            if let Ok(mut fill) = fill.single_mut() {
-                fill.width = Val::Percent(pct * 100.0);
-            }
-            if let Ok(mut text) = label.single_mut() {
-                let remaining = (gather.required_seconds - gather.elapsed_seconds).max(0.0);
-                text.0 = format!("Gathering {remaining:.1}s");
-            }
-        }
+    let (elapsed, required, caption) = if let Some(gather) = gathering {
+        (
+            gather.elapsed_seconds,
+            gather.required_seconds,
+            "Gathering".to_string(),
+        )
+    } else if let Some(craft) = crafting {
+        let name = items
+            .as_ref()
+            .and_then(|registry| registry.get(&craft.item_id))
+            .map(|item| item.display_name().to_string())
+            .unwrap_or_else(|| craft.item_id.as_str().to_string());
+        (
+            craft.elapsed_seconds,
+            craft.required_seconds,
+            format!("Crafting {name}"),
+        )
+    } else {
+        root.display = Display::None;
+        return;
+    };
+    root.display = Display::Flex;
+    let pct = if required <= 0.0 {
+        1.0
+    } else {
+        (elapsed / required).clamp(0.0, 1.0)
+    };
+    if let Ok(mut fill) = fill.single_mut() {
+        fill.width = Val::Percent(pct * 100.0);
+    }
+    if let Ok(mut text) = label.single_mut() {
+        let remaining = (required - elapsed).max(0.0);
+        text.0 = format!("{caption} {remaining:.1}s");
     }
 }

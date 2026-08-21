@@ -30,6 +30,9 @@ thiserror = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4"] }
+# Same digest the module stores: SHA-256 hex of the API key secret, used as
+# the in-memory session-store key so the plaintext never sits in the map.
+sha2 = "0.10"
 
 # OpenAPI generation for the Scalar reference at `/docs`. Plain `utoipa` only
 # (no `utoipa-scalar`/`utoipa-swagger-ui`): those crates ship axum integration

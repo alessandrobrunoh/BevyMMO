@@ -32,7 +32,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{bracketed, parenthesized, parse_macro_input};
@@ -905,6 +905,134 @@ struct RuneProfileDef {
     stability: LitFloat,
 }
 
+/// Parsed `crafting(channel_seconds = ..., ingredients = [ingredient(...), ...])`.
+struct CraftingDef {
+    channel_seconds: LitFloat,
+    ingredients: Vec<IngredientDef>,
+}
+
+struct IngredientDef {
+    id: LitStr,
+    amount: LitInt,
+}
+
+impl Parse for IngredientDef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let kind: Ident = input.parse()?;
+        if kind != "ingredient" {
+            return Err(syn::Error::new_spanned(
+                &kind,
+                "expected `ingredient(id = \"...\", amount = ...)`",
+            ));
+        }
+        let content;
+        parenthesized!(content in input);
+        let mut id = None;
+        let mut amount = None;
+        while !content.is_empty() {
+            let key: Ident = content.parse()?;
+            content.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "id" => id = Some(content.parse::<LitStr>()?),
+                "amount" => amount = Some(content.parse::<LitInt>()?),
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!("unknown key `{other}` in ingredient(...) (expected id, amount)"),
+                    ))
+                }
+            }
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+        Ok(Self {
+            id: id.ok_or_else(|| {
+                syn::Error::new_spanned(&kind, "ingredient(...) requires `id = \"...\"`")
+            })?,
+            amount: amount.ok_or_else(|| {
+                syn::Error::new_spanned(&kind, "ingredient(...) requires `amount = ...`")
+            })?,
+        })
+    }
+}
+
+impl CraftingDef {
+    fn parse_from(content: ParseStream) -> syn::Result<Self> {
+        let mut channel_seconds = None;
+        let mut ingredients: Option<Vec<IngredientDef>> = None;
+
+        while !content.is_empty() {
+            let key: Ident = content.parse()?;
+            content.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "channel_seconds" => channel_seconds = Some(content.parse::<LitFloat>()?),
+                "ingredients" => {
+                    let inner;
+                    bracketed!(inner in content);
+                    let list: Punctuated<IngredientDef, Token![,]> =
+                        Punctuated::parse_terminated(&inner)?;
+                    ingredients = Some(list.into_iter().collect());
+                }
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!(
+                            "unknown key `{other}` in crafting(...) (expected channel_seconds, ingredients)"
+                        ),
+                    ))
+                }
+            }
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+
+        let ingredients = ingredients.ok_or_else(|| {
+            content.error("crafting(...) requires `ingredients = [ingredient(...), ...]`")
+        })?;
+        if ingredients.is_empty() {
+            return Err(content.error("crafting(...) requires at least one ingredient"));
+        }
+
+        let mut seen = HashSet::new();
+        for ingredient in &ingredients {
+            if !seen.insert(ingredient.id.value()) {
+                return Err(syn::Error::new_spanned(
+                    &ingredient.id,
+                    format!("duplicate ingredient id `{}`", ingredient.id.value()),
+                ));
+            }
+            let amount: u32 = ingredient.amount.base10_parse()?;
+            if amount < 1 {
+                return Err(syn::Error::new_spanned(
+                    &ingredient.amount,
+                    "ingredient amount must be at least 1",
+                ));
+            }
+        }
+
+        let channel_seconds = channel_seconds
+            .ok_or_else(|| content.error("crafting(...) requires `channel_seconds = ...`"))?;
+        let seconds: f32 = channel_seconds.base10_parse()?;
+        if seconds <= 0.0 {
+            return Err(syn::Error::new_spanned(
+                &channel_seconds,
+                "channel_seconds must be greater than 0",
+            ));
+        }
+
+        Ok(Self {
+            channel_seconds,
+            ingredients,
+        })
+    }
+}
+
 impl RuneProfileDef {
     fn parse_from(content: ParseStream) -> syn::Result<Self> {
         let mut capacity = None;
@@ -957,6 +1085,7 @@ struct ItemDef {
     spells: Option<SpellsDef>,
     abilities: Option<AbilitiesDef>,
     rune_profile: Option<RuneProfileDef>,
+    crafting: Option<CraftingDef>,
 }
 
 impl Parse for ItemDef {
@@ -974,6 +1103,7 @@ impl Parse for ItemDef {
         let mut spells = None;
         let mut abilities = None;
         let mut rune_profile = None;
+        let mut crafting = None;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -992,6 +1122,10 @@ impl Parse for ItemDef {
                 let content;
                 parenthesized!(content in input);
                 rune_profile = Some(RuneProfileDef::parse_from(&content)?);
+            } else if key_str == "crafting" {
+                let content;
+                parenthesized!(content in input);
+                crafting = Some(CraftingDef::parse_from(&content)?);
             } else {
                 input.parse::<Token![=]>()?;
                 match key_str.as_str() {
@@ -1016,7 +1150,7 @@ impl Parse for ItemDef {
                             format!(
                                 "unknown key `{other}` in #[item(...)] (expected id, name, description, \
                                  category, rarity, slot, family, tradable, icon, effects, \
-                                 spells, abilities, rune_profile)"
+                                 spells, abilities, rune_profile, crafting)"
                             ),
                         ))
                     }
@@ -1056,6 +1190,7 @@ impl Parse for ItemDef {
             spells,
             abilities,
             rune_profile,
+            crafting,
         })
     }
 }
@@ -1140,6 +1275,29 @@ impl ItemDef {
             }
         });
 
+        let crafting_method = self.crafting.as_ref().map(|crafting| {
+            let channel_seconds = &crafting.channel_seconds;
+            let ingredients = crafting.ingredients.iter().map(|ingredient| {
+                let id = &ingredient.id;
+                let amount = &ingredient.amount;
+                quote! {
+                    crate::items::CraftIngredient {
+                        item_id: crate::items::ItemId::new(#id),
+                        amount: #amount,
+                    }
+                }
+            });
+            quote! {
+                fn craft_recipe(&self) -> Option<&crate::items::CraftRecipe> {
+                    static RECIPE: std::sync::OnceLock<crate::items::CraftRecipe> = std::sync::OnceLock::new();
+                    Some(RECIPE.get_or_init(|| crate::items::CraftRecipe {
+                        ingredients: vec![#(#ingredients),*],
+                        channel_seconds: #channel_seconds,
+                    }))
+                }
+            }
+        });
+
         let rune_profile_method = self.rune_profile.as_ref().map(|profile| {
             let capacity = &profile.capacity;
             let stability = &profile.stability;
@@ -1192,6 +1350,7 @@ impl ItemDef {
                 #family_method
                 #ability_loadout_method
                 #rune_profile_method
+                #crafting_method
             }
 
             impl #name {

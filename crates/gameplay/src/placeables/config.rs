@@ -7,6 +7,7 @@
 //! dynamically without recompiling per kind.
 
 use crate::abilities::{AbilityId, KitInscription};
+use crate::items::definition::ItemCategory;
 use crate::spells::SpellId;
 use crate::stats::components::StatsBundleData;
 
@@ -72,7 +73,7 @@ pub struct BossConfig {
 ///
 /// Kept as a non-`Component` enum so the trait stays object-safe; the server
 /// binding converts it into the appropriate replicated component at spawn.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InteractionKind {
     /// Opens a shop inventory. `inventory_id` references a content table.
     Shop { inventory_id: String },
@@ -80,6 +81,8 @@ pub enum InteractionKind {
     Market { market_id: String },
     /// Opens a dialogue tree. `dialogue_tree_id` references a dialogue asset.
     Dialogue { dialogue_tree_id: String },
+    /// Opens a crafter UI listing catalogue items in `category` that have a recipe.
+    Craft { category: ItemCategory },
     /// Opens a chest and rolls the given loot table.
     OpenChest { loot_table_id: String },
     /// Toggles a door (open / closed).

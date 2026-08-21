@@ -128,6 +128,54 @@ impl Inventory {
         matches!(category, ItemCategory::Material)
     }
 
+    /// Total quantity of `item_id` across every occupied slot.
+    pub fn count_item(&self, item_id: &ItemId) -> u32 {
+        self.slots
+            .iter()
+            .flatten()
+            .filter(|item| item.item_id == *item_id)
+            .map(|item| item.quantity)
+            .sum()
+    }
+
+    /// Removes `amount` pieces of `item_id` from the first matching slots.
+    ///
+    /// Whole stacks whose remaining quantity hits zero are cleared. Unique
+    /// items (quantity 1) are consumed one instance at a time.
+    pub fn remove_item_amount(
+        &mut self,
+        item_id: &ItemId,
+        amount: u32,
+    ) -> Result<(), StackOpError> {
+        if amount == 0 {
+            return Err(StackOpError::AmountZero);
+        }
+        if self.count_item(item_id) < amount {
+            return Err(StackOpError::AmountExceedsQuantity);
+        }
+        let mut remaining = amount;
+        for slot in &mut self.slots {
+            if remaining == 0 {
+                break;
+            }
+            let Some(item) = slot.as_mut() else {
+                continue;
+            };
+            if item.item_id != *item_id {
+                continue;
+            }
+            if item.quantity <= remaining {
+                remaining -= item.quantity;
+                *slot = None;
+            } else {
+                item.quantity -= remaining;
+                remaining = 0;
+            }
+        }
+        debug_assert_eq!(remaining, 0);
+        Ok(())
+    }
+
     /// How many more pieces of `item_id` this bag can accept.
     pub fn space_for(&self, item_id: &ItemId, stacks: bool) -> u32 {
         if !stacks {
@@ -898,5 +946,38 @@ mod tests {
         assert_eq!(Inventory::clamp_trade_amount(99, 50), 50);
         assert_eq!(Inventory::clamp_trade_amount(1, 1), 1);
         assert_eq!(Inventory::clamp_trade_amount(3, 0), 0);
+    }
+
+    #[test]
+    fn count_item_sums_matching_piles() {
+        let mut inv = Inventory::default();
+        inv.slots[0] = Some(wood_stack(1, 5));
+        inv.slots[2] = Some(wood_stack(2, 7));
+        inv.slots[3] = Some(sword(3));
+        assert_eq!(inv.count_item(&ItemId::new("wood")), 12);
+        assert_eq!(inv.count_item(&ItemId::new("sword")), 1);
+        assert_eq!(inv.count_item(&ItemId::new("copper")), 0);
+    }
+
+    #[test]
+    fn remove_item_amount_drains_first_piles_then_clears() {
+        let mut inv = Inventory::default();
+        inv.slots[0] = Some(wood_stack(1, 5));
+        inv.slots[1] = Some(wood_stack(2, 8));
+        inv.remove_item_amount(&ItemId::new("wood"), 7)
+            .expect("drain");
+        assert_eq!(inv.slots[0], None);
+        assert_eq!(inv.slots[1].as_ref().map(|item| item.quantity), Some(6));
+        inv.remove_item_amount(&ItemId::new("wood"), 6)
+            .expect("clear last pile");
+        assert!(inv.slots[1].is_none());
+        assert_eq!(
+            inv.remove_item_amount(&ItemId::new("wood"), 1).unwrap_err(),
+            StackOpError::AmountExceedsQuantity
+        );
+        assert_eq!(
+            inv.remove_item_amount(&ItemId::new("wood"), 0).unwrap_err(),
+            StackOpError::AmountZero
+        );
     }
 }

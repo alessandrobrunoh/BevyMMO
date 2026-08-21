@@ -11,7 +11,10 @@
 //! Fuori dal gameplay, `cleanup_floating_ui_root` rimuove la root UI e resetta
 //! `FloatingUiAttached` sui target, così il re-entry può ri-spawnare le barre.
 
+use bevymmo_client::gathering::pick_height_for;
 use bevymmo_gameplay::entity::components::{EntityKind, PlayerName};
+use bevymmo_gameplay::gathering::Harvestable;
+use bevymmo_gameplay::placeables::PlaceableRegistry;
 use bevymmo_gameplay::stats::components::VitalStats;
 use bevymmo_network::network::protocol::Position;
 
@@ -19,6 +22,7 @@ use crate::ui::bar::{get_hp_fill_color, get_or_spawn_root};
 use crate::ui::theme::UiTheme;
 use bevy::prelude::*;
 
+use super::plugin::{CHARACTER_BAR_OFFSET, HARVESTABLE_BAR_CLEARANCE};
 use super::{spawn_entity_bar, EntityBarParts, FloatingUi};
 
 /// Root UI Node per tutta la UI flottante.
@@ -39,11 +43,12 @@ pub fn spawn_ui_for_new_entities(
     mut commands: Commands,
     root_query: Query<Entity, With<FloatingUiRoot>>,
     theme: Res<UiTheme>,
+    placeables: Res<PlaceableRegistry>,
     new_entities: Query<
-        Entity,
+        (Entity, Option<&Harvestable>),
         (
             With<Position>,
-            With<VitalStats>,
+            Or<(With<VitalStats>, With<Harvestable>)>,
             Without<FloatingUiAttached>,
         ),
     >,
@@ -54,8 +59,19 @@ pub fn spawn_ui_for_new_entities(
 
     let root = get_or_spawn_root(&mut commands, &root_query);
 
-    for entity in new_entities.iter() {
-        spawn_entity_bar(&mut commands, root, entity, &theme);
+    for (entity, harvestable) in new_entities.iter() {
+        let offset = harvestable
+            .map(|harvestable| {
+                // A node's model is nothing like a character: the oak stands
+                // 11.9 m tall, so a fixed 2 m offset buries the bar in the
+                // trunk. `pick_height_for` is the height the click volume is
+                // already built from — one number, not two that can drift.
+                Vec3::Y
+                    * (pick_height_for(harvestable.kind_id.as_str(), Some(&placeables))
+                        + HARVESTABLE_BAR_CLEARANCE)
+            })
+            .unwrap_or(CHARACTER_BAR_OFFSET);
+        spawn_entity_bar(&mut commands, root, entity, offset, &theme);
         commands.entity(entity).insert(FloatingUiAttached);
     }
 }
@@ -133,19 +149,45 @@ pub fn update_floating_ui_position(
     }
 }
 
-/// Fase 2 — aggiorna contenuto (nome, fill, testo HP, colore fill) tramite riferimenti diretti,
+/// Cosa conta la barra: salute per chi combatte, pezzi rimasti per un nodo
+/// raccoglibile. Un nodo non ha `VitalStats` e nient'altro ha `Harvestable`,
+/// quindi i due casi non competono mai.
+///
+/// `None` quando il target non è nessuno dei due, o quando il registry non
+/// conosce quel `kind_id`: senza il massimo la barra non ha una scala.
+fn bar_values(
+    vital: Option<&VitalStats>,
+    harvestable: Option<&Harvestable>,
+    placeables: &PlaceableRegistry,
+) -> Option<(f32, f32)> {
+    if let Some(vital) = vital {
+        return Some((vital.current_health, vital.max_health));
+    }
+    let harvestable = harvestable?;
+    let max = crate::harvest::max_pieces_for(&harvestable.kind_id, placeables)?;
+    Some((harvestable.current_pieces as f32, max as f32))
+}
+
+/// Fase 2 — aggiorna contenuto (nome, fill, testo, colore fill) tramite riferimenti diretti,
 /// saltando le scritture invariate grazie alla cache in [`EntityBarParts`].
 pub fn update_floating_ui_content(
     changed_targets: Query<
         Entity,
         Or<(
             Changed<VitalStats>,
+            Changed<Harvestable>,
             Changed<PlayerName>,
             Changed<EntityKind>,
         )>,
     >,
-    target_query: Query<(&VitalStats, Option<&PlayerName>, Option<&EntityKind>)>,
+    target_query: Query<(
+        Option<&VitalStats>,
+        Option<&Harvestable>,
+        Option<&PlayerName>,
+        Option<&EntityKind>,
+    )>,
     theme: Res<UiTheme>,
+    placeables: Res<PlaceableRegistry>,
     mut ui_query: Query<(&FloatingUi, &mut EntityBarParts)>,
     mut text_query: Query<&mut Text>,
     mut node_query: Query<&mut Node>,
@@ -157,7 +199,11 @@ pub fn update_floating_ui_content(
             continue;
         }
 
-        let Ok((vital, name, entity_kind)) = target_query.get(floating_ui.target) else {
+        let Ok((vital, harvestable, name, entity_kind)) = target_query.get(floating_ui.target)
+        else {
+            continue;
+        };
+        let Some((current, max)) = bar_values(vital, harvestable, &placeables) else {
             continue;
         };
 
@@ -174,8 +220,7 @@ pub fn update_floating_ui_content(
         }
 
         // Fill: clampa [0,1] -> [0,100], scrivi solo se la percentuale è cambiata.
-        let new_fill_pct =
-            (vital.current_health / vital.max_health.max(0.1)).clamp(0.0, 1.0) * 100.0;
+        let new_fill_pct = (current / max.max(0.1)).clamp(0.0, 1.0) * 100.0;
         if parts.last_fill_pct != new_fill_pct {
             let fill_entity = parts.hp_fill;
             if let Ok(mut fill_node) = node_query.get_mut(fill_entity) {
@@ -184,11 +229,8 @@ pub fn update_floating_ui_content(
             parts.last_fill_pct = new_fill_pct;
         }
 
-        // Testo HP: "current/max" intero, scrivi solo se la stringa è cambiata.
-        let new_hp_text = format!(
-            "{}/{}",
-            vital.current_health as i32, vital.max_health as i32
-        );
+        // Testo: "current/max" intero, scrivi solo se la stringa è cambiata.
+        let new_hp_text = format!("{}/{}", current as i32, max as i32);
         if parts.last_hp_text != new_hp_text {
             let hp_text_entity = parts.hp_text;
             if let Ok(mut text) = text_query.get_mut(hp_text_entity) {
@@ -258,11 +300,28 @@ mod tests {
     fn content_app() -> App {
         let mut app = App::new();
         app.init_resource::<UiTheme>();
+        insert_placeables(&mut app);
         app.add_systems(
             Update,
             (spawn_ui_for_new_entities, update_floating_ui_content).chain(),
         );
         app
+    }
+
+    /// The real registry, not an empty one: the pieces bar reads a node's
+    /// maximum from it, so an empty registry would silently skip that path.
+    fn insert_placeables(app: &mut App) {
+        let mut registry = PlaceableRegistry::default();
+        bevymmo_content::placeable_definitions::register_all(&mut registry);
+        app.insert_resource(registry);
+    }
+
+    fn oak(pieces: u32) -> Harvestable {
+        Harvestable {
+            placement_id: "oak_spawn_west".to_string(),
+            kind_id: "resource_oak_tree".to_string(),
+            current_pieces: pieces,
+        }
     }
 
     fn root_count(world: &mut World) -> usize {
@@ -439,11 +498,78 @@ mod tests {
         assert_eq!(parts.last_name, "Entity");
     }
 
+    /// A resource node has no `VitalStats`, so it used to get no bar at all —
+    /// the pieces left in it were only visible by counting the gathers.
+    #[test]
+    fn harvestable_node_shows_pieces_instead_of_health() {
+        let mut app = content_app();
+        app.world_mut().spawn((
+            Position(Vec3::ZERO),
+            oak(47),
+            PlayerName("Oak Tree".to_string()),
+        ));
+        app.update();
+
+        let mut q = app.world_mut().query::<&EntityBarParts>();
+        let parts = q.single(app.world()).expect("parts");
+        assert_eq!(parts.last_name, "Oak Tree");
+        assert_eq!(parts.last_hp_text, "47/50");
+        assert_eq!(parts.last_fill_pct, 94.0);
+    }
+
+    #[test]
+    fn gathering_a_piece_moves_the_bar() {
+        let mut app = content_app();
+        let tree = app.world_mut().spawn((Position(Vec3::ZERO), oak(50))).id();
+        app.update();
+
+        app.world_mut()
+            .entity_mut(tree)
+            .get_mut::<Harvestable>()
+            .expect("harvestable")
+            .current_pieces = 25;
+        app.update();
+
+        let mut q = app.world_mut().query::<&EntityBarParts>();
+        let parts = q.single(app.world()).expect("parts");
+        assert_eq!(parts.last_hp_text, "25/50");
+        assert_eq!(parts.last_fill_pct, 50.0);
+    }
+
+    /// The character offset (2 m) sits inside an 11.9 m oak's trunk.
+    #[test]
+    fn a_node_carries_its_bar_above_the_model() {
+        let mut app = content_app();
+        app.world_mut().spawn((Position(Vec3::ZERO), oak(50)));
+        app.world_mut().spawn((
+            Position(Vec3::ZERO),
+            VitalStats {
+                current_health: 50.0,
+                max_health: 50.0,
+                current_mana: 40.0,
+                max_mana: 40.0,
+                mana_regeneration: 2.0,
+            },
+        ));
+        app.update();
+
+        let mut q = app.world_mut().query::<&FloatingUi>();
+        let mut offsets: Vec<f32> = q.iter(app.world()).map(|ui| ui.offset.y).collect();
+        offsets.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(offsets[0], CHARACTER_BAR_OFFSET.y);
+        assert!(
+            offsets[1] > CHARACTER_BAR_OFFSET.y,
+            "the oak's bar must clear its canopy, got {}",
+            offsets[1]
+        );
+    }
+
     #[test]
     fn root_is_despawned_when_leaving_gameplay() {
         let mut app = App::new();
         crate::game_state::init_screen_states(&mut app);
         app.init_resource::<UiTheme>();
+        insert_placeables(&mut app);
         app.add_systems(
             Update,
             spawn_ui_for_new_entities.run_if(in_state(Screen::InGame)),
@@ -483,6 +609,7 @@ mod tests {
         let mut app = App::new();
         crate::game_state::init_screen_states(&mut app);
         app.init_resource::<UiTheme>();
+        insert_placeables(&mut app);
         app.add_systems(
             Update,
             spawn_ui_for_new_entities.run_if(in_state(Screen::InGame)),

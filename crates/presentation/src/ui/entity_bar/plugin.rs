@@ -25,6 +25,13 @@ const NAME_LINE_HEIGHT: f32 = 16.0;
 /// spawn per mantenere la coerenza del centraggio.
 const ROW_GAP: f32 = 4.0;
 
+/// Scostamento della barra sopra un'entità alta come un personaggio.
+pub(crate) const CHARACTER_BAR_OFFSET: Vec3 = Vec3::new(0.0, 2.0, 0.0);
+
+/// Aria fra la cima del modello di un nodo raccoglibile e la sua barra: senza,
+/// la barra poggia esattamente sulle foglie più alte.
+pub(crate) const HARVESTABLE_BAR_CLEARANCE: f32 = 0.6;
+
 /// Altezza totale dello stack (nome + gap + barra) usata da
 /// `update_floating_ui_position` per ancorare il fondo dello stack al punto
 /// proiettato.
@@ -40,6 +47,11 @@ pub struct EntityBarPlugin;
 
 impl Plugin for EntityBarPlugin {
     fn build(&self, app: &mut App) {
+        // La barra di un nodo raccoglibile legge il massimo dei pezzi dal
+        // registry. `PresentationCorePlugin` lo popola allo Startup; qui lo si
+        // dichiara comunque perché i sistemi lo richiedono, e `init_resource`
+        // non sovrascrive quello già presente.
+        app.init_resource::<bevymmo_gameplay::placeables::PlaceableRegistry>();
         // Nota: nessun observer su `Add<VitalStats>`. Osservatore e
         // `spawn_ui_for_new_entities` facevano lo stesso lavoro; entrambi
         // chiamavano `get_or_spawn_root`, la cui `Query` non vede un root
@@ -78,12 +90,16 @@ impl Plugin for EntityBarPlugin {
 
 /// Genera una barra UI flottante legata a `target`, agganciandola a `parent_ui_node`.
 ///
+/// `world_offset` è lo scostamento dal punto ancorato al quale lo stack viene
+/// proiettato: un personaggio lo vuole sopra la testa, un albero sopra la chioma.
+///
 /// Inserisce [`EntityBarParts`] sul container per consentire aggiornamenti diretti
 /// con cache dei valori già applicati.
 pub fn spawn_entity_bar(
     commands: &mut Commands,
     parent_ui_node: Entity,
     target: Entity,
+    world_offset: Vec3,
     theme: &UiTheme,
 ) -> Entity {
     let container = commands
@@ -100,7 +116,7 @@ pub fn spawn_entity_bar(
             },
             FloatingUi {
                 target,
-                offset: Vec3::new(0.0, 2.0, 0.0),
+                offset: world_offset,
                 last_viewport: None,
             },
             Pickable::IGNORE,

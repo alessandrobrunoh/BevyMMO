@@ -103,7 +103,9 @@ pub(crate) fn update_harvestable_fill(
     }
 }
 
-fn max_pieces_for(kind_id: &str, registry: &PlaceableRegistry) -> Option<u32> {
+/// How many pieces a full node of this kind holds, or `None` for a kind the
+/// registry does not know (or one authored with no pieces at all).
+pub(crate) fn max_pieces_for(kind_id: &str, registry: &PlaceableRegistry) -> Option<u32> {
     registry
         .resources
         .get(&KindId::new(kind_id.to_owned()))

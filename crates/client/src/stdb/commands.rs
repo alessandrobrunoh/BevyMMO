@@ -32,9 +32,9 @@ use bevymmo_domain::items::EquipSlot;
 use super::module_bindings::armor_cast_reducer::armor_cast as armor_cast_reducer;
 use super::module_bindings::cancel_buy_order_reducer::cancel_buy_order as cancel_buy_order_reducer;
 use super::module_bindings::cancel_sell_order_reducer::cancel_sell_order as cancel_sell_order_reducer;
+use super::module_bindings::cast_weapon_reducer::cast_weapon as cast_weapon_reducer;
 use super::module_bindings::claim_npc_item_reducer::claim_npc_item as claim_npc_item_reducer;
 use super::module_bindings::destroy_item_reducer::destroy_item as destroy_item_reducer;
-use super::module_bindings::eidolon_cast_reducer::eidolon_cast as eidolon_cast_reducer;
 use super::module_bindings::equip_item_reducer::equip_item as equip_item_reducer;
 use super::module_bindings::market_buy_reducer::market_buy as market_buy_reducer;
 use super::module_bindings::market_sell_reducer::market_sell as market_sell_reducer;
@@ -248,18 +248,18 @@ pub fn release_cast(
     )
 }
 
-/// Casts the weapon's Eidolon gesture bound to an ability slot.
-pub fn eidolon_cast(
+/// Casts the weapon ability bound to an ability slot.
+pub fn cast_weapon(
     conn: &StdbConnection,
     slot: AbilitySlot,
     target_entity: Option<u64>,
     target_position: Option<Vec3>,
 ) -> Sent {
-    conn.reducers().eidolon_cast_then(
+    conn.reducers().cast_weapon_then(
         ability_label(slot).to_string(),
         target_entity,
         target_position.map(to_row),
-        conn.report_rejection("could not cast that gesture"),
+        conn.report_rejection("could not cast that weapon ability"),
     )
 }
 

@@ -48,7 +48,7 @@ pub mod effect_payload_filter_row_type;
 pub mod effect_payload_kind_row_type;
 pub mod effect_payload_row_type;
 pub mod effect_payload_selection_row_type;
-pub mod eidolon_cast_reducer;
+pub mod cast_weapon_reducer;
 pub mod entity_kind_row_type;
 pub mod entity_state_row_type;
 pub mod entity_stats_table;
@@ -195,7 +195,7 @@ pub use effect_payload_filter_row_type::EffectPayloadFilterRow;
 pub use effect_payload_kind_row_type::EffectPayloadKindRow;
 pub use effect_payload_row_type::EffectPayloadRow;
 pub use effect_payload_selection_row_type::EffectPayloadSelectionRow;
-pub use eidolon_cast_reducer::eidolon_cast;
+pub use cast_weapon_reducer::cast_weapon;
 pub use entity_kind_row_type::EntityKindRow;
 pub use entity_state_row_type::EntityStateRow;
 pub use entity_stats_table::*;
@@ -339,7 +339,7 @@ pub enum Reducer {
     DestroyItem {
         instance_id: u64,
     },
-    EidolonCast {
+    CastWeapon {
         slot: String,
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
@@ -477,7 +477,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ClaimNpcItem { .. } => "claim_npc_item",
             Reducer::DeleteCharacter { .. } => "delete_character",
             Reducer::DestroyItem { .. } => "destroy_item",
-            Reducer::EidolonCast { .. } => "eidolon_cast",
+            Reducer::CastWeapon { .. } => "cast_weapon",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::GmClearPropOverride { .. } => "gm_clear_prop_override",
             Reducer::GmGrantGold { .. } => "gm_grant_gold",
@@ -572,11 +572,11 @@ impl __sdk::Reducer for Reducer {
                     instance_id: instance_id.clone(),
                 })
             }
-            Reducer::EidolonCast {
+            Reducer::CastWeapon {
                 slot,
                 target_entity,
                 target_position,
-            } => __sats::bsatn::to_vec(&eidolon_cast_reducer::EidolonCastArgs {
+            } => __sats::bsatn::to_vec(&cast_weapon_reducer::CastWeaponArgs {
                 slot: slot.clone(),
                 target_entity: target_entity.clone(),
                 target_position: target_position.clone(),

@@ -13,4 +13,6 @@ pub use dropdown::{
     Select,
 };
 pub use key_capture::{spawn_key_capture, KeyCapture, KeyCaptureDisplay, KeyCaptureLabel};
-pub use toggle::{spawn_checkbox, spawn_toggle, CheckBox, Toggle, ToggleDisplay, ToggleLabel};
+pub use toggle::{
+    spawn_checkbox, spawn_toggle, CheckBox, Toggle, ToggleDisplay, ToggleKnob, ToggleLabel,
+};

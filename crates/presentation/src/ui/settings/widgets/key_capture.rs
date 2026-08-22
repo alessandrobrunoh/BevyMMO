@@ -51,7 +51,7 @@ pub fn spawn_key_capture(
 ) -> Entity {
     let row = commands
         .spawn(Node {
-            width: Val::Px(420.0),
+            width: Val::Percent(100.0),
             height: Val::Px(44.0),
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,

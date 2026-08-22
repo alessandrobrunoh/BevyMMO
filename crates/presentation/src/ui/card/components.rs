@@ -44,22 +44,22 @@ pub struct CardDraggingState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CardKind {
     Inventory,
+    Market,
     ItemDetail,
-    Spellbook,
     CharacterSheet,
     Settings,
     Generic,
 }
 
 /// Policy Object pattern: every card declares how it interacts with other
-/// open cards, instead of hardcoding "inventory closes spellbook" pairs.
+/// open cards, instead of hardcoding pairs of panel types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CardExclusivityPolicy {
     /// Opening this card closes every other currently open non-`Coexist` card,
     /// and any later `Exclusive` card will in turn replace this one.
     ///
     /// Use this for top-level panels that should never overlap (main
-    /// inventory, spellbook, character sheet).
+    /// inventory, market, character sheet).
     #[default]
     Exclusive,
 

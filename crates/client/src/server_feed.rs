@@ -2,13 +2,15 @@
 //!
 //! Everything the database mirrors — positions, stats, inventories — becomes a
 //! *component* on a mirrored entity, and the presentation reads it with an
-//! ordinary query. These three do not fit that shape:
+//! ordinary query. These do not fit that shape:
 //!
 //! - a rejected reducer is an answer to something the player just did, not a
 //!   fact about the world;
 //! - a line of chat or a server announcement belongs to a log, not to an entity;
 //! - a cooldown belongs to the *hotbar*, which is UI state keyed by ability id
-//!   rather than by entity.
+//!   rather than by entity;
+//! - a one-shot world label (gather yield, later damage numbers) is a cue, not
+//!   a replicated component.
 //!
 //! They are Bevy messages instead, written by the SpacetimeDB bridge and read by
 //! the presentation. The types live here, in the crate both sides already
@@ -16,8 +18,12 @@
 //! lightyear wire format, and adding to it would tie new code to something on
 //! its way out.
 
-use bevy::prelude::Message;
+use bevy::prelude::{Color, Message, Vec3};
 use serde::{Deserialize, Serialize};
+
+const DEFAULT_WORLD_TEXT_LIFETIME_SECONDS: f32 = 1.5;
+const DEFAULT_WORLD_TEXT_RISE_SPEED: f32 = 1.25;
+const DEFAULT_WORLD_TEXT_FONT_SIZE: f32 = 18.0;
 
 /// How loudly a [`ServerNotice`] wants to be shown.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,6 +72,53 @@ impl ServerNotice {
 #[derive(Clone, Debug, PartialEq, Message)]
 pub struct ChatLine {
     pub text: String,
+}
+
+/// A one-shot label in the world, not attached to any entity.
+///
+/// Presentation turns this into a floating UI node. The client writes it so
+/// `bevymmo_client` does not depend on presentation types.
+#[derive(Clone, Debug, PartialEq, Message)]
+pub struct WorldTextCue {
+    pub world_position: Vec3,
+    pub text: String,
+    pub color: Color,
+    pub lifetime_seconds: f32,
+    pub rise_speed: f32,
+    pub font_size: f32,
+}
+
+impl WorldTextCue {
+    pub fn new(world_position: Vec3, text: impl Into<String>) -> Self {
+        Self {
+            world_position,
+            text: text.into(),
+            color: Color::WHITE,
+            lifetime_seconds: DEFAULT_WORLD_TEXT_LIFETIME_SECONDS,
+            rise_speed: DEFAULT_WORLD_TEXT_RISE_SPEED,
+            font_size: DEFAULT_WORLD_TEXT_FONT_SIZE,
+        }
+    }
+
+    pub fn with_color(mut self, color: Color) -> Self {
+        self.color = color;
+        self
+    }
+
+    pub fn with_lifetime(mut self, seconds: f32) -> Self {
+        self.lifetime_seconds = seconds;
+        self
+    }
+
+    pub fn with_rise_speed(mut self, speed: f32) -> Self {
+        self.rise_speed = speed;
+        self
+    }
+
+    pub fn with_font_size(mut self, size: f32) -> Self {
+        self.font_size = size;
+        self
+    }
 }
 
 /// The authoritative state of one cooldown on one entity.

@@ -14,13 +14,13 @@ use bevy::prelude::*;
 use crate::ui::theme::UiTheme;
 
 /// Idle user/email field (baked user icon on the left cap).
-pub const INPUT_GOLD_PATH: &str = "ui/extracted_kit/input_gold.png";
+pub const INPUT_GOLD_PATH: &str = "ui/kit/input_gold.png";
 /// Focused / filled user field.
-pub const INPUT_BLUE_PATH: &str = "ui/extracted_kit/input_blue.png";
+pub const INPUT_BLUE_PATH: &str = "ui/kit/input_blue.png";
 /// Idle password field (baked lock + eye).
-pub const INPUT_PASSWORD_GOLD_PATH: &str = "ui/extracted_kit/input_password_gold.png";
+pub const INPUT_PASSWORD_GOLD_PATH: &str = "ui/kit/input_password_gold.png";
 /// Focused / filled password field.
-pub const INPUT_PASSWORD_BLUE_PATH: &str = "ui/extracted_kit/input_password_blue.png";
+pub const INPUT_PASSWORD_BLUE_PATH: &str = "ui/kit/input_password_blue.png";
 
 const INPUT_HEIGHT: f32 = 58.0;
 const INPUT_MAX_WIDTH: f32 = 380.0;

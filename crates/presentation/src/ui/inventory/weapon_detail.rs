@@ -91,7 +91,7 @@ pub struct SlotSummary {
     pub alternatives: Option<String>,
 }
 
-/// Tutto ciò che la scheda mostra in più per un'arma Eidolon.
+/// Tutto ciò che la scheda mostra in più per un'weapon.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WeaponSummary {
     pub runes: Option<RuneSummary>,
@@ -140,9 +140,8 @@ const fn rarity_label(rarity: ItemRarity) -> &'static str {
     }
 }
 
-/// Costruisce il riepilogo Eidolon di `instance`, o `None` se l'item non è
-/// un'arma con gesti propri (armor, pozioni, armi sul vecchio modello
-/// `spell_kit`).
+/// Costruisce il riepilogo weapon di `instance`, o `None` se l'item non è
+/// un'arma con gesti propri (armor, pozioni, armi senza loadout).
 pub fn summarize_weapon(
     instance: &ItemInstance,
     items: &ItemRegistry,
@@ -303,8 +302,8 @@ fn describe_params(params: &bevymmo_gameplay::abilities::AbilityParams) -> Strin
     if params.cooldown != 0.0 {
         parts.push(format!("{} s cooldown", number(params.cooldown)));
     }
-    if params.energy_cost != 0.0 {
-        parts.push(format!("{} mana", number(params.energy_cost)));
+    if params.mana_cost != 0.0 {
+        parts.push(format!("{} mana", number(params.mana_cost)));
     }
     if parts.is_empty() {
         return "-".to_string();
@@ -372,7 +371,7 @@ mod tests {
             range: 22.0,
             cast_time: 0.25,
             cooldown: 2.5,
-            energy_cost: 10.0,
+            mana_cost: 10.0,
         }
     }
 
@@ -400,14 +399,13 @@ mod tests {
             root_words: app.world().resource::<RootWordRegistry>(),
             ancient_words: app.world().resource::<AncientWordRegistry>(),
         };
-        summarize_weapon(instance, items, catalog, known).expect("mage_staff is an Eidolon weapon")
+        summarize_weapon(instance, items, catalog, known).expect("sword is a weapon weapon")
     }
 
-    /// A magic staff with a damage root word inscribed.
-    fn magic_staff_with_root() -> ItemInstance {
-        let mut instance = ItemInstance::new(bevymmo_gameplay::items::ItemId::new("mage_staff"));
+    fn sword_with_flame() -> ItemInstance {
+        let mut instance = ItemInstance::new(bevymmo_gameplay::items::ItemId::new("sword"));
         instance.root_inscription = Some(WeaponInscription {
-            root_word: Some(RootWordId::from("damage")),
+            root_word: Some(RootWordId::from("flame")),
             ..Default::default()
         });
         instance
@@ -418,8 +416,8 @@ mod tests {
     fn a_virgin_weapon_summarizes_every_slot() {
         let app = catalog_app();
         let mut known = KnownAncientLanguage::default();
-        known.root_words.insert(RootWordId::from("damage"));
-        let instance = magic_staff_with_root();
+        known.root_words.insert(RootWordId::from("flame"));
+        let instance = sword_with_flame();
         let summary = summarize(&app, &instance, &known);
 
         assert_eq!(summary.slots.len(), 3);
@@ -427,15 +425,15 @@ mod tests {
         assert_eq!(summary.slots[2].slot, "Ultimate");
         assert!(summary.slots.iter().all(|slot| slot.blocked.is_none()));
 
-        let runes = summary.runes.expect("mage_staff has a rune profile");
-        assert_eq!(runes.capacity, 12);
-        assert_eq!(runes.root_word.as_deref(), Some("Danno"));
+        let runes = summary.runes.expect("sword has a rune profile");
+        assert_eq!(runes.capacity, 11);
+        assert_eq!(runes.root_word.as_deref(), Some("Flame"));
     }
 
     #[test]
-    fn mage_staff_has_one_ultimate_ability() {
+    fn sword_has_one_ultimate_ability() {
         let app = catalog_app();
-        let instance = magic_staff_with_root();
+        let instance = sword_with_flame();
         let summary = summarize(&app, &instance, &KnownAncientLanguage::default());
 
         assert!(summary.slots[0].alternatives.is_none());
@@ -447,18 +445,16 @@ mod tests {
     #[test]
     fn inscribed_root_word_is_listed() {
         let app = catalog_app();
-        let instance = magic_staff_with_root();
+        let instance = sword_with_flame();
         let mut known = KnownAncientLanguage::default();
-        known.root_words.insert(RootWordId::from("damage"));
+        known.root_words.insert(RootWordId::from("flame"));
 
         let summary = summarize(&app, &instance, &known);
         let primary = &summary.slots[0];
 
         assert!(primary.blocked.is_none(), "root word is known");
-        // Title format is now "{ability} - {root_word}"
-        assert!(primary.title.contains("Danno"), "got: {}", primary.title);
+        assert!(primary.title.contains("Flame"), "got: {}", primary.title);
         let glyphs = primary.glyphs.as_ref().expect("primary is inscribed");
-        // The root word display name comes from the registry
         assert!(!glyphs.is_empty(), "glyphs should show the root word");
     }
 
@@ -466,7 +462,7 @@ mod tests {
     #[test]
     fn a_slot_with_an_unknown_root_word_is_marked_locked() {
         let app = catalog_app();
-        let instance = magic_staff_with_root();
+        let instance = sword_with_flame();
 
         // Empty knowledge: the player knows nothing.
         let summary = summarize(&app, &instance, &KnownAncientLanguage::default());
@@ -504,7 +500,7 @@ mod tests {
             range: 0.0,
             cast_time: 0.0,
             cooldown: 0.0,
-            energy_cost: 0.0,
+            mana_cost: 0.0,
         };
         assert_eq!(describe_params(&empty), "-");
     }

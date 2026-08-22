@@ -5,8 +5,8 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "ChatGPT Image Aug 19, 2026, 06_58_11 PM.png"
-OUTPUT = ROOT / "assets/ui/extracted_065811"
+SOURCE = ROOT / "assets/ui/source/hud_sheet.png"
+OUTPUT = ROOT / "assets/ui/hud"
 
 # Measured directly on the 1536x1024 source image.
 COMPONENTS: list[tuple[str, tuple[int, int, int, int]]] = [

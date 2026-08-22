@@ -4,7 +4,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevymmo_client::pointer::{hud_wants_pointer, PointerOnHud};
-use bevymmo_client::stdb::{commands, StdbConnection};
+use bevymmo_client::stdb::{commands, NpcKind, StdbConnection};
 use bevymmo_content::item_definitions::greeter_stock;
 use bevymmo_gameplay::entity::components::{EntityKind, GameEntity, PlayerName};
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -65,7 +65,16 @@ pub fn npc_sidebar_on_click(
     theme: Res<UiTheme>,
     item_registry: Res<ItemRegistry>,
     // Query per le entità game (NPC = GameEntity + Position + EntityKind::Friendly)
-    entity_query: Query<(Entity, &Position, &EntityKind), With<GameEntity>>,
+    entity_query: Query<
+        (
+            Entity,
+            &Position,
+            &EntityKind,
+            Option<&bevymmo_client::stdb::NpcMarket>,
+            Option<&NpcKind>,
+        ),
+        With<GameEntity>,
+    >,
     name_query: Query<&PlayerName>,
     // Query per le sidebar esistenti
     existing_sidebar: Query<Entity, With<NpcSidebar>>,
@@ -86,8 +95,14 @@ pub fn npc_sidebar_on_click(
 
     // Costruisci lista di hits per le entità Friendly
     let mut hits: Vec<EntityHit> = Vec::new();
-    for (entity, position, kind) in entity_query.iter() {
+    for (entity, position, kind, market, npc_kind) in entity_query.iter() {
         if *kind != EntityKind::Friendly {
+            continue;
+        }
+        if market.is_some() {
+            continue;
+        }
+        if npc_kind.is_some_and(|kind| kind.kind_id.contains("crafter")) {
             continue;
         }
 
@@ -131,7 +146,7 @@ pub fn npc_sidebar_on_click(
 ///
 /// Restituisce la distanza perpendicolare dal punto al raggio, non la
 /// distanza lungo il raggio. Questo favorisce i NPC vicini alla linea di mira.
-fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> f32 {
+pub(crate) fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> f32 {
     let to_point = point - ray_origin;
     let projection = to_point.dot(ray_direction);
     let closest_on_ray = ray_origin + ray_direction * projection.clamp(0.0, f32::MAX);
@@ -139,7 +154,7 @@ fn point_to_ray_distance(point: Vec3, ray_origin: Vec3, ray_direction: Vec3) -> 
 }
 
 /// Ottiene il raggio dalla Camera3d attraverso il cursore nella PrimaryWindow.
-fn cursor_ray(
+pub(crate) fn cursor_ray(
     windows: &Query<&Window, With<PrimaryWindow>>,
     cameras: &Query<(&Camera, &Transform), With<Camera3d>>,
 ) -> Option<Ray3d> {
@@ -328,6 +343,6 @@ mod tests {
                 "greeter lists {id} but the catalogue does not"
             );
         }
-        assert_eq!(greeter_stock().len(), 9);
+        assert_eq!(greeter_stock().len(), 6);
     }
 }

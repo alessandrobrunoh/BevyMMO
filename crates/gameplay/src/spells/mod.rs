@@ -1,24 +1,16 @@
-//! Spell framework data: the `Spell` trait, cast context, registry and
-//! runtime components.
+//! Shared cast runtime: context, targeting, AoE/projectile spawn requests,
+//! and the visual event that both `BaseAbility` and the module drain.
 //!
-//! The cast pipeline (processing requests, advancing cast progress, firing
-//! effects) is server logic and lives in `bevymmo_server`. This crate only
-//! defines the contract and the data.
+//! Combat content lives in [`crate::abilities`]. There is no spell catalog.
 
 pub mod components;
 pub mod context;
-pub mod events;
-pub mod registry;
 pub mod visuals;
 
-pub use components::{
-    default_player_hotbar, CastProgress, HotbarSlot, SpellCooldowns, SpellHotbar,
-};
+pub use components::CastProgress;
 pub use context::{
     AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ChannelMovementPolicy,
-    ProjectileSpawnRequest, Spell, SpellCast, SpellCastContext, SpellConfig, TargetingMode,
+    ProjectileSpawnRequest, SpellCastContext, TargetingMode,
 };
-pub use events::{SpellCastRequest, SpellReleaseRequest};
-pub use registry::{SpellId, SpellRegistry};
 
 pub use visuals::SpellVisualEffect;

@@ -205,18 +205,44 @@
             </div>
             <ul class="toc-list">
               @if (art.abilities && art.abilities.length > 0) {
-                <li><button class="toc-link" (click)="scrollToSection('abilities-section')">Weapon Abilities</button></li>
+                <li><app-eivar-button variant="ghost" size="sm" (onClick)="scrollToSection('abilities-section')">Weapon Abilities</app-eivar-button></li>
               }
               @if (art.runeFormulas && art.runeFormulas.length > 0) {
-                <li><button class="toc-link" (click)="scrollToSection('formulas-section')">Harmonic Builds</button></li>
+                <li><app-eivar-button variant="ghost" size="sm" (onClick)="scrollToSection('formulas-section')">Harmonic Builds</app-eivar-button></li>
               }
               @for (sec of art.sections; track sec.id) {
-                <li><button class="toc-link" (click)="scrollToSection(sec.id)">{{ sec.title }}</button></li>
+                <li><app-eivar-button variant="ghost" size="sm" (onClick)="scrollToSection(sec.id)">{{ sec.title }}</app-eivar-button></li>
               }
             </ul>
           </div>
         </aside>
       </div>
+    </div>
+  </div>
+} @else if (!catalogLoaded()) {
+  <app-page-header
+    title="The Eivar Archives"
+    subtitle="Inscribing the record…"
+    badge="Wiki"
+    [breadcrumbs]="[{ label: 'Wiki', route: '/wiki' }]"
+  ></app-page-header>
+} @else {
+  <app-page-header
+    title="Record missing"
+    subtitle="This archive entry is not in the catalog."
+    badge="Wiki"
+    [breadcrumbs]="[
+      { label: 'Wiki', route: '/wiki' }
+    ]"
+  ></app-page-header>
+  <div class="wiki-detail-wrapper section-padding">
+    <div class="container">
+      @if (catalogError(); as err) {
+        <p class="wiki-missing">{{ err }}</p>
+      } @else {
+        <p class="wiki-missing">No article is inscribed in this category yet.</p>
+      }
+      <a routerLink="/wiki">← Archives Landing</a>
     </div>
   </div>
 }

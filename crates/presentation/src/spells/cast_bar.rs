@@ -28,7 +28,7 @@ const STALE_AFTER_SECONDS: f32 = 1.0;
 /// Local mirror of an authoritative cast/channel snapshot.
 #[derive(Debug, Clone)]
 pub struct ObservedCast {
-    /// The ability or spell id — carries an `AbilityId` for Eidolon casts and a
+    /// The ability or spell id — carries an `AbilityId` for weapon casts and a
     /// `SpellId` string for legacy NPC/boss casts.
     pub spell_id: String,
     pub kind: u8,
@@ -55,8 +55,6 @@ struct ScreenCastBar {
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum CastBarKind {
     CastTime,
-    /// Hold-to-charge: fills like CastTime but fires on release.
-    Charge,
     Channeling,
 }
 
@@ -124,7 +122,7 @@ fn read_cast_progress(
 }
 
 /// Reads cast-end events and starts HUD cooldowns for completed **player**
-/// (Eidolon) casts.
+/// (weapon) casts.
 ///
 /// Legacy NPC/boss casts are still observed visually (the bar disappears) but
 /// do **not** create local player HUD cooldowns — only `AbilityId` keys that
@@ -151,7 +149,7 @@ fn read_cast_ended(
 
 /// Starts a HUD cooldown when a server-authoritative cast/channel ends successfully.
 ///
-/// Only emits a cooldown for **Eidolon abilities** found in the registry (the
+/// Only emits a cooldown for **weapon abilities** found in the registry (the
 /// player's weapon gestures). Legacy spell ids from NPCs/bosses are silently
 /// skipped so they never pollute the player's HUD state.
 fn start_cooldown_from_cast_end(
@@ -163,7 +161,7 @@ fn start_cooldown_from_cast_end(
         return;
     }
 
-    // Try Eidolon ability first — this is the player path.
+    // Try weapon ability first — this is the player path.
     let ability_id = AbilityId::new(message.spell_id.clone());
     if let Some(ability) = ability_registry.get(&ability_id) {
         let cooldown_seconds = ability.base_params().cooldown;
@@ -303,7 +301,6 @@ fn spawn_screen_bar(
 ) {
     let fill_color = match kind {
         CastBarKind::CastTime => Color::srgb(1.0, 0.62, 0.15),
-        CastBarKind::Charge => Color::srgb(0.9, 0.4, 0.95), // Purple-ish for charge
         CastBarKind::Channeling => Color::srgb(0.25, 0.65, 1.0),
     };
     let bar_entity = commands
@@ -356,11 +353,9 @@ fn spawn_screen_bar(
 struct CastBarFill;
 
 fn cast_bar_kind(cast: &ObservedCast) -> CastBarKind {
-    // SpellCastProgress mapping:
-    //   Instant/CastTime = 0, Channeling = 1, Charge = 2
+    // SpellCastProgress mapping: Instant/CastTime = 0, Channeling = 1
     match cast.kind {
         1 => CastBarKind::Channeling,
-        2 => CastBarKind::Charge,
         _ => CastBarKind::CastTime,
     }
 }
@@ -434,7 +429,6 @@ fn cast_label(cast: &ObservedCast, kind: CastBarKind) -> String {
     let remaining = (cast.required_seconds - cast.elapsed_seconds).max(0.0);
     match kind {
         CastBarKind::CastTime => format!("Cast {} {:.1}s", cast.spell_id, remaining),
-        CastBarKind::Charge => format!("Charge {} {:.1}s", cast.spell_id, remaining),
         CastBarKind::Channeling => format!("Channel {} {:.1}s", cast.spell_id, remaining),
     }
 }

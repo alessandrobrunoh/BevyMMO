@@ -29,7 +29,7 @@ pub const ARRIVAL_DISTANCE: f32 = 0.05;
 #[derive(Resource, Default)]
 pub struct MoveTarget(pub Option<Vec3>);
 
-/// Optimistic root applied the frame a CastTime/Charge is sent, before
+/// Optimistic root applied the frame a Charge is sent, before
 /// `cast_state` replicates.
 ///
 /// Without this the client keeps walking toward the last server dest for

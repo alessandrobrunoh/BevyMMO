@@ -1,18 +1,15 @@
 import { Component, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { EivarButtonComponent } from '../../shared/ui/button/button.component';
-import { RuneDividerComponent } from '../../shared/ui/rune-divider/rune-divider.component';
-
-export type AuthMode = 'login' | 'register' | 'forgot';
+import { AuthShellComponent } from '../../shared/ui/auth-shell/auth-shell.component';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, EivarButtonComponent, RuneDividerComponent],
+  imports: [FormsModule, RouterModule, EivarButtonComponent, AuthShellComponent],
   templateUrl: './login.component.html',
   styleUrls: ['./login.component.scss']
 })
@@ -20,68 +17,50 @@ export class LoginComponent {
   private authService = inject(AuthService);
   private toastService = inject(ToastService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
-  readonly mode = signal<AuthMode>('login');
-  readonly email = signal<string>('wayfarer@eivar.online');
-  readonly password = signal<string>('alpha2026');
-  readonly rememberMe = signal<boolean>(true);
-  readonly showPassword = signal<boolean>(false);
-  readonly isLoading = signal<boolean>(false);
+  readonly email = signal('');
+  readonly password = signal('');
+  readonly rememberMe = signal(true);
+  readonly showPassword = signal(false);
+  readonly isLoading = signal(false);
   readonly errorMessage = signal<string | null>(null);
 
-  setMode(newMode: AuthMode) {
-    this.mode.set(newMode);
-    this.errorMessage.set(null);
+  toggleShowPassword(): void {
+    this.showPassword.update(value => !value);
   }
 
-  toggleShowPassword() {
-    this.showPassword.update(v => !v);
-  }
+  async onSubmit(): Promise<void> {
+    const email = this.email().trim();
+    const password = this.password();
 
-  async onSubmit() {
-    const em = this.email().trim();
-    const pw = this.password().trim();
-
-    // Local format validation — the gateway/module re-validate authoritatively
-    // (reducers::account::{validate_email,validate_password}); this is only
-    // to avoid a round trip for the obviously-wrong cases.
-    if (!em || !em.includes('@') || !em.includes('.')) {
-      this.errorMessage.set('Please enter a valid email address (e.g. name@domain.com).');
+    if (!isValidEmail(email)) {
+      this.errorMessage.set('Enter a valid email address to continue.');
       return;
     }
-
-    if (this.mode() !== 'forgot' && (!pw || pw.length < 8)) {
-      this.errorMessage.set('Password must contain at least 8 characters.');
+    if (password.length < 8) {
+      this.errorMessage.set('Your password must contain at least 8 characters.');
       return;
     }
 
     this.errorMessage.set(null);
-
-    if (this.mode() === 'forgot') {
-      this.toastService.showSuccess(
-        `Password recovery dispatched to ${em} (Prototype demo).`,
-        'Recovery Rune'
-      );
-      this.setMode('login');
-      return;
-    }
-
     this.isLoading.set(true);
     try {
-      if (this.mode() === 'register') {
-        await this.authService.register(em, pw);
-      } else {
-        await this.authService.login(em, pw);
-      }
-      this.toastService.showSuccess(
-        `Welcome to Eivar Online, ${em.split('@')[0]}!`,
-        'Vanguard Attunement'
-      );
-      this.router.navigate(['/']);
-    } catch (err) {
-      this.errorMessage.set(err instanceof Error ? err.message : 'Something went wrong.');
+      await this.authService.login(email, password);
+      this.toastService.showSuccess(`Welcome back, ${email.split('@')[0]}.`, 'Attunement restored');
+      await this.router.navigateByUrl(safeReturnUrl(this.route.snapshot.queryParamMap.get('returnUrl')));
+    } catch (error) {
+      this.errorMessage.set(error instanceof Error ? error.message : 'Unable to enter Eivar right now.');
     } finally {
       this.isLoading.set(false);
     }
   }
+}
+
+function isValidEmail(value: string): boolean {
+  return value.includes('@') && value.includes('.');
+}
+
+function safeReturnUrl(raw: string | null): string {
+  return raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : '/';
 }

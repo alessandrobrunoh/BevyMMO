@@ -17,8 +17,9 @@ pub mod commands;
 pub mod plugin;
 
 pub use plugin::{
-    CharacterRoster, ClientSimulation, PartyMemberView, PartyRoster, RosterCharacter,
-    StdbAuthoritative, StdbConnection, StdbEntityMap, StdbPlugin,
+    CharacterRoster, ClientSimulation, LocalGold, MarketBuyBook, MarketOrderBook, NpcKind,
+    NpcMarket, PartyMemberView, PartyRoster, RosterCharacter, StdbAuthoritative, StdbConnection,
+    StdbEntityMap, StdbPlugin,
 };
 
 /// The id type of a character row (`player.character_id`). Re-exported so

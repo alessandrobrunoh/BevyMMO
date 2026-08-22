@@ -1,50 +1,40 @@
 //! Greeter NPC with a dialogue interaction.
 
-use std::sync::Arc;
+use crate::placeables::npc;
 
-use crate::placeables::{
-    AssetHint, InteractionKind, KindId, NpcPlaceable, PlaceableDefaults, PlaceableDefinition,
-    PlaceableRegistry,
-};
-use crate::world::TransformData;
+#[npc(
+    id = "npc_greeter",
+    name = "Greeter",
+    icon = "👋",
+    interaction = dialogue("greeting"),
+)]
+pub struct Greeter;
 
-pub struct GreeterDefinition;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::placeables::{
+        AssetHint, InteractionKind, NpcPlaceable, PlaceableDefinition, PlaceableRegistry,
+    };
 
-impl PlaceableDefinition for GreeterDefinition {
-    fn id(&self) -> KindId {
-        KindId::new("npc_greeter")
-    }
-    fn display_name(&self) -> &'static str {
-        "Greeter"
-    }
-    fn icon(&self) -> &'static str {
-        "👋"
-    }
-    fn asset_hint(&self) -> AssetHint {
-        AssetHint::Placeholder
-    }
-    fn defaults(&self) -> PlaceableDefaults {
-        PlaceableDefaults {
-            transform: TransformData {
-                translation: [0.0, 0.0, 0.0],
-                rotation_deg: [0.0, 0.0, 0.0],
-                scale: [1.0, 1.0, 1.0],
-            },
-            tint: None,
-            collision: None,
-            blocks_movement: false,
+    #[test]
+    fn greeter_keeps_dialogue_kind_and_placeholder() {
+        let def = Greeter;
+        assert_eq!(def.id().as_str(), "npc_greeter");
+        assert_eq!(Greeter::ID, "npc_greeter");
+        assert_eq!(def.display_name(), "Greeter");
+        assert_eq!(def.icon(), "👋");
+        assert!(matches!(def.asset_hint(), AssetHint::Placeholder));
+        assert_eq!(def.defaults().tint, None);
+        match def.interaction() {
+            InteractionKind::Dialogue { dialogue_tree_id } => {
+                assert_eq!(dialogue_tree_id, "greeting");
+            }
+            other => panic!("expected Dialogue, got {other:?}"),
         }
-    }
-}
 
-impl NpcPlaceable for GreeterDefinition {
-    fn interaction(&self) -> InteractionKind {
-        InteractionKind::Dialogue {
-            dialogue_tree_id: "greeting".to_string(),
-        }
+        let mut registry = PlaceableRegistry::default();
+        register(&mut registry);
+        assert!(registry.npcs.contains_key(&def.id()));
     }
-}
-
-pub fn register(registry: &mut PlaceableRegistry) {
-    registry.register_npc(Arc::new(GreeterDefinition));
 }

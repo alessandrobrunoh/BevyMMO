@@ -1,0 +1,285 @@
+@use '../../../../styles/variables' as *;
+
+:host {
+  display: block;
+  container-type: inline-size;
+}
+
+.eivar-card {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  isolation: isolate;
+  min-width: 0;
+  color: var(--text-dark);
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.52), transparent 38%),
+    repeating-linear-gradient(-25deg, rgba(105, 80, 45, 0.025) 0 1px, transparent 1px 6px),
+    linear-gradient(135deg, #f5eedf, var(--parchment-card));
+  border: 1px solid rgba(117, 86, 39, 0.68);
+  border-radius: 0.7rem;
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 249, 234, 0.74),
+    inset 0 0 0 5px rgba(120, 91, 45, 0.34),
+    var(--shadow);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.eivar-card::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0.5rem;
+  content: '';
+  border: 1px solid rgba(116, 86, 39, 0.35);
+  border-radius: 0.4rem;
+  pointer-events: none;
+}
+
+.eivar-card--interactive {
+  cursor: pointer;
+}
+
+.eivar-card--interactive:hover {
+  transform: translateY(-0.25rem);
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 249, 234, 0.74),
+    inset 0 0 0 5px rgba(120, 91, 45, 0.34),
+    0 1.4rem 2.8rem rgba(7, 26, 42, 0.24);
+}
+
+.eivar-card--interactive:hover .eivar-card__media img {
+  transform: scale(1.045);
+}
+
+.eivar-card__corner {
+  position: absolute;
+  z-index: 2;
+  width: clamp(2.25rem, 11cqi, 3.35rem);
+  aspect-ratio: 1;
+  background: url('/assets/images/corner-flourish.svg') center / contain no-repeat;
+  filter: drop-shadow(0 1px 1px rgba(35, 24, 8, 0.35));
+  pointer-events: none;
+}
+
+.eivar-card__corner--top-left {
+  top: 0.15rem;
+  left: 0.15rem;
+}
+
+.eivar-card__corner--top-right {
+  top: 0.15rem;
+  right: 0.15rem;
+  transform: scaleX(-1);
+}
+
+.eivar-card__corner--bottom-left {
+  bottom: 0.15rem;
+  left: 0.15rem;
+  transform: scaleY(-1);
+}
+
+.eivar-card__corner--bottom-right {
+  right: 0.15rem;
+  bottom: 0.15rem;
+  transform: scale(-1);
+}
+
+.eivar-card__media {
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+  aspect-ratio: var(--card-media-ratio, 16 / 9);
+  margin: 0.7rem 0.7rem 0;
+  overflow: hidden;
+  background: linear-gradient(135deg, #7e9ca9, #314f61);
+  border: 1px solid rgba(110, 79, 35, 0.7);
+  box-shadow: inset 0 0 0 3px rgba(255, 241, 211, 0.48);
+}
+
+.eivar-card__media::after {
+  position: absolute;
+  bottom: -0.95rem;
+  left: 50%;
+  width: 2.1rem;
+  height: 1.8rem;
+  content: '';
+  background: var(--parchment-card);
+  border: 1px solid rgba(117, 86, 39, 0.55);
+  border-radius: 50% 50% 0 0;
+  box-shadow: 0 -1px 0 rgba(255, 249, 234, 0.65);
+  transform: translateX(-50%);
+}
+
+.eivar-card__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 400ms ease;
+}
+
+.eivar-card__badge {
+  position: absolute;
+  top: 0.7rem;
+  left: 0;
+  padding: 0.35rem 0.75rem;
+  color: var(--gold-light);
+  background: linear-gradient(180deg, var(--blue-700), var(--blue-900));
+  border-block: 1px solid rgba(243, 220, 152, 0.56);
+  font-family: var(--font-serif);
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.eivar-card__content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: 1.5rem 1.35rem 1.3rem;
+}
+
+.eivar-card__eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--blue-700);
+  font-family: var(--font-serif);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.eivar-card__title {
+  margin: 0;
+  color: var(--text-dark);
+  font-family: var(--font-serif);
+  font-size: clamp(1rem, 5cqi, 1.3rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+}
+
+.eivar-card__description {
+  margin: 0.55rem 0 0;
+  color: var(--text-dark-muted);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.eivar-card__footer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 0;
+  margin-top: auto;
+  padding-top: 0.9rem;
+}
+
+.eivar-card__footer:empty {
+  display: none;
+}
+
+.eivar-card--compact .eivar-card__content {
+  padding: 1.15rem;
+}
+
+.eivar-card--compact .eivar-card__description {
+  font-size: 0.92rem;
+}
+
+.eivar-card--runic {
+  color: var(--text-light);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(60, 203, 255, 0.14), transparent 45%),
+    linear-gradient(145deg, var(--blue-800), var(--blue-950));
+  border-color: rgba(212, 173, 87, 0.62);
+  box-shadow:
+    inset 0 0 0 3px rgba(164, 238, 255, 0.08),
+    inset 0 0 0 5px rgba(212, 173, 87, 0.25),
+    var(--shadow-runic);
+}
+
+.eivar-card--runic::before {
+  border-color: rgba(212, 173, 87, 0.38);
+}
+
+.eivar-card--runic .eivar-card__media::after {
+  background: var(--blue-900);
+  border-color: rgba(212, 173, 87, 0.6);
+}
+
+.eivar-card--runic .eivar-card__eyebrow {
+  color: var(--gold-light);
+}
+
+.eivar-card--runic .eivar-card__title {
+  color: var(--text-light);
+}
+
+.eivar-card--runic .eivar-card__description {
+  color: var(--text-light-muted);
+}
+
+.eivar-card--horizontal,
+.eivar-card--auto {
+  grid-template-columns: minmax(9rem, 0.9fr) minmax(0, 1.1fr);
+}
+
+.eivar-card--horizontal .eivar-card__media,
+.eivar-card--auto .eivar-card__media {
+  aspect-ratio: auto;
+  height: 100%;
+  margin: 0.7rem 0 0.7rem 0.7rem;
+}
+
+.eivar-card--horizontal .eivar-card__media::after,
+.eivar-card--auto .eivar-card__media::after {
+  top: 50%;
+  right: -0.95rem;
+  bottom: auto;
+  left: auto;
+  width: 1.8rem;
+  height: 2.1rem;
+  border-radius: 50% 0 0 50%;
+  transform: translateY(-50%);
+}
+
+@container (max-width: 20rem) {
+  .eivar-card__content {
+    padding: 1.25rem 1rem 1rem;
+  }
+
+  .eivar-card__media {
+    margin: 0.5rem 0.5rem 0;
+  }
+}
+
+@container (max-width: 29rem) {
+  .eivar-card--horizontal,
+  .eivar-card--auto {
+    grid-template-columns: 1fr;
+  }
+
+  .eivar-card--horizontal .eivar-card__media,
+  .eivar-card--auto .eivar-card__media {
+    aspect-ratio: var(--card-media-ratio, 16 / 9);
+    height: auto;
+    margin: 0.7rem 0.7rem 0;
+  }
+
+  .eivar-card--horizontal .eivar-card__media::after,
+  .eivar-card--auto .eivar-card__media::after {
+    top: auto;
+    right: auto;
+    bottom: -0.95rem;
+    left: 50%;
+    width: 2.1rem;
+    height: 1.8rem;
+    border-radius: 50% 50% 0 0;
+    transform: translateX(-50%);
+  }
+}

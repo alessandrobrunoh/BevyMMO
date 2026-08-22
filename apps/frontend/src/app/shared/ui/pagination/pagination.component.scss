@@ -1,0 +1,24 @@
+.eivar-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: #cba968;
+}
+
+.eivar-pagination__page,
+.eivar-pagination__arrow {
+  flex: 0 0 auto;
+}
+
+.eivar-pagination__ellipsis {
+  padding: 0 2px;
+  color: #b59b68;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+@media (max-width: 420px) {
+  .eivar-pagination {
+    gap: 7px;
+  }
+}

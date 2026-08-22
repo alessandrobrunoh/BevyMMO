@@ -30,16 +30,23 @@ use bevymmo_domain::abilities::AbilitySlot;
 use bevymmo_domain::items::EquipSlot;
 
 use super::module_bindings::armor_cast_reducer::armor_cast as armor_cast_reducer;
+use super::module_bindings::cancel_buy_order_reducer::cancel_buy_order as cancel_buy_order_reducer;
+use super::module_bindings::cancel_sell_order_reducer::cancel_sell_order as cancel_sell_order_reducer;
+use super::module_bindings::cast_weapon_reducer::cast_weapon as cast_weapon_reducer;
 use super::module_bindings::claim_npc_item_reducer::claim_npc_item as claim_npc_item_reducer;
+use super::module_bindings::combine_item_reducer::combine_item as combine_item_reducer;
 use super::module_bindings::destroy_item_reducer::destroy_item as destroy_item_reducer;
-use super::module_bindings::eidolon_cast_reducer::eidolon_cast as eidolon_cast_reducer;
 use super::module_bindings::equip_item_reducer::equip_item as equip_item_reducer;
+use super::module_bindings::market_buy_reducer::market_buy as market_buy_reducer;
+use super::module_bindings::market_sell_reducer::market_sell as market_sell_reducer;
 use super::module_bindings::move_item_reducer::move_item as move_item_reducer;
 use super::module_bindings::party_accept_reducer::party_accept as party_accept_reducer;
 use super::module_bindings::party_decline_reducer::party_decline as party_decline_reducer;
 use super::module_bindings::party_invite_reducer::party_invite as party_invite_reducer;
 use super::module_bindings::party_join_reducer::party_join as party_join_reducer;
 use super::module_bindings::party_leave_reducer::party_leave as party_leave_reducer;
+use super::module_bindings::place_buy_order_reducer::place_buy_order as place_buy_order_reducer;
+use super::module_bindings::place_sell_order_reducer::place_sell_order as place_sell_order_reducer;
 use super::module_bindings::release_cast_reducer::release_cast as release_cast_reducer;
 use super::module_bindings::respawn_reducer::respawn as respawn_reducer;
 use super::module_bindings::send_chat_message_reducer::send_chat_message as send_chat_message_reducer;
@@ -47,6 +54,11 @@ use super::module_bindings::set_ability_selection_reducer::set_ability_selection
 use super::module_bindings::set_armor_inscription_reducer::set_armor_inscription as set_armor_inscription_reducer;
 
 use super::module_bindings::set_root_inscription_reducer::set_root_inscription as set_root_inscription_reducer;
+use super::module_bindings::split_item_reducer::split_item as split_item_reducer;
+use super::module_bindings::start_craft_reducer::start_craft as start_craft_reducer;
+use super::module_bindings::start_gather_reducer::start_gather as start_gather_reducer;
+use super::module_bindings::stop_craft_reducer::stop_craft as stop_craft_reducer;
+use super::module_bindings::stop_gather_reducer::stop_gather as stop_gather_reducer;
 use super::module_bindings::unequip_item_reducer::unequip_item as unequip_item_reducer;
 use super::module_bindings::Vec3Row;
 use super::plugin::StdbConnection;
@@ -72,6 +84,82 @@ pub fn claim_npc_item(conn: &StdbConnection, npc_entity_id: u64, item_id: String
     )
 }
 
+/// Lists `quantity` of an inventory pile on the NPC's isolated market.
+///
+/// `price` is gold per unit. The module stores the total (`price * quantity`).
+pub fn place_sell_order(
+    conn: &StdbConnection,
+    npc_entity_id: u64,
+    instance_id: u64,
+    price: u64,
+    quantity: u32,
+) -> Sent {
+    conn.reducers().place_sell_order_then(
+        npc_entity_id,
+        instance_id,
+        price,
+        quantity,
+        conn.report_rejection("could not list that item"),
+    )
+}
+
+/// Buys a sell order from the NPC's isolated market.
+pub fn market_buy(conn: &StdbConnection, npc_entity_id: u64, sell_order_id: u64) -> Sent {
+    conn.reducers().market_buy_then(
+        npc_entity_id,
+        sell_order_id,
+        conn.report_rejection("could not buy that listing"),
+    )
+}
+
+/// Cancels one of the caller's sell listings.
+pub fn cancel_sell_order(conn: &StdbConnection, order_id: u64) -> Sent {
+    conn.reducers().cancel_sell_order_then(
+        order_id,
+        conn.report_rejection("could not cancel that listing"),
+    )
+}
+
+/// Places a Gold bid for a catalogue item in the NPC's market.
+pub fn place_buy_order(
+    conn: &StdbConnection,
+    npc_entity_id: u64,
+    item_id: String,
+    price: u64,
+) -> Sent {
+    conn.reducers().place_buy_order_then(
+        npc_entity_id,
+        item_id,
+        price,
+        conn.report_rejection("could not place that bid"),
+    )
+}
+
+/// Instant-sells `quantity` of an inventory pile into the best matching bid.
+///
+/// `min_price` is gold per unit.
+pub fn market_sell(
+    conn: &StdbConnection,
+    npc_entity_id: u64,
+    instance_id: u64,
+    min_price: u64,
+    quantity: u32,
+) -> Sent {
+    conn.reducers().market_sell_then(
+        npc_entity_id,
+        instance_id,
+        min_price,
+        quantity,
+        conn.report_rejection("could not sell that item"),
+    )
+}
+
+/// Cancels one of the caller's bids and refunds escrowed Gold.
+pub fn cancel_buy_order(conn: &StdbConnection, order_id: u64) -> Sent {
+    conn.reducers()
+        .cancel_buy_order_then(order_id, conn.report_rejection("could not cancel that bid"))
+}
+
 /// Permanently destroys an item instance from the inventory.
 pub fn destroy_item(conn: &StdbConnection, instance_id: u64) -> Sent {
     conn.reducers().destroy_item_then(
@@ -94,10 +182,27 @@ pub fn unequip_item(conn: &StdbConnection, slot: EquipSlot) -> Sent {
     )
 }
 
-/// Swaps two inventory slots.
+/// Swaps two inventory slots, or merges same-item Material piles.
 pub fn move_item(conn: &StdbConnection, from: u8, to: u8) -> Sent {
     conn.reducers()
         .move_item_then(from, to, conn.report_rejection("could not move that item"))
+}
+
+/// Peels `amount` off inventory slot `slot_index` into the first empty slot.
+pub fn split_item(conn: &StdbConnection, slot_index: u8, amount: u32) -> Sent {
+    conn.reducers().split_item_then(
+        slot_index,
+        amount,
+        conn.report_rejection("could not split that stack"),
+    )
+}
+
+/// Pulls other piles of the same Material into `slot_index` up to the bag cap.
+pub fn combine_item(conn: &StdbConnection, slot_index: u8) -> Sent {
+    conn.reducers().combine_item_then(
+        slot_index,
+        conn.report_rejection("could not combine those stacks"),
+    )
 }
 
 /// Writes the equipped weapon's shared Root Word and per-slot Ancient Words.
@@ -141,6 +246,39 @@ pub fn set_ability_selection(conn: &StdbConnection, slot: AbilitySlot, ability_i
     )
 }
 
+/// Starts gathering the targeted resource node.
+pub fn start_gather(conn: &StdbConnection, node_entity_id: u64) -> Sent {
+    conn.reducers()
+        .start_gather_then(node_entity_id, conn.report_rejection("could not gather"))
+}
+
+/// Stops the local gather channel, if any.
+pub fn stop_gather(conn: &StdbConnection) -> Sent {
+    conn.reducers()
+        .stop_gather_then(conn.report_rejection("could not stop gathering"))
+}
+
+/// Starts crafting `quantity` of `item_id` at a nearby crafter NPC.
+pub fn start_craft(
+    conn: &StdbConnection,
+    npc_entity_id: u64,
+    item_id: String,
+    quantity: u32,
+) -> Sent {
+    conn.reducers().start_craft_then(
+        npc_entity_id,
+        item_id,
+        quantity,
+        conn.report_rejection("could not craft"),
+    )
+}
+
+/// Stops the local craft channel, if any.
+pub fn stop_craft(conn: &StdbConnection) -> Sent {
+    conn.reducers()
+        .stop_craft_then(conn.report_rejection("could not stop crafting"))
+}
+
 /// Ends a channelled or charged cast. Naming the spell stops a stale release
 /// from cancelling a cast that started after it.
 ///
@@ -160,18 +298,18 @@ pub fn release_cast(
     )
 }
 
-/// Casts the weapon's Eidolon gesture bound to an ability slot.
-pub fn eidolon_cast(
+/// Casts the weapon ability bound to an ability slot.
+pub fn cast_weapon(
     conn: &StdbConnection,
     slot: AbilitySlot,
     target_entity: Option<u64>,
     target_position: Option<Vec3>,
 ) -> Sent {
-    conn.reducers().eidolon_cast_then(
+    conn.reducers().cast_weapon_then(
         ability_label(slot).to_string(),
         target_entity,
         target_position.map(to_row),
-        conn.report_rejection("could not cast that gesture"),
+        conn.report_rejection("could not cast that weapon ability"),
     )
 }
 

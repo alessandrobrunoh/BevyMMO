@@ -13,12 +13,14 @@ export interface WikiStatRow {
   highlight?: boolean;
 }
 
+export type WikiRarity = 'Common' | 'Uncommon' | 'Rare' | 'Epic' | 'Legendary' | 'Ancient' | 'Mythic';
+
 export interface WikiInfoBox {
   title: string;
   image?: string;
   type: string;
   stats: WikiStatRow[];
-  rarity?: 'Common' | 'Rare' | 'Ancient' | 'Mythic';
+  rarity?: WikiRarity;
 }
 
 export interface AbilityDefinition {
@@ -27,7 +29,7 @@ export interface AbilityDefinition {
   baseType: string;
   description: string;
   cooldown: string;
-  energyCost: string;
+  manaCost: string;
   recommendedEssence?: string;
   recommendedModifiers?: string[];
   recommendedAncientWord?: string;

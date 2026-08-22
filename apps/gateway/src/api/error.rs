@@ -10,6 +10,7 @@
 //! | `BadRequest` | 400 | the module rejected the request (email taken, weak password, ...) |
 //! | `Unauthorized` | 401 | no session on a route that needs one |
 //! | `SessionExpired` | 401 | cookie present, but its server-side connection was reaped |
+//! | `Forbidden` | 403 | authenticated, but the resource belongs to another account |
 //! | `NotFound` | 404 | no such character, or no such route (the fallback) |
 //! | `BadGateway` | 502 | SpacetimeDB unreachable while opening an auth connection |
 //! | `ServiceUnavailable` | 503 | the shared directory connection is down; retry later |
@@ -34,6 +35,8 @@ pub(crate) enum AppError {
     #[error("session expired")]
     SessionExpired,
     #[error("{0}")]
+    Forbidden(String),
+    #[error("{0}")]
     NotFound(String),
     #[error("could not reach the game server")]
     BadGateway,
@@ -50,6 +53,7 @@ impl AppError {
         match self {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::Unauthorized | Self::SessionExpired => StatusCode::UNAUTHORIZED,
+            Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::BadGateway => StatusCode::BAD_GATEWAY,
             Self::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,

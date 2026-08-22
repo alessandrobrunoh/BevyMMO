@@ -1,8 +1,10 @@
 //! The gateway's HTTP surface, one module per API area.
 //!
-//! - [`auth`]: `/v1/auth/*` and `/v1/profile`, session-cookie based.
-//! - [`public`]: `/v1/public/*`, no session required — reads only data the
-//!   module already replicates publicly.
+//! - [`auth`]: `/v1/auth/*` and `/v1/profile`, cookie or Bearer API key.
+//! - [`api_keys`]: `/v1/api-keys`, cookie only — create/list/revoke.
+//! - [`characters`]: `/v1/characters/:id/{wallet,stats}`, cookie or Bearer.
+//! - [`public`]: `/v1/public/*`, no session required — live module rows
+//!   (markets, accounts) and the compiled game catalog.
 //! - [`docs`]: the Scalar API reference at `/docs`.
 //! - [`error`]: [`AppError`], the single error type every handler returns.
 //!
@@ -17,7 +19,9 @@
 //! constants and helpers below it). Handlers stay thin translation layers —
 //! rules live in the SpacetimeDB module, connection plumbing in [`crate::stdb`].
 
+pub mod api_keys;
 pub mod auth;
+pub mod characters;
 pub mod docs;
 pub mod error;
 pub mod public;
@@ -56,6 +60,8 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(welcome))
         .route("/health", get(health))
         .merge(auth::router())
+        .merge(api_keys::router())
+        .merge(characters::router())
         .merge(public::router())
         .merge(docs::router())
         // Unmatched paths get the same JSON error body as everything else,

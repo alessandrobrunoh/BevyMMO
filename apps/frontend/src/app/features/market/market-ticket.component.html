@@ -1,0 +1,222 @@
+<app-page-header
+  [title]="itemDetail().name"
+  [subtitle]="(market()?.display_name || 'Market') + ' — Item Ledger & Order Book'"
+  badge="Item Exchange"
+  bgImage="assets/images/channeling-staff.jpg"
+  [breadcrumbs]="[
+    { label: 'Market', route: '/market' },
+    { label: market()?.display_name || marketId(), route: ['/market', marketId()] },
+    { label: itemDetail().name }
+  ]"
+></app-page-header>
+
+<div class="market-page-section section-padding">
+  <div class="container">
+    <!-- Item Header Card -->
+    <div class="market-toolbar stone-panel chamfer-box">
+      <div class="toolbar-left">
+        <div class="item-icon-box">
+          <span class="item-rune">{{ itemDetail().runeSymbol }}</span>
+        </div>
+        <div>
+          <div class="item-title-row">
+            <h2 class="toolbar-title">{{ itemDetail().name }}</h2>
+            <span class="rarity-badge" [class]="'rarity-' + itemDetail().rarity.toLowerCase()">
+              {{ itemDetail().rarity }}
+            </span>
+            <span class="category-badge">{{ itemDetail().category }} · {{ itemDetail().slot }}</span>
+          </div>
+          <p class="toolbar-sub">Trading in {{ market()?.display_name || marketId() }} · Isolated Order Book</p>
+        </div>
+      </div>
+
+      <div class="toolbar-right">
+        @if (auth.isLoggedIn()) {
+          @if (characters().length > 1) {
+            <label class="char-select">
+              <span>Character</span>
+              <select [value]="selectedCharacterId() ?? ''" (change)="onCharacterChange($event)">
+                @for (character of characters(); track character.character_id) {
+                  <option [value]="character.character_id">{{ character.display_name }}</option>
+                }
+              </select>
+            </label>
+          }
+          <div class="gold-pill">
+            <span class="gold-icon">✦</span>
+            <span>{{ gold() === null ? '—' : formatGold(gold()!) }}</span>
+          </div>
+        } @else {
+          <a class="login-hint" [routerLink]="['/login']" [queryParams]="{ returnUrl: loginReturnUrl() }">
+            Sign in to see Gold
+          </a>
+        }
+      </div>
+    </div>
+
+    @if (loading()) {
+      <div class="market-empty stone-panel chamfer-box">
+        <span class="empty-rune">ᛟ</span>
+        <p>Opening the item ticket…</p>
+      </div>
+    } @else if (unknownMarket()) {
+      <div class="market-empty stone-panel chamfer-box">
+        <span class="empty-rune">ᛟ</span>
+        <h3>Unknown market</h3>
+        <p>This market hall is not registered in the ledger.</p>
+        <a routerLink="/market">Return to markets</a>
+      </div>
+    } @else if (error(); as message) {
+      <div class="market-empty stone-panel chamfer-box">
+        <span class="empty-rune">ᛟ</span>
+        <h3>Could not load ticket</h3>
+        <p>{{ message }}</p>
+      </div>
+    } @else {
+      <!-- Main Content Grid -->
+      <div class="ticket-grid">
+        <!-- Left Column: Item Codex, Stats & Combat Abilities -->
+        <div class="ticket-main-col">
+          <!-- Item Codex Card -->
+          <article class="item-codex-card stone-panel chamfer-box">
+            <header class="codex-header">
+              <span class="codex-glyph">ᛟ</span>
+              <h3 class="codex-title">Item Overview & Lore</h3>
+            </header>
+
+            <p class="codex-desc">{{ itemDetail().description }}</p>
+
+            <blockquote class="codex-lore">
+              "{{ itemDetail().lore }}"
+            </blockquote>
+
+            <!-- Stats Matrix Grid -->
+            <div class="stats-matrix">
+              <h4 class="matrix-title">Core Item Attributes</h4>
+              <div class="stats-grid">
+                @for (stat of itemDetail().stats; track stat.label) {
+                  <div class="stat-box">
+                    <span class="stat-label">{{ stat.label }}</span>
+                    <span class="stat-value" [class.highlight]="stat.highlight">{{ stat.value }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <!-- Combat Abilities (if weapon / conduit) -->
+            @if (itemDetail().combatAbilities && itemDetail().combatAbilities!.length > 0) {
+              <div class="abilities-section">
+                <h4 class="abilities-title">Engraved Combat Inscriptions</h4>
+                <div class="abilities-list">
+                  @for (ab of itemDetail().combatAbilities; track ab.slot) {
+                    <div class="ability-card">
+                      <span class="ability-slot-badge">{{ ab.slot }}</span>
+                      <div class="ability-details">
+                        <div class="ability-head">
+                          <strong class="ability-name">{{ ab.name }}</strong>
+                          <span class="ability-type">{{ ab.type }}</span>
+                        </div>
+                        <p class="ability-desc">{{ ab.desc }}</p>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+
+            <div class="crafting-origin-box">
+              <span class="origin-label">Acquisition & Origin:</span>
+              <span class="origin-val">{{ itemDetail().craftingOrigin }}</span>
+            </div>
+          </article>
+
+          <!-- Visual Price Depth Chart Component -->
+          <app-market-chart [offers]="isolatedSells()"></app-market-chart>
+
+          <!-- Listing & Fee Calculator Component -->
+          <app-market-calculator
+            [currentPrice]="lowestAskUnit() > 0 ? lowestAskUnit() : 100"
+            [suggestedQuantity]="isolatedSells().length > 0 ? offerQuantity(isolatedSells()[0]) : 1"
+            [marketFeeBps]="market()?.fee_bps ?? 200"
+            [accountFeeBps]="100"
+          ></app-market-calculator>
+        </div>
+
+        <!-- Right Column: Order Book & Fee Breakdown -->
+        <div class="ticket-sidebar-col">
+          <!-- Fee Quote Box -->
+          @if (feeQuote(); as quote) {
+            <div class="fee-panel stone-panel chamfer-box">
+              <h3 class="fee-title">Fee on Lowest Ask ({{ formatGold(quote.youPay) }})</h3>
+              <div class="fee-rows">
+                <div class="fee-row">
+                  <span>Market Cut ({{ quote.marketBps }} bps)</span>
+                  <span>{{ Math.floor(quote.youPay * quote.marketBps / 10000) }} Gold</span>
+                </div>
+                <div class="fee-row">
+                  <span>Account Cut ({{ quote.accountBps }} bps)</span>
+                  <span>{{ Math.floor(quote.youPay * quote.accountBps / 10000) }} Gold</span>
+                </div>
+                <div class="fee-row total-row">
+                  <span>Total Deducted ({{ (quote.marketBps + quote.accountBps) / 100 }}%)</span>
+                  <span class="fee-highlight">-{{ quote.fee }} Gold</span>
+                </div>
+                <div class="fee-row net-row">
+                  <span>Seller Receives</span>
+                  <strong>{{ formatGold(quote.sellerReceives) }}</strong>
+                </div>
+              </div>
+            </div>
+          } @else if (market(); as hall) {
+            <div class="fee-panel stone-panel chamfer-box">
+              <h3 class="fee-title">Hall Fee Schedule</h3>
+              <p class="fee-desc">Market cut: {{ hall.fee_bps }} bps · Account cut: 100 bps. No active asks listed yet.</p>
+            </div>
+          }
+
+          <!-- Order Book Columns -->
+          <div class="book-grid">
+            <section class="book-col stone-panel chamfer-box">
+              <header class="book-head">
+                <h3>Sell Orders</h3>
+                <span class="order-count">{{ isolatedSells().length }}</span>
+              </header>
+              @if (isolatedSells().length === 0) {
+                <p class="empty-side">No sell offers for this item in this hall.</p>
+              } @else {
+                <ul class="book-list">
+                  @for (offer of isolatedSells(); track offer.id) {
+                    <li>
+                      <div class="offer-info">
+                        <span class="price">{{ formatOfferPrice(offer.price_gold, offer.quantity) }}</span>
+                        <span class="seller-id">
+                          Qty {{ offerQuantity(offer) }}
+                          · Seller: {{ offer.seller_character_id.slice(0, 8) }}…
+                        </span>
+                      </div>
+                      <div class="offer-action">
+                        @if (auth.isLoggedIn()) {
+                          <app-eivar-button variant="cyan" size="sm" [disabled]="true">Buy</app-eivar-button>
+                        } @else {
+                          <app-eivar-button variant="cyan" size="sm" [routerLink]="['/login']" [queryParams]="{ returnUrl: loginReturnUrl() }">Login to Buy</app-eivar-button>
+                        }
+                      </div>
+                    </li>
+                  }
+                </ul>
+              }
+            </section>
+
+            <section class="book-col stone-panel chamfer-box">
+              <header class="book-head">
+                <h3>Buy Orders</h3>
+                <span class="order-count">{{ ticket()?.buy_orders?.length ?? 0 }}</span>
+              </header>
+              <p class="empty-side">No buy orders. The public buy book is not currently active in this module.</p>
+            </section>
+          </div>
+        </div>
+      </div>
+    }
+  </div>
+</div>

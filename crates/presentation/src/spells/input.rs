@@ -1,4 +1,4 @@
-//! Player ability input for the Eidolon cast pipeline.
+//! Player ability input for the weapon cast pipeline.
 //!
 //! Routes the weapon HUD keys (default 1/2/3) to the press/aim/release path
 //! for every equipped weapon that exposes `Item::ability_loadout()`. There is
@@ -6,20 +6,10 @@
 //!
 //! # Cast behavior by [`AbilityCastMode`]
 //!
-//! - **Instant / CastTime**: press-to-aim, release-to-confirm.  The press opens
-//!   an aim window ([`AbilityAim`]) during which
-//!   [`crate::spells::aim_preview`] draws the exact impact area on the ground;
-//!   the release closes it and sends the command.  A quick tap behaves like an
-//!   instant cast because press and arrive a few frames apart.
-//! - **Charge**: press starts the server-side charge via `eidolon_cast` and
-//!   keeps the aim preview open; release calls `release_cast` with the cursor
-//!   at that moment so the impact follows the hold, not the press.  A tap that
-//!   beats replication still sends the release — waiting for [`ObservedCasts`]
-//!   first is how a fast Q/W/E left the charge bar stuck at 0.0s.
-//! - **Channeling**: press **immediately** starts the server-side channel via
-//!   `eidolon_cast`; release calls `release_cast` with the resolved ability id
-//!   to end it early.  An optimistic HUD cooldown starts at press time (the
-//!   server does the same) so the key cannot be spammed while the channel runs.
+//! Instant, CastTime and Channeling share the same input: press opens an aim
+//! window ([`AbilityAim`]); release sends `cast_weapon`. Instant fires on
+//! that call. CastTime winds up and auto-fires. Channeling ticks until
+//! `cast_time` or a movement interrupt.
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -29,9 +19,8 @@ use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_client::targeting::CurrentTarget;
 use bevymmo_client::user_settings::{GameSettingsResource, KeyAction};
 use bevymmo_gameplay::abilities::{
-    flush_queued_release, movement_lock_for_ability, queue_release_until_observed,
-    resolve_active_ability, weapon_cast_intent, AbilityAim, AbilityId, AbilitySlot, ArcBaseAbility,
-    BaseAbilityRegistry, BlueprintExecution,
+    movement_lock_for_ability, resolve_active_ability, weapon_cast_intent, AbilityAim, AbilityId,
+    AbilitySlot, ArcBaseAbility, BaseAbilityRegistry,
 };
 use bevymmo_gameplay::items::components::Equipment;
 use bevymmo_gameplay::items::registry::ItemRegistry;
@@ -48,14 +37,14 @@ use crate::spells::ui::{HudCooldownKey, SpellHudCooldownStarted, SpellHudState};
 /// Canonical HUD + input mapping for the three weapon slots.
 ///
 /// The hotbar labels these actions, and [`cast_abilities_on_key`] reads them
-/// so a Charge bound to the printed key starts on press and fires on release.
+/// so a key bound here aims on press and casts on release.
 pub const WEAPON_HUD_BINDINGS: [(KeyAction, AbilitySlot); 3] = [
     (KeyAction::CastPrimary, AbilitySlot::Primary),
     (KeyAction::CastSecondary, AbilitySlot::Secondary),
     (KeyAction::CastUltimate, AbilitySlot::Ultimate),
 ];
 
-/// Every key that drives a weapon slot through the aim / charge / release path.
+/// Every key that drives a weapon slot through the aim / cast path.
 pub fn weapon_slot_bindings() -> impl Iterator<Item = (KeyAction, AbilitySlot)> {
     WEAPON_HUD_BINDINGS.into_iter()
 }
@@ -64,7 +53,7 @@ pub fn weapon_slot_bindings() -> impl Iterator<Item = (KeyAction, AbilitySlot)> 
 ///
 /// The first `release_cast` still goes out immediately (same-client reducers
 /// stay ordered). This retry covers the case where that send raced ahead of
-/// `eidolon_cast` and no-op'd, which would otherwise leave the charge bar up
+/// `cast_weapon` and no-op'd, which would otherwise leave the charge bar up
 /// until the player held the key again.
 #[derive(Resource, Default)]
 pub struct PendingCastRelease(Option<QueuedCastRelease>);
@@ -123,7 +112,7 @@ pub fn cast_abilities_on_key(
         ),
         With<LocalPlayer>,
     >,
-    observed_casts: Res<ObservedCasts>,
+    _observed_casts: Res<ObservedCasts>,
     mut pending_release: ResMut<PendingCastRelease>,
     movement: CastMovementParams,
     conn: Option<Res<StdbConnection>>,
@@ -150,7 +139,7 @@ pub fn cast_abilities_on_key(
         return;
     }
 
-    let Ok((equipment, player_position, local_network_id, mut look_direction, vitals)) =
+    let Ok((equipment, player_position, _local_network_id, mut look_direction, vitals)) =
         controlled_players.single_mut()
     else {
         aim.clear();
@@ -158,7 +147,7 @@ pub fn cast_abilities_on_key(
         return;
     };
 
-    // Only weapons with Eidolon gestures drive Q/W/E.
+    // Only weapons with a loadout drive Primary/Secondary/Ultimate.
     let Some(weapon) = &equipment.weapon else {
         aim.clear();
         pending_release.clear();
@@ -195,71 +184,24 @@ pub fn cast_abilities_on_key(
         .and_then(|entity| target_ids.get(entity).ok())
         .map(|net_id| net_id.0);
 
-    // ── Press handling ────────────────────────────────────────────────
-    // Instant/CastTime open aim; Charge starts the server-side charge and
-    // keeps the preview open; Channeling starts immediately.
+    // ── Press handling: open aim only ────────────────────────────────
     for (action, slot) in weapon_slot_bindings() {
         if !settings.just_pressed(action, &keys) {
             continue;
         }
+        pending_release.clear();
 
-        // A new press of this slot is a new hold, not a retry of the last tap.
-        if pending_release
-            .0
-            .as_ref()
-            .is_some_and(|queued| queued.action == action)
-        {
-            pending_release.clear();
-        }
-
-        let Some((ability_id, ability)) =
-            active_ability(slot, weapon_abilities, weapon, &ability_registry)
+        let Some((_, ability)) = active_ability(slot, weapon_abilities, weapon, &ability_registry)
         else {
             continue;
         };
-        if !can_afford_mana(vitals.current_mana, ability.base_params().energy_cost) {
+        if !can_afford_mana(vitals.current_mana, ability.base_params().mana_cost) {
             continue;
         }
 
-        let blueprint = item.ability_blueprint(ability.as_ref());
-        let intent = weapon_cast_intent(true, false, blueprint.execution, ability.cast_mode());
-
+        let intent = weapon_cast_intent(true, false, ability.cast_mode());
         if intent.open_aim {
             aim.begin(slot);
-        }
-        if !intent.start_cast {
-            continue;
-        }
-        if hud_state.ability_on_cooldown(&ability_id) {
-            continue;
-        }
-        if let Some(conn) = conn.as_deref() {
-            if let Err(err) = stdb_commands::eidolon_cast(
-                conn,
-                slot,
-                ability.geometry().selected_entity_payload(selected_id),
-                target_position,
-            ) {
-                error!("could not start Eidolon cast: {err}");
-            }
-        }
-        root_local_movement(
-            &mut move_target,
-            &mut movement_freeze,
-            time.elapsed_secs(),
-            movement_lock_for_ability(
-                ability.cast_mode(),
-                blueprint.execution == BlueprintExecution::Charge,
-            ),
-            ability.cast_mode(),
-        );
-        // Channel cooldown starts on press (server does the same). Charge
-        // waits for release_cast.
-        if ability.cast_mode().is_channeling() {
-            hud_cooldowns.write(SpellHudCooldownStarted {
-                key: HudCooldownKey::Ability(ability_id.clone()),
-                cooldown_seconds: ability.base_params().cooldown,
-            });
         }
     }
 
@@ -275,12 +217,9 @@ pub fn cast_abilities_on_key(
         }
     }
 
-    // ── Release handling ─────────────────────────────────────────────
-    // Instant/CastTime confirm the aimed `eidolon_cast`. Charge and
-    // Channeling call `release_cast`. Channeling is not gated on `aim.slot`
-    // because it never opens an aim window.
-    for (action, slot) in weapon_slot_bindings() {
-        if !settings.just_released(action, &keys) {
+    // ── Release handling: one `cast_weapon` ─────────────────────────
+    for (_action, slot) in weapon_slot_bindings() {
+        if !settings.just_released(_action, &keys) {
             continue;
         }
 
@@ -290,134 +229,55 @@ pub fn cast_abilities_on_key(
             continue;
         };
 
-        let blueprint = item.ability_blueprint(ability.as_ref());
-        let intent = weapon_cast_intent(false, true, blueprint.execution, ability.cast_mode());
-        if intent.start_cast
-            && !can_afford_mana(vitals.current_mana, ability.base_params().energy_cost)
-        {
+        let intent = weapon_cast_intent(false, true, ability.cast_mode());
+        if !intent.start_cast {
+            continue;
+        }
+        if !can_afford_mana(vitals.current_mana, ability.base_params().mana_cost) {
             aim.clear();
             continue;
         }
-
-        if intent.start_cast {
-            if aim.slot != Some(slot) {
-                continue;
-            }
-            let cancelled = aim.cancelled;
-            aim.clear();
-            if cancelled {
-                continue;
-            }
-            if hud_state.ability_on_cooldown(&ability_id) {
-                continue;
-            }
-
-            let face_direction = target_position
-                .and_then(|target| flat_direction_towards(player_position.0, target));
-            if let Some(direction) = face_direction {
-                look_direction.0 = direction;
-            }
-            root_local_movement(
-                &mut move_target,
-                &mut movement_freeze,
-                time.elapsed_secs(),
-                movement_lock_for_ability(
-                    ability.cast_mode(),
-                    blueprint.execution == BlueprintExecution::Charge,
-                ),
-                ability.cast_mode(),
-            );
-
-            if let Some(conn) = conn.as_deref() {
-                if let Err(err) = stdb_commands::eidolon_cast(
-                    conn,
-                    slot,
-                    ability.geometry().selected_entity_payload(selected_id),
-                    target_position,
-                ) {
-                    error!("could not cast Eidolon ability: {err}");
-                }
-            }
-
-            if ability.cast_mode().is_instant() {
-                hud_cooldowns.write(SpellHudCooldownStarted {
-                    key: HudCooldownKey::Ability(ability_id.clone()),
-                    cooldown_seconds: ability.base_params().cooldown,
-                });
-            }
+        if aim.slot != Some(slot) {
+            continue;
+        }
+        let cancelled = aim.cancelled;
+        aim.clear();
+        if cancelled {
+            continue;
+        }
+        if hud_state.ability_on_cooldown(&ability_id) {
+            continue;
         }
 
-        if intent.release_cast {
-            let observed_matches =
-                observed_cast_is(&observed_casts, local_network_id.0, &ability_id);
-            aim.clear();
+        let face_direction =
+            target_position.and_then(|target| flat_direction_towards(player_position.0, target));
+        if let Some(direction) = face_direction {
+            look_direction.0 = direction;
+        }
+        root_local_movement(
+            &mut move_target,
+            &mut movement_freeze,
+            time.elapsed_secs(),
+            movement_lock_for_ability(ability.cast_mode()),
+            ability.cast_mode(),
+        );
 
-            let stop_movement = blueprint.execution == BlueprintExecution::Charge;
-            // Optimistic HUD cooldown only once we know this snapshot is ours.
-            // Starting it on a no-op release would lock the slot while the
-            // charge bar stayed up.
-            let hud_cooldown_seconds =
-                (!ability.cast_mode().is_channeling()).then_some(ability.base_params().cooldown);
-
-            let hud_cooldown = if observed_matches {
-                hud_cooldown_seconds
-            } else {
-                None
-            };
-            send_release_cast(
-                conn.as_deref(),
-                &ability_id,
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::cast_weapon(
+                conn,
+                slot,
                 ability.geometry().selected_entity_payload(selected_id),
                 target_position,
-                player_position.0,
-                &mut look_direction,
-                &mut move_target,
-                &mut movement_freeze,
-                time.elapsed_secs(),
-                stop_movement,
-                hud_cooldown.map(|seconds| (&mut hud_cooldowns, seconds)),
-            );
-
-            if queue_release_until_observed(observed_matches) {
-                pending_release.0 = Some(QueuedCastRelease {
-                    ability_id,
-                    action,
-                    target_id: ability.geometry().selected_entity_payload(selected_id),
-                    target_position,
-                    stop_movement,
-                    hud_cooldown_seconds,
-                });
-            } else {
-                pending_release.clear();
+            ) {
+                error!("could not cast weapon ability: {err}");
             }
         }
-    }
 
-    // A tap that beat replication queued a retry; fire it once the charge
-    // row is visible and the key is still up.
-    let should_flush = pending_release.0.as_ref().is_some_and(|queued| {
-        let observed_matches =
-            observed_cast_is(&observed_casts, local_network_id.0, &queued.ability_id);
-        let slot_held = settings.pressed(queued.action, &keys);
-        flush_queued_release(observed_matches, slot_held)
-    });
-    if should_flush {
-        if let Some(queued) = pending_release.0.take() {
-            send_release_cast(
-                conn.as_deref(),
-                &queued.ability_id,
-                queued.target_id,
-                queued.target_position,
-                player_position.0,
-                &mut look_direction,
-                &mut move_target,
-                &mut movement_freeze,
-                time.elapsed_secs(),
-                queued.stop_movement,
-                queued
-                    .hud_cooldown_seconds
-                    .map(|seconds| (&mut hud_cooldowns, seconds)),
-            );
+        if ability.cast_mode().is_instant() || ability.cast_mode().is_channeling() {
+            hud_cooldowns.write(SpellHudCooldownStarted {
+                key: HudCooldownKey::Ability(ability_id.clone()),
+                cooldown_seconds: ability.base_params().cooldown,
+            });
         }
     }
 }
@@ -430,6 +290,7 @@ fn observed_cast_is(observed: &ObservedCasts, caster: u64, ability_id: &AbilityI
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 fn send_release_cast(
     conn: Option<&StdbConnection>,
     ability_id: &AbilityId,
@@ -500,8 +361,9 @@ fn stops_movement_for_ability(cast_mode: bevymmo_gameplay::abilities::AbilityCas
 }
 
 /// Drop the local dest immediately, and root prediction when the ability
-/// will freeze the character. A channel that interrupts on move only
-/// clears the dest — walking is still allowed so a held click can cancel it.
+/// will freeze the character. CastTime and a channel that interrupts on
+/// move only clear the dest — walking is still allowed so a later click
+/// can cancel them.
 fn root_local_movement(
     move_target: &mut bevymmo_client::movement::MoveTarget,
     freeze: &mut LocalMovementFreeze,
@@ -551,7 +413,7 @@ mod tests {
         observed.0.insert(
             1,
             crate::spells::cast_bar::ObservedCast {
-                spell_id: "arcane_bolt".into(),
+                spell_id: "cleave".into(),
                 kind: 2,
                 elapsed_seconds: 0.0,
                 required_seconds: 0.15,
@@ -559,25 +421,28 @@ mod tests {
                 stale_after_seconds: 1.0,
             },
         );
-        assert!(observed_cast_is(
-            &observed,
-            1,
-            &AbilityId::new("arcane_bolt")
-        ));
-        assert!(!observed_cast_is(
-            &observed,
-            1,
-            &AbilityId::new("arcane_wave")
-        ));
-        assert!(!observed_cast_is(
-            &observed,
-            2,
-            &AbilityId::new("arcane_bolt")
-        ));
+        assert!(observed_cast_is(&observed, 1, &AbilityId::new("cleave")));
+        assert!(!observed_cast_is(&observed, 1, &AbilityId::new("lunge")));
+        assert!(!observed_cast_is(&observed, 2, &AbilityId::new("cleave")));
     }
 
     #[test]
-    fn rooted_cast_arms_the_optimistic_freeze() {
+    fn rooted_charge_arms_the_optimistic_freeze() {
+        let mut dest = bevymmo_client::movement::MoveTarget(Some(Vec3::X));
+        let mut freeze = LocalMovementFreeze::default();
+        root_local_movement(
+            &mut dest,
+            &mut freeze,
+            1.0,
+            bevymmo_gameplay::movement::MovementLock::None,
+            bevymmo_gameplay::abilities::AbilityCastMode::Instant,
+        );
+        assert_eq!(dest.0, Some(Vec3::X));
+        assert!(!freeze.is_active(1.0));
+    }
+
+    #[test]
+    fn cast_time_clears_dest_without_rooting() {
         let mut dest = bevymmo_client::movement::MoveTarget(Some(Vec3::X));
         let mut freeze = LocalMovementFreeze::default();
         root_local_movement(
@@ -588,8 +453,7 @@ mod tests {
             bevymmo_gameplay::abilities::AbilityCastMode::CastTime,
         );
         assert!(dest.0.is_none());
-        assert!(freeze.is_active(1.0));
-        assert!(!freeze.is_active(1.0 + LocalMovementFreeze::DURATION));
+        assert!(!freeze.is_active(1.0));
     }
 
     #[test]

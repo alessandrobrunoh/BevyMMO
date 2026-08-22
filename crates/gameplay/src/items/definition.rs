@@ -1,7 +1,7 @@
 //! Static metadata and the `Item` trait contract.
 //!
-//! Mirrors `crate::spells::context::Spell`: the trait is the contract that
-//! every concrete item implements; static metadata lives in [`ItemConfig`].
+//! The `Item` trait is the contract every concrete item implements;
+//! static metadata lives in [`ItemConfig`].
 //! Concrete implementations live in `crate::content::items`.
 
 use std::borrow::Cow;
@@ -13,8 +13,8 @@ use crate::abilities::{AbilityBlueprint, AbilityLoadout, BaseAbility, RuneProfil
 
 use super::components::EquipSlot;
 use super::effects::ItemEffect;
+use super::recipe::CraftRecipe;
 use super::registry::ItemId;
-use super::spell_kit::SpellKit;
 use super::weapon_family::WeaponFamilyId;
 
 /// Narrative category, used by the inventory UI (filtering / icons) and by
@@ -42,9 +42,8 @@ pub enum ItemRarity {
 
 /// Static metadata shared by every item.
 ///
-/// `max_stack` is intentionally absent: 1 item = 1 slot (decision #1 of
-/// `plans/inventory-system.md`). It can be reintroduced later without breaking
-/// saved data because the inventory layout is a fixed-size array of ids.
+/// Stack size is not an item property: [`super::components::Inventory::MAX_STACK`]
+/// is the bag cap, and only [`ItemCategory::Material`] stacks.
 #[derive(Debug, Clone)]
 pub struct ItemConfig {
     /// Player-facing name shown in the inventory and detail cards.
@@ -59,6 +58,14 @@ pub struct ItemConfig {
     pub equippable_into: Option<EquipSlot>,
     /// Reserved for a future encumbrance system. 0 for now.
     pub weight: f32,
+    /// Whether this item can change owner via the player market.
+    ///
+    /// Defaults to `true` in `#[item(...)]`. Soulbound / quest items set
+    /// `tradable = false` and never appear in a hall's sell list.
+    pub tradable: bool,
+    /// Bevy asset path under `assets/` for the inventory / detail-card icon.
+    /// Empty means the UI falls back to the item name.
+    pub icon: &'static str,
 }
 
 /// Contract every concrete item implements.
@@ -87,6 +94,17 @@ pub trait Item: Send + Sync + 'static {
         &self.config().display_name
     }
 
+    /// Inventory / HUD icon asset path. `None` when `config().icon` is empty.
+    fn icon(&self) -> Option<&'static str> {
+        let icon = self.config().icon;
+        (!icon.is_empty()).then_some(icon)
+    }
+
+    /// Whether this item can change owner via the player market.
+    fn tradable(&self) -> bool {
+        self.config().tradable
+    }
+
     /// Effects applied while equipped (StatBonus), or on use for consumables.
     fn effects(&self) -> &[ItemEffect];
 
@@ -94,19 +112,6 @@ pub trait Item: Send + Sync + 'static {
     /// equippable. The server reads this when validating an equip command.
     fn equip_requirements(&self) -> &[EquipRequirement] {
         &[]
-    }
-
-    /// Spells this item makes available on the Q/W/E hotbar while equipped.
-    ///
-    /// `None` (the default) means the item grants no spells at all — most
-    /// armor/accessory items only contribute [`effects`](Item::effects) and
-    /// never override this. Items that *do* grant spells implement it via
-    /// the `#[item(..., spells(q = [...], w = [...], e = ...))]` macro,
-    /// which also enforces the Q(1+)/W(1+)/E(1) shape at compile time; see
-    /// `bevymmo_server::items::available_spells` for how kits from every
-    /// equipped item are unioned into the player's selectable spell pool.
-    fn spell_kit(&self) -> Option<&SpellKit> {
-        None
     }
 
     /// Shared weapon category. `None` for non-weapon items or items that do
@@ -133,6 +138,12 @@ pub trait Item: Send + Sync + 'static {
 
     /// Capacità Runica / Stabilità / Affinità — quanto può reggere inciso.
     fn rune_profile(&self) -> Option<&RuneProfile> {
+        None
+    }
+
+    /// How to craft this item. `None` (the default) means it is unique and
+    /// never appears in a crafter NPC's list.
+    fn craft_recipe(&self) -> Option<&CraftRecipe> {
         None
     }
 }
@@ -180,6 +191,8 @@ mod tests {
             rarity: ItemRarity::Common,
             equippable_into: Some(EquipSlot::Weapon),
             weight: 0.0,
+            tradable: true,
+            icon: "",
         }
     }
 
@@ -192,10 +205,50 @@ mod tests {
     }
 
     #[test]
+    fn tradable_defaults_to_config_value() {
+        let item = Dummy {
+            config: sample_config(),
+        };
+        assert!(item.tradable());
+
+        let bound = Dummy {
+            config: ItemConfig {
+                tradable: false,
+                ..sample_config()
+            },
+        };
+        assert!(!bound.tradable());
+    }
+
+    #[test]
     fn equip_requirements_defaults_to_empty() {
         let item = Dummy {
             config: sample_config(),
         };
         assert!(item.equip_requirements().is_empty());
+    }
+
+    #[test]
+    fn craft_recipe_defaults_to_none() {
+        let item = Dummy {
+            config: sample_config(),
+        };
+        assert!(item.craft_recipe().is_none());
+    }
+
+    #[test]
+    fn icon_is_absent_when_the_path_is_empty() {
+        let item = Dummy {
+            config: sample_config(),
+        };
+        assert!(item.icon().is_none());
+
+        let with_icon = Dummy {
+            config: ItemConfig {
+                icon: "items/icons/dummy.png",
+                ..sample_config()
+            },
+        };
+        assert_eq!(with_icon.icon(), Some("items/icons/dummy.png"));
     }
 }

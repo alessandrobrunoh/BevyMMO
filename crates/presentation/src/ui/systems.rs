@@ -19,6 +19,7 @@ use crate::game_state::{
 use crate::ui::button::{apply_button_image, UiButton, UiButtonAction, UiButtonImages};
 use crate::ui::character_roster::SelectedRosterEntry;
 use crate::ui::chat::ChatInput;
+use crate::ui::inventory::components::SplitAmountField;
 use crate::ui::login::{AuthPage, EmailInput, PasswordInput};
 use crate::ui::main_menu::PlayerNameInput;
 use crate::ui::text_input::{
@@ -44,6 +45,7 @@ use crate::ui::theme::UiTheme;
 pub(crate) fn sync_typing_focus(
     chat_inputs: Query<(Entity, &ChatInput)>,
     text_inputs: Query<(Entity, &TextInput)>,
+    split_amounts: Query<(Entity, &SplitAmountField)>,
     nodes: Query<&Node>,
     parents: Query<&ChildOf>,
     mut typing: ResMut<TypingFocus>,
@@ -53,7 +55,10 @@ pub(crate) fn sync_typing_focus(
         .any(|(entity, input)| input.focused && ui_tree_is_displayed(entity, &nodes, &parents))
         || text_inputs
             .iter()
-            .any(|(entity, input)| input.focused && ui_tree_is_displayed(entity, &nodes, &parents));
+            .any(|(entity, input)| input.focused && ui_tree_is_displayed(entity, &nodes, &parents))
+        || split_amounts
+            .iter()
+            .any(|(entity, field)| field.focused && ui_tree_is_displayed(entity, &nodes, &parents));
     if typing.0 != focused {
         typing.0 = focused;
     }
@@ -761,6 +766,32 @@ mod tests {
         assert!(
             app.world().resource::<TypingFocus>().0,
             "visible login fields must still capture keys"
+        );
+    }
+
+    #[test]
+    fn focused_split_amount_field_holds_typing_focus() {
+        use crate::ui::inventory::components::SplitAmountField;
+
+        let mut app = App::new();
+        app.init_resource::<TypingFocus>();
+        init_screen_states(&mut app);
+        app.insert_state(Screen::InGame);
+
+        app.world_mut().spawn((
+            Node::default(),
+            SplitAmountField {
+                value: "7".into(),
+                focused: true,
+                quantity: 50,
+            },
+        ));
+        app.add_systems(Update, sync_typing_focus);
+        app.update();
+
+        assert!(
+            app.world().resource::<TypingFocus>().0,
+            "typing a split amount must not fire I/WASD"
         );
     }
 

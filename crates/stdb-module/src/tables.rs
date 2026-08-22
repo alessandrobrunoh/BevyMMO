@@ -9,13 +9,16 @@
 //! In SpacetimeDB *everything* persists — there is no distinction the database
 //! enforces. The distinction below is one the module has to keep for itself:
 //!
-//! - **Persistent**: `player`, `player_stats`, `hotbar`, `inventory`,
-//!   `equipment`, `known_glyphs`, `prop_override`. These outlive a session and
-//!   must survive a republish.
+//! - **Persistent**: `account`, `api_key`, `player`, `player_stats`, `hotbar`,
+//!   `inventory`, `equipment`, `known_glyphs`, `character_wallet`,
+//!   `account_economy`, `market`, `market_sell_order`, `market_buy_order`,
+//!   `prop_override`, `resource_node`. These outlive a session and must
+//!   survive a republish.
 //! - **Runtime**: `game_entity`, `entity_stats`, `cast_state`, `cooldown`,
-//!   `projectile`, `aoe_region`, `crowd_control`, `threat`, `stat_modifier`.
-//!   Conceptually these die with the session, so `init` clears and re-seeds
-//!   them — otherwise a republish inherits yesterday's projectiles mid-flight.
+//!   `projectile`, `aoe_region`, `crowd_control`, `threat`, `stat_modifier`,
+//!   `gather_session`, `craft_session`. Conceptually these die with the session, so `init`
+//!   clears and re-seeds them — otherwise a republish inherits yesterday's
+//!   projectiles mid-flight.
 //!
 //! # Spatial queries
 //!
@@ -115,6 +118,47 @@ pub struct Session {
     pub authenticated_at: Timestamp,
 }
 
+/// A long-lived HTTP credential for one [`Account`]. Used by the gateway so a
+/// bot can read the owner's profile, wallet and stats without a browser cookie.
+///
+/// Deliberately **not** `public`, for the same reason as [`Account`]: a public
+/// table would let any connected client subscribe and read every key hash.
+/// The owning client sees metadata (name, prefix, dates — never the hash)
+/// through the `my_api_keys` view, which filters by the caller's session.
+///
+/// The plaintext secret is never stored. The gateway mints it, the reducer
+/// hashes it with SHA-256, and the HTTP create response is the only time the
+/// caller sees the secret.
+#[table(accessor = api_key)]
+pub struct ApiKey {
+    #[primary_key]
+    pub id: Uuid,
+    #[index(btree)]
+    pub account_id: u64,
+    /// SHA-256 hex of the full secret (`eiv_` + 64 hex chars). Unique so
+    /// `authenticate_api_key` is a point lookup, not a scan.
+    #[unique]
+    pub key_hash: String,
+    pub name: String,
+    /// First 12 characters of the secret (`eiv_` + 8 hex), shown in the UI
+    /// so the owner can tell keys apart after the secret is gone.
+    pub prefix: String,
+    pub created_at: Timestamp,
+    pub last_used_at: Option<Timestamp>,
+}
+
+/// What the `my_api_keys` view returns: everything an owner may see, and
+/// nothing they must not (the hash). Named fields because `SpacetimeType`
+/// panics on tuple structs.
+#[derive(SpacetimeType, Clone, Debug, PartialEq, Eq)]
+pub struct ApiKeyMeta {
+    pub id: Uuid,
+    pub name: String,
+    pub prefix: String,
+    pub created_at: Timestamp,
+    pub last_used_at: Option<Timestamp>,
+}
+
 // ---------------------------------------------------------------------------
 // Persistent: the character
 // ---------------------------------------------------------------------------
@@ -149,6 +193,94 @@ pub struct Player {
     /// from row existence: the character outlives the session.
     pub online: bool,
     pub last_seen: Timestamp,
+}
+
+/// Gold of one character. Not shared across an account's other characters.
+///
+/// Created at `join` with `gold = 0`. `Account` itself holds no Gold — that
+/// table is credentials, and Crystals (later) get their own account-scoped
+/// table rather than a column here.
+#[table(accessor = character_wallet, public)]
+pub struct CharacterWallet {
+    #[primary_key]
+    pub character_id: Uuid,
+    pub gold: u64,
+}
+
+/// Account-wide economy knobs. Public the way `player` is: it is not a
+/// credential. `fee_bps` starts at
+/// [`bevymmo_domain::economy::DEFAULT_ACCOUNT_FEE_BPS`] and a future
+/// subscription reducer writes `0` without touching each market's own fee.
+#[table(accessor = account_economy, public)]
+pub struct AccountEconomy {
+    #[primary_key]
+    pub account_id: u64,
+    pub fee_bps: u16,
+}
+
+/// Isolated player market. Seeded in `init`; not cleared as runtime state.
+#[table(accessor = market, public)]
+pub struct Market {
+    #[primary_key]
+    pub id: String,
+    pub display_name: String,
+    pub fee_bps: u16,
+}
+
+/// Runtime NPC profile. Re-seeded with `game_entity` because entity ids
+/// change every `init`. `market_id` is `Some` only for market NPCs.
+#[table(accessor = npc, public)]
+pub struct Npc {
+    #[primary_key]
+    pub entity_id: u64,
+    pub kind_id: String,
+    pub market_id: Option<String>,
+}
+
+/// Runtime enemy profile. Re-seeded with `game_entity` because entity ids
+/// change every `init`. `kind_id` is the placeable catalog key (`mob_goblin`).
+#[table(accessor = enemy_ai, public)]
+pub struct EnemyAi {
+    #[primary_key]
+    pub entity_id: u64,
+    pub kind_id: String,
+}
+
+/// One listed item instance, escrowed out of the seller's inventory.
+#[table(
+    accessor = market_sell_order,
+    public,
+    index(accessor = by_market_item, btree(columns = [market_id, item_id]))
+)]
+pub struct MarketSellOrder {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub market_id: String,
+    #[index(btree)]
+    pub seller_character_id: Uuid,
+    pub item_id: String,
+    pub item: ItemInstanceRow,
+    pub price_gold: u64,
+    pub created_at: Timestamp,
+}
+
+/// One bid: `price_gold` is Gold escrowed from the buyer until fill or cancel.
+#[table(
+    accessor = market_buy_order,
+    public,
+    index(accessor = by_market_item, btree(columns = [market_id, item_id]))
+)]
+pub struct MarketBuyOrder {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub market_id: String,
+    #[index(btree)]
+    pub buyer_character_id: Uuid,
+    pub item_id: String,
+    pub price_gold: u64,
+    pub created_at: Timestamp,
 }
 
 /// Base stats, without equipment bonuses. See [`StatsRow`].
@@ -335,6 +467,8 @@ pub enum EntityKindRow {
     Npc,
     /// Training dummy that receives heals the way a party member would.
     AllyDummy,
+    /// Harvestable world node. Not a combatant.
+    ResourceNode,
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
@@ -362,6 +496,7 @@ impl ColorRow {
             EntityKindRow::Dummy => Self::srgb(0.7, 0.1, 0.1),
             EntityKindRow::AllyDummy => Self::srgb(0.2, 0.75, 0.35),
             EntityKindRow::Npc => Self::srgb(0.5, 0.5, 0.5),
+            EntityKindRow::ResourceNode => Self::srgb(0.45, 0.7, 0.3),
         }
     }
 
@@ -431,9 +566,6 @@ pub struct EntityStats {
 pub enum CastKindRow {
     Instant,
     CastTime,
-    /// Hold-to-charge: accumulates while held, fires on release (not auto-fire).
-    /// Only valid for Eidolon abilities with BlueprintExecution::Charge.
-    Charge,
     Channeling,
 }
 
@@ -443,14 +575,16 @@ pub enum CastKindRow {
 pub enum CastSourceRow {
     /// Legacy spell from the hotbar (`cast_spell` reducer).
     Spell,
-    /// Eidolon weapon ability (`eidolon_cast` reducer).
-    Eidolon,
+    /// Weapon ability (`cast_weapon` reducer).
+    Weapon,
     /// Primary ability from the equipped helmet.
     Helmet,
     /// Primary ability from the equipped chestplate.
     Armor,
     /// Primary ability from the equipped boots/shoes.
     Shoes,
+    /// Catalog `BaseAbility` fired by AI (enemy/boss/NPC kit). No equipment.
+    Catalog,
 }
 
 /// A cast in progress. At most one per caster: starting another cancels it.
@@ -473,7 +607,7 @@ pub struct CastState {
     pub tick_interval_seconds: f32,
     /// For Channeling casts only: whether movement cancels the channel.
     /// True for legacy spells with InterruptOnMove; reflects AbilityCastMode
-    /// for Eidolon abilities. Ignored for Instant/CastTime (movement always
+    /// for weapon abilities. Ignored for Instant/CastTime (movement always
     /// interrupts CastTime).
     pub channel_movement_interrupts: bool,
 }
@@ -670,17 +804,22 @@ pub struct PeriodicEffect {
     pub remaining_seconds: f32,
 }
 
-/// How much a boss hates each of its attackers.
+/// How much a Table-policy combatant hates each of its attackers.
+///
+/// Used by bosses and by any enemy whose kit threat policy is Table
+/// (Sticky also writes amount-1 rows to remember the current target).
+/// Adding `threat_generation` / renaming this column requires
+/// `./scripts/stdb.sh reset`.
 #[table(
     accessor = threat,
     public,
-    index(accessor = by_boss, btree(columns = [boss_entity]))
+    index(accessor = by_combatant, btree(columns = [combatant_entity]))
 )]
 pub struct Threat {
     #[primary_key]
     #[auto_inc]
     pub id: u64,
-    pub boss_entity: u64,
+    pub combatant_entity: u64,
     pub target_entity: u64,
     pub amount: f32,
 }
@@ -747,6 +886,64 @@ pub struct CastEndedEvent {
 pub struct PlayerMessageEvent {
     pub target: Option<Identity>,
     pub text: String,
+}
+
+/// One completed gather channel. Floating text / VFX on the client.
+#[table(accessor = gather_yield, public, event)]
+pub struct GatherYieldEvent {
+    pub entity_id: u64,
+    pub node_entity_id: u64,
+    pub item_id: String,
+    pub amount: u32,
+    pub extra: u32,
+    pub node_depleted: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Gathering
+// ---------------------------------------------------------------------------
+
+/// Persistent harvest state, keyed by the map placement id.
+#[table(
+    accessor = resource_node,
+    public,
+    index(accessor = next_regen, btree(columns = [next_regen_at]))
+)]
+#[derive(Clone)]
+pub struct ResourceNode {
+    #[primary_key]
+    pub placement_id: String,
+    #[unique]
+    pub entity_id: u64,
+    pub kind_id: String,
+    pub current_pieces: u32,
+    pub last_regen_at: Timestamp,
+    pub next_regen_at: Timestamp,
+}
+
+/// One player gathering at a time. Runtime: cleared on init.
+#[table(accessor = gather_session, public)]
+pub struct GatherSession {
+    #[primary_key]
+    pub entity_id: u64,
+    pub node_entity_id: u64,
+    pub placement_id: String,
+    pub elapsed_seconds: f32,
+    pub required_seconds: f32,
+    pub start_position: Vec3Row,
+}
+
+/// One player crafting at a time. Runtime: cleared on init.
+#[table(accessor = craft_session, public)]
+pub struct CraftSession {
+    #[primary_key]
+    pub entity_id: u64,
+    pub npc_entity_id: u64,
+    pub item_id: String,
+    pub quantity: u32,
+    pub elapsed_seconds: f32,
+    pub required_seconds: f32,
+    pub start_position: Vec3Row,
 }
 
 // ---------------------------------------------------------------------------

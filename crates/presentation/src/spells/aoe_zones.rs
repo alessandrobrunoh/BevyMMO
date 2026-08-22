@@ -80,18 +80,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn arcane_wave_draws_as_a_cone_even_if_the_row_omits_the_angle() {
+    fn cleave_draws_as_a_cone_even_if_the_row_omits_the_angle() {
         let abilities = bevymmo_content::ability_definitions::default_base_abilities();
         let zone = AoeZone {
-            radius: 8.0,
+            radius: 5.0,
             remaining_seconds: 0.15,
-            pending_delay_seconds: 0.15,
-            spell_id: "arcane_wave".into(),
+            pending_delay_seconds: 0.0,
+            spell_id: "cleave".into(),
             cone_angle_deg: None,
             direction: Vec3::Z,
         };
         let (angle, dir) = cone_draw(&zone, &abilities).expect("cone");
-        assert!((angle - 55.0).abs() < f32::EPSILON);
+        assert!((angle - 85.0).abs() < f32::EPSILON);
         assert_eq!(dir, Vec3::Z);
     }
 }

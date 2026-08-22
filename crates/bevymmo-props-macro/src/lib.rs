@@ -33,6 +33,7 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use std::collections::HashMap;
+use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{bracketed, parenthesized, parse_macro_input};
@@ -119,10 +120,203 @@ pub fn props(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+/// Attribute macro to define a harvestable resource node.
+///
+/// Automatically implements:
+/// - `PlaceableDefinition`
+/// - `ResourceNodePlaceable`
+/// - `register()` function
+#[proc_macro_attribute]
+pub fn resource(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    let attr_str = attr.to_string();
+    let attrs = parse_resource_attrs(&attr_str);
+    match expand_resource(&input, attrs) {
+        Ok(tokens) => tokens.into(),
+        Err(message) => syn::Error::new_spanned(&input.ident, message)
+            .to_compile_error()
+            .into(),
+    }
+}
+
+struct ResourceAttributes {
+    props: PropsAttributes,
+    max_pieces: Option<u32>,
+    channel_seconds: Option<f32>,
+    min_channel_seconds: f32,
+    yield_item: Option<String>,
+    yield_amount: u32,
+    regen_interval_seconds: Option<f32>,
+    regen_amount: Option<u32>,
+    interact_range: f32,
+}
+
+fn parse_resource_attrs(input: &str) -> ResourceAttributes {
+    let mut attrs = ResourceAttributes {
+        props: parse_attrs(input),
+        max_pieces: None,
+        channel_seconds: None,
+        min_channel_seconds: 0.25,
+        yield_item: None,
+        yield_amount: 1,
+        regen_interval_seconds: None,
+        regen_amount: None,
+        interact_range: 2.5,
+    };
+
+    for pair in split_top_level_commas(input) {
+        let pair = pair.trim();
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+        match key {
+            "max_pieces" => attrs.max_pieces = value.parse().ok(),
+            "channel_seconds" => attrs.channel_seconds = value.parse().ok(),
+            "min_channel_seconds" => {
+                if let Ok(min) = value.parse() {
+                    attrs.min_channel_seconds = min;
+                }
+            }
+            "yield_item" => attrs.yield_item = Some(clean_string(value)),
+            "yield_amount" => {
+                if let Ok(amount) = value.parse() {
+                    attrs.yield_amount = amount;
+                }
+            }
+            "regen_interval_seconds" => attrs.regen_interval_seconds = value.parse().ok(),
+            "regen_amount" => attrs.regen_amount = value.parse().ok(),
+            "interact_range" => {
+                if let Ok(range) = value.parse() {
+                    attrs.interact_range = range;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    attrs
+}
+
+fn expand_resource(input: &DeriveInput, attrs: ResourceAttributes) -> Result<TokenStream2, String> {
+    let name = &input.ident;
+    let id = attrs
+        .props
+        .id
+        .clone()
+        .unwrap_or_else(|| name.to_string().to_lowercase());
+    let display_name = attrs
+        .props
+        .display_name
+        .clone()
+        .unwrap_or_else(|| id.clone());
+    let icon = attrs.props.icon.clone().unwrap_or_else(|| "⛏".to_string());
+    let asset = attrs
+        .props
+        .asset
+        .clone()
+        .ok_or_else(|| "#[resource(...)] requires `asset = \"...\"`".to_string())?;
+    let max_pieces = attrs
+        .max_pieces
+        .filter(|n| *n >= 1)
+        .ok_or_else(|| "#[resource(...)] requires `max_pieces = N` with N >= 1".to_string())?;
+    let channel_seconds = attrs
+        .channel_seconds
+        .filter(|n| *n > 0.0)
+        .ok_or_else(|| "#[resource(...)] requires `channel_seconds = N` with N > 0".to_string())?;
+    let yield_item = attrs
+        .yield_item
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "#[resource(...)] requires `yield_item = \"...\"`".to_string())?;
+    let regen_interval_seconds = attrs
+        .regen_interval_seconds
+        .filter(|n| *n > 0.0)
+        .ok_or_else(|| {
+            "#[resource(...)] requires `regen_interval_seconds = N` with N > 0".to_string()
+        })?;
+    let regen_amount = attrs
+        .regen_amount
+        .filter(|n| *n >= 1)
+        .ok_or_else(|| "#[resource(...)] requires `regen_amount = N` with N >= 1".to_string())?;
+    if attrs.yield_amount < 1 {
+        return Err("#[resource(...)] `yield_amount` must be >= 1".to_string());
+    }
+
+    let (scale_x, scale_y, scale_z) = attrs.props.scale.unwrap_or((1.0, 1.0, 1.0));
+    let tint = attrs.props.tint.map(|(r, g, b)| quote!(Some([#r, #g, #b])));
+    let tint_tokens = tint.unwrap_or_else(|| quote!(None));
+    let blocks_movement = attrs.props.blocks_movement;
+    let collision_tokens = build_collision_tokens(attrs.props.collision);
+    let min_channel_seconds = attrs.min_channel_seconds;
+    let yield_amount = attrs.yield_amount;
+    let interact_range = attrs.interact_range;
+
+    Ok(quote! {
+        #input
+
+        impl crate::placeables::PlaceableDefinition for #name {
+            fn id(&self) -> crate::placeables::KindId {
+                crate::placeables::KindId::new(#id)
+            }
+
+            fn display_name(&self) -> &'static str {
+                #display_name
+            }
+
+            fn icon(&self) -> &'static str {
+                #icon
+            }
+
+            fn asset_hint(&self) -> crate::placeables::AssetHint {
+                crate::placeables::AssetHint::Scene(#asset)
+            }
+
+            fn defaults(&self) -> crate::placeables::PlaceableDefaults {
+                crate::placeables::PlaceableDefaults {
+                    transform: crate::world::TransformData {
+                        translation: [0.0_f32, 0.0_f32, 0.0_f32],
+                        rotation_deg: [0.0_f32, 0.0_f32, 0.0_f32],
+                        scale: [#scale_x, #scale_y, #scale_z],
+                    },
+                    tint: #tint_tokens,
+                    collision: #collision_tokens,
+                    blocks_movement: #blocks_movement,
+                }
+            }
+        }
+
+        impl crate::placeables::ResourceNodePlaceable for #name {
+            fn resource_config(&self) -> crate::placeables::ResourceConfig {
+                crate::placeables::ResourceConfig {
+                    max_pieces: #max_pieces,
+                    channel_seconds: #channel_seconds,
+                    min_channel_seconds: #min_channel_seconds,
+                    yield_item: crate::items::ItemId::new(#yield_item),
+                    yield_amount: #yield_amount,
+                    regen_interval_seconds: #regen_interval_seconds,
+                    regen_amount: #regen_amount,
+                    interact_range: #interact_range,
+                    required_item_id: None,
+                }
+            }
+        }
+
+        impl #name {
+            pub const ID: &'static str = #id;
+        }
+
+        pub fn register(registry: &mut crate::placeables::PlaceableRegistry) {
+            registry.register_resource(std::sync::Arc::new(#name))
+        }
+    })
+}
+
 /// Parsed `collision = ...` clause.
 ///
 /// Kept as a small enum (instead of pre-rendering tokens) so that the macro
 /// stays readable and so future shapes can be added in one place.
+#[derive(Clone, Copy)]
 enum CollisionSpec {
     None,
     Cylinder {
@@ -352,21 +546,22 @@ fn parse_triple_f32(s: &str) -> Option<(f32, f32, f32)> {
 // Same spirit as `#[props(...)]` above (a unit struct + a small DSL generates
 // the whole trait impl), but parsed with `syn::parse::Parse` instead of the
 // manual string splitter, because the DSL here nests (`effects = [...]`,
-// `spells(q = [...], w = [...], e = ...)`) and hand-rolled comma-splitting
+// `spells(primary = [...], secondary = [...], ultimate = ...)`) and hand-rolled comma-splitting
 // does not compose well past one level of nesting.
 //
-// Optionally declares the Q/W/E spell kit an item grants while equipped
-// (`bevymmo_shared::items::SpellKit`, see `crates/shared/src/items/spell_kit.rs`):
+// Optionally declares the Primary/Secondary/Ultimate spell kit an item grants
+// while equipped (`bevymmo_shared::items::SpellKit`):
 // if the `spells(...)` clause is present, the macro rejects at compile time
-// any shape that isn't "at least one Q, at least one W, exactly one E" — the
-// contract required by the hotbar (`crate::spells::components::SpellHotbar`)
-// — instead of only catching it at startup.
+// any shape that isn't "at least one Primary, at least one Secondary, exactly
+// one Ultimate" — the contract required by the hotbar
+// (`crate::spells::components::SpellHotbar`) — instead of only catching it at
+// startup.
 //
 // # Example
 // ```ignore
 // use bevymmo_props_macro::item;
 //
-// // A weapon that grants two Q options, one W option, one E spell.
+// // A weapon that grants two Primary options, one Secondary option, one Ultimate.
 // #[item(
 //     id = "magic_staff",
 //     name = "Flame Staff",
@@ -374,11 +569,13 @@ fn parse_triple_f32(s: &str) -> Option<(f32, f32, f32)> {
 //     category = Weapon,
 //     rarity = Rare,
 //     slot = Weapon,
+//     icon = "items/icons/magic_staff.png",
+//     tradable = true,
 //     effects = [stat_bonus(field = AttackPower, op = Add, value = 25.0)],
 //     spells(
-//         q = [AttackSpell, FireballSpell],
-//         w = [StunFieldSpell],
-//         e = MeteoriteSpell,
+//         primary = [AttackSpell, FireballSpell],
+//         secondary = [StunFieldSpell],
+//         ultimate = MeteoriteSpell,
 //     ),
 // )]
 // pub struct MagicStaff;
@@ -546,81 +743,6 @@ impl Parse for EffectDef {
     }
 }
 
-/// Parsed `spells(q = [...], w = [...], e = ...)` clause.
-///
-/// This is where the Q(1+) / W(1+) / E(1) contract is enforced: parsing
-/// fails with a `syn::Error` (surfaced as a normal compile error at the
-/// macro call site) unless `q` and `w` each have at least one entry and `e`
-/// has exactly one.
-struct SpellsDef {
-    q: Vec<Path>,
-    w: Vec<Path>,
-    e: Path,
-}
-
-impl SpellsDef {
-    fn parse_from(content: ParseStream) -> syn::Result<Self> {
-        let mut q: Option<Vec<Path>> = None;
-        let mut w: Option<Vec<Path>> = None;
-        let mut e: Option<Path> = None;
-
-        while !content.is_empty() {
-            let key: Ident = content.parse()?;
-            content.parse::<Token![=]>()?;
-            match key.to_string().as_str() {
-                "q" => {
-                    let inner;
-                    bracketed!(inner in content);
-                    let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
-                    q = Some(list.into_iter().collect());
-                }
-                "w" => {
-                    let inner;
-                    bracketed!(inner in content);
-                    let list: Punctuated<Path, Token![,]> = Punctuated::parse_terminated(&inner)?;
-                    w = Some(list.into_iter().collect());
-                }
-                "e" => e = Some(content.parse::<Path>()?),
-                other => {
-                    return Err(syn::Error::new_spanned(
-                        &key,
-                        format!("unknown key `{other}` in spells(...) (expected q, w, e)"),
-                    ))
-                }
-            }
-            if content.peek(Token![,]) {
-                content.parse::<Token![,]>()?;
-            } else {
-                break;
-            }
-        }
-
-        let q = q.unwrap_or_default();
-        let w = w.unwrap_or_default();
-
-        if q.is_empty() {
-            return Err(syn::Error::new(
-                content.span(),
-                "spells(...) requires at least one spell in `q = [...]` — every item that grants \
-                 spells must offer at least one Q option",
-            ));
-        }
-        if w.is_empty() {
-            return Err(syn::Error::new(
-                content.span(),
-                "spells(...) requires at least one spell in `w = [...]`",
-            ));
-        }
-        let e = e.ok_or_else(|| {
-            syn::Error::new(
-                content.span(),
-                "spells(...) requires exactly one spell in `e = ...` (found none)",
-            )
-        })?;
-
-        Ok(Self { q, w, e })
-    }
-}
 
 /// Parsed `abilities(primary = [...], secondary = [...], ultimate = [...])`
 /// clause. Ogni slot deve offrire almeno una abilità; la selezione attiva vive
@@ -705,7 +827,7 @@ impl AbilitiesDef {
 }
 
 /// Parsed `rune_profile(capacity = ..., stability = ...)`.
-/// Required alongside `abilities(...)` — un'arma "Eidolon" senza profilo
+/// Required alongside `abilities(...)` — a weapon senza profilo
 /// runico non potrebbe mai essere incisa.
 struct RuneProfileDef {
     capacity: LitInt,
@@ -750,6 +872,97 @@ impl RuneProfileDef {
 }
 
 /// Fully parsed `#[item(...)]` argument list.
+struct CraftIngredientDef {
+    id: LitStr,
+    amount: LitInt,
+}
+
+impl Parse for CraftIngredientDef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let kind: Ident = input.parse()?;
+        if kind != "ingredient" {
+            return Err(syn::Error::new_spanned(
+                &kind,
+                "expected ingredient(id = \"...\", amount = N)",
+            ));
+        }
+        let content;
+        parenthesized!(content in input);
+        let mut id = None;
+        let mut amount = None;
+        while !content.is_empty() {
+            let key: Ident = content.parse()?;
+            content.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "id" => id = Some(content.parse::<LitStr>()?),
+                "amount" => amount = Some(content.parse::<LitInt>()?),
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!("unknown key `{other}` in ingredient(...)"),
+                    ))
+                }
+            }
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            }
+        }
+        Ok(Self {
+            id: id.ok_or_else(|| syn::Error::new_spanned(&kind, "ingredient(...) requires id"))?,
+            amount: amount
+                .ok_or_else(|| syn::Error::new_spanned(&kind, "ingredient(...) requires amount"))?,
+        })
+    }
+}
+
+struct CraftingDef {
+    channel_seconds: LitFloat,
+    ingredients: Vec<CraftIngredientDef>,
+}
+
+impl CraftingDef {
+    fn parse_from(content: ParseStream) -> syn::Result<Self> {
+        let mut channel_seconds = None;
+        let mut ingredients = None;
+        while !content.is_empty() {
+            let key: Ident = content.parse()?;
+            content.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "channel_seconds" => channel_seconds = Some(content.parse::<LitFloat>()?),
+                "ingredients" => {
+                    let inner;
+                    bracketed!(inner in content);
+                    let list: Punctuated<CraftIngredientDef, Token![,]> =
+                        Punctuated::parse_terminated(&inner)?;
+                    ingredients = Some(list.into_iter().collect());
+                }
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!(
+                            "unknown key `{other}` in crafting(...) (expected channel_seconds, ingredients)"
+                        ),
+                    ))
+                }
+            }
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+        Ok(Self {
+            channel_seconds: channel_seconds.ok_or_else(|| {
+                content.error("crafting(...) requires `channel_seconds = ...`")
+            })?,
+            ingredients: ingredients.ok_or_else(|| {
+                content.error("crafting(...) requires `ingredients = [...]`")
+            })?,
+        })
+    }
+}
+
+/// Fully parsed `#[item(...)]` argument list.
 struct ItemDef {
     id: LitStr,
     name: LitStr,
@@ -758,11 +971,12 @@ struct ItemDef {
     rarity: Ident,
     slot: Option<Ident>,
     family: Option<Ident>,
-    execution: Option<Ident>,
+    tradable: bool,
+    icon: Option<LitStr>,
     effects: Vec<EffectDef>,
-    spells: Option<SpellsDef>,
     abilities: Option<AbilitiesDef>,
     rune_profile: Option<RuneProfileDef>,
+    crafting: Option<CraftingDef>,
 }
 
 impl Parse for ItemDef {
@@ -774,22 +988,18 @@ impl Parse for ItemDef {
         let mut rarity = None;
         let mut slot = None;
         let mut family = None;
-        let mut execution = None;
+        let mut tradable = true;
+        let mut icon = None;
         let mut effects = Vec::new();
-        let mut spells = None;
         let mut abilities = None;
         let mut rune_profile = None;
+        let mut crafting = None;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
             let key_str = key.to_string();
 
-            if key_str == "spells" {
-                // `spells(...)` reads like a function call, no `=` before it.
-                let content;
-                parenthesized!(content in input);
-                spells = Some(SpellsDef::parse_from(&content)?);
-            } else if key_str == "abilities" {
+            if key_str == "abilities" {
                 let content;
                 parenthesized!(content in input);
                 abilities = Some(AbilitiesDef::parse_from(&content)?);
@@ -797,6 +1007,10 @@ impl Parse for ItemDef {
                 let content;
                 parenthesized!(content in input);
                 rune_profile = Some(RuneProfileDef::parse_from(&content)?);
+            } else if key_str == "crafting" {
+                let content;
+                parenthesized!(content in input);
+                crafting = Some(CraftingDef::parse_from(&content)?);
             } else {
                 input.parse::<Token![=]>()?;
                 match key_str.as_str() {
@@ -807,7 +1021,8 @@ impl Parse for ItemDef {
                     "rarity" => rarity = Some(input.parse::<Ident>()?),
                     "slot" => slot = Some(input.parse::<Ident>()?),
                     "family" => family = Some(input.parse::<Ident>()?),
-                    "execution" => execution = Some(input.parse::<Ident>()?),
+                    "tradable" => tradable = input.parse::<LitBool>()?.value(),
+                    "icon" => icon = Some(input.parse::<LitStr>()?),
                     "effects" => {
                         let content;
                         bracketed!(content in input);
@@ -819,7 +1034,8 @@ impl Parse for ItemDef {
                             &key,
                             format!(
                                 "unknown key `{other}` in #[item(...)] (expected id, name, description, \
-                                 category, rarity, slot, family, execution, effects, spells, abilities, rune_profile)"
+                                 category, rarity, slot, family, tradable, icon, effects, \
+                                 abilities, rune_profile, crafting)"
                             ),
                         ))
                     }
@@ -833,11 +1049,9 @@ impl Parse for ItemDef {
             }
         }
 
-        if abilities.is_some() != rune_profile.is_some() {
+        if abilities.is_some() && rune_profile.is_none() {
             return Err(input.error(
-                "#[item(...)] requires `abilities(...)` and `rune_profile(...)` together — an Eidolon \
-                 weapon without a rune profile could never be inscribed, and a rune profile without \
-                 abilities has nothing to inscribe onto",
+                "#[item(...)] items with `abilities(...)` also need `rune_profile(...)` so the gestures can be inscribed",
             ));
         }
 
@@ -855,11 +1069,12 @@ impl Parse for ItemDef {
             })?,
             slot,
             family,
-            execution,
+            tradable,
+            icon,
             effects,
-            spells,
             abilities,
             rune_profile,
+            crafting,
         })
     }
 }
@@ -875,6 +1090,8 @@ impl ItemDef {
             .unwrap_or_else(|| LitStr::new("", proc_macro2::Span::call_site()));
         let category = &self.category;
         let rarity = &self.rarity;
+        let tradable = self.tradable;
+        let icon = icon_or(self.icon.clone(), empty_icon());
         let equippable_into = match &self.slot {
             Some(slot) => quote! { Some(crate::items::EquipSlot::#slot) },
             None => quote! { None },
@@ -887,26 +1104,6 @@ impl ItemDef {
                 }
             }
         });
-        let execution_method = self.execution.as_ref().map(|execution| {
-            let execution = match execution.to_string().as_str() {
-                "Charge" => quote! { crate::abilities::BlueprintExecution::Charge },
-                "Echo" => quote! { crate::abilities::BlueprintExecution::Echo },
-                other => {
-                    let message =
-                        format!("unknown item execution `{other}` (expected Charge or Echo)");
-                    return syn::Error::new_spanned(execution, message).to_compile_error();
-                }
-            };
-            quote! {
-                fn transform_ability_blueprint(
-                    &self,
-                    blueprint: &mut crate::abilities::AbilityBlueprint,
-                ) {
-                    blueprint.execution = #execution;
-                }
-            }
-        });
-
         let effect_tokens: Vec<TokenStream2> = self
             .effects
             .iter()
@@ -923,26 +1120,6 @@ impl ItemDef {
                 },
             })
             .collect();
-
-        // Only override `spell_kit()` when a `spells(...)` clause was given;
-        // otherwise the trait's `None` default (see
-        // `crates/shared/src/items/definition.rs`) applies, exactly like a
-        // hand-written item that never mentions spells.
-        let spell_kit_method = self.spells.as_ref().map(|spells| {
-            let q_paths = &spells.q;
-            let w_paths = &spells.w;
-            let e_path = &spells.e;
-            quote! {
-                fn spell_kit(&self) -> Option<&crate::items::SpellKit> {
-                    static KIT: std::sync::OnceLock<crate::items::SpellKit> = std::sync::OnceLock::new();
-                    Some(KIT.get_or_init(|| crate::items::SpellKit::new(
-                        vec![#(crate::spells::SpellId::new(#q_paths::ID)),*],
-                        vec![#(crate::spells::SpellId::new(#w_paths::ID)),*],
-                        crate::spells::SpellId::new(#e_path::ID),
-                    )))
-                }
-            }
-        });
 
         // Items with `abilities(...)` expose a shared loadout. The same
         // generated method is usable by weapons and armor.
@@ -976,6 +1153,29 @@ impl ItemDef {
             }
         });
 
+        let craft_recipe_method = self.crafting.as_ref().map(|crafting| {
+            let channel_seconds = &crafting.channel_seconds;
+            let ingredients = crafting.ingredients.iter().map(|ingredient| {
+                let id = &ingredient.id;
+                let amount = &ingredient.amount;
+                quote! {
+                    crate::items::CraftIngredient {
+                        item_id: crate::items::ItemId::new(#id),
+                        amount: #amount,
+                    }
+                }
+            });
+            quote! {
+                fn craft_recipe(&self) -> Option<&crate::items::CraftRecipe> {
+                    static RECIPE: std::sync::OnceLock<crate::items::CraftRecipe> = std::sync::OnceLock::new();
+                    Some(RECIPE.get_or_init(|| crate::items::CraftRecipe {
+                        ingredients: vec![#(#ingredients),*],
+                        channel_seconds: #channel_seconds,
+                    }))
+                }
+            }
+        });
+
         quote! {
             #original
 
@@ -1000,6 +1200,8 @@ impl ItemDef {
                         rarity: crate::items::ItemRarity::#rarity,
                         equippable_into: #equippable_into,
                         weight: 0.0,
+                        tradable: #tradable,
+                        icon: #icon,
                     })
                 }
 
@@ -1008,11 +1210,10 @@ impl ItemDef {
                     EFFECTS.get_or_init(|| vec![#(#effect_tokens),*])
                 }
 
-                #spell_kit_method
                 #family_method
-                #execution_method
                 #ability_loadout_method
                 #rune_profile_method
+                #craft_recipe_method
             }
 
             impl #name {
@@ -1028,6 +1229,7 @@ impl ItemDef {
 struct WeaponFamilyDef {
     id: LitStr,
     name: LitStr,
+    icon: Option<LitStr>,
     primary: Option<Vec<Path>>,
     secondary: Option<Vec<Path>>,
     ultimate: Option<Vec<Path>>,
@@ -1037,6 +1239,7 @@ impl Parse for WeaponFamilyDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut id = None;
         let mut name = None;
+        let mut icon = None;
         let mut primary = None;
         let mut secondary = None;
         let mut ultimate = None;
@@ -1047,6 +1250,7 @@ impl Parse for WeaponFamilyDef {
             match key.to_string().as_str() {
                 "id" => id = Some(input.parse::<LitStr>()?),
                 "name" => name = Some(input.parse::<LitStr>()?),
+                "icon" => icon = Some(input.parse::<LitStr>()?),
                 "primary" => {
                     let inner;
                     bracketed!(inner in input);
@@ -1068,7 +1272,7 @@ impl Parse for WeaponFamilyDef {
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in #[weapon_family(...)] (expected id, name, primary, secondary, ultimate)"),
+                        format!("unknown key `{other}` in #[weapon_family(...)] (expected id, name, icon, primary, secondary, ultimate)"),
                     ))
                 }
             }
@@ -1083,6 +1287,7 @@ impl Parse for WeaponFamilyDef {
             id: id.ok_or_else(|| input.error("#[weapon_family(...)] requires `id = \"...\"`"))?,
             name: name
                 .ok_or_else(|| input.error("#[weapon_family(...)] requires `name = \"...\"`"))?,
+            icon,
             primary,
             secondary,
             ultimate,
@@ -1100,6 +1305,7 @@ pub fn weapon_family(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = &input.ident;
     let id = &def.id;
     let display_name = &def.name;
+    let icon = icon_or(def.icon, empty_icon());
 
     let ability_loadout = match (&def.primary, &def.secondary, &def.ultimate) {
         (Some(primary), Some(secondary), Some(ultimate))
@@ -1142,6 +1348,7 @@ pub fn weapon_family(attr: TokenStream, item: TokenStream) -> TokenStream {
                 crate::items::WeaponFamilyMetadata {
                     id: crate::items::WeaponFamilyId::new(Self::ID),
                     display_name: #display_name,
+                    icon: #icon,
                     ability_loadout: #metadata_ability_loadout,
                 }
             }
@@ -1149,6 +1356,20 @@ pub fn weapon_family(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+/// Optional `icon = "..."` path. `default` is used when the key is omitted
+/// (`""` for most content; abilities default to `abilities/icons/{id}.png`).
+fn icon_or(icon: Option<LitStr>, default: LitStr) -> LitStr {
+    icon.unwrap_or(default)
+}
+
+fn empty_icon() -> LitStr {
+    LitStr::new("", proc_macro2::Span::call_site())
+}
+
+fn default_ability_icon(id: &LitStr) -> LitStr {
+    LitStr::new(&format!("abilities/icons/{}.png", id.value()), id.span())
 }
 
 /// Rejects anything but a bare unit struct — every macro in this file only
@@ -1186,8 +1407,9 @@ fn require_unit_struct(input: &DeriveInput, macro_name: &str) -> Result<(), Toke
 //     tags = [Ranged, Projectile, SingleTarget],
 //     range = 20.0,
 //     geometry = projectile(speed = 26.0),
-//     potency = 260.0, cast_time = 0.35, cooldown = 4.0, energy_cost = 12.0,
+//     potency = 260.0, cast_time = 0.35, cooldown = 4.0, mana_cost = 12.0,
 //     animation = "staff_bolt_cast", impact_vfx = "bolt_impact_burst",
+//     icon = "abilities/icons/staff_bolt.png",
 // )]
 // pub struct StaffBolt;
 // ```
@@ -1266,9 +1488,10 @@ struct BaseAbilityDef {
     potency: LitFloat,
     cast_time: LitFloat,
     cooldown: LitFloat,
-    energy_cost: LitFloat,
+    mana_cost: LitFloat,
     animation: LitStr,
     impact_vfx: LitStr,
+    icon: Option<LitStr>,
     /// Opzionali: assenti = impatto immediato e nessun controllo.
     impact_delay: Option<LitFloat>,
     stun_seconds: Option<LitFloat>,
@@ -1295,9 +1518,10 @@ impl Parse for BaseAbilityDef {
         let mut potency = None;
         let mut cast_time = None;
         let mut cooldown = None;
-        let mut energy_cost = None;
+        let mut mana_cost = None;
         let mut animation = None;
         let mut impact_vfx = None;
+        let mut icon = None;
         let mut impact_delay = None;
         let mut stun_seconds = None;
         let mut statuses = Vec::new();
@@ -1327,9 +1551,10 @@ impl Parse for BaseAbilityDef {
                 "potency" => potency = Some(input.parse::<LitFloat>()?),
                 "cast_time" => cast_time = Some(input.parse::<LitFloat>()?),
                 "cooldown" => cooldown = Some(input.parse::<LitFloat>()?),
-                "energy_cost" => energy_cost = Some(input.parse::<LitFloat>()?),
+                "mana_cost" => mana_cost = Some(input.parse::<LitFloat>()?),
                 "animation" => animation = Some(input.parse::<LitStr>()?),
                 "impact_vfx" => impact_vfx = Some(input.parse::<LitStr>()?),
+                "icon" => icon = Some(input.parse::<LitStr>()?),
                 "impact_delay" => impact_delay = Some(input.parse::<LitFloat>()?),
                 "stun_seconds" => stun_seconds = Some(input.parse::<LitFloat>()?),
                 "statuses" => {
@@ -1371,7 +1596,7 @@ impl Parse for BaseAbilityDef {
                         &key,
                         format!(
                             "unknown key `{other}` in #[base_ability(...)] (expected id, name, tags, range, geometry, \
-                             potency, cast_time, cooldown, energy_cost, animation, impact_vfx, impact_delay, \
+                             potency, cast_time, cooldown, mana_cost, animation, impact_vfx, icon, impact_delay, \
                              stun_seconds, statuses, channeling)"
                         )
                     ))
@@ -1398,14 +1623,15 @@ impl Parse for BaseAbilityDef {
                 .ok_or_else(|| input.error("#[base_ability(...)] requires `cast_time = ...`"))?,
             cooldown: cooldown
                 .ok_or_else(|| input.error("#[base_ability(...)] requires `cooldown = ...`"))?,
-            energy_cost: energy_cost
-                .ok_or_else(|| input.error("#[base_ability(...)] requires `energy_cost = ...`"))?,
+            mana_cost: mana_cost
+                .ok_or_else(|| input.error("#[base_ability(...)] requires `mana_cost = ...`"))?,
             animation: animation.ok_or_else(|| {
                 input.error("#[base_ability(...)] requires `animation = \"...\"`")
             })?,
             impact_vfx: impact_vfx.ok_or_else(|| {
                 input.error("#[base_ability(...)] requires `impact_vfx = \"...\"`")
             })?,
+            icon,
             impact_delay,
             stun_seconds,
             statuses,
@@ -1430,9 +1656,10 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
     let potency = &def.potency;
     let cast_time = &def.cast_time;
     let cooldown = &def.cooldown;
-    let energy_cost = &def.energy_cost;
+    let mana_cost = &def.mana_cost;
     let animation = &def.animation;
     let impact_vfx = &def.impact_vfx;
+    let icon = icon_or(def.icon, default_ability_icon(&def.id));
 
     let cleanse_method = match &def.cleanse {
         Some(filter) => {
@@ -1585,7 +1812,7 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
                     range: #range,
                     cast_time: #cast_time,
                     cooldown: #cooldown,
-                    energy_cost: #energy_cost,
+                    mana_cost: #mana_cost,
                 }
             }
             fn animation(&self) -> &'static str {
@@ -1593,6 +1820,9 @@ pub fn base_ability(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             fn impact_vfx(&self) -> &'static str {
                 #impact_vfx
+            }
+            fn icon(&self) -> &'static str {
+                #icon
             }
             #impact_delay_method
             #stun_seconds_method
@@ -2142,6 +2372,7 @@ pub fn status(attr: TokenStream, item: TokenStream) -> TokenStream {
 struct AncientWordDef {
     id: LitStr,
     name: LitStr,
+    icon: Option<LitStr>,
     tag: Ident,
     /// Full required-tag list when `tags = [...]` is set; otherwise just `tag`.
     required_tags: Vec<Ident>,
@@ -2152,6 +2383,7 @@ impl Parse for AncientWordDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut id = None;
         let mut name = None;
+        let mut icon = None;
         let mut tag = None;
         let mut required_tags = Vec::new();
         let mut rune_cost = None;
@@ -2162,6 +2394,7 @@ impl Parse for AncientWordDef {
             match key.to_string().as_str() {
                 "id" => id = Some(input.parse::<LitStr>()?),
                 "name" => name = Some(input.parse::<LitStr>()?),
+                "icon" => icon = Some(input.parse::<LitStr>()?),
                 "tag" => tag = Some(input.parse::<Ident>()?),
                 "tags" => {
                     let content;
@@ -2173,7 +2406,7 @@ impl Parse for AncientWordDef {
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in #[ancient_word(...)] (expected id, name, tag, tags, rune_cost)"),
+                        format!("unknown key `{other}` in #[ancient_word(...)] (expected id, name, icon, tag, tags, rune_cost)"),
                     ))
                 }
             }
@@ -2188,6 +2421,7 @@ impl Parse for AncientWordDef {
             id: id.ok_or_else(|| input.error("#[ancient_word(...)] requires `id = \"...\"`"))?,
             name: name
                 .ok_or_else(|| input.error("#[ancient_word(...)] requires `name = \"...\"`"))?,
+            icon,
             tag: tag.ok_or_else(|| {
                 input.error("#[ancient_word(...)] requires `tag = ...` (an AbilityTag)")
             })?,
@@ -2209,6 +2443,7 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let id_lit = &def.id;
     let name_lit = &def.name;
+    let icon = icon_or(def.icon, empty_icon());
     let tag = &def.tag;
     let rune_cost = &def.rune_cost;
     let required_tags = if def.required_tags.is_empty() {
@@ -2246,6 +2481,7 @@ pub fn ancient_word(attr: TokenStream, item: TokenStream) -> TokenStream {
                     phase: 0,
                     visual_priority: 0,
                     rune_cost: #rune_cost,
+                    icon: #icon,
                 }
             }
             fn post_process(
@@ -2286,6 +2522,7 @@ struct RootWordDef {
     name: LitStr,
     description: LitStr,
     rune_cost: LitInt,
+    icon: Option<LitStr>,
 }
 
 impl Parse for RootWordDef {
@@ -2294,6 +2531,7 @@ impl Parse for RootWordDef {
         let mut name = None;
         let mut description = None;
         let mut rune_cost = None;
+        let mut icon = None;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -2303,10 +2541,11 @@ impl Parse for RootWordDef {
                 "name" => name = Some(input.parse::<LitStr>()?),
                 "description" => description = Some(input.parse::<LitStr>()?),
                 "rune_cost" => rune_cost = Some(input.parse::<LitInt>()?),
+                "icon" => icon = Some(input.parse::<LitStr>()?),
                 other => {
                     return Err(syn::Error::new_spanned(
                         &key,
-                        format!("unknown key `{other}` in #[root_word(...)] (expected id, name, description, rune_cost)"),
+                        format!("unknown key `{other}` in #[root_word(...)] (expected id, name, description, rune_cost, icon)"),
                     ))
                 }
             }
@@ -2324,6 +2563,7 @@ impl Parse for RootWordDef {
                 .ok_or_else(|| input.error("#[root_word(...)] requires `description = \"...\"`"))?,
             rune_cost: rune_cost
                 .ok_or_else(|| input.error("#[root_word(...)] requires `rune_cost = ...`"))?,
+            icon,
         })
     }
 }
@@ -2341,6 +2581,7 @@ pub fn root_word(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name_lit = &def.name;
     let description_lit = &def.description;
     let rune_cost = &def.rune_cost;
+    let icon = icon_or(def.icon, empty_icon());
 
     let expanded = quote! {
         #input
@@ -2358,6 +2599,7 @@ pub fn root_word(attr: TokenStream, item: TokenStream) -> TokenStream {
                     display_name: #name_lit,
                     description: #description_lit,
                     rune_cost: #rune_cost,
+                    icon: #icon,
                 };
                 &META
             }
@@ -2381,185 +2623,574 @@ pub fn root_word(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-/// DSL — all fields are flat, the config shape is inferred automatically:
+// ============================================================================
+// #[enemy(...)] — declares a catalog enemy (Normal) or boss (Boss).
+// ============================================================================
 //
-// | targeting          | required extras         | → SpellConfig shape      |
-// |--------------------|-------------------------|--------------------------|
-// | SelfCentered       | area = f32              | melee_aoe                |
-// | SingleEntity       | range = f32             | ranged_single_target     |
-// | DirectionalLine    | range = f32             | ranged_single_target     |
-// | GroundAoe          | range = f32, area = f32 | ranged_aoe               |
-//
-// Optional modifiers:
-//   cast_time = 0.5
-//   channeling(movement = AllowMovement)
-//   channeling(movement = InterruptOnMove, duration = 3.0)
+// Parsed with `syn::parse::Parse` like `#[item(...)]` because the DSL nests
+// (`stats(...)`, `abilities = [Cleave(when = (...), root = Flame)]`,
+// `phases = [(id = "...", ...)]`).
 //
 // # Example
-//
 // ```ignore
-// use bevymmo_props_macro::spell;
-//
-// #[spell(
-//     id = "fireball",
-//     name = "Fireball",
-//     cooldown = 10.0,
-//     range = 15.0,
-//     targeting = SingleEntity,
+// #[enemy(
+//     id = "mob_goblin",
+//     type = Normal,
+//     name = "Goblin",
+//     icon = "👺",
+//     asset = "models/creatures/goblin.glb",
+//     stats(health = 30.0, armor = 8.0),
+//     aggro = 8.0,
+//     leash_aggro = 20.0,
+//     abilities = [Cleave],
 // )]
-// pub struct FireballSpell;
-//
-// impl SpellCast for FireballSpell {
-//     fn cast(&self, ctx: &mut SpellCastContext) { /* ... */ }
-// }
+// pub struct Goblin;
 // ```
-enum SpellConfigShape {
-    RangedSingleTarget {
-        cooldown: LitFloat,
-        range: LitFloat,
-        targeting: Ident,
-    },
-    MeleeAoe {
-        cooldown: LitFloat,
-        area: LitFloat,
-    },
-    RangedAoe {
-        cooldown: LitFloat,
-        range: LitFloat,
-        area: LitFloat,
-    },
-}
 
-fn parse_spell_config(
-    kind: Ident,
-    fields: Punctuated<KvPair, Token![,]>,
-) -> syn::Result<SpellConfigShape> {
-    let field = |name: &str| fields.iter().find(|p| p.key == name);
-    match kind.to_string().as_str() {
-        "ranged_single_target" => Ok(SpellConfigShape::RangedSingleTarget {
-            cooldown: field("cooldown")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_single_target(...) requires `cooldown = ...`"))?
-                .float_value()?,
-            range: field("range")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_single_target(...) requires `range = ...`"))?
-                .float_value()?,
-            targeting: field("targeting")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_single_target(...) requires `targeting = ...`"))?
-                .ident_value()?,
-        }),
-        "melee_aoe" => Ok(SpellConfigShape::MeleeAoe {
-            cooldown: field("cooldown")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "melee_aoe(...) requires `cooldown = ...`"))?
-                .float_value()?,
-            area: field("area")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "melee_aoe(...) requires `area = ...`"))?
-                .float_value()?,
-        }),
-        "ranged_aoe" => Ok(SpellConfigShape::RangedAoe {
-            cooldown: field("cooldown")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_aoe(...) requires `cooldown = ...`"))?
-                .float_value()?,
-            range: field("range")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_aoe(...) requires `range = ...`"))?
-                .float_value()?,
-            area: field("area")
-                .ok_or_else(|| syn::Error::new_spanned(&kind, "ranged_aoe(...) requires `area = ...`"))?
-                .float_value()?,
-        }),
-        other => Err(syn::Error::new_spanned(
-            &kind,
-            format!("unknown spell config shape `{other}` (expected ranged_single_target, melee_aoe, ranged_aoe)"),
-        )),
+#[proc_macro_attribute]
+pub fn enemy(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    if let Err(err) = require_unit_struct(&input, "enemy") {
+        return err;
+    }
+    let def = parse_macro_input!(attr as EnemyDef);
+    match def.build_tokens(&input) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
     }
 }
 
-enum SpellConfigDef {
-    Explicit(SpellConfigShape),
-    Inferred {
-        cooldown: LitFloat,
-        targeting: Ident,
-        range: Option<LitFloat>,
-        area: Option<LitFloat>,
-    },
+#[derive(Clone, Copy)]
+enum EnemyKind {
+    Normal,
+    Boss,
 }
 
-struct SpellChannelingDef {
-    movement: Ident,
-    duration: Option<LitFloat>,
+struct EnemyStatsDef {
+    health: Option<LitFloat>,
+    mana: Option<LitFloat>,
+    mana_regen: Option<LitFloat>,
+    attack_power: Option<LitFloat>,
+    armor: Option<LitFloat>,
+    speed: Option<LitFloat>,
 }
 
-struct SpellDef {
-    id: LitStr,
-    name: LitStr,
-    config: SpellConfigDef,
-    cast_time: Option<LitFloat>,
-    channeling: Option<SpellChannelingDef>,
+impl EnemyStatsDef {
+    fn parse_from(content: ParseStream) -> syn::Result<Self> {
+        let mut stats = Self {
+            health: None,
+            mana: None,
+            mana_regen: None,
+            attack_power: None,
+            armor: None,
+            speed: None,
+        };
+        while !content.is_empty() {
+            let key: Ident = content.parse()?;
+            content.parse::<Token![=]>()?;
+            let value = parse_number_f32(content)?;
+            match key.to_string().as_str() {
+                "health" => stats.health = Some(value),
+                "mana" => stats.mana = Some(value),
+                "mana_regen" => stats.mana_regen = Some(value),
+                "attack_power" => stats.attack_power = Some(value),
+                "armor" => stats.armor = Some(value),
+                "speed" => stats.speed = Some(value),
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!(
+                            "unknown stats field `{other}` (expected health, mana, mana_regen, \
+                             attack_power, armor, speed)"
+                        ),
+                    ));
+                }
+            }
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+        Ok(stats)
+    }
+
+    fn override_tokens(&self) -> Vec<TokenStream2> {
+        let mut out = Vec::new();
+        if let Some(health) = &self.health {
+            out.push(quote! {
+                stats.vital.current_health = #health;
+                stats.vital.max_health = #health;
+            });
+        }
+        if let Some(mana) = &self.mana {
+            out.push(quote! {
+                stats.vital.current_mana = #mana;
+                stats.vital.max_mana = #mana;
+            });
+        }
+        if let Some(mana_regen) = &self.mana_regen {
+            out.push(quote! {
+                stats.vital.mana_regeneration = #mana_regen;
+            });
+        }
+        if let Some(attack_power) = &self.attack_power {
+            out.push(quote! {
+                stats.combat.attack_power = #attack_power;
+            });
+        }
+        if let Some(armor) = &self.armor {
+            out.push(quote! {
+                stats.combat.armor = #armor;
+            });
+        }
+        if let Some(speed) = &self.speed {
+            out.push(quote! {
+                stats.movement.speed = #speed;
+            });
+        }
+        out
+    }
 }
 
-impl Parse for SpellDef {
+enum AbilityTargetingDef {
+    Main,
+    Farthest,
+    SelfCentered,
+    DensestCluster { n: LitInt },
+}
+
+impl AbilityTargetingDef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut id = None;
-        let mut name = None;
-        let mut config = None;
-        let mut cooldown = None;
-        let mut targeting = None;
-        let mut range = None;
-        let mut area = None;
-        let mut cast_time = None;
-        let mut channeling = None;
-
-        while !input.is_empty() {
-            let key: Ident = input.parse()?;
-            let key_str = key.to_string();
-
-            if key_str == "channeling" {
-                // channeling(movement = AllowMovement) — no `=` before it.
+        if input.peek(Token![Self]) {
+            input.parse::<Token![Self]>()?;
+            return Ok(Self::SelfCentered);
+        }
+        let ident: Ident = input.parse()?;
+        match ident.to_string().as_str() {
+            "Main" => Ok(Self::Main),
+            "Farthest" => Ok(Self::Farthest),
+            "Self" | "SelfCentered" => Ok(Self::SelfCentered),
+            "Cluster" | "DensestCluster" => {
                 let content;
                 parenthesized!(content in input);
-                let fields: Punctuated<KvPair, Token![,]> = Punctuated::parse_terminated(&content)?;
-                let mut movement = None;
-                let mut duration = None;
-                for pair in &fields {
-                    match pair.key.to_string().as_str() {
-                        "movement" => movement = Some(pair.ident_value()?),
-                        "duration" => duration = Some(pair.float_value()?),
-                        other => {
-                            return Err(syn::Error::new_spanned(
-                                &pair.key,
-                                format!("unknown key `{other}` in channeling(...) (expected movement, duration)"),
-                            ))
-                        }
+                let n: LitInt = content.parse()?;
+                if !content.is_empty() {
+                    return Err(content.error("Cluster(n) takes a single integer"));
+                }
+                Ok(Self::DensestCluster { n })
+            }
+            other => Err(syn::Error::new_spanned(
+                &ident,
+                format!("unknown targeting `{other}` (expected Main, Farthest, Self, Cluster(n))"),
+            )),
+        }
+    }
+
+    fn to_tokens(&self) -> TokenStream2 {
+        match self {
+            Self::Main => quote!(crate::placeables::AbilityTargeting::Main),
+            Self::Farthest => quote!(crate::placeables::AbilityTargeting::Farthest),
+            Self::SelfCentered => quote!(crate::placeables::AbilityTargeting::SelfCentered),
+            Self::DensestCluster { n } => {
+                quote!(crate::placeables::AbilityTargeting::DensestCluster { n: #n })
+            }
+        }
+    }
+}
+
+struct AbilityWhenDef {
+    interval: Option<LitFloat>,
+    min_range: Option<LitFloat>,
+    max_range: Option<LitFloat>,
+    hp_above: Option<LitFloat>,
+    hp_below: Option<LitFloat>,
+    priority: Option<LitInt>,
+    targeting: Option<AbilityTargetingDef>,
+}
+
+impl AbilityWhenDef {
+    fn parse_from(content: ParseStream) -> syn::Result<Self> {
+        let mut when = Self {
+            interval: None,
+            min_range: None,
+            max_range: None,
+            hp_above: None,
+            hp_below: None,
+            priority: None,
+            targeting: None,
+        };
+        while !content.is_empty() {
+            let key: Ident = content.parse()?;
+            content.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "interval" => when.interval = Some(parse_number_f32(content)?),
+                "min_range" => when.min_range = Some(parse_number_f32(content)?),
+                "max_range" => when.max_range = Some(parse_number_f32(content)?),
+                "hp_above" => when.hp_above = Some(parse_number_f32(content)?),
+                "hp_below" => when.hp_below = Some(parse_number_f32(content)?),
+                "priority" => when.priority = Some(content.parse::<LitInt>()?),
+                "targeting" => when.targeting = Some(AbilityTargetingDef::parse(content)?),
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!(
+                            "unknown key `{other}` in when(...) (expected interval, min_range, \
+                             max_range, hp_above, hp_below, priority, targeting)"
+                        ),
+                    ));
+                }
+            }
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+        Ok(when)
+    }
+
+    fn to_tokens(&self) -> TokenStream2 {
+        let interval = self.interval.clone().unwrap_or_else(|| lit_f32("0.0"));
+        let min_range = self.min_range.clone().unwrap_or_else(|| lit_f32("0.0"));
+        let max_range = match &self.max_range {
+            Some(value) => quote!(Some(#value)),
+            None => quote!(None),
+        };
+        let hp_above = self.hp_above.clone().unwrap_or_else(|| lit_f32("0.0"));
+        let hp_below = self.hp_below.clone().unwrap_or_else(|| lit_f32("1.0"));
+        let priority = self
+            .priority
+            .clone()
+            .unwrap_or_else(|| LitInt::new("0", proc_macro2::Span::call_site()));
+        let targeting = self
+            .targeting
+            .as_ref()
+            .map(AbilityTargetingDef::to_tokens)
+            .unwrap_or_else(|| quote!(crate::placeables::AbilityTargeting::Main));
+        quote! {
+            crate::placeables::AbilityUse {
+                interval: #interval,
+                min_range: #min_range,
+                max_range: #max_range,
+                hp_above: #hp_above,
+                hp_below: #hp_below,
+                priority: #priority,
+                targeting: #targeting,
+            }
+        }
+    }
+}
+
+struct AbilityEntryDef {
+    path: Path,
+    root: Option<Path>,
+    when: Option<AbilityWhenDef>,
+}
+
+impl Parse for AbilityEntryDef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let path: Path = input.parse()?;
+        let mut root = None;
+        let mut when = None;
+        if input.peek(syn::token::Paren) {
+            let content;
+            parenthesized!(content in input);
+            while !content.is_empty() {
+                let key: Ident = content.parse()?;
+                content.parse::<Token![=]>()?;
+                match key.to_string().as_str() {
+                    "root" => root = Some(content.parse::<Path>()?),
+                    "when" => {
+                        let inner;
+                        parenthesized!(inner in content);
+                        when = Some(AbilityWhenDef::parse_from(&inner)?);
+                    }
+                    other => {
+                        return Err(syn::Error::new_spanned(
+                            &key,
+                            format!("unknown key `{other}` in ability entry (expected root, when)"),
+                        ));
                     }
                 }
-                let movement = movement.unwrap_or_else(|| {
-                    syn::Ident::new("InterruptOnMove", proc_macro2::Span::call_site())
-                });
-                channeling = Some(SpellChannelingDef { movement, duration });
+                if content.peek(Token![,]) {
+                    content.parse::<Token![,]>()?;
+                } else {
+                    break;
+                }
+            }
+        }
+        Ok(Self { path, root, when })
+    }
+}
+
+impl AbilityEntryDef {
+    fn to_tokens(&self) -> TokenStream2 {
+        let path = &self.path;
+        let inscription = match &self.root {
+            Some(root) => quote! {
+                crate::abilities::KitInscription {
+                    root_word: Some(crate::abilities::RootWordId::from(#root::ID)),
+                    secondary_words: ::std::vec::Vec::new(),
+                }
+            },
+            None => quote!(crate::abilities::KitInscription::default()),
+        };
+        let use_when = match &self.when {
+            Some(when) => when.to_tokens(),
+            None => quote!(crate::placeables::AbilityUse::default()),
+        };
+        quote! {
+            crate::placeables::AbilityKitEntry {
+                ability_id: crate::abilities::AbilityId::new(#path::ID),
+                inscription: #inscription,
+                use_when: #use_when,
+            }
+        }
+    }
+}
+
+enum CombatMovementDef {
+    Chase,
+    KeepDistance { range: LitFloat },
+    Stationary,
+    Hover,
+}
+
+impl CombatMovementDef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let ident: Ident = input.parse()?;
+        match ident.to_string().as_str() {
+            "Chase" => Ok(Self::Chase),
+            "Stationary" => Ok(Self::Stationary),
+            "Hover" => Ok(Self::Hover),
+            "KeepDistance" => {
+                let content;
+                parenthesized!(content in input);
+                let mut range = None;
+                while !content.is_empty() {
+                    let key: Ident = content.parse()?;
+                    content.parse::<Token![=]>()?;
+                    if key == "range" {
+                        range = Some(parse_number_f32(&content)?);
+                    } else {
+                        return Err(syn::Error::new_spanned(
+                            &key,
+                            format!("unknown key `{key}` in KeepDistance(...) (expected range)"),
+                        ));
+                    }
+                    if content.peek(Token![,]) {
+                        content.parse::<Token![,]>()?;
+                    } else {
+                        break;
+                    }
+                }
+                Ok(Self::KeepDistance {
+                    range: range.ok_or_else(|| {
+                        syn::Error::new_spanned(&ident, "KeepDistance(...) requires `range = ...`")
+                    })?,
+                })
+            }
+            other => Err(syn::Error::new_spanned(
+                &ident,
+                format!(
+                    "unknown movement `{other}` (expected Chase, KeepDistance(range = ...), \
+                     Stationary, Hover)"
+                ),
+            )),
+        }
+    }
+
+    fn to_tokens(&self) -> TokenStream2 {
+        match self {
+            Self::Chase => quote!(crate::placeables::CombatMovement::Chase),
+            Self::KeepDistance { range } => {
+                quote!(crate::placeables::CombatMovement::KeepDistance { range: #range })
+            }
+            Self::Stationary => quote!(crate::placeables::CombatMovement::Stationary),
+            Self::Hover => quote!(crate::placeables::CombatMovement::Hover),
+        }
+    }
+}
+
+struct BossPhaseMacroDef {
+    id: LitStr,
+    hp_below: LitFloat,
+    movement: CombatMovementDef,
+}
+
+impl Parse for BossPhaseMacroDef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let content;
+        parenthesized!(content in input);
+        let mut id = None;
+        let mut hp_below = None;
+        let mut movement = None;
+        while !content.is_empty() {
+            let key: Ident = content.parse()?;
+            content.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "id" => id = Some(content.parse::<LitStr>()?),
+                "hp_below" => hp_below = Some(parse_number_f32(&content)?),
+                "movement" => movement = Some(CombatMovementDef::parse(&content)?),
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!("unknown key `{other}` in phase (expected id, hp_below, movement)"),
+                    ));
+                }
+            }
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+        Ok(Self {
+            id: id.ok_or_else(|| content.error("phase requires `id = \"...\"`"))?,
+            hp_below: hp_below.ok_or_else(|| content.error("phase requires `hp_below = ...`"))?,
+            movement: movement.ok_or_else(|| content.error("phase requires `movement = ...`"))?,
+        })
+    }
+}
+
+impl BossPhaseMacroDef {
+    fn to_tokens(&self) -> TokenStream2 {
+        let id = &self.id;
+        let hp_below = &self.hp_below;
+        let movement = self.movement.to_tokens();
+        quote! {
+            crate::placeables::BossPhaseDef {
+                id: #id,
+                hp_below: #hp_below,
+                movement: #movement,
+            }
+        }
+    }
+}
+
+struct EnemyDef {
+    id: LitStr,
+    kind: EnemyKind,
+    name: LitStr,
+    icon: Option<LitStr>,
+    asset: LitStr,
+    stats: EnemyStatsDef,
+    aggro: LitFloat,
+    leash_aggro: LitFloat,
+    acquire: Ident,
+    origin: Ident,
+    threat: Ident,
+    movement: CombatMovementDef,
+    abilities: Vec<AbilityEntryDef>,
+    arena: Option<LitFloat>,
+    enrage_after: Option<LitFloat>,
+    phases: Vec<BossPhaseMacroDef>,
+    scale: Option<(LitFloat, LitFloat, LitFloat)>,
+    tint: Option<(LitFloat, LitFloat, LitFloat)>,
+    blocks_movement: bool,
+    collision: CollisionSpec,
+}
+
+impl Parse for EnemyDef {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut id = None;
+        let mut kind = None;
+        let mut name = None;
+        let mut icon = None;
+        let mut asset = None;
+        let mut stats = None;
+        let mut aggro = None;
+        let mut leash_aggro = None;
+        let mut acquire = None;
+        let mut origin = None;
+        let mut threat = None;
+        let mut movement = None;
+        let mut abilities = None;
+        let mut arena = None;
+        let mut arena_span = None;
+        let mut enrage_after = None;
+        let mut enrage_span = None;
+        let mut phases = Vec::new();
+        let mut phases_span = None;
+        let mut scale = None;
+        let mut tint = None;
+        let mut blocks_movement = false;
+        let mut collision = CollisionSpec::None;
+
+        while !input.is_empty() {
+            let key: Ident = Ident::parse_any(input)?;
+            let key_str = key.to_string();
+
+            if key_str == "stats" {
+                let content;
+                parenthesized!(content in input);
+                stats = Some(EnemyStatsDef::parse_from(&content)?);
             } else {
                 input.parse::<Token![=]>()?;
                 match key_str.as_str() {
                     "id" => id = Some(input.parse::<LitStr>()?),
-                    "name" => name = Some(input.parse::<LitStr>()?),
-                    "config" => {
-                        let kind: Ident = input.parse()?;
-                        let content;
-                        parenthesized!(content in input);
-                        let fields: Punctuated<KvPair, Token![,]> = Punctuated::parse_terminated(&content)?;
-                        config = Some(SpellConfigDef::Explicit(parse_spell_config(kind, fields)?));
+                    "type" => {
+                        let value: Ident = input.parse()?;
+                        kind = Some(match value.to_string().as_str() {
+                            "Normal" => EnemyKind::Normal,
+                            "Boss" => EnemyKind::Boss,
+                            other => {
+                                return Err(syn::Error::new_spanned(
+                                    &value,
+                                    format!(
+                                        "#[enemy(...)] `type` must be `Normal` or `Boss`, found `{other}`"
+                                    ),
+                                ));
+                            }
+                        });
                     }
-                    "cooldown" => cooldown = Some(input.parse::<LitFloat>()?),
-                    "targeting" => targeting = Some(input.parse::<Ident>()?),
-                    "range" => range = Some(input.parse::<LitFloat>()?),
-                    "area" => area = Some(input.parse::<LitFloat>()?),
-                    "cast_time" => cast_time = Some(input.parse::<LitFloat>()?),
+                    "name" => name = Some(input.parse::<LitStr>()?),
+                    "icon" => icon = Some(input.parse::<LitStr>()?),
+                    "asset" => asset = Some(input.parse::<LitStr>()?),
+                    "aggro" => aggro = Some(parse_number_f32(input)?),
+                    "leash_aggro" => leash_aggro = Some(parse_number_f32(input)?),
+                    "acquire" => acquire = Some(input.parse::<Ident>()?),
+                    "origin" => origin = Some(input.parse::<Ident>()?),
+                    "threat" => threat = Some(input.parse::<Ident>()?),
+                    "movement" => movement = Some(CombatMovementDef::parse(input)?),
+                    "abilities" => {
+                        let content;
+                        bracketed!(content in input);
+                        let list: Punctuated<AbilityEntryDef, Token![,]> =
+                            Punctuated::parse_terminated(&content)?;
+                        abilities = Some(list.into_iter().collect::<Vec<_>>());
+                    }
+                    "arena" => {
+                        arena_span = Some(key.span());
+                        arena = Some(parse_number_f32(input)?);
+                    }
+                    "enrage_after" => {
+                        enrage_span = Some(key.span());
+                        enrage_after = Some(parse_number_f32(input)?);
+                    }
+                    "phases" => {
+                        phases_span = Some(key.span());
+                        let content;
+                        bracketed!(content in input);
+                        let list: Punctuated<BossPhaseMacroDef, Token![,]> =
+                            Punctuated::parse_terminated(&content)?;
+                        phases = list.into_iter().collect();
+                    }
+                    "scale" => scale = Some(parse_lit_triple(input)?),
+                    "tint" => tint = Some(parse_lit_triple(input)?),
+                    "blocks_movement" => blocks_movement = input.parse::<LitBool>()?.value(),
+                    "collision" => collision = parse_collision_dsl(input)?,
                     other => {
                         return Err(syn::Error::new_spanned(
                             &key,
                             format!(
-                                "unknown key `{other}` in #[spell(...)] (expected \
-                                 id, name, config, cooldown, targeting, range, area, cast_time, channeling)"
+                                "unknown key `{other}` in #[enemy(...)] (expected id, type, name, \
+                                 icon, asset, stats, aggro, leash_aggro, acquire, origin, threat, \
+                                 movement, abilities, arena, enrage_after, phases, scale, tint, \
+                                 blocks_movement, collision)"
                             ),
-                        ))
+                        ));
                     }
                 }
             }
@@ -2571,215 +3202,604 @@ impl Parse for SpellDef {
             }
         }
 
-        let config = if let Some(cfg) = config {
-            cfg
-        } else if let (Some(cooldown), Some(targeting)) = (cooldown, targeting) {
-            SpellConfigDef::Inferred {
-                cooldown,
-                targeting,
-                range,
-                area,
+        let kind = kind.ok_or_else(|| {
+            input.error("#[enemy(...)] requires `type = Normal` or `type = Boss`")
+        })?;
+        let abilities = abilities.ok_or_else(|| {
+            input.error("#[enemy(...)] requires `abilities = [...]` with at least one ability")
+        })?;
+        if abilities.is_empty() {
+            return Err(
+                input.error("#[enemy(...)] requires `abilities = [...]` with at least one ability")
+            );
+        }
+
+        match kind {
+            EnemyKind::Normal => {
+                if arena.is_some() || enrage_after.is_some() || !phases.is_empty() {
+                    let span = arena_span
+                        .or(enrage_span)
+                        .or(phases_span)
+                        .unwrap_or_else(proc_macro2::Span::call_site);
+                    return Err(syn::Error::new(
+                        span,
+                        "#[enemy(...)] `type = Normal` cannot set `arena`, `phases`, or \
+                         `enrage_after` (boss-only keys); use `type = Boss`",
+                    ));
+                }
             }
-        } else {
-            return Err(input.error(
-                "#[spell(...)] requires either `config = ...` or `cooldown = ..., targeting = ...`",
-            ));
-        };
+            EnemyKind::Boss => {
+                if arena.is_none() {
+                    return Err(input.error("#[enemy(...)] `type = Boss` requires `arena = ...`"));
+                }
+            }
+        }
 
         Ok(Self {
-            id: id.ok_or_else(|| input.error("#[spell(...)] requires `id = \"...\"`"))?,
-            name: name.ok_or_else(|| input.error("#[spell(...)] requires `name = \"...\"`"))?,
-            config,
-            cast_time,
-            channeling,
+            id: id.ok_or_else(|| input.error("#[enemy(...)] requires `id = \"...\"`"))?,
+            kind,
+            name: name.ok_or_else(|| input.error("#[enemy(...)] requires `name = \"...\"`"))?,
+            icon,
+            asset: asset.ok_or_else(|| input.error("#[enemy(...)] requires `asset = \"...\"`"))?,
+            stats: stats.ok_or_else(|| input.error("#[enemy(...)] requires `stats(...)`"))?,
+            aggro: match (aggro, kind, &arena) {
+                (Some(value), _, _) => value,
+                (None, EnemyKind::Boss, Some(arena)) => arena.clone(),
+                (None, _, _) => {
+                    return Err(input.error(
+                        "#[enemy(...)] requires `aggro = ...` (or `arena` when `type = Boss`)",
+                    ));
+                }
+            },
+            leash_aggro: match (leash_aggro, kind, &arena) {
+                (Some(value), _, _) => value,
+                (None, EnemyKind::Boss, Some(arena)) => arena.clone(),
+                (None, _, _) => {
+                    return Err(input.error(
+                        "#[enemy(...)] requires `leash_aggro = ...` (or `arena` when `type = Boss`)",
+                    ));
+                }
+            },
+            acquire: acquire
+                .unwrap_or_else(|| Ident::new("Proximity", proc_macro2::Span::call_site())),
+            origin: origin.unwrap_or_else(|| {
+                Ident::new(
+                    match kind {
+                        EnemyKind::Normal => "Body",
+                        EnemyKind::Boss => "Spawn",
+                    },
+                    proc_macro2::Span::call_site(),
+                )
+            }),
+            threat: threat.unwrap_or_else(|| {
+                Ident::new(
+                    match kind {
+                        EnemyKind::Normal => "Nearest",
+                        EnemyKind::Boss => "Table",
+                    },
+                    proc_macro2::Span::call_site(),
+                )
+            }),
+            movement: movement.unwrap_or(CombatMovementDef::Chase),
+            abilities,
+            arena,
+            enrage_after,
+            phases,
+            scale,
+            tint,
+            blocks_movement,
+            collision,
         })
     }
 }
 
-#[proc_macro_attribute]
-pub fn spell(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as DeriveInput);
-    if let Err(err) = require_unit_struct(&input, "spell") {
-        return err;
-    }
-    let def = parse_macro_input!(attr as SpellDef);
-    let name = &input.ident;
-
-    let id_lit = &def.id;
-    let name_lit = &def.name;
-
-    // Build the base config from the config shape.
-    let base_config = match &def.config {
-        SpellConfigDef::Explicit(SpellConfigShape::MeleeAoe { cooldown, area }) => {
-            quote! { crate::spells::SpellConfig::melee_aoe(#cooldown, #area) }
-        }
-        SpellConfigDef::Explicit(SpellConfigShape::RangedSingleTarget {
-            cooldown,
-            range,
-            targeting,
-        }) => {
+impl EnemyDef {
+    fn build_tokens(&self, original: &DeriveInput) -> syn::Result<TokenStream2> {
+        let name = &original.ident;
+        let id = &self.id;
+        let display_name = &self.name;
+        let icon = self
+            .icon
+            .clone()
+            .unwrap_or_else(|| LitStr::new("❓", proc_macro2::Span::call_site()));
+        let asset = &self.asset;
+        let aggro = &self.aggro;
+        let leash_aggro = &self.leash_aggro;
+        let acquire = &self.acquire;
+        let origin = &self.origin;
+        let threat = &self.threat;
+        let movement = self.movement.to_tokens();
+        let ability_tokens: Vec<TokenStream2> = self
+            .abilities
+            .iter()
+            .map(AbilityEntryDef::to_tokens)
+            .collect();
+        let stat_overrides = self.stats.override_tokens();
+        let defaults_fn = match self.kind {
+            EnemyKind::Normal => quote!(crate::stats::defaults::enemy_defaults),
+            EnemyKind::Boss => quote!(crate::stats::defaults::boss_defaults),
+        };
+        let stats_init = if stat_overrides.is_empty() {
+            quote! { let stats = #defaults_fn(); }
+        } else {
             quote! {
-                crate::spells::SpellConfig::ranged_single_target(
-                    #cooldown, #range,
-                    crate::spells::TargetingMode::#targeting,
-                )
+                let mut stats = #defaults_fn();
+                #(#stat_overrides)*
             }
-        }
-        SpellConfigDef::Explicit(SpellConfigShape::RangedAoe {
-            cooldown,
-            range,
-            area,
-        }) => {
-            quote! { crate::spells::SpellConfig::ranged_aoe(#cooldown, #range, #area) }
-        }
-        SpellConfigDef::Inferred {
-            cooldown,
-            targeting,
-            range,
-            area,
-        } => match targeting.to_string().as_str() {
-            "SelfCentered" => {
-                let area = match area {
-                    Some(a) => a.clone(),
-                    None => {
-                        return syn::Error::new_spanned(
-                            targeting,
-                            "#[spell(...)] with `targeting = SelfCentered` requires `area = ...`",
-                        )
-                        .to_compile_error()
-                        .into();
-                    }
-                };
-                quote! { crate::spells::SpellConfig::melee_aoe(#cooldown, #area) }
-            }
-            "SingleEntity" | "DirectionalLine" => {
-                let range = match range {
-                    Some(r) => r.clone(),
-                    None => {
-                        return syn::Error::new_spanned(
-                                targeting,
-                                "#[spell(...)] with `targeting = SingleEntity | DirectionalLine` requires `range = ...`",
-                            )
-                            .to_compile_error()
-                            .into();
-                    }
-                };
+        };
+        let (scale_x, scale_y, scale_z) = match &self.scale {
+            Some((x, y, z)) => (quote!(#x), quote!(#y), quote!(#z)),
+            None => (quote!(1.0_f32), quote!(1.0_f32), quote!(1.0_f32)),
+        };
+        let tint_tokens = match &self.tint {
+            Some((r, g, b)) => quote!(Some([#r, #g, #b])),
+            None => quote!(None),
+        };
+        let blocks_movement = self.blocks_movement;
+        let collision_tokens = build_collision_tokens(self.collision);
+        let rank_tokens = match self.kind {
+            EnemyKind::Normal => quote!(crate::placeables::EnemyRank::Normal),
+            EnemyKind::Boss => quote!(crate::placeables::EnemyRank::Boss),
+        };
+        let arena_tokens = match &self.arena {
+            Some(value) => quote!(Some(#value)),
+            None => quote!(None),
+        };
+        let enrage_tokens = match &self.enrage_after {
+            Some(value) => quote!(Some(#value)),
+            None => quote!(None),
+        };
+        let phase_tokens: Vec<TokenStream2> = self
+            .phases
+            .iter()
+            .map(BossPhaseMacroDef::to_tokens)
+            .collect();
+        let register_call = match self.kind {
+            EnemyKind::Normal => quote! {
+                registry.register_enemy(std::sync::Arc::new(#name))
+            },
+            EnemyKind::Boss => quote! {
+                registry.register_boss(std::sync::Arc::new(#name))
+            },
+        };
+        let boss_impl = match self.kind {
+            EnemyKind::Boss => {
+                let arena = self.arena.as_ref().expect("Boss requires arena");
                 quote! {
-                    crate::spells::SpellConfig::ranged_single_target(
-                        #cooldown, #range,
-                        crate::spells::TargetingMode::#targeting,
-                    )
+                    impl crate::placeables::BossPlaceable for #name {
+                        fn boss_config(&self) -> crate::placeables::BossConfig {
+                            #stats_init
+                            crate::placeables::BossConfig {
+                                stats,
+                                abilities: vec![#(#ability_tokens),*],
+                                arena_radius: #arena,
+                            }
+                        }
+                    }
                 }
             }
-            "GroundAoe" => {
-                let range = match range {
-                    Some(r) => r.clone(),
-                    None => {
-                        return syn::Error::new_spanned(
-                            targeting,
-                            "#[spell(...)] with `targeting = GroundAoe` requires `range = ...`",
-                        )
-                        .to_compile_error()
-                        .into();
-                    }
-                };
-                let area = match area {
-                    Some(a) => a.clone(),
-                    None => {
-                        return syn::Error::new_spanned(
-                            targeting,
-                            "#[spell(...)] with `targeting = GroundAoe` requires `area = ...`",
-                        )
-                        .to_compile_error()
-                        .into();
-                    }
-                };
-                quote! { crate::spells::SpellConfig::ranged_aoe(#cooldown, #range, #area) }
+            EnemyKind::Normal => quote! {},
+        };
+
+        Ok(quote! {
+            #original
+
+            impl #name {
+                pub const ID: &'static str = #id;
             }
-            other => {
-                return syn::Error::new_spanned(
-                    targeting,
-                    format!(
-                        "unknown targeting `{other}` (expected \
-                             SelfCentered | SingleEntity | DirectionalLine | GroundAoe)"
-                    ),
-                )
-                .to_compile_error()
-                .into();
+
+            impl crate::placeables::PlaceableDefinition for #name {
+                fn id(&self) -> crate::placeables::KindId {
+                    crate::placeables::KindId::new(Self::ID)
+                }
+
+                fn display_name(&self) -> &'static str {
+                    #display_name
+                }
+
+                fn icon(&self) -> &'static str {
+                    #icon
+                }
+
+                fn asset_hint(&self) -> crate::placeables::AssetHint {
+                    crate::placeables::AssetHint::Scene(#asset)
+                }
+
+                fn defaults(&self) -> crate::placeables::PlaceableDefaults {
+                    crate::placeables::PlaceableDefaults {
+                        transform: crate::world::TransformData {
+                            translation: [0.0_f32, 0.0_f32, 0.0_f32],
+                            rotation_deg: [0.0_f32, 0.0_f32, 0.0_f32],
+                            scale: [#scale_x, #scale_y, #scale_z],
+                        },
+                        tint: #tint_tokens,
+                        collision: #collision_tokens,
+                        blocks_movement: #blocks_movement,
+                    }
+                }
+            }
+
+            impl crate::placeables::EnemyPlaceable for #name {
+                fn enemy_config(&self) -> crate::placeables::EnemyConfig {
+                    #stats_init
+                    crate::placeables::EnemyConfig {
+                        stats,
+                        aggro: #aggro,
+                        leash_aggro: #leash_aggro,
+                        abilities: vec![#(#ability_tokens),*],
+                        acquire: crate::placeables::AcquirePolicy::#acquire,
+                        origin: crate::placeables::AggroOrigin::#origin,
+                        threat: crate::placeables::ThreatPolicy::#threat,
+                        rank: #rank_tokens,
+                        movement: #movement,
+                        arena_radius: #arena_tokens,
+                        enrage_after_seconds: #enrage_tokens,
+                        phases: vec![#(#phase_tokens),*],
+                    }
+                }
+            }
+
+            #boss_impl
+
+            pub fn register(registry: &mut crate::placeables::PlaceableRegistry) {
+                #register_call
+            }
+        })
+    }
+}
+
+fn parse_number_f32(input: ParseStream) -> syn::Result<LitFloat> {
+    if input.peek(LitFloat) {
+        input.parse()
+    } else if input.peek(LitInt) {
+        let int: LitInt = input.parse()?;
+        Ok(LitFloat::new(
+            &format!("{}.0", int.base10_digits()),
+            int.span(),
+        ))
+    } else {
+        Err(input.error("expected a number"))
+    }
+}
+
+fn lit_f32(value: &str) -> LitFloat {
+    LitFloat::new(value, proc_macro2::Span::call_site())
+}
+
+fn parse_lit_triple(input: ParseStream) -> syn::Result<(LitFloat, LitFloat, LitFloat)> {
+    let content;
+    parenthesized!(content in input);
+    let x = parse_number_f32(&content)?;
+    content.parse::<Token![,]>()?;
+    let y = parse_number_f32(&content)?;
+    content.parse::<Token![,]>()?;
+    let z = parse_number_f32(&content)?;
+    if content.peek(Token![,]) {
+        content.parse::<Token![,]>()?;
+    }
+    if !content.is_empty() {
+        return Err(content.error("expected exactly 3 numbers"));
+    }
+    Ok((x, y, z))
+}
+
+fn parse_collision_dsl(input: ParseStream) -> syn::Result<CollisionSpec> {
+    let kind: Ident = Ident::parse_any(input)?;
+    let content;
+    parenthesized!(content in input);
+    match kind.to_string().as_str() {
+        "cylinder" => {
+            let mut radius = None;
+            let mut height = None;
+            while !content.is_empty() {
+                let key: Ident = content.parse()?;
+                content.parse::<Token![=]>()?;
+                let value = parse_number_f32(&content)?;
+                match key.to_string().as_str() {
+                    "radius" => radius = Some(value),
+                    "height" => height = Some(value),
+                    other => {
+                        return Err(syn::Error::new_spanned(
+                            &key,
+                            format!(
+                                "unknown key `{other}` in cylinder(...) (expected radius, height)"
+                            ),
+                        ));
+                    }
+                }
+                if content.peek(Token![,]) {
+                    content.parse::<Token![,]>()?;
+                } else {
+                    break;
+                }
+            }
+            let radius = radius
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(&kind, "cylinder(...) requires `radius = ...`")
+                })?
+                .base10_parse::<f32>()?;
+            let height = height
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(&kind, "cylinder(...) requires `height = ...`")
+                })?
+                .base10_parse::<f32>()?;
+            Ok(CollisionSpec::Cylinder { radius, height })
+        }
+        "sphere" => {
+            let mut radius = None;
+            while !content.is_empty() {
+                let key: Ident = content.parse()?;
+                content.parse::<Token![=]>()?;
+                if key == "radius" {
+                    radius = Some(parse_number_f32(&content)?);
+                } else {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!("unknown key `{key}` in sphere(...) (expected radius)"),
+                    ));
+                }
+                if content.peek(Token![,]) {
+                    content.parse::<Token![,]>()?;
+                } else {
+                    break;
+                }
+            }
+            let radius = radius
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(&kind, "sphere(...) requires `radius = ...`")
+                })?
+                .base10_parse::<f32>()?;
+            Ok(CollisionSpec::Sphere { radius })
+        }
+        "box" => {
+            let values: Punctuated<LitFloat, Token![,]> = Punctuated::parse_terminated(&content)?;
+            let values: Vec<LitFloat> = values.into_iter().collect();
+            match values.as_slice() {
+                [x, y, z] => Ok(CollisionSpec::Box {
+                    half_x: x.base10_parse::<f32>()? * 0.5,
+                    half_y: y.base10_parse::<f32>()? * 0.5,
+                    half_z: z.base10_parse::<f32>()? * 0.5,
+                }),
+                _ => Err(syn::Error::new(
+                    content.span(),
+                    "box(...) requires (width, height, depth)",
+                )),
+            }
+        }
+        other => Err(syn::Error::new_spanned(
+            &kind,
+            format!("unknown collision `{other}` (expected cylinder, box, sphere)"),
+        )),
+    }
+}
+
+/// Attribute macro to define an interactive NPC.
+///
+/// Automatically implements:
+/// - `PlaceableDefinition`
+/// - `NpcPlaceable`
+/// - `register()` function
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use bevymmo_shared::placeables::npc;
+///
+/// #[npc(
+///     id = "npc_merchant",
+///     name = "Merchant",
+///     icon = "🧑‍💼",
+///     asset = "models/npcs/merchant.glb",
+///     tint = (0.6, 0.5, 0.9),
+///     interaction = shop("shop_general"),
+/// )]
+/// pub struct Merchant;
+/// ```
+///
+/// `asset` may be omitted or set to `placeholder` for a colored cuboid.
+/// `interaction` is one of `shop("...")`, `market("...")`, `dialogue("...")`.
+#[proc_macro_attribute]
+pub fn npc(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    let attrs = parse_npc_attrs(&attr.to_string());
+    match expand_npc(&input, attrs) {
+        Ok(tokens) => tokens.into(),
+        Err(message) => syn::Error::new_spanned(&input.ident, message)
+            .to_compile_error()
+            .into(),
+    }
+}
+
+enum NpcInteraction {
+    Shop { inventory_id: String },
+    Market { market_id: String },
+    Dialogue { dialogue_tree_id: String },
+    Craft { category: String },
+}
+
+struct NpcAttributes {
+    props: PropsAttributes,
+    interaction_raw: Option<String>,
+}
+
+fn parse_npc_attrs(input: &str) -> NpcAttributes {
+    let mut attrs = NpcAttributes {
+        props: parse_attrs(input),
+        interaction_raw: None,
+    };
+
+    for pair in split_top_level_commas(input) {
+        let pair = pair.trim();
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        if key.trim() == "interaction" {
+            attrs.interaction_raw = Some(value.trim().to_string());
+        }
+    }
+
+    attrs
+}
+
+fn parse_npc_interaction(value: &str) -> Result<NpcInteraction, String> {
+    let value = value.trim();
+    let Some((kind, rest)) = value.split_once('(') else {
+        return Err(format!(
+            "#[npc(...)] `interaction` must be shop(\"...\"), market(\"...\"), dialogue(\"...\"), or craft(Weapon), got `{value}`"
+        ));
+    };
+    let kind = kind.trim();
+    let inner = rest
+        .trim()
+        .strip_suffix(')')
+        .unwrap_or(rest)
+        .trim()
+        .to_string();
+    let id = clean_string(&inner).trim().to_string();
+    if id.is_empty() {
+        return Err(format!(
+            "#[npc(...)] `{kind}(...)` requires a non-empty id string"
+        ));
+    }
+    match kind {
+        "shop" => Ok(NpcInteraction::Shop { inventory_id: id }),
+        "market" => Ok(NpcInteraction::Market { market_id: id }),
+        "dialogue" => Ok(NpcInteraction::Dialogue {
+            dialogue_tree_id: id,
+        }),
+        "craft" => {
+            match id.as_str() {
+                "Weapon" | "Armor" | "Consumable" | "Material" | "Quest" | "Accessory" => {
+                    Ok(NpcInteraction::Craft { category: id })
+                }
+                other => Err(format!(
+                    "#[npc(...)] `craft(...)` expected an ItemCategory (Weapon | Armor | Consumable | Material | Quest | Accessory), got `{other}`"
+                )),
+            }
+        }
+        other => Err(format!(
+            "#[npc(...)] unknown interaction `{other}` (expected shop, market, dialogue, craft)"
+        )),
+    }
+}
+
+fn npc_asset_is_scene(asset: &str) -> bool {
+    let asset = asset.trim();
+    !asset.is_empty() && !asset.eq_ignore_ascii_case("placeholder")
+}
+
+fn expand_npc(input: &DeriveInput, attrs: NpcAttributes) -> Result<TokenStream2, String> {
+    let name = &input.ident;
+    let id = attrs
+        .props
+        .id
+        .clone()
+        .unwrap_or_else(|| name.to_string().to_lowercase());
+    let display_name = attrs
+        .props
+        .display_name
+        .clone()
+        .unwrap_or_else(|| id.clone());
+    let icon = attrs.props.icon.clone().unwrap_or_else(|| "👤".to_string());
+    let interaction = match attrs.interaction_raw {
+        Some(raw) => parse_npc_interaction(&raw)?,
+        None => {
+            return Err(
+                "#[npc(...)] requires `interaction = shop(\"...\")` (or market/dialogue/craft)"
+                    .to_string(),
+            )
+        }
+    };
+
+    let asset_hint = match attrs.props.asset.as_deref() {
+        Some(path) if npc_asset_is_scene(path) => {
+            quote!(crate::placeables::AssetHint::Scene(#path))
+        }
+        _ => quote!(crate::placeables::AssetHint::Placeholder),
+    };
+
+    let (scale_x, scale_y, scale_z) = attrs.props.scale.unwrap_or((1.0, 1.0, 1.0));
+    let tint = attrs.props.tint.map(|(r, g, b)| quote!(Some([#r, #g, #b])));
+    let tint_tokens = tint.unwrap_or_else(|| quote!(None));
+    let blocks_movement = attrs.props.blocks_movement;
+    let collision_tokens = build_collision_tokens(attrs.props.collision);
+
+    let interaction_tokens = match &interaction {
+        NpcInteraction::Shop { inventory_id } => quote! {
+            crate::placeables::InteractionKind::Shop {
+                inventory_id: #inventory_id.to_string(),
             }
         },
-    };
-
-    // Optional cast_time builder.
-    let config_with_cast_time = match &def.cast_time {
-        Some(ct) => quote! { .with_cast_time(#ct) },
-        None => quote! {},
-    };
-
-    // Optional channeling builder.
-    let config_with_channel = match &def.channeling {
-        Some(ch) => {
-            let movement = &ch.movement;
-            let policy = match movement.to_string().as_str() {
-                "InterruptOnMove" => {
-                    quote! { crate::spells::context::ChannelMovementPolicy::InterruptOnMove }
+        NpcInteraction::Market { market_id } => quote! {
+            crate::placeables::InteractionKind::Market {
+                market_id: #market_id.to_string(),
+            }
+        },
+        NpcInteraction::Dialogue { dialogue_tree_id } => quote! {
+            crate::placeables::InteractionKind::Dialogue {
+                dialogue_tree_id: #dialogue_tree_id.to_string(),
+            }
+        },
+        NpcInteraction::Craft { category } => {
+            let category_ident = Ident::new(category, proc_macro2::Span::call_site());
+            quote! {
+                crate::placeables::InteractionKind::Craft {
+                    category: crate::items::ItemCategory::#category_ident,
                 }
-                "AllowMovement" => {
-                    quote! { crate::spells::context::ChannelMovementPolicy::AllowMovement }
-                }
-                other => {
-                    return syn::Error::new_spanned(
-                        movement,
-                        format!(
-                            "unknown channeling movement `{other}` \
-                             (expected InterruptOnMove or AllowMovement)"
-                        ),
-                    )
-                    .to_compile_error()
-                    .into();
-                }
-            };
-            let duration_builder = match &ch.duration {
-                Some(d) => quote! { .with_channel_duration(#d) },
-                None => quote! {},
-            };
-            quote! { .with_channel(#policy) #duration_builder }
+            }
         }
-        None => quote! {},
     };
 
-    let expanded = quote! {
+    Ok(quote! {
         #input
 
-        impl #name {
-            pub const ID: &'static str = #id_lit;
-        }
-
-        impl crate::spells::Spell for #name {
-            fn id(&self) -> crate::spells::SpellId {
-                crate::spells::SpellId::new(Self::ID)
+        impl crate::placeables::PlaceableDefinition for #name {
+            fn id(&self) -> crate::placeables::KindId {
+                crate::placeables::KindId::new(#id)
             }
 
             fn display_name(&self) -> &'static str {
-                #name_lit
+                #display_name
             }
 
-            fn config(&self) -> crate::spells::SpellConfig {
-                #base_config #config_with_cast_time #config_with_channel
+            fn icon(&self) -> &'static str {
+                #icon
             }
 
-            fn cast(&self, ctx: &mut crate::spells::context::SpellCastContext) {
-                <Self as crate::spells::SpellCast>::cast(self, ctx)
+            fn asset_hint(&self) -> crate::placeables::AssetHint {
+                #asset_hint
+            }
+
+            fn defaults(&self) -> crate::placeables::PlaceableDefaults {
+                crate::placeables::PlaceableDefaults {
+                    transform: crate::world::TransformData {
+                        translation: [0.0_f32, 0.0_f32, 0.0_f32],
+                        rotation_deg: [0.0_f32, 0.0_f32, 0.0_f32],
+                        scale: [#scale_x, #scale_y, #scale_z],
+                    },
+                    tint: #tint_tokens,
+                    collision: #collision_tokens,
+                    blocks_movement: #blocks_movement,
+                }
+            }
+        }
+
+        impl crate::placeables::NpcPlaceable for #name {
+            fn interaction(&self) -> crate::placeables::InteractionKind {
+                #interaction_tokens
             }
         }
 
         impl #name {
-            /// Registers this spell in the global registry. Generated by `#[spell(...)]`.
-            pub fn register(registry: &mut crate::spells::SpellRegistry) {
-                registry.register(std::sync::Arc::new(#name));
+            pub const ID: &'static str = #id;
+
+            pub fn register(registry: &mut crate::placeables::PlaceableRegistry) {
+                registry.register_npc(std::sync::Arc::new(#name))
             }
         }
-    };
 
-    TokenStream::from(expanded)
+        pub fn register(registry: &mut crate::placeables::PlaceableRegistry) {
+            #name::register(registry)
+        }
+    })
 }

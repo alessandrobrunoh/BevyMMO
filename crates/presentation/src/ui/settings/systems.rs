@@ -477,17 +477,17 @@ mod tests {
 
         s1.keybinds
             .bindings
-            .insert(KeyAction::CastSpellQ, KeyBinding::bare(KeyCode::KeyQ));
+            .insert(KeyAction::CastPrimary, KeyBinding::bare(KeyCode::KeyQ));
         s1.keybinds
             .bindings
-            .insert(KeyAction::CastSpellW, KeyBinding::bare(KeyCode::KeyW));
+            .insert(KeyAction::CastSecondary, KeyBinding::bare(KeyCode::KeyW));
 
         s2.keybinds
             .bindings
-            .insert(KeyAction::CastSpellW, KeyBinding::bare(KeyCode::KeyW));
+            .insert(KeyAction::CastSecondary, KeyBinding::bare(KeyCode::KeyW));
         s2.keybinds
             .bindings
-            .insert(KeyAction::CastSpellQ, KeyBinding::bare(KeyCode::KeyQ));
+            .insert(KeyAction::CastPrimary, KeyBinding::bare(KeyCode::KeyQ));
 
         assert_eq!(
             GameSettingsFingerprint::from(&s1),

@@ -6,11 +6,13 @@ use std::time::Duration;
 use crate::reducers::account::caller_session;
 use crate::rows::{equipment_to_rows, inventory_to_rows, HotbarRow, StatsRow, Vec3Row};
 use crate::tables::{
-    active_status, aoe_region, boss_state, cast_state, cooldown, crowd_control, entity_stats,
-    equipment, game_entity, grid_cell, hotbar, inventory, known_ancient_language, periodic_effect,
-    player, player_stats, projectile, resonance, session, stat_modifier, threat, tick_schedule,
-    tick_stats, ColorRow, EntityKindRow, EntityStateRow, EquipmentTable, GameEntity, Hotbar,
-    InventoryTable, KnownAncientLanguageTable, Player, PlayerStats, Session, TickSchedule,
+    active_status, aoe_region, boss_state, cast_state, character_wallet, cooldown, crowd_control,
+    craft_session, enemy_ai, entity_stats, equipment, game_entity, gather_session, grid_cell,
+    hotbar, inventory,
+    known_ancient_language, npc, periodic_effect, player, player_stats, projectile, resonance,
+    session, stat_modifier, threat, tick_schedule, tick_stats, CharacterWallet, ColorRow,
+    EntityKindRow, EntityStateRow, EquipmentTable, GameEntity, Hotbar, InventoryTable,
+    KnownAncientLanguageTable, Player, PlayerStats, Session, TickSchedule,
 };
 use crate::{
     normalize_name, world, DEFAULT_SPEED_PER_SECOND, MAX_CHARACTERS_PER_ACCOUNT, TICK_INTERVAL_MS,
@@ -26,6 +28,7 @@ pub fn init(ctx: &ReducerContext) {
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(TICK_INTERVAL_MS).into()),
     });
 
+    crate::reducers::market::seed_markets(ctx);
     world::seed(ctx);
 
     log::info!("module initialised; tick every {TICK_INTERVAL_MS} ms");
@@ -68,6 +71,20 @@ fn clear_runtime_state(ctx: &ReducerContext) {
         .map(|row| row.entity_id)
         .collect();
     let tick_stat_ids: Vec<_> = ctx.db.tick_stats().iter().map(|row| row.id).collect();
+    let npc_ids: Vec<_> = ctx.db.npc().iter().map(|row| row.entity_id).collect();
+    let enemy_ai_ids: Vec<_> = ctx.db.enemy_ai().iter().map(|row| row.entity_id).collect();
+    let gather_entity_ids: Vec<_> = ctx
+        .db
+        .gather_session()
+        .iter()
+        .map(|row| row.entity_id)
+        .collect();
+    let craft_entity_ids: Vec<_> = ctx
+        .db
+        .craft_session()
+        .iter()
+        .map(|row| row.entity_id)
+        .collect();
 
     for id in projectile_ids {
         ctx.db.projectile().id().delete(&id);
@@ -103,6 +120,18 @@ fn clear_runtime_state(ctx: &ReducerContext) {
     }
     for id in tick_stat_ids {
         ctx.db.tick_stats().id().delete(&id);
+    }
+    for entity_id in npc_ids {
+        ctx.db.npc().entity_id().delete(&entity_id);
+    }
+    for entity_id in enemy_ai_ids {
+        ctx.db.enemy_ai().entity_id().delete(&entity_id);
+    }
+    for entity_id in gather_entity_ids {
+        ctx.db.gather_session().entity_id().delete(&entity_id);
+    }
+    for entity_id in craft_entity_ids {
+        ctx.db.craft_session().entity_id().delete(&entity_id);
     }
 }
 
@@ -185,8 +214,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         // connection's active character — unless another live session already
         // owns it.
         let already_played = ctx.db.session().iter().any(|session| {
-            session.character_id == Some(existing.character_id)
-                && session.identity != ctx.sender()
+            session.character_id == Some(existing.character_id) && session.identity != ctx.sender()
         });
         if already_played {
             return Err(format!(
@@ -268,13 +296,18 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
 
     ctx.db.hotbar().insert(Hotbar {
         character_id,
-        slots: HotbarRow::from(&bevymmo_domain::spells::components::default_player_hotbar()),
+        slots: HotbarRow::default(),
     });
     ctx.db.inventory().insert(InventoryTable {
         character_id,
         slots: inventory_to_rows(&Default::default()),
     });
-    crate::reducers::items::grant_item(ctx, character_id, "mage_staff")?;
+    ctx.db.character_wallet().insert(CharacterWallet {
+        character_id,
+        gold: 0,
+    });
+    crate::reducers::economy::ensure_account_economy(ctx, account_id);
+    crate::reducers::items::grant_item(ctx, character_id, "sword")?;
     ctx.db.equipment().insert(EquipmentTable {
         character_id,
         slots: equipment_to_rows(&Default::default()),
@@ -284,15 +317,7 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
         .known_ancient_language()
         .insert(KnownAncientLanguageTable {
             character_id,
-            root_words: vec![
-                "damage".to_string(),
-                "flame".to_string(),
-                "frost".to_string(),
-                "storm".to_string(),
-                "life".to_string(),
-                "void".to_string(),
-                "stone".to_string(),
-            ],
+            root_words: vec!["flame".to_string(), "life".to_string()],
             ancient_words: vec![
                 "echo".to_string(),
                 "twin".to_string(),
@@ -302,9 +327,9 @@ pub fn join(ctx: &ReducerContext, display_name: String) -> Result<(), String> {
                 "reversal".to_string(),
             ],
             base_abilities: vec![
-                "arcane_bolt".to_string(),
-                "arcane_wave".to_string(),
-                "great_manifestation".to_string(),
+                "cleave".to_string(),
+                "lunge".to_string(),
+                "blade_storm".to_string(),
             ],
         });
 
@@ -441,7 +466,7 @@ fn delete_character_rows(ctx: &ReducerContext, character: &Player) {
         .filter(|row| row.entity_id == entity_id)
         .map(|row| row.id)
         .collect();
-    // A player entity is only ever a threat *target*, never a `boss_entity`.
+    // A player entity is only ever a threat *target*, never a `combatant_entity`.
     let threat_ids: Vec<_> = ctx
         .db
         .threat()
@@ -491,6 +516,10 @@ fn delete_character_rows(ctx: &ReducerContext, character: &Player) {
         .character_id()
         .delete(&character_id);
     ctx.db.player_stats().character_id().delete(&character_id);
+    ctx.db
+        .character_wallet()
+        .character_id()
+        .delete(&character_id);
 
     crate::reducers::parties::forget_deleted_character(ctx, character);
 

@@ -16,10 +16,11 @@ use crate::abilities::BaseAbilityRegistry;
     potency = 145.0,
     cast_time = 0.1,
     cooldown = 2.2,
-    energy_cost = 7.0,
+    mana_cost = 7.0,
     stun_seconds = 0.4,
     animation = "sword_lunge",
     impact_vfx = "lunge_impact",
+    icon = "abilities/icons/lunge.png",
 )]
 pub struct Lunge;
 

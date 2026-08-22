@@ -1,54 +1,65 @@
 //! Goblin enemy archetype.
 //!
-//! Lower HP than the default enemy profile; chases on a tighter aggro radius.
+//! Frail raider: same Cleave the player sword uses, tighter aggro, leash back
+//! to camp.
 
-use std::sync::Arc;
+use crate::ability_definitions::cleave::Cleave;
+use crate::placeables::enemy;
 
-use crate::placeables::{
-    AssetHint, EnemyConfig, EnemyPlaceable, KindId, PlaceableDefaults, PlaceableDefinition,
-    PlaceableRegistry,
-};
-use crate::spells::{HotbarSlot, SpellHotbar, SpellId};
-use crate::stats::defaults::enemy_defaults;
+#[enemy(
+    id = "mob_goblin",
+    type = Normal,
+    name = "Goblin",
+    icon = "👺",
+    asset = "models/creatures/goblin.glb",
+    stats(health = 30.0, mana = 40.0, mana_regen = 2.0, attack_power = 20.0, armor = 8.0, speed = 0.08),
+    aggro = 8.0,
+    leash_aggro = 20.0,
+    abilities = [Cleave],
+)]
+pub struct Goblin;
 
-pub struct GoblinDefinition;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::abilities::AbilityId;
+    use crate::placeables::{
+        AcquirePolicy, AggroOrigin, EnemyPlaceable, PlaceableDefinition, ThreatPolicy,
+    };
 
-impl PlaceableDefinition for GoblinDefinition {
-    fn id(&self) -> KindId {
-        KindId::new("mob_goblin")
+    #[test]
+    fn goblin_uses_the_same_cleave_as_the_sword() {
+        let config = Goblin.enemy_config();
+        assert_eq!(config.abilities.len(), 1);
+        assert_eq!(config.abilities[0].ability_id, AbilityId::new(Cleave::ID));
+        assert!(config.abilities[0].inscription.is_empty());
+        assert!(!config
+            .abilities
+            .iter()
+            .any(|entry| entry.ability_id.as_str() == "fireball"));
     }
-    fn display_name(&self) -> &'static str {
-        "Goblin"
-    }
-    fn icon(&self) -> &'static str {
-        "👺"
-    }
-    fn asset_hint(&self) -> AssetHint {
-        AssetHint::Scene("models/creatures/goblin.glb")
-    }
-    fn defaults(&self) -> PlaceableDefaults {
-        PlaceableDefaults::default()
-    }
-}
 
-impl EnemyPlaceable for GoblinDefinition {
-    fn enemy_config(&self) -> EnemyConfig {
-        let mut stats = enemy_defaults();
-        // Goblins are frail raiders.
-        stats.vital.current_health = 30.0;
-        stats.vital.max_health = 30.0;
-
-        let mut spell_hotbar = SpellHotbar::default();
-        spell_hotbar.assign(HotbarSlot::Q, Some(SpellId::new("fireball")));
-
-        EnemyConfig {
-            stats,
-            spell_hotbar,
-            aggro_range: 8.0,
-        }
+    #[test]
+    fn goblin_stats_and_leash_are_authored() {
+        let config = Goblin.enemy_config();
+        assert_eq!(config.stats.vital.max_health, 30.0);
+        assert_eq!(config.stats.vital.current_health, 30.0);
+        assert_eq!(config.stats.combat.armor, 8.0);
+        assert_eq!(config.aggro, 8.0);
+        assert_eq!(config.leash_aggro, 20.0);
+        assert_eq!(Goblin.id().as_str(), "mob_goblin");
+        assert_eq!(Goblin::ID, "mob_goblin");
     }
-}
 
-pub fn register(registry: &mut PlaceableRegistry) {
-    registry.register_enemy(Arc::new(GoblinDefinition));
+    #[test]
+    fn goblin_uses_normal_acquire_defaults() {
+        let config = Goblin.enemy_config();
+        assert_eq!(config.acquire, AcquirePolicy::Proximity);
+        assert_eq!(config.origin, AggroOrigin::Body);
+        assert_eq!(config.threat, ThreatPolicy::Nearest);
+        assert_eq!(
+            config.abilities[0].use_when,
+            crate::placeables::AbilityUse::default()
+        );
+    }
 }

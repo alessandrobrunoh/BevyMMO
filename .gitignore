@@ -25,4 +25,9 @@ __pycache__/
 .DS_Store
 Thumbs.db
 .claude/
+.playwright-mcp/
+
+# ChatGPT / browser downloads dumped at the repo root.
+# Design sheets belong in apps/frontend/design-assets/sheets/ or assets/ui/source/.
+/ChatGPT Image *.png
 

@@ -4,10 +4,65 @@
 
 @use 'variables' as *;
 
+@font-face {
+  font-family: 'Cinzel';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('/assets/fonts/cinzel/cinzel-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Cinzel Decorative';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/assets/fonts/cinzel-decorative/cinzel-decorative-400-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Cinzel Decorative';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/assets/fonts/cinzel-decorative/cinzel-decorative-700-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Crimson Pro';
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url('/assets/fonts/crimson-pro/crimson-pro-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/assets/fonts/inter/inter-latin.woff2') format('woff2');
+}
+
 h1, h2, h3, h4, h5, h6, .fantasy-title {
   font-family: var(--font-serif);
   font-weight: 500;
   color: var(--text-dark);
+}
+
+:where(
+  .article-meta-banner,
+  .article-tag,
+  .card-meta,
+  .card-tag,
+  .item-meta,
+  .last-updated,
+  .meta-date,
+  .meta-read,
+  .news-meta,
+  .rel-date
+) {
+  font-family: var(--font-ui);
 }
 
 .eyebrow {
@@ -37,7 +92,7 @@ h1, h2, h3, h4, h5, h6, .fantasy-title {
     max-width: 650px;
     margin: auto;
     color: var(--text-dark-muted);
-    font-family: var(--font-sans);
+    font-family: var(--font-body);
     font-size: 1.03rem;
     line-height: 1.8;
   }

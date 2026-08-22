@@ -12,9 +12,12 @@ pub enum StatField {
     Speed,
     Armor,
     AttackPower,
+    ThreatGeneration,
     MaxHealth,
     MaxMana,
     ManaRegeneration,
+    GatheringSpeed,
+    GatheringBonus,
 }
 
 /// Operation applied by the modifier to the base value.

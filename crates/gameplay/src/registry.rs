@@ -57,6 +57,10 @@ impl<K: Eq + Hash, V> Registry<K, V> {
         self.entries.is_empty()
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.entries.iter()
+    }
+
     /// All entries as owned `(key, value)` pairs, sorted with `cmp`.
     ///
     /// Takes a full comparator rather than a key-extraction closure so a

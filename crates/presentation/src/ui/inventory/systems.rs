@@ -1,52 +1,29 @@
 //! Systems for Inventory UI rendering, input handling, and server communication.
 
+use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::input::{ButtonInput, ButtonState};
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
 use bevymmo_client::stdb::{commands as stdb_commands, StdbConnection};
 use bevymmo_gameplay::items::{
-    components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY},
+    components::{Equipment, Inventory},
     registry::ItemRegistry,
 };
 
-use super::{components::*, detail::despawn_detail_cards, InventoryUiState};
+use super::{
+    components::*,
+    detail::despawn_detail_cards,
+    equipment_section::equip_slot_label,
+    spawn_inventory_window,
+    stack::{parse_split_amount, step_split_amount},
+    InventoryUiState, ItemDetailUiState,
+};
 use crate::ui::{
-    card::{
-        builder::{CardBuilder, CardFrameAssets},
-        components::{CardKind, CardPositioning, CardWindow},
-    },
+    card::components::{CardKind, CardWindow},
+    chat::ChatInput,
     settings::state::{GameSettingsResource, KeyAction},
     theme::UiTheme,
 };
-
-// Width is chosen so 5 columns + gaps + the visible scrollbar still sit
-// inside the ornate frame's inner dark area. Height is `Auto`: the card
-// docks between the top edge and the hotbar (see `CardBuilder`).
-const INVENTORY_CARD_WIDTH: f32 = 448.0;
-const INVENTORY_GRID_COLUMNS: u16 = 5;
-const INVENTORY_GRID_ROWS: u16 =
-    INVENTORY_CAPACITY.div_ceil(INVENTORY_GRID_COLUMNS as usize) as u16;
-const INVENTORY_SLOT_WIDTH: f32 = 48.0;
-const INVENTORY_SLOT_HEIGHT: f32 = 50.0;
-const INVENTORY_SLOT_GAP: f32 = 4.0;
-const EQUIP_SLOT_SIZE: f32 = 44.0;
-/// Column track is wider than the box so captions like `OFFHAND` still fit.
-const EQUIP_CELL_WIDTH: f32 = 52.0;
-const EQUIP_GRID_GAP: f32 = 6.0;
-const MAIN_COLUMN_GAP: f32 = 4.0;
-/// Extra inset on top of `CardBuilder`'s frame padding so slots stay off the
-/// gold ornaments when that padding is tight against the 9-slice corners.
-const INNER_CONTENT_PADDING: f32 = 16.0;
-const INVENTORY_GRID_WIDTH: f32 = INVENTORY_GRID_COLUMNS as f32 * INVENTORY_SLOT_WIDTH
-    + (INVENTORY_GRID_COLUMNS - 1) as f32 * INVENTORY_SLOT_GAP;
-// 448 − ~2×64 frame inset − ~20 px scrollbar. Inner padding is extra to that.
-const _: () = assert!(INVENTORY_GRID_WIDTH <= INVENTORY_CARD_WIDTH - 128.0 - 20.0);
-/// Shown in an empty inventory / equipment cell.
-///
-/// ASCII on purpose: Bevy's built-in font is an ASCII subset, so an em dash
-/// renders as a blank box rather than a dash.
-const EMPTY_SLOT_PLACEHOLDER: &str = "-";
-const SLOT_EMPTY_PATH: &str = "ui/extracted_065811/slot_empty_01.png";
-const SLOT_ACTIVE_PATH: &str = "ui/extracted_065811/slot_active.png";
 
 pub fn toggle_inventory(
     keys: Res<ButtonInput<KeyCode>>,
@@ -87,277 +64,35 @@ pub fn toggle_inventory(
     );
 }
 
-/// Resolves the display label for an equip slot's box: the equipped item's
-/// name, or a placeholder dash when empty.
-fn equip_slot_label(equipment: &Equipment, registry: &ItemRegistry, slot: EquipSlot) -> String {
-    equipment
-        .get(slot)
-        .as_ref()
-        .and_then(|instance| registry.get(&instance.item_id))
-        .map(|item| item.display_name().to_string())
-        .unwrap_or_else(|| EMPTY_SLOT_PLACEHOLDER.to_string())
-}
-
-/// Spawns one equipment slot cell: a small caption above a bordered box.
-/// Shared by the 3x3 body-slot grid and the standalone Mount row.
-fn spawn_equip_slot_cell(
-    parent: &mut ChildSpawnerCommands,
-    theme: &UiTheme,
-    slot: EquipSlot,
-    label: String,
-    images: &InventorySlotImages,
-) {
-    let has_item = label != EMPTY_SLOT_PLACEHOLDER;
-
-    parent
-        .spawn((Node {
-            width: Val::Px(EQUIP_CELL_WIDTH),
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Center,
-            row_gap: Val::Px(2.0),
-            ..default()
-        },))
-        .with_children(|cell| {
-            cell.spawn((
-                Text::new(slot.label().to_string()),
-                TextFont {
-                    font_size: FontSize::Px(theme.button_font_size * 0.55),
-                    ..default()
-                },
-                TextColor(Color::srgba(0.75, 0.78, 0.85, 0.85)),
-            ));
-
-            cell.spawn((
-                Button,
-                Node {
-                    width: Val::Px(EQUIP_SLOT_SIZE),
-                    height: Val::Px(EQUIP_SLOT_SIZE),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    padding: UiRect::all(Val::Px(2.0)),
-                    overflow: Overflow::clip(),
-                    ..default()
-                },
-                ImageNode::new(if has_item {
-                    images.active.clone()
-                } else {
-                    images.empty.clone()
-                })
-                .with_mode(NodeImageMode::Stretch),
-                InventorySlotImages {
-                    empty: images.empty.clone(),
-                    active: images.active.clone(),
-                },
-                EquipSlotButton { slot },
-            ))
-            .with_children(|btn| {
-                btn.spawn((
-                    Text::new(label),
-                    TextFont {
-                        font_size: FontSize::Px(theme.button_font_size * 0.48),
-                        ..default()
-                    },
-                    TextColor(theme.text_color),
-                    TextLayout::justify(Justify::Center),
-                    EquipSlotText { slot },
-                ));
-            });
-        });
-}
-
-fn spawn_inventory_window(
-    commands: &mut Commands,
-    theme: &UiTheme,
-    registry: &ItemRegistry,
-    inventory: &Inventory,
-    equipment: &Equipment,
-    asset_server: &AssetServer,
-) {
-    let equipment = equipment.clone();
-    let inventory = inventory.clone();
-    let registry_snapshot = registry;
-    // Body-slot grid (everything but Mount, which gets its own centered row).
-    let grid_slots: Vec<EquipSlot> = EquipSlot::ALL[..9].to_vec();
-    let mount_slot = EquipSlot::ALL[9];
-
-    let grid_labels: Vec<(EquipSlot, String)> = grid_slots
-        .iter()
-        .map(|s| (*s, equip_slot_label(&equipment, registry_snapshot, *s)))
-        .collect();
-    let mount_label = equip_slot_label(&equipment, registry_snapshot, mount_slot);
-
-    let item_labels: Vec<String> = (0..INVENTORY_CAPACITY)
-        .map(|idx| {
-            inventory
-                .slots
-                .get(idx)
-                .and_then(|opt| opt.as_ref())
-                .and_then(|instance| registry_snapshot.get(&instance.item_id))
-                .map(|item| item.display_name().to_string())
-                .unwrap_or_default()
-        })
-        .collect();
-    let slot_images = InventorySlotImages {
-        empty: asset_server.load(SLOT_EMPTY_PATH),
-        active: asset_server.load(SLOT_ACTIVE_PATH),
-    };
-    CardBuilder::new(CardKind::Inventory, "Inventory")
-        .frame(CardFrameAssets::load(asset_server))
-        .headerless()
-        .width(Val::Px(INVENTORY_CARD_WIDTH))
-        .height(Val::Auto)
-        .positioning(CardPositioning::Right)
-        .scrollable()
-        .exclusive()
-        .with_body(move |body| {
-            // Inner spacer: extra padding so slots stay off the gold frame
-            // even when CardBuilder's inset is tight against the ornaments.
-            body.spawn((Node {
-                width: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                padding: UiRect::all(Val::Px(INNER_CONTENT_PADDING)),
-                row_gap: Val::Px(MAIN_COLUMN_GAP),
-                ..default()
-            },))
-                .with_children(|main| {
-                    // 3x3 equipment grid.
-                    //
-                    // Rows are `auto`, not `flex`: `flex()` tracks are
-                    // `minmax(0, Nfr)`, and inside the scrollable body the
-                    // grid's height is indefinite (it sizes to its own
-                    // content), so there is no space to distribute the `fr`
-                    // against — every row collapsed to its zero minimum and
-                    // all three rows of captions/boxes drew stacked on top of
-                    // each other. `auto` sizes each row to its content
-                    // instead, which works regardless of the container's
-                    // height being definite or not.
-                    main.spawn((
-                        Node {
-                            display: Display::Grid,
-                            grid_template_columns: RepeatedGridTrack::px(3, EQUIP_CELL_WIDTH),
-                            grid_template_rows: RepeatedGridTrack::auto(3),
-                            justify_content: JustifyContent::Center,
-                            row_gap: Val::Px(EQUIP_GRID_GAP),
-                            column_gap: Val::Px(EQUIP_GRID_GAP),
-                            ..default()
-                        },
-                        EquipmentPanel,
-                    ))
-                    .with_children(|grid| {
-                        for (slot, label) in grid_labels {
-                            spawn_equip_slot_cell(grid, theme, slot, label, &slot_images);
-                        }
-                    });
-
-                    // Mount: standalone, centered below the 3x3 grid.
-                    main.spawn((Node {
-                        flex_direction: FlexDirection::Row,
-                        justify_content: JustifyContent::Center,
-                        ..default()
-                    },))
-                        .with_children(|row| {
-                            spawn_equip_slot_cell(
-                                row,
-                                theme,
-                                mount_slot,
-                                mount_label,
-                                &slot_images,
-                            );
-                        });
-
-                    // Divider.
-                    main.spawn((
-                        Node {
-                            width: Val::Percent(100.0),
-                            height: Val::Px(1.0),
-                            margin: UiRect::vertical(Val::Px(2.0)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.12)),
-                    ));
-
-                    // Generic inventory grid. The card body scrolls when all
-                    // rows exceed the available height.
-                    main.spawn((
-                        Node {
-                            display: Display::Grid,
-                            grid_template_columns: RepeatedGridTrack::px(
-                                INVENTORY_GRID_COLUMNS,
-                                INVENTORY_SLOT_WIDTH,
-                            ),
-                            // Item names can wrap to two lines. Fixed tracks keep
-                            // each row tall enough and make the grid expand inside
-                            // the scroll view instead of compressing its contents.
-                            grid_template_rows: RepeatedGridTrack::px(
-                                INVENTORY_GRID_ROWS,
-                                INVENTORY_SLOT_HEIGHT,
-                            ),
-                            row_gap: Val::Px(INVENTORY_SLOT_GAP),
-                            column_gap: Val::Px(INVENTORY_SLOT_GAP),
-                            justify_content: JustifyContent::Center,
-                            ..default()
-                        },
-                        InventoryPanel,
-                    ))
-                    .with_children(|grid| {
-                        for (idx, item_name) in item_labels.into_iter().enumerate() {
-                            let has_item = !item_name.is_empty();
-
-                            grid.spawn((
-                                Button,
-                                Node {
-                                    width: Val::Px(INVENTORY_SLOT_WIDTH),
-                                    height: Val::Px(INVENTORY_SLOT_HEIGHT),
-                                    justify_content: JustifyContent::Center,
-                                    align_items: AlignItems::Center,
-                                    padding: UiRect::all(Val::Px(2.0)),
-                                    overflow: Overflow::clip(),
-                                    ..default()
-                                },
-                                ImageNode::new(if has_item {
-                                    slot_images.active.clone()
-                                } else {
-                                    slot_images.empty.clone()
-                                })
-                                .with_mode(NodeImageMode::Stretch),
-                                InventorySlotImages {
-                                    empty: slot_images.empty.clone(),
-                                    active: slot_images.active.clone(),
-                                },
-                                ItemSlotButton { index: idx as u8 },
-                            ))
-                            .with_children(|btn| {
-                                btn.spawn((
-                                    Text::new(item_name),
-                                    TextFont {
-                                        font_size: FontSize::Px(theme.button_font_size * 0.55),
-                                        ..default()
-                                    },
-                                    TextColor(theme.text_color),
-                                    TextLayout::justify(Justify::Center),
-                                    ItemSlotText { index: idx as u8 },
-                                ));
-                            });
-                        }
-                    });
-                });
-        })
-        .spawn(commands, theme);
-}
-
 pub fn update_inventory_ui(
     mut slot_texts: Query<(&ItemSlotText, &mut Text)>,
     mut equip_texts: Query<(&EquipSlotText, &mut Text), Without<ItemSlotText>>,
     mut slot_images: Query<
         (&ItemSlotButton, &mut ImageNode, &InventorySlotImages),
-        (Without<EquipSlotButton>, Without<ItemSlotText>),
+        (
+            Without<EquipSlotButton>,
+            Without<ItemSlotText>,
+            Without<ItemSlotIcon>,
+        ),
     >,
     mut equip_images: Query<
         (&EquipSlotButton, &mut ImageNode, &InventorySlotImages),
-        (Without<ItemSlotButton>, Without<EquipSlotText>),
+        (
+            Without<ItemSlotButton>,
+            Without<EquipSlotText>,
+            Without<EquipSlotIcon>,
+        ),
+    >,
+    mut slot_icons: Query<
+        (&ItemSlotIcon, &mut ImageNode, &mut Visibility),
+        Without<InventorySlotImages>,
+    >,
+    mut equip_icons: Query<
+        (&EquipSlotIcon, &mut ImageNode, &mut Visibility),
+        (Without<InventorySlotImages>, Without<ItemSlotIcon>),
     >,
     registry: Res<ItemRegistry>,
+    asset_server: Res<AssetServer>,
     player_query: Query<(&Inventory, &Equipment), With<LocalPlayer>>,
 ) {
     let Some((inventory, equipment)) = player_query.iter().next() else {
@@ -365,15 +100,35 @@ pub fn update_inventory_ui(
     };
 
     for (slot_text, mut text) in slot_texts.iter_mut() {
-        let name = inventory
+        let instance = inventory
             .slots
             .get(slot_text.index as usize)
-            .and_then(|opt| opt.as_ref())
-            .and_then(|instance| registry.get(&instance.item_id))
-            .map(|item| item.display_name().to_string())
-            .unwrap_or_default();
-
-        text.0 = name;
+            .and_then(|opt| opt.as_ref());
+        let has_icon = instance
+            .and_then(|item| registry.get(&item.item_id))
+            .and_then(|item| item.icon())
+            .is_some();
+        text.0 = match instance {
+            Some(instance) if has_icon => {
+                if instance.quantity > 1 {
+                    instance.quantity.to_string()
+                } else {
+                    String::new()
+                }
+            }
+            Some(instance) => {
+                let display = registry
+                    .get(&instance.item_id)
+                    .map(|item| item.display_name().to_string())
+                    .unwrap_or_else(|| instance.item_id.as_str().to_string());
+                if instance.quantity > 1 {
+                    format!("{display} x{}", instance.quantity)
+                } else {
+                    display
+                }
+            }
+            None => String::new(),
+        };
     }
 
     for (btn, mut image, images) in slot_images.iter_mut() {
@@ -388,8 +143,37 @@ pub fn update_inventory_ui(
         };
     }
 
+    for (icon, mut image, mut visibility) in slot_icons.iter_mut() {
+        let path = inventory
+            .slots
+            .get(icon.index as usize)
+            .and_then(|opt| opt.as_ref())
+            .and_then(|instance| registry.get(&instance.item_id))
+            .and_then(|item| item.icon());
+        apply_item_icon(&mut image, &mut visibility, &asset_server, path);
+    }
+
     for (equip_text, mut text) in equip_texts.iter_mut() {
-        text.0 = equip_slot_label(equipment, &registry, equip_text.slot);
+        let has_icon = equipment
+            .get(equip_text.slot)
+            .as_ref()
+            .and_then(|instance| registry.get(&instance.item_id))
+            .and_then(|item| item.icon())
+            .is_some();
+        text.0 = if has_icon {
+            String::new()
+        } else {
+            equip_slot_label(equipment, &registry, equip_text.slot)
+        };
+    }
+
+    for (icon, mut image, mut visibility) in equip_icons.iter_mut() {
+        let path = equipment
+            .get(icon.slot)
+            .as_ref()
+            .and_then(|instance| registry.get(&instance.item_id))
+            .and_then(|item| item.icon());
+        apply_item_icon(&mut image, &mut visibility, &asset_server, path);
     }
 
     for (btn, mut image, images) in equip_images.iter_mut() {
@@ -451,10 +235,230 @@ pub fn handle_inventory_interactions(
     }
 }
 
+fn apply_item_icon(
+    image: &mut ImageNode,
+    visibility: &mut Visibility,
+    asset_server: &AssetServer,
+    path: Option<&str>,
+) {
+    match path {
+        Some(path) => {
+            image.image = asset_server.load(path.to_string());
+            *visibility = Visibility::Inherited;
+        }
+        None => {
+            *visibility = Visibility::Hidden;
+        }
+    }
+}
+
 fn despawn_inventory_cards(commands: &mut Commands, cards: &Query<(Entity, &CardWindow)>) {
     for (entity, window) in cards.iter() {
         if window.kind == CardKind::Inventory || window.kind == CardKind::ItemDetail {
             commands.entity(entity).despawn();
         }
+    }
+}
+
+type SplitClicksQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static SplitButton),
+    (Changed<Interaction>, With<Button>),
+>;
+type CombineClicksQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static CombineButton),
+    (Changed<Interaction>, With<Button>),
+>;
+type StepClicksQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static SplitAmountStep),
+    (Changed<Interaction>, With<Button>),
+>;
+
+/// Split / Combine on the detail card, plus the − / + stepper.
+pub(super) fn handle_stack_controls(
+    split_clicks: SplitClicksQuery,
+    combine_clicks: CombineClicksQuery,
+    step_clicks: StepClicksQuery,
+    mut fields: Query<&mut SplitAmountField>,
+    mut detail_state: ResMut<ItemDetailUiState>,
+    conn: Option<Res<StdbConnection>>,
+) {
+    for (interaction, step) in step_clicks.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        for mut field in fields.iter_mut() {
+            let current = parse_split_amount(&field.value, field.quantity);
+            let next = step_split_amount(current, step.delta, field.quantity);
+            field.value = next.to_string();
+            field.focused = false;
+            detail_state.split_amount = next;
+        }
+    }
+
+    for (interaction, split) in split_clicks.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let amount = fields
+            .iter_mut()
+            .next()
+            .map(|mut field| {
+                let amount = parse_split_amount(&field.value, field.quantity);
+                field.value = amount.to_string();
+                field.focused = false;
+                detail_state.split_amount = amount;
+                amount
+            })
+            .unwrap_or(0);
+        if amount == 0 {
+            continue;
+        }
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::split_item(conn, split.slot_index, amount) {
+                error!("could not split stack: {err}");
+            }
+        }
+    }
+
+    for (interaction, combine) in combine_clicks.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        if let Some(conn) = conn.as_deref() {
+            if let Err(err) = stdb_commands::combine_item(conn, combine.slot_index) {
+                error!("could not combine stacks: {err}");
+            }
+        }
+    }
+}
+
+pub(super) fn unfocus_split_when_chat_focused(
+    chat: Query<&ChatInput>,
+    mut fields: Query<&mut SplitAmountField>,
+) {
+    if !chat.iter().any(|input| input.focused) {
+        return;
+    }
+    for mut field in fields.iter_mut() {
+        if field.focused {
+            field.focused = false;
+        }
+    }
+}
+
+/// Clicking the amount field captures the keyboard so I/WASD don't fire.
+pub(super) fn focus_split_amount(
+    clicked: Query<&Interaction, (With<SplitAmountField>, Changed<Interaction>)>,
+    mut fields: Query<&mut SplitAmountField>,
+    mut chat: Query<&mut ChatInput>,
+) {
+    if !clicked
+        .iter()
+        .any(|interaction| *interaction == Interaction::Pressed)
+    {
+        return;
+    }
+    for mut input in chat.iter_mut() {
+        input.focused = false;
+    }
+    for mut field in fields.iter_mut() {
+        field.focused = true;
+    }
+}
+
+pub(super) fn edit_split_amount(
+    mut events: MessageReader<KeyboardInput>,
+    mut fields: Query<&mut SplitAmountField>,
+    mut detail_state: ResMut<ItemDetailUiState>,
+) {
+    let Some(mut field) = fields.iter_mut().find(|field| field.focused) else {
+        return;
+    };
+
+    for event in events.read() {
+        if event.state != ButtonState::Pressed {
+            continue;
+        }
+        match &event.logical_key {
+            Key::Backspace => {
+                field.value.pop();
+            }
+            Key::Escape | Key::Enter => {
+                let amount = parse_split_amount(&field.value, field.quantity);
+                field.value = amount.to_string();
+                field.focused = false;
+                detail_state.split_amount = amount;
+            }
+            Key::Character(chars) => {
+                for character in chars.chars() {
+                    if field.value.len() >= 3 {
+                        break;
+                    }
+                    if character.is_ascii_digit() {
+                        field.value.push(character);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(super) fn update_split_amount_display(
+    theme: Res<UiTheme>,
+    fields: Query<(&SplitAmountField, &Children, Entity), Changed<SplitAmountField>>,
+    mut texts: Query<&mut Text, With<SplitAmountText>>,
+    mut borders: Query<&mut BorderColor>,
+) {
+    for (field, children, entity) in fields.iter() {
+        if let Ok(mut border) = borders.get_mut(entity) {
+            *border = BorderColor::all(if field.focused {
+                theme.input_border_focused
+            } else {
+                theme.input_border
+            });
+        }
+        for child in children.iter() {
+            if let Ok(mut text) = texts.get_mut(child) {
+                text.0 = if field.value.is_empty() {
+                    String::new()
+                } else {
+                    field.value.clone()
+                };
+            }
+        }
+    }
+}
+
+/// Same rule as chat: a world click (move, attack) releases the amount field.
+pub(super) fn defocus_split_amount_on_world_click(
+    mouse: Res<ButtonInput<MouseButton>>,
+    ui_interactions: Query<&Interaction>,
+    mut fields: Query<&mut SplitAmountField>,
+    mut detail_state: ResMut<ItemDetailUiState>,
+) {
+    if !(mouse.just_pressed(MouseButton::Left) || mouse.just_pressed(MouseButton::Right)) {
+        return;
+    }
+    if ui_interactions
+        .iter()
+        .any(|interaction| *interaction == Interaction::Pressed)
+    {
+        return;
+    }
+    for mut field in fields.iter_mut() {
+        if !field.focused {
+            continue;
+        }
+        let amount = parse_split_amount(&field.value, field.quantity);
+        field.value = amount.to_string();
+        field.focused = false;
+        detail_state.split_amount = amount;
     }
 }

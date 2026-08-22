@@ -12,6 +12,7 @@ use bevymmo_gameplay::placeables::{AssetHint, PlaceableRegistry};
 use bevymmo_world::{CollisionGrid, MapManifest, Prop, SurfaceQuery, Terrain};
 
 use crate::map_loader::load_map_auto;
+use crate::renderer::AnchorSceneLayout;
 
 #[derive(Resource, Default)]
 pub struct ClientWorldMap {
@@ -310,8 +311,11 @@ fn spawn_prop_visual(
             // scene as children of the WorldAssetRoot entity.
             // MapSceneVisual is required so tag_occludables recognises the
             // spawned children and can fade this prop when it blocks the view.
+            // AnchorSceneLayout drops the offset the model was exported with,
+            // so the mesh lands on the authored placement (and its collider)
+            // instead of the spot it happened to occupy in the export scene.
             let handle = asset_server.load::<WorldAsset>(format!("{path}#Scene0"));
-            entity.insert((WorldAssetRoot(handle), MapSceneVisual));
+            entity.insert((WorldAssetRoot(handle), MapSceneVisual, AnchorSceneLayout));
         }
         AssetHint::Placeholder => {
             let color = prop

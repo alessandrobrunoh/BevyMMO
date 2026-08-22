@@ -25,9 +25,9 @@ use bevymmo_domain::items::components::{Equipment, Inventory};
 use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId};
 use bevymmo_domain::items::registry::ItemId;
 use bevymmo_domain::items::EquipSlot;
-use bevymmo_domain::spells::components::SpellHotbar;
-use bevymmo_domain::spells::registry::SpellId;
-use bevymmo_domain::stats::components::{CombatStats, MovementStats, StatsBundleData, VitalStats};
+use bevymmo_domain::stats::components::{
+    CombatStats, GatheringStats, MovementStats, StatsBundleData, VitalStats,
+};
 use glam::Vec3;
 use spacetimedb::SpacetimeType;
 
@@ -162,7 +162,7 @@ impl From<Vec3Row> for Vec3 {
     }
 }
 
-/// The seven numbers that make up a character's stats.
+/// The numbers that make up a character's stats.
 ///
 /// Stored as *base* values, without equipment bonuses. The Bevy server was
 /// careful about this too — it persisted `base_stats_without_equipment` so that
@@ -177,6 +177,13 @@ pub struct StatsRow {
     pub armor: f32,
     pub movement_speed: f32,
     pub attack_power: f32,
+    /// Multiplier on threat this entity generates when it deals damage.
+    ///
+    /// Adding this column is not auto-filled to `1.0` for existing character
+    /// rows; `./scripts/stdb.sh reset` is required after publish.
+    pub threat_generation: f32,
+    pub gathering_speed: f32,
+    pub gathering_bonus: f32,
 }
 
 impl From<&StatsBundleData> for StatsRow {
@@ -189,6 +196,9 @@ impl From<&StatsBundleData> for StatsRow {
             armor: s.combat.armor,
             movement_speed: s.movement.speed,
             attack_power: s.combat.attack_power,
+            threat_generation: s.combat.threat_generation,
+            gathering_speed: s.gathering.speed,
+            gathering_bonus: s.gathering.bonus,
         }
     }
 }
@@ -206,9 +216,14 @@ impl From<StatsRow> for StatsBundleData {
             combat: CombatStats {
                 armor: s.armor,
                 attack_power: s.attack_power,
+                threat_generation: s.threat_generation,
             },
             movement: MovementStats {
                 speed: s.movement_speed,
+            },
+            gathering: GatheringStats {
+                speed: s.gathering_speed,
+                bonus: s.gathering_bonus,
             },
         }
     }
@@ -376,6 +391,7 @@ pub struct ItemInstanceRow {
     /// Zero means "not stored yet"; see [`ItemInstanceId`].
     pub instance_id: u64,
     pub item_id: String,
+    pub quantity: u32,
     pub ability_selection: AbilitySelectionRow,
     /// New RootWord-based weapon inscription model.
     pub root_inscription: Option<WeaponInscriptionRow>,
@@ -388,6 +404,7 @@ impl From<&ItemInstance> for ItemInstanceRow {
         Self {
             instance_id: i.instance_id.0,
             item_id: i.item_id.as_str().to_string(),
+            quantity: i.quantity.max(1),
             ability_selection: (&i.ability_selection).into(),
             root_inscription: i.root_inscription.as_ref().map(Into::into),
             armor_inscription: i.armor_inscription.as_ref().map(Into::into),
@@ -400,6 +417,7 @@ impl From<&ItemInstanceRow> for ItemInstance {
         ItemInstance {
             instance_id: ItemInstanceId(i.instance_id),
             item_id: ItemId::new(i.item_id.clone()),
+            quantity: i.quantity.max(1),
             ability_selection: (&i.ability_selection).into(),
             root_inscription: i.root_inscription.as_ref().map(Into::into),
             armor_inscription: i.armor_inscription.as_ref().map(Into::into),
@@ -461,29 +479,9 @@ pub fn equipment_from_rows(rows: &[Option<ItemInstanceRow>]) -> Equipment {
 /// The three hotbar slots as stored.
 #[derive(SpacetimeType, Clone, Debug, PartialEq, Default)]
 pub struct HotbarRow {
-    pub q: Option<String>,
-    pub w: Option<String>,
-    pub e: Option<String>,
-}
-
-impl From<&SpellHotbar> for HotbarRow {
-    fn from(h: &SpellHotbar) -> Self {
-        Self {
-            q: h.q_spell.as_ref().map(|s| s.as_str().to_string()),
-            w: h.w_spell.as_ref().map(|s| s.as_str().to_string()),
-            e: h.e_spell.as_ref().map(|s| s.as_str().to_string()),
-        }
-    }
-}
-
-impl From<&HotbarRow> for SpellHotbar {
-    fn from(h: &HotbarRow) -> Self {
-        SpellHotbar {
-            q_spell: h.q.clone().map(SpellId::new),
-            w_spell: h.w.clone().map(SpellId::new),
-            e_spell: h.e.clone().map(SpellId::new),
-        }
-    }
+    pub primary: Option<String>,
+    pub secondary: Option<String>,
+    pub ultimate: Option<String>,
 }
 
 pub fn known_ancient_language_from_rows(

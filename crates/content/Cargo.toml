@@ -5,14 +5,21 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+openapi = ["dep:utoipa"]
+
 [dependencies]
 bevymmo_core = { path = "../core" }
 bevymmo_world = { path = "../world" }
 bevymmo_gameplay = { path = "../gameplay" }
 bevymmo-props-macro = { path = "../bevymmo-props-macro" }
+serde = { workspace = true }
+utoipa = { version = "5", optional = true }
 
 [dev-dependencies]
 glam = { version = "0.32", features = ["serde"] }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

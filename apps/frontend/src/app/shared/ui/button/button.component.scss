@@ -1,190 +1,363 @@
 @use '../../../../styles/variables' as *;
 
+:host {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+:host(.full-width) {
+  display: block;
+  width: 100%;
+}
+
 .eivar-btn {
+  --button-default: url('/assets/ui/buttons/wide-dark-default.png');
+  --button-hover: url('/assets/ui/buttons/wide-dark-hover.png');
+  --button-pressed: url('/assets/ui/buttons/wide-dark-pressed.png');
+  --button-disabled: url('/assets/ui/buttons/wide-dark-disabled.png');
+  --button-image: var(--button-default);
+
   position: relative;
   isolation: isolate;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  min-height: 44px;
-  padding: 0 22px;
-  overflow: hidden;
-  border-radius: var(--radius-xs);
+  min-width: 10rem;
+  height: 3.25rem;
+  max-width: 100%;
+  padding: 0.45rem 2rem;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: var(--button-image) center / 100% 100% no-repeat;
+  box-shadow: none;
+  color: #f2d58f;
   cursor: pointer;
   font-family: var(--font-serif);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.105em;
+  line-height: 1.2;
+  text-align: center;
   text-decoration: none;
-  transition: transform var(--transition), box-shadow var(--transition), filter var(--transition), background var(--transition);
+  text-shadow: 0 1px 2px rgba(2, 7, 11, 0.96), 0 0 0.45rem rgba(231, 197, 126, 0.28);
+  text-transform: uppercase;
+  transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), filter 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  -webkit-tap-highlight-color: transparent;
 
-  // Subtle metallic border highlight
-  &::before {
-    position: absolute;
-    inset: 0;
-    content: "";
-    border-radius: inherit;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    pointer-events: none;
+  &:hover:not(:disabled, [aria-disabled='true']) {
+    --button-image: var(--button-hover);
     z-index: 1;
+    transform: translateY(-1px);
   }
 
-  // Light sweep shimmer layer
-  .shimmer-layer {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      105deg,
-      transparent 20%,
-      rgba(255, 255, 255, 0.28) 50%,
-      transparent 80%
-    );
-    transform: translateX(-100%);
-    transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
-    pointer-events: none;
-    z-index: 2;
-  }
-
-  &:hover:not(:disabled) {
-    transform: translateY(-2px);
-
-    .shimmer-layer {
-      transform: translateX(100%);
-    }
-  }
-
-  &:active:not(:disabled) {
+  &:active:not(:disabled, [aria-disabled='true']),
+  &.is-active:not(:disabled, [aria-disabled='true']) {
+    --button-image: var(--button-pressed);
     transform: translateY(1px);
   }
 
-  &:disabled {
-    opacity: 0.55;
+  &:focus-visible {
+    outline: 3px solid #a4eeff;
+    outline-offset: 3px;
+  }
+
+  &:disabled,
+  &[aria-disabled='true'] {
+    --button-image: var(--button-disabled);
+    color: #9d9a91;
     cursor: not-allowed;
-    filter: grayscale(0.5);
+    text-shadow: 0 1px 1px rgba(2, 4, 5, 0.9);
   }
 
   &.full-width {
     width: 100%;
   }
 
-  // Size variants
   &.size-sm {
-    min-height: 34px;
-    padding: 0 14px;
-    font-size: 0.68rem;
-    letter-spacing: 0.1em;
-  }
-
-  &.size-md {
-    min-height: 44px;
-    padding: 0 22px;
-    font-size: 0.76rem;
+    min-width: 7.5rem;
+    height: 2.7rem;
+    padding-inline: 1.35rem;
+    font-size: 0.64rem;
   }
 
   &.size-lg {
-    min-height: 52px;
-    padding: 0 30px;
-    font-size: 0.84rem;
-    letter-spacing: 0.14em;
+    min-width: min(19rem, 100%);
+    height: 5.35rem;
+    padding-inline: 3.4rem;
+    font-size: 0.86rem;
+    letter-spacing: 0.13em;
   }
 
-  // Primary / Gold Radiant Variant
   &.variant-primary,
-  &.variant-gold {
-    color: #162432;
-    background: linear-gradient(180deg, #f6dc94 0%, #d5aa4e 45%, #ae8027 100%);
-    border: 1px solid #ffecb6;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.8),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-      0 4px 16px rgba(0, 0, 0, 0.35),
-      0 0 14px rgba(212, 173, 87, 0.3);
-    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
-
-    &:hover:not(:disabled) {
-      background: linear-gradient(180deg, #fff0c2 0%, #e2b95a 45%, #c08f30 100%);
-      border-color: #ffffff;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.95),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.25),
-        0 8px 24px rgba(0, 0, 0, 0.45),
-        0 0 24px rgba(243, 220, 152, 0.65);
-      color: #0c1824;
-    }
-
-    &:active:not(:disabled) {
-      box-shadow:
-        inset 0 2px 4px rgba(0, 0, 0, 0.35),
-        0 2px 6px rgba(0, 0, 0, 0.4);
-    }
+  &.variant-gold,
+  &.variant-cta {
+    --button-default: url('/assets/ui/buttons/large-gold-default.png');
+    --button-hover: url('/assets/ui/buttons/large-gold-hover.png');
+    --button-pressed: url('/assets/ui/buttons/large-gold-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/large-gold-disabled.png');
+    color: #fff0bd;
   }
 
-  // Secondary / Arcane Celestial Cyan Variant
+  &.variant-primary.size-sm,
+  &.variant-gold.size-sm {
+    --button-default: url('/assets/ui/buttons/compact-gold-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-gold-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-gold-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-gold-disabled.png');
+  }
+
   &.variant-secondary,
-  &.variant-cyan {
-    color: #ffffff;
-    background: linear-gradient(180deg, #1e699b 0%, #12466c 45%, #0b314d 100%);
-    border: 1px solid #6cd6ff;
-    box-shadow:
-      inset 0 1px 0 rgba(164, 238, 255, 0.6),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.4),
-      0 4px 16px rgba(0, 0, 0, 0.35),
-      0 0 14px rgba(60, 203, 255, 0.3);
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
-
-    &:hover:not(:disabled) {
-      background: linear-gradient(180deg, #277fb9 0%, #175786 45%, #0f3f63 100%);
-      border-color: #a4eeff;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.8),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-        0 8px 24px rgba(0, 0, 0, 0.45),
-        0 0 24px rgba(60, 203, 255, 0.65);
-    }
-
-    &:active:not(:disabled) {
-      box-shadow:
-        inset 0 2px 4px rgba(0, 0, 0, 0.45),
-        0 2px 6px rgba(0, 0, 0, 0.4);
-    }
-  }
-
-  // Ghost Variant
+  &.variant-navigation,
+  &.variant-outline,
   &.variant-ghost {
-    background: rgba(10, 32, 52, 0.5);
-    border: 1px solid rgba(212, 173, 87, 0.45);
-    color: var(--gold-light);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    --button-default: url('/assets/ui/buttons/wide-dark-default.png');
+    --button-hover: url('/assets/ui/buttons/wide-dark-hover.png');
+    --button-pressed: url('/assets/ui/buttons/wide-dark-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/wide-dark-disabled.png');
+    color: #e8cf98;
+  }
 
-    &:hover:not(:disabled) {
-      background: rgba(212, 173, 87, 0.18);
-      border-color: var(--gold-light);
-      color: #ffffff;
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3), 0 0 16px rgba(212, 173, 87, 0.3);
+  &.variant-tag {
+    --button-default: url('/assets/ui/buttons/compact-blue-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-blue-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-blue-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-blue-disabled.png');
+    color: #d9f7ff;
+  }
+
+  &.variant-tag.size-sm {
+    min-width: 5.75rem;
+    padding-inline: 1rem;
+  }
+
+  &.variant-tag.tone-green {
+    --button-default: url('/assets/ui/buttons/compact-green-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-green-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-green-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-green-disabled.png');
+    color: #eef2b8;
+  }
+
+  &.variant-tag.tone-red {
+    --button-default: url('/assets/ui/buttons/compact-red-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-red-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-red-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-red-disabled.png');
+    color: #ffd5b5;
+  }
+
+  &.variant-tag.tone-gold {
+    --button-default: url('/assets/ui/buttons/compact-gold-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-gold-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-gold-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-gold-disabled.png');
+    color: #fff0bd;
+  }
+
+  &.variant-cyan,
+  &.variant-info {
+    --button-default: url('/assets/ui/buttons/compact-blue-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-blue-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-blue-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-blue-disabled.png');
+    color: #d9f7ff;
+  }
+
+  &.variant-cyan.size-lg,
+  &.variant-info.size-lg,
+  &.variant-ornate {
+    --button-default: url('/assets/ui/buttons/large-blue-default.png');
+    --button-hover: url('/assets/ui/buttons/large-blue-hover.png');
+    --button-pressed: url('/assets/ui/buttons/large-blue-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/large-blue-disabled.png');
+    color: #d9f7ff;
+  }
+
+  &.variant-success {
+    --button-default: url('/assets/ui/buttons/compact-green-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-green-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-green-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-green-disabled.png');
+    color: #eef2b8;
+  }
+
+  &.variant-danger {
+    --button-default: url('/assets/ui/buttons/compact-red-default.png');
+    --button-hover: url('/assets/ui/buttons/compact-red-hover.png');
+    --button-pressed: url('/assets/ui/buttons/compact-red-pressed.png');
+    --button-disabled: url('/assets/ui/buttons/compact-red-disabled.png');
+    color: #ffd5b5;
+  }
+
+  &.variant-icon-square,
+  &.variant-social,
+  &.variant-icon-circle,
+  &.variant-arrow-left,
+  &.variant-arrow-right {
+    min-width: 3.25rem;
+    width: 3.25rem;
+    height: 3.25rem;
+    padding: 0;
+  }
+
+  &.variant-icon-square.size-sm,
+  &.variant-social.size-sm,
+  &.variant-icon-circle.size-sm,
+  &.variant-arrow-left.size-sm,
+  &.variant-arrow-right.size-sm {
+    min-width: 2.75rem;
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  &.variant-icon-square,
+  &.variant-social {
+    --button-default: url('/assets/ui/buttons/square-blue-blank.png');
+    --button-hover: url('/assets/ui/buttons/square-blue-blank.png');
+    --button-pressed: url('/assets/ui/buttons/square-blue-blank.png');
+    --button-disabled: url('/assets/ui/buttons/square-blue-blank.png');
+  }
+
+  &.variant-icon-circle {
+    --button-default: url('/assets/ui/buttons/circle-blue-blank.png');
+    --button-hover: url('/assets/ui/buttons/circle-blue-blank.png');
+    --button-pressed: url('/assets/ui/buttons/circle-blue-blank.png');
+    --button-disabled: url('/assets/ui/buttons/circle-blue-blank.png');
+  }
+
+  &.variant-icon-square.tone-green,
+  &.variant-social.tone-green {
+    --button-default: url('/assets/ui/buttons/square-green-blank.png');
+    --button-hover: url('/assets/ui/buttons/square-green-blank.png');
+    --button-pressed: url('/assets/ui/buttons/square-green-blank.png');
+    --button-disabled: url('/assets/ui/buttons/square-green-blank.png');
+  }
+
+  &.variant-icon-circle.tone-green {
+    --button-default: url('/assets/ui/buttons/circle-green-blank.png');
+    --button-hover: url('/assets/ui/buttons/circle-green-blank.png');
+    --button-pressed: url('/assets/ui/buttons/circle-green-blank.png');
+    --button-disabled: url('/assets/ui/buttons/circle-green-blank.png');
+  }
+
+  &.variant-icon-square.tone-red,
+  &.variant-social.tone-red {
+    --button-default: url('/assets/ui/buttons/square-red-blank.png');
+    --button-hover: url('/assets/ui/buttons/square-red-blank.png');
+    --button-pressed: url('/assets/ui/buttons/square-red-blank.png');
+    --button-disabled: url('/assets/ui/buttons/square-red-blank.png');
+  }
+
+  &.variant-icon-circle.tone-red {
+    --button-default: url('/assets/ui/buttons/circle-red-blank.png');
+    --button-hover: url('/assets/ui/buttons/circle-red-blank.png');
+    --button-pressed: url('/assets/ui/buttons/circle-red-blank.png');
+    --button-disabled: url('/assets/ui/buttons/circle-red-blank.png');
+  }
+
+  &.variant-icon-square.tone-gold,
+  &.variant-social.tone-gold {
+    --button-default: url('/assets/ui/buttons/square-gold-blank.png');
+    --button-hover: url('/assets/ui/buttons/square-gold-blank.png');
+    --button-pressed: url('/assets/ui/buttons/square-gold-blank.png');
+    --button-disabled: url('/assets/ui/buttons/square-gold-blank.png');
+  }
+
+  &.variant-icon-circle.tone-gold {
+    --button-default: url('/assets/ui/buttons/circle-gold-blank.png');
+    --button-hover: url('/assets/ui/buttons/circle-gold-blank.png');
+    --button-pressed: url('/assets/ui/buttons/circle-gold-blank.png');
+    --button-disabled: url('/assets/ui/buttons/circle-gold-blank.png');
+  }
+
+  // Default/hover sprites include a baked emblem. These variants overlay a custom icon on the empty frame.
+  &:is(.variant-icon-square, .variant-icon-circle, .variant-social) {
+    &:hover:not(:disabled, [aria-disabled='true']) {
+      filter: brightness(1.14);
     }
 
-    &:active:not(:disabled) {
-      background: rgba(212, 173, 87, 0.25);
+    &:disabled,
+    &[aria-disabled='true'] {
+      filter: grayscale(0.28) brightness(0.78);
     }
   }
 
-  .btn-content {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    z-index: 3;
-    position: relative;
+  &.variant-arrow-left {
+    --button-default: url('/assets/ui/buttons/arrow-left-default.png');
+    --button-hover: url('/assets/ui/buttons/arrow-left-hover.png');
+    --button-pressed: url('/assets/ui/buttons/arrow-left-hover.png');
+    --button-disabled: url('/assets/ui/buttons/arrow-left-disabled.png');
   }
 
-  .spinner-rune {
-    display: inline-block;
-    animation: runePulse 1s infinite;
+  &.variant-arrow-right {
+    --button-default: url('/assets/ui/buttons/arrow-right-default.png');
+    --button-hover: url('/assets/ui/buttons/arrow-right-hover.png');
+    --button-pressed: url('/assets/ui/buttons/arrow-right-hover.png');
+    --button-disabled: url('/assets/ui/buttons/arrow-right-disabled.png');
   }
 
-  .btn-icon {
-    font-size: 1.1em;
+  &.icon-only {
+    min-width: 3.25rem;
+    width: 3.25rem;
+    padding: 0;
   }
 }
 
+.eivar-btn__content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  max-width: 100%;
+}
+
+.eivar-btn__icon {
+  display: inline-grid;
+  place-items: center;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.icon-only .eivar-btn__content,
+.variant-icon-square .eivar-btn__content,
+.variant-icon-circle .eivar-btn__content,
+.variant-social .eivar-btn__content,
+.variant-arrow-left .eivar-btn__content,
+.variant-arrow-right .eivar-btn__content {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.eivar-btn__spinner {
+  display: inline-block;
+  animation: eivar-button-spin 900ms linear infinite;
+}
+
+@keyframes eivar-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 550px) {
+  .eivar-btn.size-lg,
+  .eivar-btn.variant-ornate {
+    min-width: min(16rem, 100%);
+    height: 4.4rem;
+    padding-inline: 2.6rem;
+    font-size: 0.74rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eivar-btn,
+  .eivar-btn__spinner {
+    transition: none;
+    animation: none;
+  }
+}

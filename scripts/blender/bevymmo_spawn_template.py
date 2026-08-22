@@ -70,6 +70,7 @@ TEMPLATE_OBJECT_NAMES = (
     "PLACEABLE_player_spawn",
     "PLACEABLE_mob_goblin",
     "PLACEABLE_boss_dragon",
+    "RESOURCE_oak_tree",
 )
 
 
@@ -494,6 +495,15 @@ def _create_placeables() -> list[bpy.types.Object]:
             "PLACEABLE_boss_dragon",
             Vector((-16.0, 10.54, -8.0)),
             "boss_dragon",
+        )
+    )
+
+    # Gatherable oak next to the player spawn.
+    out.append(
+        _add_empty_placeable(
+            "RESOURCE_oak_tree",
+            Vector((4.0, 0.0, -10.0)),
+            "resource_oak_tree",
         )
     )
 

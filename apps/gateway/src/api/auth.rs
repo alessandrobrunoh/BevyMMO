@@ -16,6 +16,7 @@ use axum::Json;
 use axum::Router;
 use serde::{Deserialize, Serialize};
 
+use crate::api::api_keys::hash_api_key;
 use crate::api::error::AppError;
 use crate::stdb::connection::{CharacterSummary, GatewayConnection};
 use crate::AppState;
@@ -133,15 +134,7 @@ pub async fn profile(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<ProfileResponse>, AppError> {
-    let Some(id) = session_id_from_cookie(&headers) else {
-        return Err(AppError::Unauthorized);
-    };
-    let Some(connection) = state.sessions.get(&id).await else {
-        // Cookie is still present client-side, but the server-side
-        // connection behind it was reaped for inactivity (or never existed,
-        // e.g. a stale cookie from a restarted gateway).
-        return Err(AppError::SessionExpired);
-    };
+    let connection = resolve_connection(&state, &headers, true).await?;
     let Some(account_id) = connection.account_id() else {
         return Err(AppError::Unauthorized);
     };
@@ -155,7 +148,87 @@ pub async fn profile(
 /// Not yet stored in the session store or cookied — that only happens once
 /// the reducer call on it actually succeeds, so a failed attempt never hands
 /// the browser a session id for a connection nobody can use.
-async fn open_connection(state: &AppState) -> Result<GatewayConnection, AppError> {
+/// Cookie session if present, otherwise a Bearer API key when
+/// `allow_api_key` is true. Cookie always wins: the Angular site sends
+/// `withCredentials` on every call, and management routes pass `false` so a
+/// stolen key cannot mint more keys.
+pub(crate) async fn resolve_connection(
+    state: &AppState,
+    headers: &HeaderMap,
+    allow_api_key: bool,
+) -> Result<GatewayConnection, AppError> {
+    if session_id_from_cookie(headers).is_some() {
+        return connection_from_cookie(state, headers).await;
+    }
+    if allow_api_key {
+        if let Some(secret) = bearer_token(headers) {
+            return connection_from_api_key(state, secret).await;
+        }
+    }
+    Err(AppError::Unauthorized)
+}
+
+pub(crate) async fn connection_from_cookie(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<GatewayConnection, AppError> {
+    let Some(id) = session_id_from_cookie(headers) else {
+        return Err(AppError::Unauthorized);
+    };
+    let Some(connection) = state.sessions.get(&id).await else {
+        return Err(AppError::SessionExpired);
+    };
+    if connection.account_id().is_none() {
+        return Err(AppError::Unauthorized);
+    }
+    Ok(connection)
+}
+
+pub(crate) fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?.trim();
+    let token = value
+        .strip_prefix("Bearer ")
+        .or_else(|| value.strip_prefix("bearer "))?
+        .trim();
+    if token.is_empty() {
+        None
+    } else {
+        Some(token)
+    }
+}
+
+fn api_key_session_id(secret: &str) -> String {
+    format!("ak:{}", hash_api_key(secret))
+}
+
+async fn connection_from_api_key(
+    state: &AppState,
+    secret: &str,
+) -> Result<GatewayConnection, AppError> {
+    let cache_id = api_key_session_id(secret);
+    if let Some(connection) = state.sessions.get(&cache_id).await {
+        // Re-run authenticate so a revoked key dies even if the socket is
+        // still cached, and so `last_used_at` moves on every request.
+        match connection.authenticate_api_key(secret.to_string()).await {
+            Ok(()) => return Ok(connection),
+            Err(_) => {
+                state.sessions.end(&cache_id).await;
+                return Err(AppError::Unauthorized);
+            }
+        }
+    }
+
+    let connection = open_connection(state).await?;
+    if let Err(reason) = connection.authenticate_api_key(secret.to_string()).await {
+        connection.disconnect();
+        tracing::debug!(prefix = %crate::api::api_keys::display_prefix(secret), "api key auth rejected: {reason}");
+        return Err(AppError::Unauthorized);
+    }
+    state.sessions.insert(cache_id, connection.clone()).await;
+    Ok(connection)
+}
+
+pub(crate) async fn open_connection(state: &AppState) -> Result<GatewayConnection, AppError> {
     GatewayConnection::connect(&state.spacetime_uri, &state.spacetime_module)
         .await
         .map_err(|err| {
@@ -197,7 +270,9 @@ async fn authenticated_response(
     Ok(response)
 }
 
-fn session_id_from_cookie(headers: &HeaderMap) -> Option<String> {
+/// The session id on the request cookie, if any. Shared with the
+/// authenticated character routes that reuse the same cookie.
+pub(crate) fn session_id_from_cookie(headers: &HeaderMap) -> Option<String> {
     let raw = headers.get(header::COOKIE)?.to_str().ok()?;
     raw.split(';').find_map(|pair| {
         let (name, value) = pair.trim().split_once('=')?;
@@ -218,4 +293,49 @@ fn clear_cookie(secure: bool) -> HeaderValue {
     let value =
         format!("{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{secure_attr}");
     HeaderValue::from_str(&value).expect("cookie header value is always valid ASCII")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    fn headers_with(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        for (name, value) in pairs {
+            headers.append(*name, HeaderValue::from_static(value));
+        }
+        headers
+    }
+
+    #[test]
+    fn bearer_token_reads_standard_authorization() {
+        let headers = headers_with(&[("authorization", "Bearer eiv_abc")]);
+        assert_eq!(bearer_token(&headers), Some("eiv_abc"));
+    }
+
+    #[test]
+    fn bearer_token_is_case_insensitive_on_the_scheme() {
+        let headers = headers_with(&[("authorization", "bearer eiv_abc")]);
+        assert_eq!(bearer_token(&headers), Some("eiv_abc"));
+    }
+
+    #[test]
+    fn bearer_token_ignores_empty_and_missing() {
+        assert!(bearer_token(&HeaderMap::new()).is_none());
+        let headers = headers_with(&[("authorization", "Bearer ")]);
+        assert!(bearer_token(&headers).is_none());
+        let headers = headers_with(&[("authorization", "Basic abc")]);
+        assert!(bearer_token(&headers).is_none());
+    }
+
+    #[test]
+    fn cookie_is_detected_independently_of_bearer() {
+        let headers = headers_with(&[
+            ("cookie", "bevymmo_session=abc-123"),
+            ("authorization", "Bearer eiv_abc"),
+        ]);
+        assert_eq!(session_id_from_cookie(&headers).as_deref(), Some("abc-123"));
+        assert_eq!(bearer_token(&headers), Some("eiv_abc"));
+    }
 }

@@ -24,31 +24,34 @@
 
       <!-- Hero Action Buttons -->
       <div class="hero-cta-group">
-        <!-- Primary: Discover Eivar (Radiant Gilded Gold) -->
-        <button class="hero-btn hero-btn-discover" (click)="scrollToSection('world')">
-          <span class="btn-shimmer"></span>
-          <span class="btn-rune-spark">✦</span>
-          <span class="btn-text">Discover Eivar</span>
-        </button>
+        <app-eivar-button
+          variant="cta"
+          size="lg"
+          icon="auto_awesome"
+          (onClick)="scrollToSection('world')"
+        >Discover Eivar</app-eivar-button>
 
-        <span class="hero-cta-sep">◈</span>
+        <span class="hero-cta-sep" aria-hidden="true">◈</span>
 
-        <!-- Secondary: Latest News (Arcane Celestial Blue) -->
-        <a routerLink="/news" class="hero-news-link">
-          <button class="hero-btn hero-btn-news">
-            <span class="btn-shimmer"></span>
-            <span class="btn-text">Latest News</span>
-            <span class="btn-arrow">→</span>
-          </button>
-        </a>
+        <app-eivar-button
+          variant="secondary"
+          size="lg"
+          icon="arrow_forward"
+          (onClick)="goToNews()"
+        >Latest News</app-eivar-button>
       </div>
     </div>
   </div>
 
   <!-- Floating Scroll Rune Indicator -->
-  <button class="scroll-rune" (click)="scrollToSection('world')" aria-label="Scroll down">
-    ◇
-  </button>
+  <app-eivar-button
+    variant="icon-circle"
+    class="scroll-rune"
+    [iconOnly]="true"
+    icon="arrow_downward"
+    ariaLabel="Scroll down"
+    (onClick)="scrollToSection('world')"
+  ></app-eivar-button>
 </section>
 
 <!-- =======================================================
@@ -336,11 +339,9 @@
         </div>
 
         <div class="news-more">
-          <a routerLink="/news">
-            <button class="eivar-button secondary">
-              View All News
-            </button>
-          </a>
+          <app-eivar-button variant="secondary" size="md" [routerLink]="['/news']">
+            View All News
+          </app-eivar-button>
         </div>
       </section>
 
@@ -383,9 +384,9 @@
           <p>
             Eivar Online is in active development. Many features, regions, and systems are still being crafted. Your feedback helps shape the world.
           </p>
-          <a (click)="onLearnMore()" class="read-more-light">
+          <app-eivar-button variant="secondary" size="sm" (onClick)="onLearnMore()">
             Learn More →
-          </a>
+          </app-eivar-button>
         </div>
       </article>
 
@@ -401,9 +402,9 @@
           <p>
             Share ideas, get updates, and connect with fellow adventurers. Join our Discord and be part of building Eivar.
           </p>
-          <a (click)="onJoinDiscord()" class="read-more-light">
+          <app-eivar-button variant="info" size="sm" (onClick)="onJoinDiscord()">
             Join Discord →
-          </a>
+          </app-eivar-button>
         </div>
       </article>
     </div>

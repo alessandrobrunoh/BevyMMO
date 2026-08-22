@@ -34,6 +34,8 @@ impl From<&'static str> for WeaponFamilyId {
 pub struct WeaponFamilyMetadata {
     pub id: WeaponFamilyId,
     pub display_name: &'static str,
+    /// Bevy asset path under `assets/` for a family icon. Empty = none.
+    pub icon: &'static str,
     /// Default ability pools for this family. Items may override with their own.
     pub ability_loadout: Option<AbilityLoadout>,
 }
@@ -86,6 +88,7 @@ mod tests {
         registry.register(WeaponFamilyMetadata {
             id: id.clone(),
             display_name: "Staff",
+            icon: "",
             ability_loadout: None,
         });
 

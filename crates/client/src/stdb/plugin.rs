@@ -35,25 +35,27 @@ use crate::movement::{
     snap_to_ground, step_on_terrain, ClientCollision, ClientSurfaceQuery, LocalMovementFreeze,
     MoveTarget, TerrainStep,
 };
-use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState};
+use crate::server_feed::{ChatLine, ServerNotice, SpellCooldownState, WorldTextCue};
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
 use bevymmo_domain::movement::{self, predicted_move_dest, reconcile_offset, Reconcile, Step};
 use bevymmo_domain::movement::{movement_intent_allowed, MovementLock};
-use bevymmo_domain::spells::components::SpellHotbar;
-use bevymmo_domain::spells::registry::SpellId;
+
 use bevymmo_domain::stats::events::{ModifierKind, ModifierOp, StatField};
 use bevymmo_domain::stats::modifiers::{
     ActiveStatModifiers, ModifierEffectInstance, ModifierId as StatModifierId, StatModifierInstance,
 };
 use bevymmo_domain::EntityId;
 use bevymmo_gameplay::abilities::{AbilityAim, AncientWordId, KnownAncientLanguage};
+use bevymmo_gameplay::crafting::ActiveCraft;
 use bevymmo_gameplay::crowd_control::{ActiveCrowdControl, CrowdControlKind, CrowdControlState};
 use bevymmo_gameplay::effects::{ActiveStatusSnapshot, ActiveStatuses};
 use bevymmo_gameplay::entity::boss::components::{Boss, BossArena, BossPhase};
 use bevymmo_gameplay::entity::components::{EntityKind, EntityState, GameEntity, PlayerName};
+use bevymmo_gameplay::gathering::{ActiveGather, Harvestable};
 use bevymmo_gameplay::items::components::{Equipment, Inventory};
-use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
+use bevymmo_gameplay::items::{ItemId, ItemRegistry};
+use bevymmo_gameplay::stats::components::{CombatStats, GatheringStats, MovementStats, VitalStats};
 use bevymmo_network::network::protocol::{SpellCastEnded, SpellCastProgress, SpellVisualEffect};
 use bevymmo_network::world_components::{
     AoeZone, EntityColor, LookDirection, NetworkEntityId, Position, ProjectileFlight,
@@ -72,12 +74,16 @@ use super::module_bindings::aoe_region_table::AoeRegionTableAccess;
 use super::module_bindings::boss_state_table::BossStateTableAccess;
 use super::module_bindings::cast_ended_table::CastEndedTableAccess;
 use super::module_bindings::cast_state_table::CastStateTableAccess;
+use super::module_bindings::character_wallet_table::CharacterWalletTableAccess;
 use super::module_bindings::cooldown_table::CooldownTableAccess;
+use super::module_bindings::craft_session_table::CraftSessionTableAccess;
 use super::module_bindings::crowd_control_table::CrowdControlTableAccess;
 use super::module_bindings::delete_character_reducer::delete_character;
 use super::module_bindings::entity_stats_table::EntityStatsTableAccess;
 use super::module_bindings::equipment_table::EquipmentTableAccess;
 use super::module_bindings::game_entity_table::GameEntityTableAccess;
+use super::module_bindings::gather_session_table::GatherSessionTableAccess;
+use super::module_bindings::gather_yield_table::GatherYieldTableAccess;
 use super::module_bindings::heartbeat_reducer::heartbeat;
 use super::module_bindings::hotbar_table::HotbarTableAccess;
 use super::module_bindings::inventory_table::InventoryTableAccess;
@@ -86,22 +92,27 @@ use super::module_bindings::known_ancient_language_table::KnownAncientLanguageTa
 use super::module_bindings::leave_reducer::leave;
 use super::module_bindings::login_reducer::login;
 use super::module_bindings::logout_reducer::logout;
+use super::module_bindings::market_buy_order_table::MarketBuyOrderTableAccess;
+use super::module_bindings::market_sell_order_table::MarketSellOrderTableAccess;
 use super::module_bindings::move_to_reducer::move_to;
+use super::module_bindings::npc_table::NpcTableAccess;
 use super::module_bindings::periodic_effect_table::PeriodicEffectTableAccess;
 use super::module_bindings::player_message_table::PlayerMessageTableAccess;
 use super::module_bindings::player_table::PlayerTableAccess;
 use super::module_bindings::projectile_table::ProjectileTableAccess;
 use super::module_bindings::register_reducer::register;
+use super::module_bindings::resource_node_table::ResourceNodeTableAccess;
 use super::module_bindings::session_table::SessionTableAccess;
 use super::module_bindings::spell_visual_effect_table::SpellVisualEffectTableAccess;
 use super::module_bindings::stat_modifier_table::StatModifierTableAccess;
 use super::module_bindings::{
     ActiveStatus, AoeRegion, BossPhaseRow, BossState, CastEndedEvent, CastKindRow, CastState,
-    ColorRow, Cooldown, CrowdControl, CrowdControlKindRow, DbConnection, EntityKindRow,
-    EntityStateRow, EntityStats, EquipmentTable, GameEntity as EntityRow, Hotbar, InventoryTable,
-    ItemInstanceRow, KnownAncientLanguageTable, ModifierKindRow, PeriodicEffect, Player,
-    PlayerMessageEvent, Projectile, ReducerEventContext, RemoteReducers, Session,
-    SpellVisualEffectEvent, StatModifier, Vec3Row,
+    CharacterWallet, ColorRow, Cooldown, CraftSession, CrowdControl, CrowdControlKindRow,
+    DbConnection, EntityKindRow, EntityStateRow, EntityStats, EquipmentTable,
+    GameEntity as EntityRow, GatherSession, GatherYieldEvent, Hotbar, InventoryTable,
+    ItemInstanceRow, KnownAncientLanguageTable, MarketBuyOrder, MarketSellOrder, ModifierKindRow,
+    Npc, PeriodicEffect, Player, PlayerMessageEvent, Projectile, ReducerEventContext,
+    RemoteReducers, ResourceNode, Session, SpellVisualEffectEvent, StatModifier, Vec3Row,
 };
 
 /// How fast predicted position is pulled back towards the authoritative one, as
@@ -163,6 +174,7 @@ enum RowEvent {
     Player(Player),
     Session(Session),
     Inventory(InventoryTable),
+    Wallet(CharacterWallet),
     Equipment(EquipmentTable),
     Hotbar(Hotbar),
     KnownAncientLanguage(KnownAncientLanguageTable),
@@ -184,6 +196,17 @@ enum RowEvent {
     ProjectileRemoved(u64),
     AoeRegion(AoeRegion),
     AoeRegionRemoved(u64),
+    Npc(Npc),
+    ResourceNode(ResourceNode),
+    GatherSession(GatherSession),
+    GatherSessionRemoved(u64),
+    CraftSession(CraftSession),
+    CraftSessionRemoved(u64),
+    GatherYield(GatherYieldEvent),
+    SellOrder(MarketSellOrder),
+    SellOrderRemoved(u64),
+    BuyOrder(MarketBuyOrder),
+    BuyOrderRemoved(u64),
     PlayerMessage(PlayerMessageEvent),
     /// A reducer the client called came back with the module's own `Err`.
     ReducerRejected(String),
@@ -214,6 +237,10 @@ struct PendingRows {
     equipment: HashMap<Uuid, EquipmentTable>,
     hotbar: HashMap<Uuid, Hotbar>,
     known_ancient_language: HashMap<Uuid, KnownAncientLanguageTable>,
+    npcs: HashMap<u64, Npc>,
+    resource_nodes: HashMap<u64, ResourceNode>,
+    gather_sessions: HashMap<u64, GatherSession>,
+    craft_sessions: HashMap<u64, CraftSession>,
     boss_state: HashMap<u64, BossState>,
     /// Keyed by `active_status.id`, not by entity: one entity can carry several.
     active_status: HashMap<u64, ActiveStatus>,
@@ -282,6 +309,7 @@ impl StdbConnection {
             format!("SELECT * FROM equipment WHERE character_id = '{character_id}'"),
             format!("SELECT * FROM hotbar WHERE character_id = '{character_id}'"),
             format!("SELECT * FROM known_ancient_language WHERE character_id = '{character_id}'"),
+            format!("SELECT * FROM character_wallet WHERE character_id = '{character_id}'"),
         ];
         if let Some(entity_id) = entity_id {
             queries.push(format!(
@@ -405,6 +433,40 @@ pub struct RosterCharacter {
     pub online: bool,
 }
 
+/// Gold of the character this client is currently playing.
+///
+/// The table `character_wallet` is the source of truth; this resource is the
+/// HUD-facing copy for the local character only. Other characters' wallets
+/// are ignored even though the table is public.
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalGold {
+    pub amount: u64,
+}
+
+/// Sell orders replicated from `market_sell_order`. UI filters by `market_id`.
+#[derive(Resource, Default)]
+pub struct MarketOrderBook {
+    pub orders: HashMap<u64, MarketSellOrder>,
+}
+
+/// Buy orders replicated from `market_buy_order`. UI filters by `market_id`.
+#[derive(Resource, Default)]
+pub struct MarketBuyBook {
+    pub orders: HashMap<u64, MarketBuyOrder>,
+}
+
+/// Present on an NPC entity that opens an isolated player market.
+#[derive(Component, Debug, Clone)]
+pub struct NpcMarket {
+    pub market_id: String,
+}
+
+/// Catalogue kind of a mirrored NPC (`npc_greeter`, `npc_weapon_crafter`, …).
+#[derive(Component, Debug, Clone)]
+pub struct NpcKind {
+    pub kind_id: String,
+}
+
 /// The caller's own characters (from the public `player` table, filtered to
 /// [`LocalCharacter::account_id`]), for the character-select screen.
 ///
@@ -469,6 +531,9 @@ struct ReplicationState<'w> {
     pending: ResMut<'w, PendingRows>,
     local: ResMut<'w, LocalCharacter>,
     roster: ResMut<'w, CharacterRoster>,
+    gold: ResMut<'w, LocalGold>,
+    markets: ResMut<'w, MarketOrderBook>,
+    bids: ResMut<'w, MarketBuyBook>,
 }
 
 /// [`AuthState`]/[`AuthFailure`], bundled for the same reason as
@@ -479,6 +544,22 @@ struct AuthResources<'w> {
     state: ResMut<'w, AuthState>,
     failure: ResMut<'w, AuthFailure>,
 }
+
+/// Player-facing messages and the world anchors they need, bundled so adding
+/// [`WorldTextCue`] does not push [`drain_events`] over the argument threshold.
+#[derive(bevy::ecs::system::SystemParam)]
+struct PlayerFacingMessages<'w, 's> {
+    notices: MessageWriter<'w, ServerNotice>,
+    chat_lines: MessageWriter<'w, ChatLine>,
+    world_text: MessageWriter<'w, WorldTextCue>,
+    local_player: Query<'w, 's, (Entity, &'static Position), With<LocalPlayer>>,
+    positions: Query<'w, 's, &'static Position>,
+    items: Option<Res<'w, ItemRegistry>>,
+}
+
+/// Amber for a normal gather tick; brighter gold when the roll granted extra.
+const GATHER_AMBER: Color = Color::srgb(1.0, 0.72, 0.18);
+const GATHER_BONUS_GOLD: Color = Color::srgb(1.0, 0.88, 0.32);
 
 impl LocalCharacter {
     /// Whether `character_id` (from a `game_entity` row's `owner_character_id`,
@@ -501,6 +582,7 @@ impl Plugin for StdbPlugin {
         app.add_message::<SpellCastEnded>();
         app.add_message::<ServerNotice>();
         app.add_message::<SpellCooldownState>();
+        app.add_message::<WorldTextCue>();
 
         let uri = self.uri.clone();
         let module = self.module.clone();
@@ -516,6 +598,9 @@ impl Plugin for StdbPlugin {
         app.init_resource::<LocalMovementFreeze>();
         app.init_resource::<LocalCharacter>();
         app.init_resource::<CharacterRoster>();
+        app.init_resource::<LocalGold>();
+        app.init_resource::<MarketOrderBook>();
+        app.init_resource::<MarketBuyBook>();
         app.init_resource::<ShuttingDown>();
         app.insert_resource(StdbConnectionConfig {
             uri: uri.clone(),
@@ -686,6 +771,15 @@ fn connect(
             "SELECT * FROM player_message",
             "SELECT * FROM party",
             "SELECT * FROM party_member",
+            "SELECT * FROM npc",
+            "SELECT * FROM enemy_ai",
+            "SELECT * FROM resource_node",
+            "SELECT * FROM gather_session",
+            "SELECT * FROM craft_session",
+            "SELECT * FROM gather_yield",
+            "SELECT * FROM market",
+            "SELECT * FROM market_sell_order",
+            "SELECT * FROM market_buy_order",
         ]);
 
     Ok((
@@ -756,6 +850,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(player, Player);
     mirror!(session, Session);
     mirror!(inventory, Inventory);
+    mirror!(character_wallet, Wallet);
     mirror!(equipment, Equipment);
     mirror!(hotbar, Hotbar);
     mirror!(known_ancient_language, KnownAncientLanguage);
@@ -768,6 +863,12 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror!(cooldown, Cooldown);
     mirror!(projectile, Projectile);
     mirror!(aoe_region, AoeRegion);
+    mirror!(npc, Npc);
+    mirror!(resource_node, ResourceNode);
+    mirror!(gather_session, GatherSession);
+    mirror!(craft_session, CraftSession);
+    mirror!(market_sell_order, SellOrder);
+    mirror!(market_buy_order, BuyOrder);
 
     // Deletions matter for anything the client keeps a copy of: a stun that
     // ends, a buff that expires, a projectile that lands. Without these the
@@ -787,6 +888,20 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror_delete!(periodic_effect, PeriodicEffectRemoved);
     mirror_delete!(cooldown, CooldownRemoved);
 
+    {
+        let deleted = tx.clone();
+        conn.db().market_sell_order().on_delete(move |_ctx, row| {
+            let _ = deleted.send(RowEvent::SellOrderRemoved(row.id));
+        });
+    }
+
+    {
+        let deleted = tx.clone();
+        conn.db().market_buy_order().on_delete(move |_ctx, row| {
+            let _ = deleted.send(RowEvent::BuyOrderRemoved(row.id));
+        });
+    }
+
     // Event tables are insert-only by design: a row is delivered and not
     // retained, which is exactly the lifetime "play this once" wants.
     macro_rules! mirror_event {
@@ -801,6 +916,7 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     mirror_event!(cast_ended, CastEnded);
     mirror_event!(spell_visual_effect, SpellVisualEffect);
     mirror_event!(player_message, PlayerMessage);
+    mirror_event!(gather_yield, GatherYield);
 
     let projectile_removed = tx.clone();
     conn.db().projectile().on_delete(move |_ctx, row| {
@@ -814,6 +930,14 @@ fn register_callbacks(conn: &DbConnection, tx: Sender<RowEvent>) {
     let removed = tx.clone();
     conn.db().game_entity().on_delete(move |_ctx, row| {
         let _ = removed.send(RowEvent::EntityRemoved(row.entity_id));
+    });
+    let gather_removed = tx.clone();
+    conn.db().gather_session().on_delete(move |_ctx, row| {
+        let _ = gather_removed.send(RowEvent::GatherSessionRemoved(row.entity_id));
+    });
+    let craft_removed = tx.clone();
+    conn.db().craft_session().on_delete(move |_ctx, row| {
+        let _ = craft_removed.send(RowEvent::CraftSessionRemoved(row.entity_id));
     });
 }
 
@@ -855,8 +979,7 @@ fn drain_events(
     mut cast_ended: MessageWriter<SpellCastEnded>,
     mut visual_effects: MessageWriter<SpellVisualEffect>,
     mut cooldowns: MessageWriter<SpellCooldownState>,
-    mut notices: MessageWriter<ServerNotice>,
-    mut chat_lines: MessageWriter<ChatLine>,
+    mut feed: PlayerFacingMessages,
     mut failure: ResMut<ConnectionFailure>,
     mut next_screen: ResMut<NextState<Screen>>,
 ) {
@@ -875,7 +998,13 @@ fn drain_events(
                 }
 
                 let is_new = !state.map.by_entity_id.contains_key(&entity_id);
-                apply_entity(&mut commands, &mut state.map, &row, &state.local);
+                apply_entity(
+                    &mut commands,
+                    &mut state.map,
+                    &row,
+                    &state.local,
+                    &state.pending,
+                );
                 replay_entity(&mut commands, &state.map, &mut state.pending, entity_id);
                 if is_new {
                     if let Some(character_id) = owner {
@@ -964,7 +1093,13 @@ fn drain_events(
                 if row.online {
                     state.pending.offline_players.remove(&row.character_id);
                     if let Some(entity_row) = state.pending.entities.get(&row.entity_id).cloned() {
-                        apply_entity(&mut commands, &mut state.map, &entity_row, &state.local);
+                        apply_entity(
+                            &mut commands,
+                            &mut state.map,
+                            &entity_row,
+                            &state.local,
+                            &state.pending,
+                        );
                         replay_entity(&mut commands, &state.map, &mut state.pending, row.entity_id);
                     }
                     replay_character(
@@ -980,6 +1115,71 @@ fn drain_events(
                         commands.entity(entity).despawn();
                     }
                 }
+            }
+            RowEvent::Wallet(row) => {
+                if state.local.character_id == Some(row.character_id) {
+                    state.gold.amount = row.gold;
+                }
+            }
+            RowEvent::Npc(row) => {
+                if let Some(entity) = state.map.get(row.entity_id) {
+                    commands.entity(entity).insert(NpcKind {
+                        kind_id: row.kind_id.clone(),
+                    });
+                    if let Some(market_id) = row.market_id.clone() {
+                        commands.entity(entity).insert(NpcMarket { market_id });
+                    }
+                }
+                state.pending.npcs.insert(row.entity_id, row);
+            }
+            RowEvent::ResourceNode(row) => {
+                if let Some(entity) = state.map.get(row.entity_id) {
+                    commands.entity(entity).insert(harvestable_from(&row));
+                }
+                state.pending.resource_nodes.insert(row.entity_id, row);
+            }
+            RowEvent::GatherSession(row) => {
+                if let Some(entity) = state.map.get(row.entity_id) {
+                    commands.entity(entity).insert(active_gather_from(&row));
+                }
+                state.pending.gather_sessions.insert(row.entity_id, row);
+            }
+            RowEvent::GatherSessionRemoved(entity_id) => {
+                if let Some(entity) = state.map.get(entity_id) {
+                    commands.entity(entity).remove::<ActiveGather>();
+                }
+                state.pending.gather_sessions.remove(&entity_id);
+            }
+            RowEvent::CraftSession(row) => {
+                if let Some(entity) = state.map.get(row.entity_id) {
+                    commands.entity(entity).insert(active_craft_from(&row));
+                }
+                state.pending.craft_sessions.insert(row.entity_id, row);
+            }
+            RowEvent::CraftSessionRemoved(entity_id) => {
+                if let Some(entity) = state.map.get(entity_id) {
+                    commands.entity(entity).remove::<ActiveCraft>();
+                }
+                state.pending.craft_sessions.remove(&entity_id);
+            }
+            RowEvent::GatherYield(row) => {
+                debug!(
+                    "gathered {} {} extra={} depleted={}",
+                    row.amount, row.item_id, row.extra, row.node_depleted
+                );
+                emit_gather_yield_cue(&row, &state.map, &state.pending, &mut feed);
+            }
+            RowEvent::SellOrder(row) => {
+                state.markets.orders.insert(row.id, row);
+            }
+            RowEvent::SellOrderRemoved(id) => {
+                state.markets.orders.remove(&id);
+            }
+            RowEvent::BuyOrder(row) => {
+                state.bids.orders.insert(row.id, row);
+            }
+            RowEvent::BuyOrderRemoved(id) => {
+                state.bids.orders.remove(&id);
             }
             RowEvent::Inventory(row) => {
                 let character_id = row.character_id;
@@ -1039,6 +1239,9 @@ fn drain_events(
                     continue;
                 }
                 state.local.account_id = Some(row.account_id);
+                if state.local.character_id != row.character_id {
+                    state.gold.amount = 0;
+                }
                 state.local.character_id = row.character_id;
                 // Catches every `player` row that already arrived before
                 // this `Session` row told us which account they should be
@@ -1166,11 +1369,11 @@ fn drain_events(
                 // through the notice toast too made every message render
                 // twice in the same screen corner (chat.rs + notices/systems.rs).
                 if row.target.is_none() || row.target == local_identity {
-                    chat_lines.write(ChatLine { text: row.text });
+                    feed.chat_lines.write(ChatLine { text: row.text });
                 }
             }
             RowEvent::ReducerRejected(message) => {
-                notices.write(ServerNotice::error(message));
+                feed.notices.write(ServerNotice::error(message));
             }
             RowEvent::JoinRejected(message) => {
                 failure.0 = Some(message);
@@ -1204,7 +1407,42 @@ fn replay_entity(
     if let Some(row) = pending.boss_state.get(&entity_id) {
         apply_boss_state(commands, entity, row);
     }
+    if let Some(row) = pending.resource_nodes.get(&entity_id) {
+        commands.entity(entity).insert(harvestable_from(row));
+    }
+    if let Some(row) = pending.gather_sessions.get(&entity_id) {
+        commands.entity(entity).insert(active_gather_from(row));
+    }
+    if let Some(row) = pending.craft_sessions.get(&entity_id) {
+        commands.entity(entity).insert(active_craft_from(row));
+    }
     apply_effects(commands, entity, entity_id, pending);
+}
+
+fn harvestable_from(row: &ResourceNode) -> Harvestable {
+    Harvestable {
+        placement_id: row.placement_id.clone(),
+        kind_id: row.kind_id.clone(),
+        current_pieces: row.current_pieces,
+    }
+}
+
+fn active_gather_from(row: &GatherSession) -> ActiveGather {
+    ActiveGather {
+        node_entity_id: row.node_entity_id,
+        elapsed_seconds: row.elapsed_seconds,
+        required_seconds: row.required_seconds,
+    }
+}
+
+fn active_craft_from(row: &CraftSession) -> ActiveCraft {
+    ActiveCraft {
+        npc_entity_id: row.npc_entity_id,
+        item_id: ItemId::new(row.item_id.clone()),
+        quantity: row.quantity,
+        elapsed_seconds: row.elapsed_seconds,
+        required_seconds: row.required_seconds,
+    }
 }
 
 /// Rewrites `CrowdControlState` and `ActiveStatModifiers` — but only when the
@@ -1265,9 +1503,6 @@ fn replay_character(
             .entity(entity)
             .insert_if_neq(equipment_from(&row.slots));
     }
-    if let Some(row) = pending.hotbar.get(&character_id) {
-        commands.entity(entity).insert_if_neq(hotbar_from(row));
-    }
     if local_character_id == Some(character_id) {
         if let Some(row) = pending.known_ancient_language.get(&character_id) {
             commands
@@ -1289,9 +1524,14 @@ fn apply_stats(commands: &mut Commands, entity: Entity, row: &EntityStats) {
         CombatStats {
             armor: row.stats.armor,
             attack_power: row.stats.attack_power,
+            threat_generation: row.stats.threat_generation,
         },
         MovementStats {
             speed: row.stats.movement_speed,
+        },
+        GatheringStats {
+            speed: row.stats.gathering_speed,
+            bonus: row.stats.gathering_bonus,
         },
     ));
 }
@@ -1304,14 +1544,6 @@ fn vital_from_entity_stats(row: &EntityStats) -> VitalStats {
         current_mana: row.current_mana,
         max_mana: stats.max_mana,
         mana_regeneration: stats.mana_regeneration,
-    }
-}
-
-fn hotbar_from(row: &Hotbar) -> SpellHotbar {
-    SpellHotbar {
-        q_spell: row.slots.q.clone().map(SpellId::new),
-        w_spell: row.slots.w.clone().map(SpellId::new),
-        e_spell: row.slots.e.clone().map(SpellId::new),
     }
 }
 
@@ -1342,7 +1574,6 @@ fn movement_lock_from_cast(kind: CastKindRow) -> MovementLock {
     match kind {
         CastKindRow::Instant => MovementLock::None,
         CastKindRow::CastTime => MovementLock::CastTime,
-        CastKindRow::Charge => MovementLock::Charge,
         CastKindRow::Channeling => MovementLock::Channel,
     }
 }
@@ -1353,8 +1584,6 @@ fn cast_progress_from(row: &CastState) -> SpellCastProgress {
         spell_id: row.spell_id.clone(),
         kind: match row.kind {
             CastKindRow::Instant | CastKindRow::CastTime => 0,
-            CastKindRow::Charge => 2,
-            // Preserve SpellCastProgress' existing public contract.
             CastKindRow::Channeling => 1,
         },
         elapsed_seconds: row.elapsed_seconds,
@@ -1564,6 +1793,8 @@ fn stat_field_from(name: &str) -> StatField {
         "MaxHealth" => StatField::MaxHealth,
         "MaxMana" => StatField::MaxMana,
         "ManaRegeneration" => StatField::ManaRegeneration,
+        "GatheringSpeed" => StatField::GatheringSpeed,
+        "GatheringBonus" => StatField::GatheringBonus,
         other => {
             warn!("unknown stat field {other:?} from the module; treating it as Speed");
             StatField::Speed
@@ -1635,6 +1866,7 @@ fn apply_entity(
     map: &mut StdbEntityMap,
     row: &EntityRow,
     local: &LocalCharacter,
+    pending: &PendingRows,
 ) {
     let authoritative = StdbAuthoritative {
         position: to_vec3(&row.position),
@@ -1684,6 +1916,17 @@ fn apply_entity(
     if matches!(row.kind, EntityKindRow::Player) && local.is(row.owner_character_id) {
         cmd.insert(LocalPlayer);
     }
+    if let Some(npc) = pending.npcs.get(&row.entity_id) {
+        cmd.insert(NpcKind {
+            kind_id: npc.kind_id.clone(),
+        });
+        if let Some(market_id) = npc.market_id.clone() {
+            cmd.insert(NpcMarket { market_id });
+        }
+    }
+    if let Some(node) = pending.resource_nodes.get(&row.entity_id) {
+        cmd.insert(harvestable_from(node));
+    }
 }
 
 fn entity_color(color: &ColorRow) -> EntityColor {
@@ -1707,6 +1950,7 @@ fn entity_kind(kind: EntityKindRow) -> EntityKind {
         EntityKindRow::AllyDummy => EntityKind::Ally,
         EntityKindRow::Dummy => EntityKind::Neutral,
         EntityKindRow::Enemy | EntityKindRow::Boss => EntityKind::Hostile,
+        EntityKindRow::ResourceNode => EntityKind::Resource,
     }
 }
 
@@ -1770,6 +2014,7 @@ fn item_instance_from(row: &ItemInstanceRow) -> bevymmo_gameplay::items::instanc
     ItemInstance {
         instance_id: ItemInstanceId(row.instance_id),
         item_id: ItemId::new(row.item_id.clone()),
+        quantity: row.quantity.max(1),
         ability_selection: AbilitySelection {
             primary: row.ability_selection.primary.clone().map(AbilityId::new),
             secondary: row.ability_selection.secondary.clone().map(AbilityId::new),
@@ -1943,6 +2188,9 @@ fn join_on_request(
                 &mut state.pending,
                 &mut state.local,
                 &mut state.roster,
+                &mut state.gold,
+                &mut state.markets,
+                &mut state.bids,
             );
             auth.state.0 = AuthStatus::LoggedOut;
             auth.failure.0 = None;
@@ -1966,6 +2214,9 @@ fn clear_replicated_state(
     pending: &mut PendingRows,
     local: &mut LocalCharacter,
     roster: &mut CharacterRoster,
+    gold: &mut LocalGold,
+    markets: &mut MarketOrderBook,
+    bids: &mut MarketBuyBook,
 ) {
     for entity in map
         .by_entity_id
@@ -1979,6 +2230,9 @@ fn clear_replicated_state(
     *pending = PendingRows::default();
     *local = LocalCharacter::default();
     roster.characters.clear();
+    gold.amount = 0;
+    markets.orders.clear();
+    bids.orders.clear();
 }
 
 /// Tells the server the client is still here.
@@ -2110,6 +2364,7 @@ fn send_move_commands(
         return;
     };
 
+    let _ = super::commands::stop_gather(&conn);
     if let Err(err) = conn.reducers().move_to(point.x, point.y, point.z) {
         error!("move_to failed: {err}");
     }
@@ -2290,6 +2545,65 @@ fn predict_projectiles(
 
 fn to_vec3(v: &Vec3Row) -> Vec3 {
     Vec3::new(v.x, v.y, v.z)
+}
+
+fn item_display_or_id(items: Option<&ItemRegistry>, item_id: &str) -> String {
+    items
+        .and_then(|items| items.get(&ItemId::new(item_id.to_string())))
+        .map(|item| item.display_name().to_string())
+        .unwrap_or_else(|| item_id.to_string())
+}
+
+fn gather_yield_label(amount: u32, extra: u32, item_label: &str) -> (String, Color) {
+    if extra > 0 {
+        (format!("+{amount} {item_label} Bonus!"), GATHER_BONUS_GOLD)
+    } else {
+        (format!("+{amount} {item_label}"), GATHER_AMBER)
+    }
+}
+
+fn gather_yield_world_position(
+    is_local_gatherer: bool,
+    local_position: Option<Vec3>,
+    node_position: Option<Vec3>,
+) -> Option<Vec3> {
+    if is_local_gatherer {
+        local_position
+            .map(|position| position + Vec3::Y * 2.0)
+            .or(node_position)
+    } else {
+        node_position
+    }
+}
+
+fn emit_gather_yield_cue(
+    row: &GatherYieldEvent,
+    map: &StdbEntityMap,
+    pending: &PendingRows,
+    feed: &mut PlayerFacingMessages,
+) {
+    let local = feed.local_player.iter().next();
+    let is_local_gatherer = local.is_some_and(|(entity, _)| map.get(row.entity_id) == Some(entity));
+    let local_position = local.map(|(_, position)| position.0);
+    let node_position = map
+        .get(row.node_entity_id)
+        .and_then(|entity| feed.positions.get(entity).ok().map(|position| position.0))
+        .or_else(|| {
+            pending
+                .entities
+                .get(&row.node_entity_id)
+                .map(|entity| to_vec3(&entity.position))
+        });
+    let Some(world_position) =
+        gather_yield_world_position(is_local_gatherer, local_position, node_position)
+    else {
+        return;
+    };
+
+    let label = item_display_or_id(feed.items.as_deref(), &row.item_id);
+    let (text, color) = gather_yield_label(row.amount, row.extra, &label);
+    feed.world_text
+        .write(WorldTextCue::new(world_position, text).with_color(color));
 }
 
 // ---------------------------------------------------------------------------
@@ -2476,6 +2790,8 @@ mod tests {
                 armor: 10.0,
                 movement_speed: 0.15,
                 attack_power: 12.0,
+                gathering_speed: 0.0,
+                gathering_bonus: 0.0,
             },
             current_mana: 17.0,
         };
@@ -2691,5 +3007,43 @@ mod tests {
                 time_since_last_tick: 0.1,
             }]
         );
+    }
+
+    #[test]
+    fn gather_yield_without_extra_is_amber_amount_and_name() {
+        let (text, color) = gather_yield_label(2, 0, "Wood");
+        assert_eq!(text, "+2 Wood");
+        assert_eq!(color, GATHER_AMBER);
+    }
+
+    #[test]
+    fn gather_yield_with_extra_is_gold_bonus() {
+        let (text, color) = gather_yield_label(3, 1, "wood");
+        assert_eq!(text, "+3 wood Bonus!");
+        assert_eq!(color, GATHER_BONUS_GOLD);
+    }
+
+    #[test]
+    fn gather_yield_anchor_prefers_local_player_then_node() {
+        let local = Vec3::new(1.0, 0.0, 2.0);
+        let node = Vec3::new(4.0, 1.0, 4.0);
+        assert_eq!(
+            gather_yield_world_position(true, Some(local), Some(node)),
+            Some(local + Vec3::Y * 2.0)
+        );
+        assert_eq!(
+            gather_yield_world_position(true, None, Some(node)),
+            Some(node)
+        );
+        assert_eq!(
+            gather_yield_world_position(false, Some(local), Some(node)),
+            Some(node)
+        );
+        assert_eq!(gather_yield_world_position(false, Some(local), None), None);
+    }
+
+    #[test]
+    fn item_label_falls_back_to_id_when_registry_misses() {
+        assert_eq!(item_display_or_id(None, "copper_ore"), "copper_ore");
     }
 }

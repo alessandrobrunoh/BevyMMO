@@ -155,6 +155,7 @@ pub fn register(ctx: &ReducerContext, email: String, password: String) -> Result
     });
 
     bind_session(ctx, account_row.id);
+    crate::reducers::economy::ensure_account_economy(ctx, account_row.id);
     Ok(())
 }
 
@@ -178,6 +179,7 @@ pub fn login(ctx: &ReducerContext, email: String, password: String) -> Result<()
     }
 
     bind_session(ctx, account_row.id);
+    crate::reducers::economy::ensure_account_economy(ctx, account_row.id);
     Ok(())
 }
 
@@ -207,7 +209,7 @@ pub fn caller_session(ctx: &ReducerContext) -> Result<Session, String> {
 /// preserved only when the existing session already pointed at this same
 /// account; switching accounts on one connection always returns to the
 /// character list.
-fn bind_session(ctx: &ReducerContext, account_id: u64) {
+pub(crate) fn bind_session(ctx: &ReducerContext, account_id: u64) {
     let identity = ctx.sender();
     let character_id = ctx
         .db

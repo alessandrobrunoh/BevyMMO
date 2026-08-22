@@ -9,6 +9,7 @@ repository.workspace = true
 default = ["client"]
 client = [
     "bevy/default",
+    "bevy/jpeg",
     "dep:bevymmo_client",
     "dep:bevymmo_presentation",
 ]

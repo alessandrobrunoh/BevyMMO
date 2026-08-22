@@ -16,13 +16,25 @@ use crate::abilities::BaseAbilityRegistry;
     potency = 115.0,
     cast_time = 0.25,
     cooldown = 3.0,
-    energy_cost = 9.0,
+    mana_cost = 9.0,
     animation = "sword_cleave",
     impact_vfx = "cleave_impact",
+    icon = "abilities/icons/cleave.png",
 )]
 pub struct Cleave;
 
 /// Adds this content package to the base-ability registry.
 pub fn register(registry: &mut BaseAbilityRegistry) {
     Cleave::register(registry);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::abilities::BaseAbility;
+
+    #[test]
+    fn selects_its_icon_asset() {
+        assert_eq!(Cleave.icon(), "abilities/icons/cleave.png");
+    }
 }

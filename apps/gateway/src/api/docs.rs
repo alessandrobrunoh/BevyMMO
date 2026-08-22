@@ -19,7 +19,7 @@ use crate::AppState;
     info(
         title = "BevyMMO Gateway",
         version = env!("CARGO_PKG_VERSION"),
-        description = "HTTP facade over the SpacetimeDB module, for the Angular frontend and any non-Bevy client. Business routes are versioned under /v1; `/v1/public/*` needs no session, `/v1/auth/*` and `/v1/profile` are cookie-based. `/` and `/health` are unversioned service routes."
+        description = "HTTP facade over the SpacetimeDB module, for the Angular frontend and any non-Bevy client. Business routes are versioned under /v1; `/v1/public/*` needs no session, `/v1/auth/*` and `/v1/api-keys` are cookie-based, `/v1/profile` and `/v1/characters/*` accept a session cookie or `Authorization: Bearer eiv_…`. `/` and `/health` are unversioned service routes."
     ),
     paths(
         crate::api::welcome,
@@ -28,8 +28,19 @@ use crate::AppState;
         crate::api::auth::login,
         crate::api::auth::logout,
         crate::api::auth::profile,
+        crate::api::api_keys::list,
+        crate::api::api_keys::create,
+        crate::api::api_keys::revoke,
+        crate::api::characters::wallet,
+        crate::api::characters::stats,
         crate::api::public::accounts::search,
         crate::api::public::accounts::detail,
+        crate::api::public::markets::list_markets,
+        crate::api::public::markets::list_offers,
+        crate::api::public::markets::item_ticket,
+        crate::api::public::catalog::get_catalog,
+        crate::api::public::catalog::list_items,
+        crate::api::public::catalog::get_item,
     ),
     components(schemas(
         crate::api::WelcomeResponse,
@@ -37,14 +48,31 @@ use crate::AppState;
         crate::api::error::ErrorResponse,
         crate::api::auth::AuthRequest,
         crate::api::auth::ProfileResponse,
+        crate::api::api_keys::CreateApiKeyRequest,
+        crate::api::api_keys::ApiKeyListItem,
+        crate::api::api_keys::CreatedApiKey,
+        crate::api::characters::WalletResponse,
+        crate::api::characters::StatsResponse,
         crate::stdb::connection::CharacterSummary,
         crate::api::public::accounts::AccountSummary,
         crate::stdb::directory::PlayerEntry,
+        crate::api::public::markets::MarketSummary,
+        crate::api::public::markets::SellOffer,
+        crate::api::public::markets::BuyOffer,
+        crate::api::public::markets::ItemTicket,
+        bevymmo_content::catalog::Catalog,
+        bevymmo_content::catalog::CatalogItem,
+        bevymmo_content::catalog::CatalogEffect,
+        bevymmo_content::catalog::CatalogRuneProfile,
+        bevymmo_content::catalog::CatalogAbilityLoadout,
     )),
     tags(
         (name = "meta", description = "Service banner and liveness"),
-        (name = "auth", description = "Registration, login, logout, own profile — cookie-based"),
+        (name = "auth", description = "Registration, login, logout, own profile — cookie, or Bearer on /profile"),
+        (name = "api-keys", description = "Create, list and revoke API keys — cookie session only"),
         (name = "public", description = "Session-less reads of already-public game data"),
+        (name = "market", description = "Isolated public market listings and item tickets"),
+        (name = "catalog", description = "Compiled game content (items, later abilities and words) — no session, no SpacetimeDB"),
     )
 )]
 struct ApiDoc;

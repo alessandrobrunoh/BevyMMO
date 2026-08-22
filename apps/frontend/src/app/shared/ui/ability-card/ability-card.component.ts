@@ -21,7 +21,7 @@ import { AbilityDefinition } from '../../models/wiki.model';
             </div>
             <div class="ability-costs">
               <span class="cost-chip cd"><span class="material-symbols-outlined cost-ico">schedule</span> {{ ability.cooldown }}</span>
-              <span class="cost-chip mp"><span class="material-symbols-outlined cost-ico">bolt</span> {{ ability.energyCost }}</span>
+              <span class="cost-chip mp"><span class="material-symbols-outlined cost-ico">bolt</span> {{ ability.manaCost }}</span>
             </div>
           </div>
 

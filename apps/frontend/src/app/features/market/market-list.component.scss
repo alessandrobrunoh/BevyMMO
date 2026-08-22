@@ -1,0 +1,456 @@
+@use '../../../styles/variables' as *;
+
+.market-page-section {
+  background: linear-gradient(
+    180deg,
+    #dce7ea 0%,
+    var(--parchment) 25%,
+    var(--parchment) 80%,
+    #d9c9aa 100%
+  );
+  padding: 60px 0 90px;
+  min-height: 80vh;
+}
+
+/* Filter & Control Panel */
+.market-control-panel {
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.75rem;
+  background: #ded2bb;
+  border: 1px solid rgba(117, 107, 90, 0.35);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.filter-top-row {
+  display: grid;
+  grid-template-columns: 1.5fr 2fr 1.2fr;
+  gap: 1.25rem;
+  align-items: end;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.select-group,
+.search-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: var(--font-serif);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dark-dim);
+
+    .label-rune {
+      color: var(--gold-dark);
+      font-size: 0.95rem;
+    }
+  }
+}
+
+.custom-select-wrap {
+  position: relative;
+
+  select {
+    width: 100%;
+    padding: 0.55rem 0.85rem;
+    background: #f5edd9;
+    border: 1px solid rgba(117, 107, 90, 0.35);
+    border-radius: var(--radius-xs);
+    font-family: var(--font-serif);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-dark);
+    outline: none;
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
+
+    &:focus {
+      border-color: var(--blue-700);
+    }
+  }
+}
+
+.search-input-box {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.85rem;
+  background: #f5edd9;
+  border: 1px solid rgba(117, 107, 90, 0.35);
+  border-radius: var(--radius-xs);
+
+  .search-icon {
+    font-size: 0.85rem;
+    color: var(--text-dark-dim);
+  }
+
+  input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    outline: none;
+    font-family: var(--font-serif);
+    font-size: 0.85rem;
+    color: var(--text-dark);
+  }
+}
+
+.category-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(117, 107, 90, 0.2);
+  padding-top: 0.85rem;
+
+  .cat-label {
+    font-family: var(--font-serif);
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dark-dim);
+  }
+
+  .cat-buttons {
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+}
+
+/* Results Count Bar */
+.results-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+
+  .results-count {
+    font-family: var(--font-serif);
+    font-size: 0.88rem;
+    color: var(--text-dark-dim);
+
+    strong {
+      color: var(--text-dark);
+    }
+  }
+
+  .active-market-tag {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--font-serif);
+    font-size: 0.8rem;
+    background: #f5edd9;
+    border: 1px solid rgba(117, 107, 90, 0.3);
+    padding: 0.25rem 0.65rem;
+    border-radius: var(--radius-xs);
+
+    span {
+      color: var(--text-dark-dim);
+    }
+
+    strong {
+      color: var(--blue-850);
+    }
+
+
+  }
+}
+
+/* 1-Column Horizontal Items List */
+.items-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.horizontal-item-card {
+  display: grid;
+  grid-template-columns: 1.4fr 2fr 1.2fr;
+  gap: 1.5rem;
+  align-items: center;
+  background: var(--parchment-news);
+  border: 1px solid rgba(117, 107, 90, 0.35);
+  box-shadow: 0 6px 20px rgba(7, 26, 42, 0.08);
+  padding: 1.5rem 1.75rem;
+  cursor: pointer;
+  transition: transform var(--transition), box-shadow var(--transition);
+
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 32px rgba(7, 26, 42, 0.14);
+    border-color: rgba(117, 107, 90, 0.55);
+  }
+
+  @media (max-width: 1024px) {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+/* Left Column: Item Identity */
+.card-identity-col {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+
+  .item-icon-box {
+    width: 52px;
+    height: 52px;
+    background: var(--blue-850);
+    border: 1px solid var(--gold);
+    border-radius: var(--radius-xs);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+
+    .item-rune {
+      font-size: 1.5rem;
+      color: var(--gold-light);
+    }
+  }
+
+  .identity-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+
+    .badge-line {
+      display: flex;
+      gap: 0.35rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .rarity-badge {
+      font-family: var(--font-serif);
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.1rem 0.45rem;
+      border-radius: 2px;
+      text-transform: uppercase;
+
+      &.rarity-common { background: #e0d7c2; color: #4a4235; border: 1px solid #c2b79b; }
+      &.rarity-rare { background: #d0e8f7; color: #104e7a; border: 1px solid #7eb8e3; }
+      &.rarity-epic { background: #ebd5fa; color: #5f1b8f; border: 1px solid #b87de3; }
+      &.rarity-legendary { background: #faebd5; color: #8f531b; border: 1px solid #e3b37d; }
+      &.rarity-ancient { background: #fad5d5; color: #8f1b1b; border: 1px solid #e37d7d; }
+    }
+
+    .category-badge,
+    .slot-badge {
+      font-family: var(--font-serif);
+      font-size: 0.68rem;
+      color: var(--text-dark-dim);
+      text-transform: uppercase;
+    }
+
+    .slot-badge {
+      background: #f5edd9;
+      padding: 0.1rem 0.4rem;
+      border-radius: 2px;
+    }
+
+    .item-title {
+      font-family: var(--font-serif);
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      margin: 0;
+    }
+
+    .item-subtype {
+      font-family: var(--font-serif);
+      font-size: 0.78rem;
+      color: var(--text-dark-dim);
+    }
+
+    .item-desc {
+      font-family: var(--font-serif);
+      font-size: 0.82rem;
+      color: var(--text-dark-dim);
+      margin: 0.25rem 0 0;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+  }
+}
+
+/* Center Column: Stats Matrix */
+.card-stats-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: #f5edd9;
+  border: 1px solid rgba(117, 107, 90, 0.25);
+  border-radius: var(--radius-xs);
+  padding: 0.85rem 1rem;
+
+  .stats-heading {
+    font-family: var(--font-serif);
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--gold-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .stats-table-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 0.5rem 0.85rem;
+  }
+
+  .stat-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+
+    .st-lbl {
+      font-family: var(--font-serif);
+      font-size: 0.68rem;
+      color: var(--text-dark-dim);
+    }
+
+    .st-val {
+      font-family: var(--font-sans);
+      font-size: 0.82rem;
+      color: var(--text-dark);
+
+      &.highlight {
+        color: var(--blue-850);
+        font-weight: 800;
+      }
+    }
+  }
+}
+
+/* Right Column: Price & Action */
+.card-price-action-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-left: 1px solid rgba(117, 107, 90, 0.2);
+  padding-left: 1.5rem;
+
+  @media (max-width: 1024px) {
+    border-left: none;
+    border-top: 1px solid rgba(117, 107, 90, 0.2);
+    padding-left: 0;
+    padding-top: 0.75rem;
+  }
+
+  .hall-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+
+    .hall-icon {
+      font-size: 1.1rem;
+      color: var(--gold-dark);
+    }
+
+    .hall-text {
+      display: flex;
+      flex-direction: column;
+
+      .hall-name {
+        font-family: var(--font-serif);
+        font-size: 0.84rem;
+        font-weight: 700;
+        color: var(--blue-850);
+      }
+
+      .hall-fee {
+        font-family: var(--font-serif);
+        font-size: 0.68rem;
+        color: var(--text-dark-dim);
+      }
+    }
+  }
+
+  .price-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+
+    .orders-count-label {
+      font-family: var(--font-serif);
+      font-size: 0.72rem;
+      color: var(--text-dark-dim);
+    }
+
+    .price-main {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+
+      .gold-icon {
+        color: var(--gold-dark);
+        font-size: 1rem;
+      }
+
+      .price-amount {
+        font-family: var(--font-sans);
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: var(--text-dark);
+      }
+    }
+
+    .price-range {
+      font-family: var(--font-serif);
+      font-size: 0.72rem;
+      color: var(--text-dark-dim);
+    }
+  }
+
+  .action-wrap {
+    margin-top: 0.2rem;
+  }
+}
+
+.market-empty {
+  text-align: center;
+  padding: 3.5rem 1.5rem;
+  background: #ded2bb;
+  border: 1px solid rgba(117, 107, 90, 0.35);
+
+  .empty-rune {
+    font-size: 2.2rem;
+    color: var(--gold-dark);
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+
+  h3 {
+    font-family: var(--font-serif);
+    margin: 0.75rem 0 0.35rem;
+    color: var(--text-dark);
+  }
+
+  p {
+    font-family: var(--font-serif);
+    color: var(--text-dark-dim);
+    margin: 0;
+  }
+}

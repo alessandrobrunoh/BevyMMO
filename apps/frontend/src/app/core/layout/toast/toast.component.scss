@@ -66,9 +66,7 @@
   }
 
   .toast-close {
-    color: var(--text-dim);
-    font-size: 0.9rem;
-    &:hover { color: #ffffff; }
+    flex: 0 0 auto;
   }
 
   &.toast-rune {

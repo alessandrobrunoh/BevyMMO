@@ -83,14 +83,14 @@ impl AbilityGeometry {
 ///
 /// Determines whether the ability fires immediately, has a wind-up period during
 /// which movement cancels it, or channels repeated effects while held.
-/// This is the Eidolon equivalent of [`crate::spells::context::CastKind`],
+/// This is the weapon equivalent of [`crate::spells::context::CastKind`],
 /// but lives on the ability definition rather than a separate spell config.
 // No `Eq`: `Channeling` carries an `f32`, which has none.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AbilityCastMode {
     /// Effect fires on press, no wind-up.
     Instant,
-    /// Blocking wind-up: caster must remain stationary for `cast_time` seconds.
+    /// Wind-up: click starts the cast; it fires when `cast_time` elapses.
     /// Movement always interrupts.
     CastTime,
     /// Repeated effect while held. Movement interrupts iff
@@ -142,7 +142,7 @@ impl AbilityCastMode {
     }
 }
 
-/// Channeling movement interrupt policy for Eidolon abilities.
+/// Channeling movement interrupt policy for weapon abilities.
 /// Mirrors [`crate::spells::context::ChannelMovementPolicy`] so the unified
 /// cast state can carry either source's policy without conversion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -164,7 +164,7 @@ pub struct AbilityParams {
     pub range: f32,
     pub cast_time: f32,
     pub cooldown: f32,
-    pub energy_cost: f32,
+    pub mana_cost: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -243,6 +243,14 @@ pub trait BaseAbility: Send + Sync + 'static {
     /// Forma visiva dell'impatto (particellare/mesh), a cui l'Essenza
     /// applica solo colore/tema (vedi `EssenceVisualTheme`).
     fn impact_vfx(&self) -> &'static str;
+
+    /// Bevy asset path under `assets/` for the HUD icon.
+    ///
+    /// Empty means the presentation layer shows no icon. `#[base_ability]`
+    /// defaults this to `abilities/icons/{id}.png` when `icon` is omitted.
+    fn icon(&self) -> &'static str {
+        ""
+    }
 
     /// Ritardo fra il lancio e l'impatto. > 0 significa "cerchio di
     /// preavviso a terra, poi lo schianto" (il Meteorite); il client legge
@@ -540,7 +548,7 @@ mod tests {
                 range: 0.0,
                 cast_time: 0.5,
                 cooldown: 5.0,
-                energy_cost: 10.0,
+                mana_cost: 10.0,
             }
         }
         fn animation(&self) -> &'static str {
@@ -556,6 +564,11 @@ mod tests {
         let ability = DummyAbility;
         assert!(ability.has_tag(AbilityTag::Area));
         assert!(!ability.has_tag(AbilityTag::Projectile));
+    }
+
+    #[test]
+    fn icon_defaults_to_empty_when_not_overridden() {
+        assert_eq!(DummyAbility.icon(), "");
     }
 
     #[test]
@@ -591,7 +604,7 @@ mod tests {
                 range: 2.0,
                 cast_time: 0.0,
                 cooldown: 1.0,
-                energy_cost: 5.0,
+                mana_cost: 5.0,
             }
         }
         fn animation(&self) -> &'static str {
@@ -623,7 +636,7 @@ mod tests {
                 range: 20.0,
                 cast_time: 0.8,
                 cooldown: 6.0,
-                energy_cost: 15.0,
+                mana_cost: 15.0,
             }
         }
         fn animation(&self) -> &'static str {
@@ -655,7 +668,7 @@ mod tests {
                 range: 0.0,
                 cast_time: 3.0,
                 cooldown: 10.0,
-                energy_cost: 30.0,
+                mana_cost: 30.0,
             }
         }
         fn animation(&self) -> &'static str {
@@ -776,6 +789,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 10.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let caster_pos = Vec3::new(0.0, 12.0, 0.0);
         let target_on_mountain = Vec3::new(1.0, 14.0, 1.0);
@@ -805,6 +819,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 10.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let mut ctx = SpellCastContext::new(
             EntityId::new(1),
@@ -833,6 +848,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 10.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let mut ctx = SpellCastContext::new(
             EntityId::new(1),

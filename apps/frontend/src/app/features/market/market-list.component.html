@@ -1,0 +1,198 @@
+<app-page-header
+  title="Player Markets"
+  subtitle="Browse active sell orders listed by players across all regional trading halls."
+  badge="Live Exchange"
+  bgImage="assets/images/ancient-citadel.jpg"
+  [breadcrumbs]="[{ label: 'Market' }]"
+></app-page-header>
+
+<div class="market-page-section section-padding">
+  <div class="container">
+    <!-- Top Filter & Control Panel -->
+    <div class="market-control-panel stone-panel chamfer-box">
+      <!-- Top Row: Market Select, Search Bar & Sort -->
+      <div class="filter-top-row">
+        <!-- Market Hall Selector Dropdown -->
+        <div class="select-group market-select-group">
+          <label for="market-filter-select">
+            <span class="label-rune">ᛟ</span>
+            <span>Trading Hall</span>
+          </label>
+          <div class="custom-select-wrap">
+            <select
+              id="market-filter-select"
+              [ngModel]="selectedMarketId()"
+              (ngModelChange)="selectedMarketId.set($event)"
+            >
+              <option value="All">All Markets (Realm-wide)</option>
+              @for (market of markets(); track market.id) {
+                <option [value]="market.id">
+                  {{ market.display_name }} ({{ market.fee_bps / 100 | number:'1.0-2' }}% Cut)
+                </option>
+              }
+            </select>
+          </div>
+        </div>
+
+        <!-- Search Input -->
+        <div class="search-group">
+          <label for="search-input">
+            <span>Search Items</span>
+          </label>
+          <div class="search-input-box">
+            <span class="search-icon">🔍</span>
+            <input
+              id="search-input"
+              type="search"
+              placeholder="Search by name, stat, type, or slot…"
+              [ngModel]="searchQuery()"
+              (ngModelChange)="searchQuery.set($event)"
+            />
+          </div>
+        </div>
+
+        <!-- Sort Dropdown -->
+        <div class="select-group sort-select-group">
+          <label for="sort-select">
+            <span>Sort by</span>
+          </label>
+          <div class="custom-select-wrap">
+            <select
+              id="sort-select"
+              [ngModel]="sortBy()"
+              (ngModelChange)="sortBy.set($event)"
+            >
+              <option value="price_asc">Price: Lowest First</option>
+              <option value="price_desc">Price: Highest First</option>
+              <option value="offers_desc">Most Active Orders</option>
+              <option value="name_asc">Name: A to Z</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Row: Category Filter Tabs -->
+      <div class="category-tabs-row">
+        <span class="cat-label">Category:</span>
+        <div class="cat-buttons">
+          @for (cat of categories; track cat) {
+            <app-eivar-button
+              variant="tag"
+              size="sm"
+              [active]="selectedCategory() === cat"
+              [toggle]="true"
+              (onClick)="selectedCategory.set(cat)"
+            >
+              {{ cat }}
+            </app-eivar-button>
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Listings Count Bar -->
+    <div class="results-header-bar">
+      <div class="results-count">
+        Showing <strong>{{ filteredItems().length }}</strong>
+        {{ filteredItems().length === 1 ? 'item with active offers' : 'items with active offers' }}
+      </div>
+
+      @if (selectedMarketId() !== 'All') {
+        <div class="active-market-tag">
+          <span>Filtered by:</span>
+          <strong>{{ filteredItems().length > 0 ? filteredItems()[0].marketName : selectedMarketId() }}</strong>
+          <app-eivar-button variant="tag" size="sm" tone="red" (onClick)="selectedMarketId.set('All')">✕ Show All</app-eivar-button>
+        </div>
+      }
+    </div>
+
+    @if (loading()) {
+      <div class="market-empty stone-panel chamfer-box">
+        <span class="empty-rune">ᛟ</span>
+        <p>Consulting exchange ledgers across all halls…</p>
+      </div>
+    } @else if (error(); as message) {
+      <div class="market-empty stone-panel chamfer-box">
+        <span class="empty-rune">ᛟ</span>
+        <h3>Could not reach the market</h3>
+        <p>{{ message }}</p>
+      </div>
+    } @else if (filteredItems().length === 0) {
+      <div class="market-empty stone-panel chamfer-box">
+        <span class="empty-rune">ᛟ</span>
+        <h3>No active offers found</h3>
+        <p>There are currently no items with active sell orders listed for the selected filters.</p>
+      </div>
+    } @else {
+      <!-- 1-Column Horizontal Row Cards List -->
+      <div class="items-row-list">
+        @for (entry of filteredItems(); track entry.item.id + entry.marketId) {
+          <article class="horizontal-item-card stone-panel chamfer-box" (click)="openTicket(entry)">
+            <!-- Left Column: Item Identity -->
+            <div class="card-identity-col">
+              <div class="item-icon-box">
+                <span class="item-rune">{{ entry.item.runeSymbol }}</span>
+              </div>
+              <div class="identity-info">
+                <div class="badge-line">
+                  <span class="rarity-badge" [class]="'rarity-' + entry.item.rarity.toLowerCase()">
+                    {{ entry.item.rarity }}
+                  </span>
+                  <span class="category-badge">{{ entry.item.category }}</span>
+                  <span class="slot-badge">{{ entry.item.slot }}</span>
+                </div>
+                <h3 class="item-title">{{ entry.item.name }}</h3>
+                <span class="item-subtype">{{ entry.item.subType }}</span>
+                <p class="item-desc">{{ entry.item.description }}</p>
+              </div>
+            </div>
+
+            <!-- Center Column: Rich Stats Matrix -->
+            <div class="card-stats-col">
+              <span class="stats-heading">Item Attributes & Combat Stats</span>
+              <div class="stats-table-grid">
+                @for (st of entry.item.stats; track st.label) {
+                  <div class="stat-cell" [class.highlight-cell]="st.highlight">
+                    <span class="st-lbl">{{ st.label }}</span>
+                    <strong class="st-val" [class.highlight]="st.highlight">{{ st.value }}</strong>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <!-- Right Column: Market Hall & Price Action -->
+            <div class="card-price-action-col">
+              <div class="hall-badge">
+                <span class="hall-icon">🏛</span>
+                <div class="hall-text">
+                  <span class="hall-name">{{ entry.marketName }}</span>
+                  <span class="hall-fee">Market Cut: {{ entry.marketFeeBps / 100 | number:'1.0-2' }}%</span>
+                </div>
+              </div>
+
+              <div class="price-box">
+                <span class="orders-count-label">
+                  {{ entry.activeOffersCount }} {{ entry.activeOffersCount === 1 ? 'active offer' : 'active offers' }}
+                  · {{ entry.totalQuantity }} listed
+                </span>
+                <div class="price-main">
+                  <span class="gold-icon">✦</span>
+                  <span class="price-amount">{{ formatOfferPrice(entry.cheapestOffer.price_gold, entry.cheapestOffer.quantity) }}</span>
+                </div>
+                @if (entry.activeOffersCount > 1 && entry.highestPrice !== entry.lowestPrice) {
+                  <span class="price-range">Unit range: {{ entry.lowestPrice }}g – {{ entry.highestPrice }}g</span>
+                }
+              </div>
+
+              <div class="action-wrap">
+                <app-eivar-button variant="cyan" size="sm" [fullWidth]="true">
+                  Inspect Item & Buy
+                </app-eivar-button>
+              </div>
+            </div>
+          </article>
+        }
+      </div>
+    }
+  </div>
+</div>

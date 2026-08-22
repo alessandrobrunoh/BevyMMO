@@ -1,50 +1,45 @@
 //! General-purpose merchant NPC with a shop interaction.
 
-use std::sync::Arc;
+use crate::placeables::npc;
 
-use crate::placeables::{
-    AssetHint, InteractionKind, KindId, NpcPlaceable, PlaceableDefaults, PlaceableDefinition,
-    PlaceableRegistry,
-};
-use crate::world::TransformData;
+#[npc(
+    id = "npc_merchant",
+    name = "Merchant",
+    icon = "🧑‍💼",
+    asset = "models/npcs/merchant.glb",
+    tint = (0.6, 0.5, 0.9),
+    interaction = shop("shop_general"),
+)]
+pub struct Merchant;
 
-pub struct MerchantDefinition;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::placeables::{
+        AssetHint, InteractionKind, NpcPlaceable, PlaceableDefinition, PlaceableRegistry,
+    };
 
-impl PlaceableDefinition for MerchantDefinition {
-    fn id(&self) -> KindId {
-        KindId::new("npc_merchant")
-    }
-    fn display_name(&self) -> &'static str {
-        "Merchant"
-    }
-    fn icon(&self) -> &'static str {
-        "🧑‍💼"
-    }
-    fn asset_hint(&self) -> AssetHint {
-        AssetHint::Scene("models/npcs/merchant.glb")
-    }
-    fn defaults(&self) -> PlaceableDefaults {
-        PlaceableDefaults {
-            transform: TransformData {
-                translation: [0.0, 0.0, 0.0],
-                rotation_deg: [0.0, 0.0, 0.0],
-                scale: [1.0, 1.0, 1.0],
-            },
-            tint: Some([0.6, 0.5, 0.9]),
-            collision: None,
-            blocks_movement: false,
+    #[test]
+    fn merchant_keeps_shop_kind_and_inventory() {
+        let def = Merchant;
+        assert_eq!(def.id().as_str(), "npc_merchant");
+        assert_eq!(Merchant::ID, "npc_merchant");
+        assert_eq!(def.display_name(), "Merchant");
+        assert_eq!(def.icon(), "🧑‍💼");
+        assert!(matches!(
+            def.asset_hint(),
+            AssetHint::Scene("models/npcs/merchant.glb")
+        ));
+        assert_eq!(def.defaults().tint, Some([0.6, 0.5, 0.9]));
+        match def.interaction() {
+            InteractionKind::Shop { inventory_id } => {
+                assert_eq!(inventory_id, "shop_general");
+            }
+            other => panic!("expected Shop, got {other:?}"),
         }
-    }
-}
 
-impl NpcPlaceable for MerchantDefinition {
-    fn interaction(&self) -> InteractionKind {
-        InteractionKind::Shop {
-            inventory_id: "shop_general".to_string(),
-        }
+        let mut registry = PlaceableRegistry::default();
+        register(&mut registry);
+        assert!(registry.npcs.contains_key(&def.id()));
     }
-}
-
-pub fn register(registry: &mut PlaceableRegistry) {
-    registry.register_npc(Arc::new(MerchantDefinition));
 }

@@ -10,7 +10,7 @@ use crate::game_state::{in_gameplay, Screen};
 use crate::ui::target_frame::components::{TargetFrame, TargetFrameTarget};
 
 /// Sits just above the ability hotbar (`bottom: 86`) so personal buffs are in
-/// the same gaze as Q/W/E instead of a thin strip at the top of the screen.
+/// the same gaze as the ability hotbar instead of a thin strip at the top of the screen.
 const STATUS_BAR_BOTTOM: f32 = 200.0;
 const STATUS_CARD_WIDTH: f32 = 108.0;
 const STATUS_CARD_HEIGHT: f32 = 72.0;

@@ -1,5 +1,6 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { ContentService } from '../../../core/services/content.service';
 import { PageHeaderComponent } from '../../../shared/ui/page-header/page-header.component';
@@ -8,7 +9,6 @@ import { WikiInfoBoxComponent } from '../../../shared/ui/wiki-infobox/wiki-infob
 import { WikiCalloutComponent } from '../../../shared/ui/wiki-callout/wiki-callout.component';
 import { AbilityCardComponent } from '../../../shared/ui/ability-card/ability-card.component';
 import { RuneDividerComponent } from '../../../shared/ui/rune-divider/rune-divider.component';
-import { WikiArticle, WikiCategory } from '../../../shared/models/wiki.model';
 
 @Component({
   selector: 'app-wiki-detail',
@@ -17,6 +17,7 @@ import { WikiArticle, WikiCategory } from '../../../shared/models/wiki.model';
     CommonModule,
     RouterModule,
     PageHeaderComponent,
+    EivarButtonComponent,
     WikiInfoBoxComponent,
     WikiCalloutComponent,
     AbilityCardComponent,
@@ -29,35 +30,30 @@ export class WikiDetailComponent {
   private route = inject(ActivatedRoute);
   private contentService = inject(ContentService);
 
-  readonly article = signal<WikiArticle | undefined>(undefined);
-  readonly categories = signal<WikiCategory[]>([]);
-  readonly categoryArticles = signal<WikiArticle[]>([]);
-  readonly currentCategory = signal<WikiCategory | undefined>(undefined);
+  private readonly routeParams = toSignal(this.route.paramMap);
 
-  constructor() {
-    this.contentService.getWikiCategories().subscribe(cats => {
-      this.categories.set(cats);
-    });
+  readonly categories = this.contentService.wikiCategories;
+  readonly catalogError = this.contentService.catalogError;
+  readonly catalogLoaded = this.contentService.catalogLoaded;
 
-    this.route.paramMap.subscribe(params => {
-      const catSlug = params.get('category') || 'weapons';
-      const slug = params.get('slug') || (catSlug === 'weapons' ? 'channeling-staff' : undefined);
+  readonly currentCategory = computed(() => {
+    const slug = this.routeParams()?.get('category') || 'weapons';
+    return this.categories().find(cat => cat.slug === slug);
+  });
 
-      this.contentService.getWikiCategoryBySlug(catSlug).subscribe(cat => {
-        this.currentCategory.set(cat);
-      });
+  readonly categoryArticles = computed(() => {
+    const slug = this.routeParams()?.get('category') || 'weapons';
+    return this.contentService.wikiArticles().filter(article => article.categorySlug === slug);
+  });
 
-      this.contentService.getWikiArticles(catSlug).subscribe(articles => {
-        this.categoryArticles.set(articles);
-        if (slug) {
-          const found = articles.find(a => a.slug === slug);
-          this.article.set(found || articles[0]);
-        } else {
-          this.article.set(articles[0]);
-        }
-      });
-    });
-  }
+  readonly article = computed(() => {
+    const articles = this.categoryArticles();
+    const slug = this.routeParams()?.get('slug');
+    if (slug) {
+      return articles.find(article => article.slug === slug);
+    }
+    return articles[0];
+  });
 
   scrollToSection(id: string) {
     const el = document.getElementById(id);

@@ -4,6 +4,7 @@
 //! Transport extraction is still in progress during the crate-split migration.
 
 pub mod app_state;
+pub mod gathering;
 pub mod local_player;
 pub mod movement;
 pub mod network;

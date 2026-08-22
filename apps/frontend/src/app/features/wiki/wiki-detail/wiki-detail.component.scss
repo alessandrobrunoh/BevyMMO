@@ -1,5 +1,11 @@
 @use '../../../../styles/variables' as *;
 
+.wiki-missing {
+  font-family: var(--font-serif);
+  color: var(--text-dark);
+  margin-bottom: 1.25rem;
+}
+
 .wiki-detail-wrapper {
   background: linear-gradient(
     180deg,
@@ -179,7 +185,7 @@
       }
 
       .overview-text {
-        font-family: var(--font-serif);
+        font-family: var(--font-body);
         font-size: 1.12rem;
         line-height: 1.75;
         color: #3b4249;
@@ -209,7 +215,7 @@
       }
 
       .sec-paragraph {
-        font-family: var(--font-serif);
+        font-family: var(--font-body);
         font-size: 1rem;
         line-height: 1.75;
         color: #3b4249;
@@ -243,7 +249,7 @@
         }
 
         .f-desc {
-          font-family: var(--font-serif);
+          font-family: var(--font-body);
           font-size: 0.88rem;
           color: var(--text-dark-dim);
           margin-bottom: 1rem;
@@ -296,7 +302,7 @@
           }
 
           .res-text {
-            font-family: var(--font-serif);
+            font-family: var(--font-body);
             font-size: 0.9rem;
             color: var(--text-dark);
             line-height: 1.5;
@@ -384,7 +390,7 @@
 // Right Sidebar
 .wiki-right-sidebar {
   position: sticky;
-  top: calc(var(--header-height) + 1rem);
+  top: calc(var(--header-height) + 1.5rem);
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -417,22 +423,6 @@
       display: flex;
       flex-direction: column;
       gap: 0.35rem;
-
-      li .toc-link {
-        font-family: var(--font-serif);
-        font-size: 0.85rem;
-        color: var(--text-dark-dim);
-        text-align: left;
-        padding: 0.25rem 0;
-        transition: all var(--transition);
-        display: block;
-        width: 100%;
-
-        &:hover {
-          color: var(--blue-800);
-          transform: translateX(3px);
-        }
-      }
     }
   }
 }

@@ -1,9 +1,10 @@
 use bevy::prelude::*;
 use bevymmo_client::local_player::LocalPlayer;
+use bevymmo_client::stdb::LocalGold;
 
 use bevymmo_client::movement::effective_movement_speed;
 use bevymmo_client::network::types::ClientConnectionConfig;
-use bevymmo_gameplay::stats::components::{CombatStats, MovementStats, VitalStats};
+use bevymmo_gameplay::stats::components::{CombatStats, GatheringStats, MovementStats, VitalStats};
 use bevymmo_gameplay::stats::modifiers::ActiveStatModifiers;
 use bevymmo_network::network::protocol::PlayerId;
 
@@ -49,6 +50,7 @@ pub fn update_player_stats(
         &MovementStats,
         &CombatStats,
         &VitalStats,
+        Option<&GatheringStats>,
         Option<&PlayerId>,
         Has<LocalPlayer>,
         Option<&ActiveStatModifiers>,
@@ -56,6 +58,7 @@ pub fn update_player_stats(
     mut root_query: Query<&mut Node, With<PlayerStatsUi>>,
     mut text_query: Query<&mut Text, With<PlayerStatsText>>,
     mut last_text: Local<String>,
+    gold: Option<Res<LocalGold>>,
 ) {
     let Ok(mut root) = root_query.single_mut() else {
         return;
@@ -68,11 +71,11 @@ pub fn update_player_stats(
 
     root.display = Display::Flex;
     let local_client_id = client_config.map(|config| config.client_id);
-    let Some((movement, combat, vital, _, _, modifiers)) = player_query
+    let Some((movement, combat, vital, gathering, _, _, modifiers)) = player_query
         .iter()
-        .find(|(_, _, _, _, controlled, _)| *controlled)
+        .find(|(_, _, _, _, _, controlled, _)| *controlled)
         .or_else(|| {
-            player_query.iter().find(|(_, _, _, player_id, _, _)| {
+            player_query.iter().find(|(_, _, _, _, player_id, _, _)| {
                 player_id.is_some_and(|id| {
                     local_client_id.is_some_and(|client_id| id.0.to_bits() == client_id)
                 })
@@ -85,7 +88,9 @@ pub fn update_player_stats(
         return;
     };
 
-    let new_text = format_stats(movement, combat, vital, modifiers);
+    let gold_amount = gold.map(|g| g.amount).unwrap_or(0);
+    let gathering = gathering.copied().unwrap_or_default();
+    let new_text = format_stats(movement, combat, vital, &gathering, modifiers, gold_amount);
     if *last_text != new_text {
         text.0 = new_text.clone();
         *last_text = new_text;
@@ -96,11 +101,13 @@ fn format_stats(
     movement: &MovementStats,
     combat: &CombatStats,
     vital: &VitalStats,
+    gathering: &GatheringStats,
     modifiers: Option<&ActiveStatModifiers>,
+    gold: u64,
 ) -> String {
     let move_speed = displayed_movement_speed(movement.speed, modifiers);
     format!(
-        "HP: {}/{}\nMana: {}/{}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)\nAttack Power: {}\nMove Speed: {:.2}",
+        "HP: {}/{}\nMana: {}/{}\nMana Regen: {:.1}/s\nArmor: {} ({}% reduction)\nAttack Power: {}\nMove Speed: {:.2}\nGather Speed: {}\nGather Bonus: {}%\nGold: {}",
         format_value(vital.current_health),
         format_value(vital.max_health),
         format_value(vital.current_mana),
@@ -110,6 +117,9 @@ fn format_stats(
         combat.armor_damage_reduction() * 100.0,
         format_value(combat.attack_power),
         move_speed,
+        format_value(gathering.speed),
+        format_value(gathering.bonus * 100.0),
+        gold,
     )
 }
 

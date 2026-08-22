@@ -6,8 +6,8 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "add57b0a-04b6-4c40-913c-e9582ac704cd.png"
-OUTPUT = ROOT / "assets/ui/extracted_add57b0a"
+SOURCE = ROOT / "assets/ui/source/menu_sheet.png"
+OUTPUT = ROOT / "assets/ui/menu_kit"
 
 # Rectangles measured directly in the 1536x1024 source image.
 COMPONENTS: list[tuple[str, tuple[int, int, int, int]]] = [

@@ -2,7 +2,7 @@ import { Injectable, inject, signal, computed } from '@angular/core';
 import { ContentService } from './content.service';
 import { MOCK_NEWS_ARTICLES } from '../../data/mocks/news.mock';
 import { MOCK_GAME_UPDATES } from '../../data/mocks/updates.mock';
-import { MOCK_WIKI_ARTICLES } from '../../data/mocks/wiki.mock';
+import { articleSearchText } from '../../features/wiki/wiki-from-catalog';
 
 export interface SearchResultItem {
   id: string;
@@ -29,12 +29,8 @@ export class SearchService {
     const list: SearchResultItem[] = [];
 
     // Search Wiki Articles
-    for (const art of MOCK_WIKI_ARTICLES) {
-      if (
-        art.title.toLowerCase().includes(q) ||
-        art.overview.toLowerCase().includes(q) ||
-        art.categoryName.toLowerCase().includes(q)
-      ) {
+    for (const art of this.contentService.wikiArticles()) {
+      if (articleSearchText(art).includes(q)) {
         list.push({
           id: art.id,
           type: 'WIKI',

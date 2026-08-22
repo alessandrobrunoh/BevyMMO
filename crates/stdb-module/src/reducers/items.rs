@@ -1,4 +1,4 @@
-//! Inventory, equipment, hotbar selection and Eidolon inscriptions.
+//! Inventory, equipment, hotbar selection and weapon inscriptions.
 //!
 //! Ported from `crates/server/src/items` (`systems.rs`, `bonuses.rs`,
 //! `available_spells.rs`) and the three request handlers that lived in
@@ -26,7 +26,7 @@
 //!   `Changed<Equipment>` query. `recompute_equipment_bonuses` and
 //!   `recompute_available_spells` both ran reactively; there is no change
 //!   detection here, so every reducer that touches `equipment` calls
-//!   [`recompute_effective_stats`] and [`prune_hotbar_to_available`] itself.
+//!   [`recompute_effective_stats`] itself.
 //!
 //! # Base versus effective stats
 //!
@@ -49,22 +49,19 @@ use bevymmo_domain::abilities::{
     BaseAbilityRegistry, RootWordId, RootWordRegistry,
 };
 use bevymmo_domain::items::components::{EquipSlot, Equipment, Inventory, INVENTORY_CAPACITY};
-use bevymmo_domain::items::definition::EquipRequirement;
+use bevymmo_domain::items::definition::{EquipRequirement, ItemCategory};
 use bevymmo_domain::items::instance::{ItemInstance, ItemInstanceId, STARTER_WEAPON_ITEM_ID};
 use bevymmo_domain::items::registry::{ItemId, ItemRegistry};
-use bevymmo_domain::items::{compute_available_choices, AvailableSpellChoices};
-use bevymmo_domain::spells::components::{HotbarSlot, SpellHotbar};
-use bevymmo_domain::spells::registry::SpellId;
 use spacetimedb::{reducer, ReducerContext, Table, Uuid};
 
 use crate::reducers::lifecycle::caller_character;
 use crate::rows::{
     equipment_from_rows, equipment_to_rows, inventory_from_rows, inventory_to_rows,
-    known_ancient_language_from_rows, HotbarRow,
+    known_ancient_language_from_rows,
 };
 use crate::tables::{
-    equipment, game_entity, hotbar, inventory, known_ancient_language, player, EntityKindRow,
-    EquipmentTable, Hotbar, InventoryTable,
+    equipment, game_entity, inventory, known_ancient_language, market_sell_order, player,
+    EntityKindRow, EquipmentTable, InventoryTable,
 };
 
 // ---------------------------------------------------------------------------
@@ -87,7 +84,7 @@ fn item_registry() -> &'static ItemRegistry {
     REGISTRY.get_or_init(bevymmo_domain::content::items::default_items)
 }
 
-/// The Eidolon gestures (`BaseAbility`) items can offer.
+/// The weapon abilities (`BaseAbility`) items can offer.
 fn ability_registry() -> &'static BaseAbilityRegistry {
     static REGISTRY: OnceLock<BaseAbilityRegistry> = OnceLock::new();
     REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
@@ -166,7 +163,6 @@ pub fn equip_item(ctx: &ReducerContext, slot_index: u8) -> Result<(), String> {
 
     // Equipment changed, so both things derived from it are now stale.
     recompute_effective_stats(ctx, character_id)?;
-    prune_hotbar_to_available(ctx, character_id, &equipment);
     Ok(())
 }
 
@@ -204,14 +200,16 @@ pub fn unequip_item(ctx: &ReducerContext, slot: String) -> Result<(), String> {
     store_equipment(ctx, character_id, &equipment);
 
     recompute_effective_stats(ctx, character_id)?;
-    prune_hotbar_to_available(ctx, character_id, &equipment);
     Ok(())
 }
 
-/// Swaps the contents of two inventory slots.
+/// Moves `from` onto `to`: same-item Material piles merge up to the bag cap,
+/// everything else swaps (including two full Wood stacks, so they stay
+/// rearrangable).
 ///
-/// Purely positional: nothing derived depends on *where* in the inventory an
-/// item sits, so unlike equip/unequip this touches no stats and no hotbar.
+/// Purely positional besides the merge: nothing derived depends on *where*
+/// in the inventory an item sits, so unlike equip/unequip this touches no
+/// stats and no hotbar.
 #[reducer]
 pub fn move_item(ctx: &ReducerContext, from: u8, to: u8) -> Result<(), String> {
     let character_id = caller_character(ctx)?.character_id;
@@ -223,7 +221,60 @@ pub fn move_item(ctx: &ReducerContext, from: u8, to: u8) -> Result<(), String> {
     }
 
     let mut inventory = load_inventory(ctx, character_id)?;
-    inventory.slots.swap(from_index, to_index);
+    let stacks = slots_stack_together(&inventory, from_index, to_index);
+    inventory
+        .move_or_merge(from_index, to_index, stacks)
+        .map_err(|error| error.to_string())?;
+    store_inventory(ctx, character_id, &inventory);
+    Ok(())
+}
+
+/// Peels `amount` off inventory slot `slot_index` into the first empty slot.
+///
+/// `amount` is the size of the **new** pile (7 off 50 leaves 43). Materials
+/// only; unique items are refused even if they somehow share a quantity.
+#[reducer]
+pub fn split_item(ctx: &ReducerContext, slot_index: u8, amount: u32) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
+    let index = usize::from(slot_index);
+    if index >= INVENTORY_CAPACITY {
+        return Err(format!(
+            "inventory slot {slot_index} out of range (0..{INVENTORY_CAPACITY})"
+        ));
+    }
+
+    let mut inventory = load_inventory(ctx, character_id)?;
+    let stacks = match inventory.slots[index].as_ref() {
+        Some(instance) => item_stacks(&instance.item_id),
+        None => return Err(format!("inventory slot {slot_index} is empty")),
+    };
+    let next_id = next_instance_id(ctx);
+    inventory
+        .split_stack(index, amount, stacks, || ItemInstanceId(next_id))
+        .map_err(|error| error.to_string())?;
+    store_inventory(ctx, character_id, &inventory);
+    Ok(())
+}
+
+/// Pulls other piles of the same Material into `slot_index` up to the bag cap.
+#[reducer]
+pub fn combine_item(ctx: &ReducerContext, slot_index: u8) -> Result<(), String> {
+    let character_id = caller_character(ctx)?.character_id;
+    let index = usize::from(slot_index);
+    if index >= INVENTORY_CAPACITY {
+        return Err(format!(
+            "inventory slot {slot_index} out of range (0..{INVENTORY_CAPACITY})"
+        ));
+    }
+
+    let mut inventory = load_inventory(ctx, character_id)?;
+    let stacks = match inventory.slots[index].as_ref() {
+        Some(instance) => item_stacks(&instance.item_id),
+        None => return Err(format!("inventory slot {slot_index} is empty")),
+    };
+    inventory
+        .combine_into(index, stacks)
+        .map_err(|error| error.to_string())?;
     store_inventory(ctx, character_id, &inventory);
     Ok(())
 }
@@ -297,74 +348,6 @@ pub fn destroy_item(ctx: &ReducerContext, instance_id: u64) -> Result<(), String
 
     inventory.slots[slot] = None;
     store_inventory(ctx, character_id, &inventory);
-    Ok(())
-}
-
-/// Binds a spell to a hotbar key, or clears the key when `spell_id` is `None`.
-///
-/// `slot` is `"q"`, `"w"` or `"e"`, case-insensitive.
-///
-/// # Why not `set_hotbar_slot`
-///
-/// `reducers::spells` still carries a `set_hotbar_slot` stub, and two reducers
-/// cannot share a name — the generated registration symbols collide at link
-/// time. This one is named for what it does instead. **When that stub goes
-/// away, the right move is to rename this reducer to `set_hotbar_slot`**, or to
-/// have the stub delegate to [`assign_hotbar_spell`], which is public for
-/// exactly that reason.
-#[reducer]
-pub fn set_hotbar_spell(
-    ctx: &ReducerContext,
-    slot: String,
-    spell_id: Option<String>,
-) -> Result<(), String> {
-    let character_id = caller_character(ctx)?.character_id;
-    assign_hotbar_spell(ctx, character_id, &slot, spell_id)
-}
-
-/// The body of [`set_hotbar_spell`], callable from another reducer.
-///
-/// The legal picks are **not** "any registered spell": they are whatever the
-/// currently equipped items offer for that key, unioned from every equipped
-/// item's `SpellKit` by
-/// [`compute_available_choices`](bevymmo_domain::items::compute_available_choices).
-/// That is the same rule `handle_update_hotbar_slot_requests` enforced against
-/// the reactively-maintained `AvailableSpellChoices` component; here the value
-/// is computed on the spot, because there is no component to keep in sync and
-/// the computation is a walk over ten slots.
-pub fn assign_hotbar_spell(
-    ctx: &ReducerContext,
-    character_id: Uuid,
-    slot: &str,
-    spell_id: Option<String>,
-) -> Result<(), String> {
-    let key = parse_hotbar_slot(slot)?;
-    let equipment = load_equipment(ctx, character_id)?;
-
-    let row = ctx
-        .db
-        .hotbar()
-        .character_id()
-        .find(&character_id)
-        .ok_or_else(|| "no character for this identity; call `join` first".to_string())?;
-    let mut bar = SpellHotbar::from(&row.slots);
-
-    let spell = spell_id.map(SpellId::new);
-    if let Some(id) = &spell {
-        let choices = available_choices(&equipment);
-        if !choices.contains(key, id) {
-            return Err(format!(
-                "{:?} is not offered on {slot:?} by your equipped items",
-                id.as_str()
-            ));
-        }
-    }
-
-    bar.assign(key, spell);
-    ctx.db.hotbar().character_id().update(Hotbar {
-        character_id,
-        slots: HotbarRow::from(&bar),
-    });
     Ok(())
 }
 
@@ -710,48 +693,6 @@ pub fn recompute_effective_stats(ctx: &ReducerContext, character_id: Uuid) -> Re
     Ok(())
 }
 
-/// Clears any hotbar selection the current equipment no longer offers.
-///
-/// The port of `available_spells::recompute_available_spells`. Same trigger
-/// point as the Bevy version — every equipment change — and the same reason:
-/// unequipping the item that granted a spell must not leave the key bound to
-/// something the character can no longer cast.
-///
-/// Silent when the character has no hotbar row: that is a state `join` does not
-/// produce, and failing an otherwise valid equip over it would be worse than
-/// ignoring it.
-fn prune_hotbar_to_available(ctx: &ReducerContext, character_id: Uuid, equipment: &Equipment) {
-    let Some(row) = ctx.db.hotbar().character_id().find(&character_id) else {
-        return;
-    };
-    let choices = available_choices(equipment);
-    let mut bar = SpellHotbar::from(&row.slots);
-
-    let mut changed = false;
-    for key in [HotbarSlot::Q, HotbarSlot::W, HotbarSlot::E] {
-        let stale = bar
-            .spell_for_slot(key)
-            .is_some_and(|selected| !choices.contains(key, selected));
-        if stale {
-            log::info!("clearing {key:?} selection: no longer offered by equipped items");
-            bar.assign(key, None);
-            changed = true;
-        }
-    }
-
-    if changed {
-        ctx.db.hotbar().character_id().update(Hotbar {
-            character_id,
-            slots: HotbarRow::from(&bar),
-        });
-    }
-}
-
-/// Which spells the equipped items currently offer for Q/W/E.
-fn available_choices(equipment: &Equipment) -> AvailableSpellChoices {
-    compute_available_choices(equipment, item_registry())
-}
-
 // ---------------------------------------------------------------------------
 // Shared API: minting items
 // ---------------------------------------------------------------------------
@@ -773,23 +714,76 @@ fn is_greeter_stock(item_id: &str) -> bool {
 /// The `item_id` is checked against the registry: an inventory holding an id
 /// nothing can look up is a slot the player can never equip or drop.
 pub fn grant_item(ctx: &ReducerContext, character_id: Uuid, item_id: &str) -> Result<u8, String> {
-    let id = ItemId::new(item_id.to_string());
-    if !item_registry().contains(&id) {
-        return Err(format!("unknown item {item_id:?}"));
+    grant_items(ctx, character_id, item_id, 1)?;
+    Ok(0)
+}
+
+pub(crate) fn item_category(item_id: &str) -> Option<ItemCategory> {
+    item_registry()
+        .get(&ItemId::new(item_id.to_string()))
+        .map(|item| item.config().category)
+}
+
+pub(crate) fn item_stacks(item_id: &ItemId) -> bool {
+    item_registry()
+        .get(item_id)
+        .is_some_and(|item| Inventory::stacks_category(item.config().category))
+}
+
+fn slots_stack_together(inventory: &Inventory, from: usize, to: usize) -> bool {
+    match (&inventory.slots[from], &inventory.slots[to]) {
+        (Some(src), Some(dst)) if src.item_id == dst.item_id => item_stacks(&src.item_id),
+        _ => false,
     }
+}
+
+/// Puts `amount` of `item_id` into the inventory, stacking Materials in the bag.
+///
+/// Returns how many pieces were actually placed. A short grant still persists:
+/// callers that must not debit a node for undelivered pieces should check
+/// `space_for` first (gathering does).
+pub fn grant_items(
+    ctx: &ReducerContext,
+    character_id: Uuid,
+    item_id: &str,
+    amount: u32,
+) -> Result<u32, String> {
+    if amount == 0 {
+        return Ok(0);
+    }
+    let id = ItemId::new(item_id.to_string());
+    let item = item_registry()
+        .get(&id)
+        .ok_or_else(|| format!("unknown item {item_id:?}"))?;
 
     let mut inventory = load_inventory(ctx, character_id)?;
-    let free = inventory
-        .slots
-        .iter()
-        .position(Option::is_none)
-        .ok_or_else(|| "inventory is full".to_string())?;
+    let mut next_id = next_instance_id(ctx);
+    let added = if Inventory::stacks_category(item.config().category) {
+        inventory.add_stackable(id, amount, || {
+            let minted = ItemInstanceId(next_id);
+            next_id += 1;
+            minted
+        })
+    } else {
+        let mut added = 0u32;
+        for _ in 0..amount {
+            let Some(free) = inventory.slots.iter().position(Option::is_none) else {
+                break;
+            };
+            let mut instance = ItemInstance::new(id.clone());
+            instance.instance_id = ItemInstanceId(next_id);
+            next_id += 1;
+            inventory.slots[free] = Some(instance);
+            added += 1;
+        }
+        added
+    };
 
-    let mut instance = ItemInstance::new(id);
-    instance.instance_id = ItemInstanceId(next_instance_id(ctx));
-    inventory.slots[free] = Some(instance);
+    if added == 0 {
+        return Err("inventory is full".to_string());
+    }
     store_inventory(ctx, character_id, &inventory);
-    Ok(free as u8)
+    Ok(added)
 }
 
 /// Moves the granted starter staff from inventory onto the weapon slot and
@@ -833,7 +827,7 @@ pub(crate) fn equip_granted_starter_staff(
 /// fine at the rate items are created and wrong at the rate they would be if
 /// this were ever called in a loop. If it becomes hot, the fix is a one-row
 /// counter table, which the schema does not currently have.
-fn next_instance_id(ctx: &ReducerContext) -> u64 {
+pub(crate) fn next_instance_id(ctx: &ReducerContext) -> u64 {
     let from_inventories = ctx
         .db
         .inventory()
@@ -846,8 +840,20 @@ fn next_instance_id(ctx: &ReducerContext) -> u64 {
         .iter()
         .flat_map(|row| row.slots.into_iter().flatten())
         .map(|item| item.instance_id);
+    // Listed piles leave the bag but keep their instance id. Skipping them
+    // here would reuse an escrowed id the next time a stack is peeled.
+    let from_orders = ctx
+        .db
+        .market_sell_order()
+        .iter()
+        .map(|row| row.item.instance_id);
 
-    from_inventories.chain(from_equipment).max().unwrap_or(0) + 1
+    from_inventories
+        .chain(from_equipment)
+        .chain(from_orders)
+        .max()
+        .unwrap_or(0)
+        + 1
 }
 
 // Equipment bonuses are folded into the effective stats by `sim::combat`, which
@@ -879,7 +885,10 @@ fn check_equip_requirements(requirements: &[EquipRequirement]) -> Result<(), Str
 // Row access
 // ---------------------------------------------------------------------------
 
-fn load_inventory(ctx: &ReducerContext, character_id: Uuid) -> Result<Inventory, String> {
+pub(crate) fn load_inventory(
+    ctx: &ReducerContext,
+    character_id: Uuid,
+) -> Result<Inventory, String> {
     ctx.db
         .inventory()
         .character_id()
@@ -888,7 +897,7 @@ fn load_inventory(ctx: &ReducerContext, character_id: Uuid) -> Result<Inventory,
         .ok_or_else(|| "no character for this identity; call `join` first".to_string())
 }
 
-fn store_inventory(ctx: &ReducerContext, character_id: Uuid, inventory: &Inventory) {
+pub(crate) fn store_inventory(ctx: &ReducerContext, character_id: Uuid, inventory: &Inventory) {
     ctx.db.inventory().character_id().update(InventoryTable {
         character_id,
         slots: inventory_to_rows(inventory),
@@ -934,16 +943,6 @@ fn parse_equip_slot(name: &str) -> Result<EquipSlot, String> {
         })
 }
 
-/// Parses a hotbar key name, case-insensitively.
-fn parse_hotbar_slot(name: &str) -> Result<HotbarSlot, String> {
-    match name.trim().to_ascii_lowercase().as_str() {
-        "q" => Ok(HotbarSlot::Q),
-        "w" => Ok(HotbarSlot::W),
-        "e" => Ok(HotbarSlot::E),
-        other => Err(format!("unknown hotbar slot {other:?}; expected q, w or e")),
-    }
-}
-
 /// Parses an ability slot name, case-insensitively.
 fn parse_ability_slot(name: &str) -> Result<AbilitySlot, String> {
     match name.trim().to_ascii_lowercase().as_str() {
@@ -961,14 +960,14 @@ mod greeter_stock_tests {
     use super::*;
 
     #[test]
-    fn greeter_accepts_the_four_alpha_weapons() {
-        assert!(is_greeter_stock("bow"));
+    fn greeter_accepts_the_sword_and_simple_armor() {
         assert!(is_greeter_stock("sword"));
-        assert!(is_greeter_stock("hammer"));
-        assert!(is_greeter_stock("mage_staff"));
         assert!(is_greeter_stock("simple_helm"));
         assert!(is_greeter_stock("simple_cuirass"));
         assert!(is_greeter_stock("simple_buckler"));
+        assert!(!is_greeter_stock("bow"));
+        assert!(!is_greeter_stock("hammer"));
+        assert!(!is_greeter_stock("mage_staff"));
     }
 
     #[test]

@@ -9,6 +9,7 @@ repository.workspace = true
 # Shared app helpers: layered `config/*.toml` + path resolution. Keeps the
 # gateway consistent with `bins/game` on how settings are loaded.
 bevymmo_app_support = { path = "../../crates/app-support" }
+bevymmo_content = { path = "../../crates/content", features = ["openapi"] }
 
 axum = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
@@ -29,6 +30,9 @@ thiserror = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4"] }
+# Same digest the module stores: SHA-256 hex of the API key secret, used as
+# the in-memory session-store key so the plaintext never sits in the map.
+sha2 = "0.10"
 
 # OpenAPI generation for the Scalar reference at `/docs`. Plain `utoipa` only
 # (no `utoipa-scalar`/`utoipa-swagger-ui`): those crates ship axum integration

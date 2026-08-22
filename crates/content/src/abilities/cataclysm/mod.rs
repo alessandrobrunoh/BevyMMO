@@ -1,8 +1,4 @@
-//! Cataclysm — Hammer ultimate ability (E).
-//!
-//! Brings the hammer down with earth-shattering force, creating a massive
-//! devastation zone that cripples anything caught within.
-//! The seismic event stuns everyone in its radius.
+//! Cataclysm — berserk arena slam. Same id the dragon rotation already used.
 
 use bevymmo_props_macro::base_ability;
 
@@ -11,17 +7,16 @@ use crate::abilities::BaseAbilityRegistry;
 #[base_ability(
     id = "cataclysm",
     name = "Cataclysm",
-    tags = [Melee, Area, Ground],
-    range = 7.0,
-    geometry = circle(radius = 8.0),
-    potency = 380.0,
-    cast_time = 1.3,
-    cooldown = 30.0,
-    energy_cost = 55.0,
-    stun_seconds = 2.0,
-    impact_delay = 0.5,
-    animation = "hammer_ultimate",
+    tags = [Area],
+    range = 0.0,
+    geometry = circle(radius = 10.0),
+    potency = 62.0,
+    cast_time = 0.0,
+    cooldown = 20.0,
+    mana_cost = 0.0,
+    animation = "cataclysm",
     impact_vfx = "cataclysm_impact",
+    icon = "",
 )]
 pub struct Cataclysm;
 

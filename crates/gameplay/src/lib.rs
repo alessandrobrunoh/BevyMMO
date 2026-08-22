@@ -1,10 +1,14 @@
 //! Engine-independent gameplay rules and frameworks.
 
 pub mod abilities;
+pub mod crafting;
 pub mod crowd_control;
+pub mod economy;
 pub mod effects;
 pub mod entity;
+pub mod gathering;
 pub mod items;
+pub mod markets;
 pub mod movement;
 pub mod placeables;
 pub mod registry;

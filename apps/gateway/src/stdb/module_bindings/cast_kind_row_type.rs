@@ -12,8 +12,6 @@ pub enum CastKindRow {
 
     CastTime,
 
-    Charge,
-
     Channeling,
 }
 

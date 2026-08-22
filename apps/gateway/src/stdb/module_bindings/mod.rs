@@ -7,6 +7,8 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod ability_selection_row_type;
+pub mod account_economy_table;
+pub mod account_economy_type;
 pub mod account_type;
 pub mod active_status_table;
 pub mod active_status_type;
@@ -14,12 +16,17 @@ pub mod aoe_region_table;
 pub mod aoe_region_type;
 pub mod aoe_shape_row_type;
 pub mod aoe_targeting_row_type;
+pub mod api_key_meta_type;
+pub mod api_key_type;
 pub mod armor_cast_reducer;
 pub mod armor_inscription_row_type;
+pub mod authenticate_api_key_reducer;
 pub mod award_resonance_xp_reducer;
 pub mod boss_phase_row_type;
 pub mod boss_state_table;
 pub mod boss_state_type;
+pub mod cancel_buy_order_reducer;
+pub mod cancel_sell_order_reducer;
 pub mod cast_ended_event_type;
 pub mod cast_ended_table;
 pub mod cast_kind_row_type;
@@ -27,10 +34,17 @@ pub mod cast_source_row_type;
 pub mod cast_spell_reducer;
 pub mod cast_state_table;
 pub mod cast_state_type;
+pub mod cast_weapon_reducer;
+pub mod character_wallet_table;
+pub mod character_wallet_type;
 pub mod claim_npc_item_reducer;
 pub mod color_row_type;
+pub mod combine_item_reducer;
 pub mod cooldown_table;
 pub mod cooldown_type;
+pub mod craft_session_table;
+pub mod craft_session_type;
+pub mod create_api_key_reducer;
 pub mod crowd_control_kind_row_type;
 pub mod crowd_control_table;
 pub mod crowd_control_type;
@@ -42,7 +56,8 @@ pub mod effect_payload_filter_row_type;
 pub mod effect_payload_kind_row_type;
 pub mod effect_payload_row_type;
 pub mod effect_payload_selection_row_type;
-pub mod eidolon_cast_reducer;
+pub mod enemy_ai_table;
+pub mod enemy_ai_type;
 pub mod entity_kind_row_type;
 pub mod entity_state_row_type;
 pub mod entity_stats_table;
@@ -52,7 +67,12 @@ pub mod equipment_table;
 pub mod equipment_table_type;
 pub mod game_entity_table;
 pub mod game_entity_type;
+pub mod gather_session_table;
+pub mod gather_session_type;
+pub mod gather_yield_event_type;
+pub mod gather_yield_table;
 pub mod gm_clear_prop_override_reducer;
+pub mod gm_grant_gold_reducer;
 pub mod gm_reseed_world_reducer;
 pub mod gm_set_prop_override_reducer;
 pub mod heartbeat_reducer;
@@ -68,9 +88,20 @@ pub mod known_ancient_language_table_type;
 pub mod leave_reducer;
 pub mod login_reducer;
 pub mod logout_reducer;
+pub mod market_buy_order_table;
+pub mod market_buy_order_type;
+pub mod market_buy_reducer;
+pub mod market_sell_order_table;
+pub mod market_sell_order_type;
+pub mod market_sell_reducer;
+pub mod market_table;
+pub mod market_type;
 pub mod modifier_kind_row_type;
 pub mod move_item_reducer;
 pub mod move_to_reducer;
+pub mod my_api_keys_table;
+pub mod npc_table;
+pub mod npc_type;
 pub mod party_accept_reducer;
 pub mod party_decline_reducer;
 pub mod party_invite_reducer;
@@ -85,6 +116,8 @@ pub mod party_row_type;
 pub mod party_table;
 pub mod periodic_effect_table;
 pub mod periodic_effect_type;
+pub mod place_buy_order_reducer;
+pub mod place_sell_order_reducer;
 pub mod player_message_event_type;
 pub mod player_message_table;
 pub mod player_stats_table;
@@ -99,7 +132,10 @@ pub mod register_reducer;
 pub mod release_cast_reducer;
 pub mod resonance_table;
 pub mod resonance_type;
+pub mod resource_node_table;
+pub mod resource_node_type;
 pub mod respawn_reducer;
+pub mod revoke_api_key_reducer;
 pub mod role_row_type;
 pub mod secondary_word_row_type;
 pub mod send_chat_message_reducer;
@@ -113,9 +149,14 @@ pub mod set_root_inscription_reducer;
 pub mod slot_inscription_row_type;
 pub mod spell_visual_effect_event_type;
 pub mod spell_visual_effect_table;
+pub mod split_item_reducer;
+pub mod start_craft_reducer;
+pub mod start_gather_reducer;
 pub mod stat_modifier_table;
 pub mod stat_modifier_type;
 pub mod stats_row_type;
+pub mod stop_craft_reducer;
+pub mod stop_gather_reducer;
 pub mod stop_reducer;
 pub mod threat_table;
 pub mod threat_type;
@@ -127,6 +168,8 @@ pub mod vec_3_row_type;
 pub mod weapon_inscription_row_type;
 
 pub use ability_selection_row_type::AbilitySelectionRow;
+pub use account_economy_table::*;
+pub use account_economy_type::AccountEconomy;
 pub use account_type::Account;
 pub use active_status_table::*;
 pub use active_status_type::ActiveStatus;
@@ -134,12 +177,17 @@ pub use aoe_region_table::*;
 pub use aoe_region_type::AoeRegion;
 pub use aoe_shape_row_type::AoeShapeRow;
 pub use aoe_targeting_row_type::AoeTargetingRow;
+pub use api_key_meta_type::ApiKeyMeta;
+pub use api_key_type::ApiKey;
 pub use armor_cast_reducer::armor_cast;
 pub use armor_inscription_row_type::ArmorInscriptionRow;
+pub use authenticate_api_key_reducer::authenticate_api_key;
 pub use award_resonance_xp_reducer::award_resonance_xp;
 pub use boss_phase_row_type::BossPhaseRow;
 pub use boss_state_table::*;
 pub use boss_state_type::BossState;
+pub use cancel_buy_order_reducer::cancel_buy_order;
+pub use cancel_sell_order_reducer::cancel_sell_order;
 pub use cast_ended_event_type::CastEndedEvent;
 pub use cast_ended_table::*;
 pub use cast_kind_row_type::CastKindRow;
@@ -147,10 +195,17 @@ pub use cast_source_row_type::CastSourceRow;
 pub use cast_spell_reducer::cast_spell;
 pub use cast_state_table::*;
 pub use cast_state_type::CastState;
+pub use cast_weapon_reducer::cast_weapon;
+pub use character_wallet_table::*;
+pub use character_wallet_type::CharacterWallet;
 pub use claim_npc_item_reducer::claim_npc_item;
 pub use color_row_type::ColorRow;
+pub use combine_item_reducer::combine_item;
 pub use cooldown_table::*;
 pub use cooldown_type::Cooldown;
+pub use craft_session_table::*;
+pub use craft_session_type::CraftSession;
+pub use create_api_key_reducer::create_api_key;
 pub use crowd_control_kind_row_type::CrowdControlKindRow;
 pub use crowd_control_table::*;
 pub use crowd_control_type::CrowdControl;
@@ -162,7 +217,8 @@ pub use effect_payload_filter_row_type::EffectPayloadFilterRow;
 pub use effect_payload_kind_row_type::EffectPayloadKindRow;
 pub use effect_payload_row_type::EffectPayloadRow;
 pub use effect_payload_selection_row_type::EffectPayloadSelectionRow;
-pub use eidolon_cast_reducer::eidolon_cast;
+pub use enemy_ai_table::*;
+pub use enemy_ai_type::EnemyAi;
 pub use entity_kind_row_type::EntityKindRow;
 pub use entity_state_row_type::EntityStateRow;
 pub use entity_stats_table::*;
@@ -172,7 +228,12 @@ pub use equipment_table::*;
 pub use equipment_table_type::EquipmentTable;
 pub use game_entity_table::*;
 pub use game_entity_type::GameEntity;
+pub use gather_session_table::*;
+pub use gather_session_type::GatherSession;
+pub use gather_yield_event_type::GatherYieldEvent;
+pub use gather_yield_table::*;
 pub use gm_clear_prop_override_reducer::gm_clear_prop_override;
+pub use gm_grant_gold_reducer::gm_grant_gold;
 pub use gm_reseed_world_reducer::gm_reseed_world;
 pub use gm_set_prop_override_reducer::gm_set_prop_override;
 pub use heartbeat_reducer::heartbeat;
@@ -188,9 +249,20 @@ pub use known_ancient_language_table_type::KnownAncientLanguageTable;
 pub use leave_reducer::leave;
 pub use login_reducer::login;
 pub use logout_reducer::logout;
+pub use market_buy_order_table::*;
+pub use market_buy_order_type::MarketBuyOrder;
+pub use market_buy_reducer::market_buy;
+pub use market_sell_order_table::*;
+pub use market_sell_order_type::MarketSellOrder;
+pub use market_sell_reducer::market_sell;
+pub use market_table::*;
+pub use market_type::Market;
 pub use modifier_kind_row_type::ModifierKindRow;
 pub use move_item_reducer::move_item;
 pub use move_to_reducer::move_to;
+pub use my_api_keys_table::*;
+pub use npc_table::*;
+pub use npc_type::Npc;
 pub use party_accept_reducer::party_accept;
 pub use party_decline_reducer::party_decline;
 pub use party_invite_reducer::party_invite;
@@ -205,6 +277,8 @@ pub use party_row_type::PartyRow;
 pub use party_table::*;
 pub use periodic_effect_table::*;
 pub use periodic_effect_type::PeriodicEffect;
+pub use place_buy_order_reducer::place_buy_order;
+pub use place_sell_order_reducer::place_sell_order;
 pub use player_message_event_type::PlayerMessageEvent;
 pub use player_message_table::*;
 pub use player_stats_table::*;
@@ -219,7 +293,10 @@ pub use register_reducer::register;
 pub use release_cast_reducer::release_cast;
 pub use resonance_table::*;
 pub use resonance_type::Resonance;
+pub use resource_node_table::*;
+pub use resource_node_type::ResourceNode;
 pub use respawn_reducer::respawn;
+pub use revoke_api_key_reducer::revoke_api_key;
 pub use role_row_type::RoleRow;
 pub use secondary_word_row_type::SecondaryWordRow;
 pub use send_chat_message_reducer::send_chat_message;
@@ -233,9 +310,14 @@ pub use set_root_inscription_reducer::set_root_inscription;
 pub use slot_inscription_row_type::SlotInscriptionRow;
 pub use spell_visual_effect_event_type::SpellVisualEffectEvent;
 pub use spell_visual_effect_table::*;
+pub use split_item_reducer::split_item;
+pub use start_craft_reducer::start_craft;
+pub use start_gather_reducer::start_gather;
 pub use stat_modifier_table::*;
 pub use stat_modifier_type::StatModifier;
 pub use stats_row_type::StatsRow;
+pub use stop_craft_reducer::stop_craft;
+pub use stop_gather_reducer::stop_gather;
 pub use stop_reducer::stop;
 pub use threat_table::*;
 pub use threat_type::Threat;
@@ -260,12 +342,26 @@ pub enum Reducer {
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
     },
+    AuthenticateApiKey {
+        secret: String,
+    },
     AwardResonanceXp {
         root_word_id: String,
         xp_amount: u64,
     },
+    CancelBuyOrder {
+        order_id: u64,
+    },
+    CancelSellOrder {
+        order_id: u64,
+    },
     CastSpell {
         spell_id: String,
+        target_entity: Option<u64>,
+        target_position: Option<Vec3Row>,
+    },
+    CastWeapon {
+        slot: String,
         target_entity: Option<u64>,
         target_position: Option<Vec3Row>,
     },
@@ -273,16 +369,20 @@ pub enum Reducer {
         npc_entity_id: u64,
         item_id: String,
     },
+    CombineItem {
+        slot_index: u8,
+    },
+    CreateApiKey {
+        id: __sdk::Uuid,
+        name: String,
+        prefix: String,
+        secret: String,
+    },
     DeleteCharacter {
         character_id: __sdk::Uuid,
     },
     DestroyItem {
         instance_id: u64,
-    },
-    EidolonCast {
-        slot: String,
-        target_entity: Option<u64>,
-        target_position: Option<Vec3Row>,
     },
     EquipItem {
         slot_index: u8,
@@ -290,6 +390,10 @@ pub enum Reducer {
     GmClearPropOverride {
         map_id: String,
         prop_id: String,
+    },
+    GmGrantGold {
+        display_name: String,
+        amount: u64,
     },
     GmReseedWorld,
     GmSetPropOverride {
@@ -310,6 +414,16 @@ pub enum Reducer {
         password: String,
     },
     Logout,
+    MarketBuy {
+        npc_entity_id: u64,
+        sell_order_id: u64,
+    },
+    MarketSell {
+        npc_entity_id: u64,
+        instance_id: u64,
+        min_price: u64,
+        quantity: u32,
+    },
     MoveItem {
         from: u8,
         to: u8,
@@ -332,6 +446,17 @@ pub enum Reducer {
         leader_name: String,
     },
     PartyLeave,
+    PlaceBuyOrder {
+        npc_entity_id: u64,
+        item_id: String,
+        price: u64,
+    },
+    PlaceSellOrder {
+        npc_entity_id: u64,
+        instance_id: u64,
+        price: u64,
+        quantity: u32,
+    },
     Register {
         email: String,
         password: String,
@@ -342,6 +467,9 @@ pub enum Reducer {
         target_position: Option<Vec3Row>,
     },
     Respawn,
+    RevokeApiKey {
+        id: __sdk::Uuid,
+    },
     SendChatMessage {
         text: String,
     },
@@ -369,7 +497,21 @@ pub enum Reducer {
         secondary_words: Vec<String>,
         ultimate_words: Vec<String>,
     },
+    SplitItem {
+        slot_index: u8,
+        amount: u32,
+    },
+    StartCraft {
+        npc_entity_id: u64,
+        item_id: String,
+        quantity: u32,
+    },
+    StartGather {
+        node_entity_id: u64,
+    },
     Stop,
+    StopCraft,
+    StopGather,
     UnequipItem {
         slot: String,
     },
@@ -383,14 +525,20 @@ impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
             Reducer::ArmorCast { .. } => "armor_cast",
+            Reducer::AuthenticateApiKey { .. } => "authenticate_api_key",
             Reducer::AwardResonanceXp { .. } => "award_resonance_xp",
+            Reducer::CancelBuyOrder { .. } => "cancel_buy_order",
+            Reducer::CancelSellOrder { .. } => "cancel_sell_order",
             Reducer::CastSpell { .. } => "cast_spell",
+            Reducer::CastWeapon { .. } => "cast_weapon",
             Reducer::ClaimNpcItem { .. } => "claim_npc_item",
+            Reducer::CombineItem { .. } => "combine_item",
+            Reducer::CreateApiKey { .. } => "create_api_key",
             Reducer::DeleteCharacter { .. } => "delete_character",
             Reducer::DestroyItem { .. } => "destroy_item",
-            Reducer::EidolonCast { .. } => "eidolon_cast",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::GmClearPropOverride { .. } => "gm_clear_prop_override",
+            Reducer::GmGrantGold { .. } => "gm_grant_gold",
             Reducer::GmReseedWorld => "gm_reseed_world",
             Reducer::GmSetPropOverride { .. } => "gm_set_prop_override",
             Reducer::Heartbeat => "heartbeat",
@@ -398,6 +546,8 @@ impl __sdk::Reducer for Reducer {
             Reducer::Leave => "leave",
             Reducer::Login { .. } => "login",
             Reducer::Logout => "logout",
+            Reducer::MarketBuy { .. } => "market_buy",
+            Reducer::MarketSell { .. } => "market_sell",
             Reducer::MoveItem { .. } => "move_item",
             Reducer::MoveTo { .. } => "move_to",
             Reducer::PartyAccept { .. } => "party_accept",
@@ -405,16 +555,24 @@ impl __sdk::Reducer for Reducer {
             Reducer::PartyInvite { .. } => "party_invite",
             Reducer::PartyJoin { .. } => "party_join",
             Reducer::PartyLeave => "party_leave",
+            Reducer::PlaceBuyOrder { .. } => "place_buy_order",
+            Reducer::PlaceSellOrder { .. } => "place_sell_order",
             Reducer::Register { .. } => "register",
             Reducer::ReleaseCast { .. } => "release_cast",
             Reducer::Respawn => "respawn",
+            Reducer::RevokeApiKey { .. } => "revoke_api_key",
             Reducer::SendChatMessage { .. } => "send_chat_message",
             Reducer::SetAbilitySelection { .. } => "set_ability_selection",
             Reducer::SetArmorInscription { .. } => "set_armor_inscription",
             Reducer::SetHotbarSpell { .. } => "set_hotbar_spell",
             Reducer::SetResonanceXp { .. } => "set_resonance_xp",
             Reducer::SetRootInscription { .. } => "set_root_inscription",
+            Reducer::SplitItem { .. } => "split_item",
+            Reducer::StartCraft { .. } => "start_craft",
+            Reducer::StartGather { .. } => "start_gather",
             Reducer::Stop => "stop",
+            Reducer::StopCraft => "stop_craft",
+            Reducer::StopGather => "stop_gather",
             Reducer::UnequipItem { .. } => "unequip_item",
             _ => unreachable!(),
         }
@@ -433,6 +591,11 @@ impl __sdk::Reducer for Reducer {
                 target_entity: target_entity.clone(),
                 target_position: target_position.clone(),
             }),
+            Reducer::AuthenticateApiKey { secret } => {
+                __sats::bsatn::to_vec(&authenticate_api_key_reducer::AuthenticateApiKeyArgs {
+                    secret: secret.clone(),
+                })
+            }
             Reducer::AwardResonanceXp {
                 root_word_id,
                 xp_amount,
@@ -440,6 +603,16 @@ impl __sdk::Reducer for Reducer {
                 root_word_id: root_word_id.clone(),
                 xp_amount: xp_amount.clone(),
             }),
+            Reducer::CancelBuyOrder { order_id } => {
+                __sats::bsatn::to_vec(&cancel_buy_order_reducer::CancelBuyOrderArgs {
+                    order_id: order_id.clone(),
+                })
+            }
+            Reducer::CancelSellOrder { order_id } => {
+                __sats::bsatn::to_vec(&cancel_sell_order_reducer::CancelSellOrderArgs {
+                    order_id: order_id.clone(),
+                })
+            }
             Reducer::CastSpell {
                 spell_id,
                 target_entity,
@@ -449,12 +622,37 @@ impl __sdk::Reducer for Reducer {
                 target_entity: target_entity.clone(),
                 target_position: target_position.clone(),
             }),
+            Reducer::CastWeapon {
+                slot,
+                target_entity,
+                target_position,
+            } => __sats::bsatn::to_vec(&cast_weapon_reducer::CastWeaponArgs {
+                slot: slot.clone(),
+                target_entity: target_entity.clone(),
+                target_position: target_position.clone(),
+            }),
             Reducer::ClaimNpcItem {
                 npc_entity_id,
                 item_id,
             } => __sats::bsatn::to_vec(&claim_npc_item_reducer::ClaimNpcItemArgs {
                 npc_entity_id: npc_entity_id.clone(),
                 item_id: item_id.clone(),
+            }),
+            Reducer::CombineItem { slot_index } => {
+                __sats::bsatn::to_vec(&combine_item_reducer::CombineItemArgs {
+                    slot_index: slot_index.clone(),
+                })
+            }
+            Reducer::CreateApiKey {
+                id,
+                name,
+                prefix,
+                secret,
+            } => __sats::bsatn::to_vec(&create_api_key_reducer::CreateApiKeyArgs {
+                id: id.clone(),
+                name: name.clone(),
+                prefix: prefix.clone(),
+                secret: secret.clone(),
             }),
             Reducer::DeleteCharacter { character_id } => {
                 __sats::bsatn::to_vec(&delete_character_reducer::DeleteCharacterArgs {
@@ -466,15 +664,6 @@ impl __sdk::Reducer for Reducer {
                     instance_id: instance_id.clone(),
                 })
             }
-            Reducer::EidolonCast {
-                slot,
-                target_entity,
-                target_position,
-            } => __sats::bsatn::to_vec(&eidolon_cast_reducer::EidolonCastArgs {
-                slot: slot.clone(),
-                target_entity: target_entity.clone(),
-                target_position: target_position.clone(),
-            }),
             Reducer::EquipItem { slot_index } => {
                 __sats::bsatn::to_vec(&equip_item_reducer::EquipItemArgs {
                     slot_index: slot_index.clone(),
@@ -486,6 +675,13 @@ impl __sdk::Reducer for Reducer {
                     prop_id: prop_id.clone(),
                 })
             }
+            Reducer::GmGrantGold {
+                display_name,
+                amount,
+            } => __sats::bsatn::to_vec(&gm_grant_gold_reducer::GmGrantGoldArgs {
+                display_name: display_name.clone(),
+                amount: amount.clone(),
+            }),
             Reducer::GmReseedWorld => {
                 __sats::bsatn::to_vec(&gm_reseed_world_reducer::GmReseedWorldArgs {})
             }
@@ -516,6 +712,24 @@ impl __sdk::Reducer for Reducer {
                 })
             }
             Reducer::Logout => __sats::bsatn::to_vec(&logout_reducer::LogoutArgs {}),
+            Reducer::MarketBuy {
+                npc_entity_id,
+                sell_order_id,
+            } => __sats::bsatn::to_vec(&market_buy_reducer::MarketBuyArgs {
+                npc_entity_id: npc_entity_id.clone(),
+                sell_order_id: sell_order_id.clone(),
+            }),
+            Reducer::MarketSell {
+                npc_entity_id,
+                instance_id,
+                min_price,
+                quantity,
+            } => __sats::bsatn::to_vec(&market_sell_reducer::MarketSellArgs {
+                npc_entity_id: npc_entity_id.clone(),
+                instance_id: instance_id.clone(),
+                min_price: min_price.clone(),
+                quantity: quantity.clone(),
+            }),
             Reducer::MoveItem { from, to } => {
                 __sats::bsatn::to_vec(&move_item_reducer::MoveItemArgs {
                     from: from.clone(),
@@ -546,6 +760,26 @@ impl __sdk::Reducer for Reducer {
                 })
             }
             Reducer::PartyLeave => __sats::bsatn::to_vec(&party_leave_reducer::PartyLeaveArgs {}),
+            Reducer::PlaceBuyOrder {
+                npc_entity_id,
+                item_id,
+                price,
+            } => __sats::bsatn::to_vec(&place_buy_order_reducer::PlaceBuyOrderArgs {
+                npc_entity_id: npc_entity_id.clone(),
+                item_id: item_id.clone(),
+                price: price.clone(),
+            }),
+            Reducer::PlaceSellOrder {
+                npc_entity_id,
+                instance_id,
+                price,
+                quantity,
+            } => __sats::bsatn::to_vec(&place_sell_order_reducer::PlaceSellOrderArgs {
+                npc_entity_id: npc_entity_id.clone(),
+                instance_id: instance_id.clone(),
+                price: price.clone(),
+                quantity: quantity.clone(),
+            }),
             Reducer::Register { email, password } => {
                 __sats::bsatn::to_vec(&register_reducer::RegisterArgs {
                     email: email.clone(),
@@ -562,6 +796,9 @@ impl __sdk::Reducer for Reducer {
                 target_position: target_position.clone(),
             }),
             Reducer::Respawn => __sats::bsatn::to_vec(&respawn_reducer::RespawnArgs {}),
+            Reducer::RevokeApiKey { id } => {
+                __sats::bsatn::to_vec(&revoke_api_key_reducer::RevokeApiKeyArgs { id: id.clone() })
+            }
             Reducer::SendChatMessage { text } => {
                 __sats::bsatn::to_vec(&send_chat_message_reducer::SendChatMessageArgs {
                     text: text.clone(),
@@ -608,7 +845,29 @@ impl __sdk::Reducer for Reducer {
                 secondary_words: secondary_words.clone(),
                 ultimate_words: ultimate_words.clone(),
             }),
+            Reducer::SplitItem { slot_index, amount } => {
+                __sats::bsatn::to_vec(&split_item_reducer::SplitItemArgs {
+                    slot_index: slot_index.clone(),
+                    amount: amount.clone(),
+                })
+            }
+            Reducer::StartCraft {
+                npc_entity_id,
+                item_id,
+                quantity,
+            } => __sats::bsatn::to_vec(&start_craft_reducer::StartCraftArgs {
+                npc_entity_id: npc_entity_id.clone(),
+                item_id: item_id.clone(),
+                quantity: quantity.clone(),
+            }),
+            Reducer::StartGather { node_entity_id } => {
+                __sats::bsatn::to_vec(&start_gather_reducer::StartGatherArgs {
+                    node_entity_id: node_entity_id.clone(),
+                })
+            }
             Reducer::Stop => __sats::bsatn::to_vec(&stop_reducer::StopArgs {}),
+            Reducer::StopCraft => __sats::bsatn::to_vec(&stop_craft_reducer::StopCraftArgs {}),
+            Reducer::StopGather => __sats::bsatn::to_vec(&stop_gather_reducer::StopGatherArgs {}),
             Reducer::UnequipItem { slot } => {
                 __sats::bsatn::to_vec(&unequip_item_reducer::UnequipItemArgs { slot: slot.clone() })
             }
@@ -621,20 +880,31 @@ impl __sdk::Reducer for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
+    account_economy: __sdk::TableUpdate<AccountEconomy>,
     active_status: __sdk::TableUpdate<ActiveStatus>,
     aoe_region: __sdk::TableUpdate<AoeRegion>,
     boss_state: __sdk::TableUpdate<BossState>,
     cast_ended: __sdk::TableUpdate<CastEndedEvent>,
     cast_state: __sdk::TableUpdate<CastState>,
+    character_wallet: __sdk::TableUpdate<CharacterWallet>,
     cooldown: __sdk::TableUpdate<Cooldown>,
+    craft_session: __sdk::TableUpdate<CraftSession>,
     crowd_control: __sdk::TableUpdate<CrowdControl>,
     damage_event: __sdk::TableUpdate<DamageEventRow>,
+    enemy_ai: __sdk::TableUpdate<EnemyAi>,
     entity_stats: __sdk::TableUpdate<EntityStats>,
     equipment: __sdk::TableUpdate<EquipmentTable>,
     game_entity: __sdk::TableUpdate<GameEntity>,
+    gather_session: __sdk::TableUpdate<GatherSession>,
+    gather_yield: __sdk::TableUpdate<GatherYieldEvent>,
     hotbar: __sdk::TableUpdate<Hotbar>,
     inventory: __sdk::TableUpdate<InventoryTable>,
     known_ancient_language: __sdk::TableUpdate<KnownAncientLanguageTable>,
+    market: __sdk::TableUpdate<Market>,
+    market_buy_order: __sdk::TableUpdate<MarketBuyOrder>,
+    market_sell_order: __sdk::TableUpdate<MarketSellOrder>,
+    my_api_keys: __sdk::TableUpdate<ApiKeyMeta>,
+    npc: __sdk::TableUpdate<Npc>,
     party: __sdk::TableUpdate<PartyRow>,
     party_member: __sdk::TableUpdate<PartyMemberRow>,
     party_request: __sdk::TableUpdate<PartyRequestRow>,
@@ -645,6 +915,7 @@ pub struct DbUpdate {
     projectile: __sdk::TableUpdate<Projectile>,
     prop_override: __sdk::TableUpdate<PropOverride>,
     resonance: __sdk::TableUpdate<Resonance>,
+    resource_node: __sdk::TableUpdate<ResourceNode>,
     session: __sdk::TableUpdate<Session>,
     spell_visual_effect: __sdk::TableUpdate<SpellVisualEffectEvent>,
     stat_modifier: __sdk::TableUpdate<StatModifier>,
@@ -658,6 +929,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
+                "account_economy" => db_update
+                    .account_economy
+                    .append(account_economy_table::parse_table_update(table_update)?),
                 "active_status" => db_update
                     .active_status
                     .append(active_status_table::parse_table_update(table_update)?),
@@ -673,15 +947,24 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "cast_state" => db_update
                     .cast_state
                     .append(cast_state_table::parse_table_update(table_update)?),
+                "character_wallet" => db_update
+                    .character_wallet
+                    .append(character_wallet_table::parse_table_update(table_update)?),
                 "cooldown" => db_update
                     .cooldown
                     .append(cooldown_table::parse_table_update(table_update)?),
+                "craft_session" => db_update
+                    .craft_session
+                    .append(craft_session_table::parse_table_update(table_update)?),
                 "crowd_control" => db_update
                     .crowd_control
                     .append(crowd_control_table::parse_table_update(table_update)?),
                 "damage_event" => db_update
                     .damage_event
                     .append(damage_event_table::parse_table_update(table_update)?),
+                "enemy_ai" => db_update
+                    .enemy_ai
+                    .append(enemy_ai_table::parse_table_update(table_update)?),
                 "entity_stats" => db_update
                     .entity_stats
                     .append(entity_stats_table::parse_table_update(table_update)?),
@@ -691,6 +974,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "game_entity" => db_update
                     .game_entity
                     .append(game_entity_table::parse_table_update(table_update)?),
+                "gather_session" => db_update
+                    .gather_session
+                    .append(gather_session_table::parse_table_update(table_update)?),
+                "gather_yield" => db_update
+                    .gather_yield
+                    .append(gather_yield_table::parse_table_update(table_update)?),
                 "hotbar" => db_update
                     .hotbar
                     .append(hotbar_table::parse_table_update(table_update)?),
@@ -700,6 +989,21 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "known_ancient_language" => db_update.known_ancient_language.append(
                     known_ancient_language_table::parse_table_update(table_update)?,
                 ),
+                "market" => db_update
+                    .market
+                    .append(market_table::parse_table_update(table_update)?),
+                "market_buy_order" => db_update
+                    .market_buy_order
+                    .append(market_buy_order_table::parse_table_update(table_update)?),
+                "market_sell_order" => db_update
+                    .market_sell_order
+                    .append(market_sell_order_table::parse_table_update(table_update)?),
+                "my_api_keys" => db_update
+                    .my_api_keys
+                    .append(my_api_keys_table::parse_table_update(table_update)?),
+                "npc" => db_update
+                    .npc
+                    .append(npc_table::parse_table_update(table_update)?),
                 "party" => db_update
                     .party
                     .append(party_table::parse_table_update(table_update)?),
@@ -730,6 +1034,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "resonance" => db_update
                     .resonance
                     .append(resonance_table::parse_table_update(table_update)?),
+                "resource_node" => db_update
+                    .resource_node
+                    .append(resource_node_table::parse_table_update(table_update)?),
                 "session" => db_update
                     .session
                     .append(session_table::parse_table_update(table_update)?),
@@ -771,6 +1078,9 @@ impl __sdk::DbUpdate for DbUpdate {
     ) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
+        diff.account_economy = cache
+            .apply_diff_to_table::<AccountEconomy>("account_economy", &self.account_economy)
+            .with_updates_by_pk(|row| &row.account_id);
         diff.active_status = cache
             .apply_diff_to_table::<ActiveStatus>("active_status", &self.active_status)
             .with_updates_by_pk(|row| &row.id);
@@ -784,13 +1094,22 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.cast_state = cache
             .apply_diff_to_table::<CastState>("cast_state", &self.cast_state)
             .with_updates_by_pk(|row| &row.entity_id);
+        diff.character_wallet = cache
+            .apply_diff_to_table::<CharacterWallet>("character_wallet", &self.character_wallet)
+            .with_updates_by_pk(|row| &row.character_id);
         diff.cooldown = cache
             .apply_diff_to_table::<Cooldown>("cooldown", &self.cooldown)
             .with_updates_by_pk(|row| &row.id);
+        diff.craft_session = cache
+            .apply_diff_to_table::<CraftSession>("craft_session", &self.craft_session)
+            .with_updates_by_pk(|row| &row.entity_id);
         diff.crowd_control = cache
             .apply_diff_to_table::<CrowdControl>("crowd_control", &self.crowd_control)
             .with_updates_by_pk(|row| &row.id);
         diff.damage_event = self.damage_event.into_event_diff();
+        diff.enemy_ai = cache
+            .apply_diff_to_table::<EnemyAi>("enemy_ai", &self.enemy_ai)
+            .with_updates_by_pk(|row| &row.entity_id);
         diff.entity_stats = cache
             .apply_diff_to_table::<EntityStats>("entity_stats", &self.entity_stats)
             .with_updates_by_pk(|row| &row.entity_id);
@@ -800,6 +1119,10 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.game_entity = cache
             .apply_diff_to_table::<GameEntity>("game_entity", &self.game_entity)
             .with_updates_by_pk(|row| &row.entity_id);
+        diff.gather_session = cache
+            .apply_diff_to_table::<GatherSession>("gather_session", &self.gather_session)
+            .with_updates_by_pk(|row| &row.entity_id);
+        diff.gather_yield = self.gather_yield.into_event_diff();
         diff.hotbar = cache
             .apply_diff_to_table::<Hotbar>("hotbar", &self.hotbar)
             .with_updates_by_pk(|row| &row.character_id);
@@ -812,6 +1135,18 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.known_ancient_language,
             )
             .with_updates_by_pk(|row| &row.character_id);
+        diff.market = cache
+            .apply_diff_to_table::<Market>("market", &self.market)
+            .with_updates_by_pk(|row| &row.id);
+        diff.market_buy_order = cache
+            .apply_diff_to_table::<MarketBuyOrder>("market_buy_order", &self.market_buy_order)
+            .with_updates_by_pk(|row| &row.id);
+        diff.market_sell_order = cache
+            .apply_diff_to_table::<MarketSellOrder>("market_sell_order", &self.market_sell_order)
+            .with_updates_by_pk(|row| &row.id);
+        diff.npc = cache
+            .apply_diff_to_table::<Npc>("npc", &self.npc)
+            .with_updates_by_pk(|row| &row.entity_id);
         diff.party = cache
             .apply_diff_to_table::<PartyRow>("party", &self.party)
             .with_updates_by_pk(|row| &row.party_id);
@@ -840,6 +1175,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.resonance = cache
             .apply_diff_to_table::<Resonance>("resonance", &self.resonance)
             .with_updates_by_pk(|row| &row.id);
+        diff.resource_node = cache
+            .apply_diff_to_table::<ResourceNode>("resource_node", &self.resource_node)
+            .with_updates_by_pk(|row| &row.placement_id);
         diff.session = cache
             .apply_diff_to_table::<Session>("session", &self.session)
             .with_updates_by_pk(|row| &row.identity);
@@ -853,6 +1191,9 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.tick_stats = cache
             .apply_diff_to_table::<TickStats>("tick_stats", &self.tick_stats)
             .with_updates_by_pk(|row| &row.id);
+        diff.my_api_keys = cache
+            .apply_diff_to_table::<ApiKeyMeta>("my_api_keys", &self.my_api_keys)
+            .with_updates_by_pk(|row| &row.id);
 
         diff
     }
@@ -860,6 +1201,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "account_economy" => db_update
+                    .account_economy
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "active_status" => db_update
                     .active_status
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -875,14 +1219,23 @@ impl __sdk::DbUpdate for DbUpdate {
                 "cast_state" => db_update
                     .cast_state
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "character_wallet" => db_update
+                    .character_wallet
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "cooldown" => db_update
                     .cooldown
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "craft_session" => db_update
+                    .craft_session
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "crowd_control" => db_update
                     .crowd_control
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "damage_event" => db_update
                     .damage_event
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "enemy_ai" => db_update
+                    .enemy_ai
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "entity_stats" => db_update
                     .entity_stats
@@ -893,6 +1246,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "game_entity" => db_update
                     .game_entity
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "gather_session" => db_update
+                    .gather_session
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "gather_yield" => db_update
+                    .gather_yield
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "hotbar" => db_update
                     .hotbar
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -901,6 +1260,21 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "known_ancient_language" => db_update
                     .known_ancient_language
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "market" => db_update
+                    .market
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "market_buy_order" => db_update
+                    .market_buy_order
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "market_sell_order" => db_update
+                    .market_sell_order
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "my_api_keys" => db_update
+                    .my_api_keys
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "npc" => db_update
+                    .npc
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "party" => db_update
                     .party
@@ -931,6 +1305,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "resonance" => db_update
                     .resonance
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "resource_node" => db_update
+                    .resource_node
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "session" => db_update
                     .session
@@ -960,6 +1337,9 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
+                "account_economy" => db_update
+                    .account_economy
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "active_status" => db_update
                     .active_status
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -975,14 +1355,23 @@ impl __sdk::DbUpdate for DbUpdate {
                 "cast_state" => db_update
                     .cast_state
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "character_wallet" => db_update
+                    .character_wallet
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "cooldown" => db_update
                     .cooldown
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "craft_session" => db_update
+                    .craft_session
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "crowd_control" => db_update
                     .crowd_control
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "damage_event" => db_update
                     .damage_event
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "enemy_ai" => db_update
+                    .enemy_ai
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "entity_stats" => db_update
                     .entity_stats
@@ -993,6 +1382,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "game_entity" => db_update
                     .game_entity
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "gather_session" => db_update
+                    .gather_session
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "gather_yield" => db_update
+                    .gather_yield
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "hotbar" => db_update
                     .hotbar
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -1001,6 +1396,21 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "known_ancient_language" => db_update
                     .known_ancient_language
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "market" => db_update
+                    .market
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "market_buy_order" => db_update
+                    .market_buy_order
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "market_sell_order" => db_update
+                    .market_sell_order
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "my_api_keys" => db_update
+                    .my_api_keys
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "npc" => db_update
+                    .npc
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "party" => db_update
                     .party
@@ -1031,6 +1441,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "resonance" => db_update
                     .resonance
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "resource_node" => db_update
+                    .resource_node
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "session" => db_update
                     .session
@@ -1062,20 +1475,31 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
+    account_economy: __sdk::TableAppliedDiff<'r, AccountEconomy>,
     active_status: __sdk::TableAppliedDiff<'r, ActiveStatus>,
     aoe_region: __sdk::TableAppliedDiff<'r, AoeRegion>,
     boss_state: __sdk::TableAppliedDiff<'r, BossState>,
     cast_ended: __sdk::TableAppliedDiff<'r, CastEndedEvent>,
     cast_state: __sdk::TableAppliedDiff<'r, CastState>,
+    character_wallet: __sdk::TableAppliedDiff<'r, CharacterWallet>,
     cooldown: __sdk::TableAppliedDiff<'r, Cooldown>,
+    craft_session: __sdk::TableAppliedDiff<'r, CraftSession>,
     crowd_control: __sdk::TableAppliedDiff<'r, CrowdControl>,
     damage_event: __sdk::TableAppliedDiff<'r, DamageEventRow>,
+    enemy_ai: __sdk::TableAppliedDiff<'r, EnemyAi>,
     entity_stats: __sdk::TableAppliedDiff<'r, EntityStats>,
     equipment: __sdk::TableAppliedDiff<'r, EquipmentTable>,
     game_entity: __sdk::TableAppliedDiff<'r, GameEntity>,
+    gather_session: __sdk::TableAppliedDiff<'r, GatherSession>,
+    gather_yield: __sdk::TableAppliedDiff<'r, GatherYieldEvent>,
     hotbar: __sdk::TableAppliedDiff<'r, Hotbar>,
     inventory: __sdk::TableAppliedDiff<'r, InventoryTable>,
     known_ancient_language: __sdk::TableAppliedDiff<'r, KnownAncientLanguageTable>,
+    market: __sdk::TableAppliedDiff<'r, Market>,
+    market_buy_order: __sdk::TableAppliedDiff<'r, MarketBuyOrder>,
+    market_sell_order: __sdk::TableAppliedDiff<'r, MarketSellOrder>,
+    my_api_keys: __sdk::TableAppliedDiff<'r, ApiKeyMeta>,
+    npc: __sdk::TableAppliedDiff<'r, Npc>,
     party: __sdk::TableAppliedDiff<'r, PartyRow>,
     party_member: __sdk::TableAppliedDiff<'r, PartyMemberRow>,
     party_request: __sdk::TableAppliedDiff<'r, PartyRequestRow>,
@@ -1086,6 +1510,7 @@ pub struct AppliedDiff<'r> {
     projectile: __sdk::TableAppliedDiff<'r, Projectile>,
     prop_override: __sdk::TableAppliedDiff<'r, PropOverride>,
     resonance: __sdk::TableAppliedDiff<'r, Resonance>,
+    resource_node: __sdk::TableAppliedDiff<'r, ResourceNode>,
     session: __sdk::TableAppliedDiff<'r, Session>,
     spell_visual_effect: __sdk::TableAppliedDiff<'r, SpellVisualEffectEvent>,
     stat_modifier: __sdk::TableAppliedDiff<'r, StatModifier>,
@@ -1104,6 +1529,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         event: &EventContext,
         callbacks: &mut __sdk::DbCallbacks<RemoteModule>,
     ) {
+        callbacks.invoke_table_row_callbacks::<AccountEconomy>(
+            "account_economy",
+            &self.account_economy,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<ActiveStatus>(
             "active_status",
             &self.active_status,
@@ -1117,7 +1547,17 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<CastState>("cast_state", &self.cast_state, event);
+        callbacks.invoke_table_row_callbacks::<CharacterWallet>(
+            "character_wallet",
+            &self.character_wallet,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<Cooldown>("cooldown", &self.cooldown, event);
+        callbacks.invoke_table_row_callbacks::<CraftSession>(
+            "craft_session",
+            &self.craft_session,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<CrowdControl>(
             "crowd_control",
             &self.crowd_control,
@@ -1128,6 +1568,7 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.damage_event,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<EnemyAi>("enemy_ai", &self.enemy_ai, event);
         callbacks.invoke_table_row_callbacks::<EntityStats>(
             "entity_stats",
             &self.entity_stats,
@@ -1135,6 +1576,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         );
         callbacks.invoke_table_row_callbacks::<EquipmentTable>("equipment", &self.equipment, event);
         callbacks.invoke_table_row_callbacks::<GameEntity>("game_entity", &self.game_entity, event);
+        callbacks.invoke_table_row_callbacks::<GatherSession>(
+            "gather_session",
+            &self.gather_session,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<GatherYieldEvent>(
+            "gather_yield",
+            &self.gather_yield,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<Hotbar>("hotbar", &self.hotbar, event);
         callbacks.invoke_table_row_callbacks::<InventoryTable>("inventory", &self.inventory, event);
         callbacks.invoke_table_row_callbacks::<KnownAncientLanguageTable>(
@@ -1142,6 +1593,19 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.known_ancient_language,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<Market>("market", &self.market, event);
+        callbacks.invoke_table_row_callbacks::<MarketBuyOrder>(
+            "market_buy_order",
+            &self.market_buy_order,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<MarketSellOrder>(
+            "market_sell_order",
+            &self.market_sell_order,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<ApiKeyMeta>("my_api_keys", &self.my_api_keys, event);
+        callbacks.invoke_table_row_callbacks::<Npc>("npc", &self.npc, event);
         callbacks.invoke_table_row_callbacks::<PartyRow>("party", &self.party, event);
         callbacks.invoke_table_row_callbacks::<PartyMemberRow>(
             "party_member",
@@ -1176,6 +1640,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<Resonance>("resonance", &self.resonance, event);
+        callbacks.invoke_table_row_callbacks::<ResourceNode>(
+            "resource_node",
+            &self.resource_node,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<Session>("session", &self.session, event);
         callbacks.invoke_table_row_callbacks::<SpellVisualEffectEvent>(
             "spell_visual_effect",
@@ -1849,20 +2318,31 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        account_economy_table::register_table(client_cache);
         active_status_table::register_table(client_cache);
         aoe_region_table::register_table(client_cache);
         boss_state_table::register_table(client_cache);
         cast_ended_table::register_table(client_cache);
         cast_state_table::register_table(client_cache);
+        character_wallet_table::register_table(client_cache);
         cooldown_table::register_table(client_cache);
+        craft_session_table::register_table(client_cache);
         crowd_control_table::register_table(client_cache);
         damage_event_table::register_table(client_cache);
+        enemy_ai_table::register_table(client_cache);
         entity_stats_table::register_table(client_cache);
         equipment_table::register_table(client_cache);
         game_entity_table::register_table(client_cache);
+        gather_session_table::register_table(client_cache);
+        gather_yield_table::register_table(client_cache);
         hotbar_table::register_table(client_cache);
         inventory_table::register_table(client_cache);
         known_ancient_language_table::register_table(client_cache);
+        market_table::register_table(client_cache);
+        market_buy_order_table::register_table(client_cache);
+        market_sell_order_table::register_table(client_cache);
+        my_api_keys_table::register_table(client_cache);
+        npc_table::register_table(client_cache);
         party_table::register_table(client_cache);
         party_member_table::register_table(client_cache);
         party_request_table::register_table(client_cache);
@@ -1873,6 +2353,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         projectile_table::register_table(client_cache);
         prop_override_table::register_table(client_cache);
         resonance_table::register_table(client_cache);
+        resource_node_table::register_table(client_cache);
         session_table::register_table(client_cache);
         spell_visual_effect_table::register_table(client_cache);
         stat_modifier_table::register_table(client_cache);
@@ -1880,20 +2361,31 @@ impl __sdk::SpacetimeModule for RemoteModule {
         tick_stats_table::register_table(client_cache);
     }
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
+        "account_economy",
         "active_status",
         "aoe_region",
         "boss_state",
         "cast_ended",
         "cast_state",
+        "character_wallet",
         "cooldown",
+        "craft_session",
         "crowd_control",
         "damage_event",
+        "enemy_ai",
         "entity_stats",
         "equipment",
         "game_entity",
+        "gather_session",
+        "gather_yield",
         "hotbar",
         "inventory",
         "known_ancient_language",
+        "market",
+        "market_buy_order",
+        "market_sell_order",
+        "my_api_keys",
+        "npc",
         "party",
         "party_member",
         "party_request",
@@ -1904,6 +2396,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "projectile",
         "prop_override",
         "resonance",
+        "resource_node",
         "session",
         "spell_visual_effect",
         "stat_modifier",

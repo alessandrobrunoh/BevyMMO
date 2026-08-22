@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use super::definition::Item;
+use super::definition::{Item, ItemCategory};
 use crate::registry::Registry;
 
 /// Unique identifier of an item type.
@@ -80,10 +80,21 @@ impl ItemRegistry {
     /// All registered items sorted alphabetically by display name.
     ///
     /// Deterministic iteration order keeps the inventory UI stable across
-    /// rebuilds and matches the behavior of `SpellRegistry::sorted_spells`.
+    /// rebuilds and matches the behavior of other sorted registries.
     pub fn sorted_items(&self) -> Vec<(ItemId, Arc<dyn Item>)> {
         self.items
             .sorted_by(|a, b| a.display_name().cmp(b.display_name()))
+    }
+
+    /// Craftable items in `category`, sorted by display name.
+    ///
+    /// An item is craftable only when it declares a recipe *and* its
+    /// catalogue category matches. Unique items (no recipe) are omitted.
+    pub fn craftable_in(&self, category: ItemCategory) -> Vec<(ItemId, Arc<dyn Item>)> {
+        self.sorted_items()
+            .into_iter()
+            .filter(|(_, item)| item.config().category == category && item.craft_recipe().is_some())
+            .collect()
     }
 }
 
@@ -112,6 +123,8 @@ mod tests {
                     rarity: ItemRarity::Common,
                     equippable_into: Some(EquipSlot::Weapon),
                     weight: 0.0,
+                    tradable: true,
+                    icon: "",
                 },
             }
         }

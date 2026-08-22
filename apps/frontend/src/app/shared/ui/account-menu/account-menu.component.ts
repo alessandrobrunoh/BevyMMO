@@ -1,13 +1,14 @@
 import { Component, inject, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { EivarButtonComponent } from '../button/button.component';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 
 @Component({
   selector: 'app-account-menu',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, EivarButtonComponent],
   template: `
     <div class="account-menu-dropdown chamfer-box">
       <header class="menu-header">
@@ -29,22 +30,18 @@ import { ToastService } from '../../../core/services/toast.service';
       </div>
 
       <nav class="menu-links">
-        <button class="menu-link-btn" (click)="onAction('Profile')">
-          <span class="material-symbols-outlined btn-icon">person</span>
+        <app-eivar-button variant="navigation" [fullWidth]="true" icon="person" (onClick)="onAction('Profile')">
           <span>Player Profile & Runes</span>
-        </button>
-        <button class="menu-link-btn" (click)="onAction('Account')">
-          <span class="material-symbols-outlined btn-icon">shield</span>
+        </app-eivar-button>
+        <app-eivar-button variant="navigation" [fullWidth]="true" icon="shield" (onClick)="onAction('Account')">
           <span>Alpha Access & Security</span>
-        </button>
-        <button class="menu-link-btn" (click)="onAction('Settings')">
-          <span class="material-symbols-outlined btn-icon">settings</span>
+        </app-eivar-button>
+        <app-eivar-button variant="navigation" [fullWidth]="true" icon="settings" (onClick)="onAction('Settings')">
           <span>Game & Display Settings</span>
-        </button>
-        <button class="menu-link-btn logout-btn" (click)="onLogout()">
-          <span class="material-symbols-outlined btn-icon">logout</span>
+        </app-eivar-button>
+        <app-eivar-button variant="danger" class="logout-btn" [fullWidth]="true" icon="logout" (onClick)="onLogout()">
           <span>Sign Out</span>
-        </button>
+        </app-eivar-button>
       </nav>
     </div>
   `,
@@ -61,6 +58,11 @@ export class AccountMenuComponent {
     if (actionName === 'Profile') {
       this.closeMenu.emit();
       this.router.navigate(['/profile']);
+      return;
+    }
+    if (actionName === 'Account') {
+      this.closeMenu.emit();
+      this.router.navigate(['/account/api-keys']);
       return;
     }
     this.toastService.showInfo(`${actionName} screen is for prototype demonstration.`, 'Eivar Account');

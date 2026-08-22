@@ -169,7 +169,9 @@ pub fn tag_occludables(
 
         if !belongs_to_map || !is_occludable_name(name.as_str()) {
             if !belongs_to_map {
-                debug!("Occlusion: {name:?} ({entity:?}) does NOT belong to map — marking NotOccludable");
+                debug!(
+                    "Occlusion: {name:?} ({entity:?}) does NOT belong to map — marking NotOccludable"
+                );
             }
             commands.entity(entity).insert(NotOccludable);
             continue;

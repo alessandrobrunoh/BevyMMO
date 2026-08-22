@@ -14,27 +14,33 @@
         <!-- Toolbar -->
         <div class="updates-toolbar stone-panel">
           <div class="type-filter-buttons">
-            <button
-              class="filter-btn"
-              [class.active]="activeType() === 'All'"
-              (click)="setType('All')"
+            <app-eivar-button
+              variant="tag"
+              size="sm"
+              [active]="activeType() === 'All'"
+              [toggle]="true"
+              (onClick)="setType('All')"
             >
               All Logs
-            </button>
-            <button
-              class="filter-btn"
-              [class.active]="activeType() === 'Patch Notes'"
-              (click)="setType('Patch Notes')"
+            </app-eivar-button>
+            <app-eivar-button
+              variant="tag"
+              size="sm"
+              [active]="activeType() === 'Patch Notes'"
+              [toggle]="true"
+              (onClick)="setType('Patch Notes')"
             >
               Patch Notes
-            </button>
-            <button
-              class="filter-btn"
-              [class.active]="activeType() === 'Development'"
-              (click)="setType('Development')"
+            </app-eivar-button>
+            <app-eivar-button
+              variant="tag"
+              size="sm"
+              [active]="activeType() === 'Development'"
+              [toggle]="true"
+              (onClick)="setType('Development')"
             >
               Development Reports
-            </button>
+            </app-eivar-button>
           </div>
         </div>
 
@@ -105,13 +111,17 @@
 
           <nav class="version-nav-list">
             @for (upd of updates(); track upd.id) {
-              <button class="v-nav-item" (click)="scrollToUpdate(upd.id)">
+              <app-eivar-button
+                variant="navigation"
+                size="sm"
+                (onClick)="scrollToUpdate(upd.id)"
+              >
                 <div class="v-meta">
                   <span class="v-title">{{ upd.version }}</span>
                   <span class="v-date">{{ upd.date }}</span>
                 </div>
                 <span class="v-arrow">↓</span>
-              </button>
+              </app-eivar-button>
             }
           </nav>
 

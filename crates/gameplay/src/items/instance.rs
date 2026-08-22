@@ -43,10 +43,17 @@ impl ItemInstanceId {
     }
 }
 
+fn default_quantity() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ItemInstance {
     pub instance_id: ItemInstanceId,
     pub item_id: ItemId,
+    /// Stack size. Unique items stay at 1; the bag cap lives on [`super::components::Inventory`].
+    #[serde(default = "default_quantity")]
+    pub quantity: u32,
     /// Which of `Item::ability_loadout()`'s Primary/Secondary options is
     /// active on THIS esemplare — `Default` (nothing picked yet) resolves to
     /// the first offered option via `abilities::resolve_active_ability`.
@@ -62,10 +69,10 @@ pub struct ItemInstance {
 }
 
 /// Catalogue id of the weapon granted to a new character.
-pub const STARTER_WEAPON_ITEM_ID: &str = "mage_staff";
+pub const STARTER_WEAPON_ITEM_ID: &str = "sword";
 
 /// Root Word inscribed on that starter weapon so the first cast is legal.
-pub const STARTER_WEAPON_ROOT_WORD: &str = "damage";
+pub const STARTER_WEAPON_ROOT_WORD: &str = "flame";
 
 impl ItemInstance {
     /// Crea un nuovo esemplare senza incisione né selezione (stato
@@ -75,6 +82,7 @@ impl ItemInstance {
         Self {
             instance_id: ItemInstanceId::unassigned(),
             item_id,
+            quantity: 1,
             ability_selection: AbilitySelection::default(),
             root_inscription: None,
             armor_inscription: None,
@@ -96,6 +104,13 @@ impl ItemInstance {
             ultimate: SlotInscription::default(),
         });
     }
+
+    /// Whether this copy can merge with another of the same `item_id`.
+    ///
+    /// Inscribed weapons/armor are unique esemplari and never stack.
+    pub fn is_stack_mergeable(&self) -> bool {
+        self.root_inscription.is_none() && self.armor_inscription.is_none()
+    }
 }
 
 #[cfg(test)]
@@ -108,8 +123,8 @@ mod tests {
         // minted a random UUID. Ids are now issued by the database, so the
         // guarantee moved: a fresh instance has *no* id, and anything that
         // needs to tell two copies apart must store them first.
-        let a = ItemInstance::new(ItemId::new("mage_staff"));
-        let b = ItemInstance::new(ItemId::new("mage_staff"));
+        let a = ItemInstance::new(ItemId::new("sword"));
+        let b = ItemInstance::new(ItemId::new("sword"));
         assert_eq!(a.item_id, b.item_id);
         assert!(!a.instance_id.is_assigned());
         assert!(!b.instance_id.is_assigned());
@@ -122,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn starter_inscription_is_damage_on_the_same_instance() {
+    fn starter_inscription_is_flame_on_the_same_instance() {
         let mut instance = ItemInstance::new(ItemId::new(STARTER_WEAPON_ITEM_ID));
         instance.instance_id = ItemInstanceId(42);
         instance.inscribe_starter_root_word();
@@ -140,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn starter_inscription_is_not_flame() {
+    fn starter_inscription_is_not_damage() {
         let mut instance = ItemInstance::new(ItemId::new(STARTER_WEAPON_ITEM_ID));
         instance.inscribe_starter_root_word();
         assert_ne!(
@@ -149,7 +164,7 @@ mod tests {
                 .as_ref()
                 .and_then(|inscription| inscription.root_word.as_ref())
                 .map(|word| word.as_str()),
-            Some("flame")
+            Some("damage")
         );
     }
 }

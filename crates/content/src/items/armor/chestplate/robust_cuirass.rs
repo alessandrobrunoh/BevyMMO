@@ -2,9 +2,6 @@
 
 use bevymmo_props_macro::item;
 
-use crate::ability_definitions::arcane_orb::ArcaneOrb;
-use crate::ability_definitions::bulwark_strike::BulwarkStrike;
-use crate::ability_definitions::iron_wave::IronWave;
 use crate::items::ItemRegistry;
 
 #[item(
@@ -14,12 +11,8 @@ use crate::items::ItemRegistry;
     category = Armor,
     rarity = Uncommon,
     slot = Armor,
+    tradable = true,
     effects = [stat_bonus(field = Armor, op = Add, value = 15.0)],
-    abilities(
-        primary = [BulwarkStrike],
-        secondary = [IronWave],
-        ultimate = [ArcaneOrb],
-    ),
     rune_profile(capacity = 6, stability = 0.92),
 )]
 pub struct RobustCuirass;
@@ -31,7 +24,6 @@ pub fn register(registry: &mut ItemRegistry) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abilities::AbilitySlot;
     use crate::items::components::EquipSlot;
     use crate::items::definition::Item;
 
@@ -52,23 +44,8 @@ mod tests {
     }
 
     #[test]
-    fn offers_dedicated_chestplate_abilities() {
-        let item = RobustCuirass;
-        let abilities = item
-            .ability_loadout()
-            .expect("robust_cuirass must grant abilities");
-        assert_eq!(
-            abilities.options_for(AbilitySlot::Primary),
-            [BulwarkStrike::ID.into()]
-        );
-        assert_eq!(
-            abilities.options_for(AbilitySlot::Secondary),
-            [IronWave::ID.into()]
-        );
-        assert_eq!(
-            abilities.options_for(AbilitySlot::Ultimate),
-            [ArcaneOrb::ID.into()]
-        );
+    fn has_no_ability_loadout() {
+        assert!(RobustCuirass.ability_loadout().is_none());
     }
 
     #[test]

@@ -1,0 +1,41 @@
+export interface MarketSummary {
+  id: string;
+  display_name: string;
+  fee_bps: number;
+}
+
+export interface SellOffer {
+  id: number;
+  item_id: string;
+  /** Units listed. Unique items are 1. */
+  quantity: number;
+  /** Total gold for the listed pile. Per-unit is `price_gold / quantity`. */
+  price_gold: number;
+  seller_character_id: string;
+}
+
+export interface BuyOffer {
+  id: number;
+  item_id: string;
+  price_gold: number;
+  buyer_character_id: string;
+}
+
+export interface ItemTicket {
+  market_id: string;
+  item_id: string;
+  sell_orders: SellOffer[];
+  buy_orders: BuyOffer[];
+}
+
+export interface WalletResponse {
+  gold: number;
+}
+
+export interface FeeQuote {
+  marketBps: number;
+  accountBps: number;
+  fee: number;
+  youPay: number;
+  sellerReceives: number;
+}

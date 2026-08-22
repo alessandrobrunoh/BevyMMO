@@ -1,19 +1,20 @@
 import { Component, Input, Output, EventEmitter, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { EivarButtonComponent } from '../button/button.component';
 
 @Component({
   selector: 'app-modal',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, EivarButtonComponent],
   template: `
     @if (isOpen) {
       <div class="modal-backdrop" (click)="onBackdropClick($event)" role="dialog" aria-modal="true">
         <div class="modal-container chamfer-box">
           <header class="modal-header">
             <h3 class="modal-title">{{ title }}</h3>
-            <button class="close-btn" (click)="close.emit()" aria-label="Close modal">
+            <app-eivar-button variant="icon-square" class="close-btn" ariaLabel="Close modal" (onClick)="close.emit()">
               <span class="material-symbols-outlined">close</span>
-            </button>
+            </app-eivar-button>
           </header>
           <div class="modal-body">
             <ng-content></ng-content>

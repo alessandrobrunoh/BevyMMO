@@ -1,0 +1,128 @@
+<app-page-header
+  title="API Keys"
+  subtitle="Mint long-lived secrets for bots and scripts that need to read your profile, wallet, and stats. The website itself stays on your login cookie."
+  badge="Account Security"
+  [breadcrumbs]="[{ label: 'Account', route: '/account/api-keys' }, { label: 'API Keys' }]"
+></app-page-header>
+
+<section class="keys-page">
+  <div class="container keys-layout">
+    <header class="keys-toolbar">
+      <div>
+        <p class="keys-kicker">Your tokens</p>
+        <h2 class="keys-heading">Keys for this account</h2>
+      </div>
+      <app-eivar-button variant="gold" icon="add" (onClick)="openCreate()" [disabled]="loading()">
+        Create API key
+      </app-eivar-button>
+    </header>
+
+    @if (errorMessage(); as error) {
+      <p class="keys-error" role="alert">{{ error }}</p>
+    }
+
+    @if (loading()) {
+      <p class="keys-muted">Reading your keys…</p>
+    } @else if (keys().length === 0) {
+      <div class="keys-empty chamfer-box" data-testid="empty-state">
+        <span class="keys-empty-rune" aria-hidden="true">ᛟ</span>
+        <h3>No API keys yet</h3>
+        <p>
+          Create one when you want a bot, a Discord script, or a local tool to read your characters
+          without logging in through the site.
+        </p>
+        <app-eivar-button variant="gold" icon="add" (onClick)="openCreate()">Create API key</app-eivar-button>
+      </div>
+    } @else {
+      <ul class="keys-list">
+        @for (key of keys(); track key.id) {
+          <li class="key-row chamfer-box">
+            <div class="key-main">
+              <h3 class="key-name">{{ key.name }}</h3>
+              <code class="key-prefix">{{ key.prefix }}…</code>
+            </div>
+            <dl class="key-meta">
+              <div>
+                <dt>Created</dt>
+                <dd>{{ formatDate(key.created_at) }}</dd>
+              </div>
+              <div>
+                <dt>Last used</dt>
+                <dd>{{ formatDate(key.last_used_at) }}</dd>
+              </div>
+            </dl>
+            <app-eivar-button variant="danger" size="sm" icon="delete" (onClick)="askRevoke(key)">
+              Revoke
+            </app-eivar-button>
+          </li>
+        }
+      </ul>
+    }
+
+    <aside class="keys-help chamfer-box">
+      <h3>Using a key</h3>
+      <p>
+        Send it as a Bearer token. Public catalog and market routes do not need a key. Creating or
+        revoking keys always requires the website login.
+      </p>
+      <pre class="keys-curl"><code>{{ curlExample() }}</code></pre>
+    </aside>
+  </div>
+</section>
+
+<app-modal [isOpen]="createOpen()" title="Create API key" [showFooter]="true" (close)="closeCreate()">
+  <form class="key-form" (ngSubmit)="submitCreate()" novalidate>
+    <label for="api-key-name">Name</label>
+    <input
+      id="api-key-name"
+      name="name"
+      type="text"
+      maxlength="48"
+      autocomplete="off"
+      placeholder="discord-bot"
+      [ngModel]="createName()"
+      (ngModelChange)="createName.set($event); createError.set(null)"
+    />
+    <p class="key-form-hint">1–48 characters. Shown in the list so you can tell keys apart.</p>
+    @if (createError(); as error) {
+      <p class="keys-error" role="alert">{{ error }}</p>
+    }
+  </form>
+  <div footer class="key-form-actions">
+    <app-eivar-button variant="ghost" (onClick)="closeCreate()" [disabled]="creating()">Cancel</app-eivar-button>
+    <app-eivar-button variant="gold" [loading]="creating()" (onClick)="submitCreate()">Create</app-eivar-button>
+  </div>
+</app-modal>
+
+<app-modal [isOpen]="!!revealed()" title="Copy this secret now" [showFooter]="true" (close)="closeReveal()">
+  @if (revealed(); as created) {
+    <p class="reveal-warning">
+      This is the only time Eivar will show the full key for <strong>{{ created.name }}</strong>.
+      After you close this, the list keeps only the prefix <code>{{ created.prefix }}</code>.
+    </p>
+    <label class="reveal-label" for="api-key-secret">API key</label>
+    <div class="reveal-secret">
+      <code id="api-key-secret" data-testid="revealed-secret">{{ created.key }}</code>
+    </div>
+    <pre class="keys-curl"><code>{{ curlExample(created.key) }}</code></pre>
+  }
+  <div footer class="key-form-actions">
+    <app-eivar-button variant="cyan" icon="content_copy" (onClick)="copySecret()">
+      {{ copied() ? 'Copied' : 'Copy secret' }}
+    </app-eivar-button>
+    <app-eivar-button variant="gold" (onClick)="closeReveal()">I have stored it</app-eivar-button>
+  </div>
+</app-modal>
+
+<app-modal [isOpen]="!!pendingRevoke()" title="Revoke this key?" [showFooter]="true" (close)="closeRevoke()">
+  @if (pendingRevoke(); as key) {
+    <p>
+      Scripts using <strong>{{ key.name }}</strong> (<code>{{ key.prefix }}…</code>) will stop
+      working immediately. You cannot recover the secret.
+    </p>
+  }
+  <div footer class="key-form-actions">
+    <app-eivar-button variant="ghost" (onClick)="closeRevoke()" [disabled]="revoking()">Keep it</app-eivar-button>
+    <app-eivar-button variant="danger" [loading]="revoking()" (onClick)="confirmRevoke()">Revoke</app-eivar-button>
+  </div>
+</app-modal>

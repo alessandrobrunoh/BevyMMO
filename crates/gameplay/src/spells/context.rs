@@ -1,7 +1,4 @@
-//! Core spell trait and cast context.
-//!
-//! This module defines the `Spell` trait that all spells must implement,
-//! and the `SpellCastContext` that provides contextual information during casting.
+//! Cast context and targeting used by `BaseAbility` manifestation.
 
 use crate::EntityId;
 use glam::Vec3;
@@ -13,17 +10,15 @@ use crate::stats::events::ApplyStatModifierEvent;
 
 /// How a spell selects its targets at cast time.
 ///
-/// This enum types what was previously implicit in [`SpellConfig`] constructors,
-/// and is used both for input validation (e.g., a `SingleEntity` cast
-/// without `target_entity` fails), and for choosing client-side targeting UI
-/// (different cursor, circle preview, etc.).
+/// Used for input validation (e.g. a `SingleEntity` cast without
+/// `target_entity` fails) and for choosing client-side targeting UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetingMode {
     /// Centered on the caster, affects everything in a radius (e.g. `Attack`).
     SelfCentered,
     /// Line-of-sight line shot along look direction (e.g. `RayOfLight`).
     DirectionalLine,
-    /// A single selected entity (e.g. `Fireball`).
+    /// A single selected entity.
     SingleEntity,
     /// Ground AoE at the indicated position (e.g. `HealingCircle`).
     GroundAoe,
@@ -42,18 +37,17 @@ impl TargetingMode {
 
 /// Classifies the timing model of a spell for the cast pipeline.
 ///
-/// The value is derived in [`Spell::cast_kind`] from [`SpellConfig`], but can
-/// be overridden by implementations when special behavior is needed (rare).
+/// Derived from an ability's [`crate::abilities::AbilityCastMode`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CastKind {
     /// Immediate effect on `just_pressed` (historical behavior).
     #[default]
     Instant,
-    /// Blocking wind-up: caster must remain stationary for `cast_time_seconds`
-    /// before the effect fires. Movement always cancels the cast.
+    /// Wind-up: click starts the cast; it fires when `cast_time_seconds`
+    /// elapses. Movement always cancels the cast.
     CastTime,
     /// Repeated effect as long as the caster holds down the key.
-    /// Movement interrupts or not according to [`SpellConfig::channel_movement`].
+    /// Movement interrupts or not according to the ability's channel policy.
     Channeling,
 }
 
@@ -69,107 +63,6 @@ pub enum ChannelMovementPolicy {
     /// Movement is allowed; only release / re-press / death terminate
     /// channeling (e.g. Swift: must be able to benefit from buff while running).
     AllowMovement,
-}
-
-/// Configuration data for a spell.
-///
-/// Contains static properties that define the spell's behavior and constraints.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SpellConfig {
-    /// Cooldown time in seconds after casting.
-    pub cooldown_seconds: f32,
-    /// Maximum range at which the spell can be cast.
-    /// - 0.0 means the spell is centered on the caster
-    /// - Higher values allow casting at a distance
-    pub cast_range: f32,
-    /// Radius of the spell's area of effect.
-    /// - Used for spells that affect multiple targets in an area
-    /// - 0.0 means single-target or no area component
-    pub area_radius: f32,
-    /// How the spell selects targets at cast time.
-    pub targeting: TargetingMode,
-    /// Wind-up duration before effect (0.0 = instant).
-    pub cast_time_seconds: f32,
-    /// `true` = channeling spell: repeated effect while held.
-    pub is_channel: bool,
-    /// Movement interrupt policy for channeling. Ignored for
-    /// Instant and CastTime spells (which follow fixed Phase 2 rules).
-    pub channel_movement: ChannelMovementPolicy,
-    /// Optional max duration of channeling. `None` keeps the open-ended
-    /// model until client releases key.
-    pub channel_duration_seconds: Option<f32>,
-}
-
-impl SpellConfig {
-    /// Create a new spell configuration.
-    pub const fn new(
-        cooldown_seconds: f32,
-        cast_range: f32,
-        area_radius: f32,
-        targeting: TargetingMode,
-    ) -> Self {
-        Self {
-            cooldown_seconds,
-            cast_range,
-            area_radius,
-            targeting,
-            cast_time_seconds: 0.0,
-            is_channel: false,
-            channel_movement: ChannelMovementPolicy::InterruptOnMove,
-            channel_duration_seconds: None,
-        }
-    }
-
-    /// Create a configuration for a self-centered melee spell.
-    pub const fn melee_aoe(cooldown_seconds: f32, area_radius: f32) -> Self {
-        Self::new(
-            cooldown_seconds,
-            0.0,
-            area_radius,
-            TargetingMode::SelfCentered,
-        )
-    }
-
-    /// Create a configuration for a ranged spell hitting along a line
-    /// or a single entity: caller must explicitly specify
-    /// mode (`DirectionalLine` or `SingleEntity`).
-    pub const fn ranged_single_target(
-        cooldown_seconds: f32,
-        cast_range: f32,
-        targeting: TargetingMode,
-    ) -> Self {
-        Self::new(cooldown_seconds, cast_range, 0.0, targeting)
-    }
-
-    /// Create a configuration for a ranged area-of-effect spell placed on the ground.
-    pub const fn ranged_aoe(cooldown_seconds: f32, cast_range: f32, area_radius: f32) -> Self {
-        Self::new(
-            cooldown_seconds,
-            cast_range,
-            area_radius,
-            TargetingMode::GroundAoe,
-        )
-    }
-
-    /// Builder: sets wind-up duration for a CastTime spell.
-    pub const fn with_cast_time(mut self, seconds: f32) -> Self {
-        self.cast_time_seconds = seconds;
-        self
-    }
-
-    /// Builder: turns spell into channeling and sets movement
-    /// interrupt policy.
-    pub const fn with_channel(mut self, movement_policy: ChannelMovementPolicy) -> Self {
-        self.is_channel = true;
-        self.channel_movement = movement_policy;
-        self
-    }
-
-    /// Builder: sets a finite duration for a channeling spell.
-    pub const fn with_channel_duration(mut self, seconds: f32) -> Self {
-        self.channel_duration_seconds = Some(seconds);
-        self
-    }
 }
 
 /// Target filtering rule applied by [`crate::spells::aoe`] to
@@ -571,88 +464,6 @@ impl<'a> SpellCastContext<'a> {
     }
 }
 
-/// Trait that all spells must implement.
-///
-/// This trait defines the interface for spell behavior. Implementations are
-/// responsible for:
-/// - Providing identification and display information
-/// - Providing static configuration (cooldown, range, area)
-/// - Implementing the actual spell logic in the `cast` method
-pub trait Spell: Send + Sync + 'static {
-    /// Get the unique identifier for this spell.
-    fn id(&self) -> crate::spells::registry::SpellId;
-
-    /// Get the human-readable display name for this spell.
-    fn display_name(&self) -> &'static str;
-
-    /// Get the static configuration for this spell.
-    fn config(&self) -> SpellConfig;
-
-    /// Classifies the timing model of this spell for the cast pipeline
-    /// (Phase 2). Default implementation derives the value from
-    /// [`SpellConfig`] and covers the vast majority of cases.
-    fn cast_kind(&self) -> CastKind {
-        let config = self.config();
-        if config.is_channel {
-            CastKind::Channeling
-        } else if config.cast_time_seconds > 0.0 {
-            CastKind::CastTime
-        } else {
-            CastKind::Instant
-        }
-    }
-
-    /// Accumulation interval between channeling ticks.
-    /// Relevant only for channeling spells: central system accumulates elapsed
-    /// time and invokes [`cast`](Self::cast) only when exceeding this
-    /// interval. Default `0.25s`.
-    fn channel_tick_interval_seconds(&self) -> f32 {
-        0.25
-    }
-
-    /// Execute the spell's logic.
-    ///
-    /// This method is called when the spell is successfully cast. It receives
-    /// a mutable context that contains:
-    /// - Caster information (entity, position, combat stats)
-    /// - Target information (if applicable)
-    /// - Potential targets that can be affected
-    ///
-    /// The spell should:
-    /// 1. Filter/select targets based on its criteria
-    /// - Emit unified effects via the context
-    /// 3. Return; the system will apply the events and handle cooldowns
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// fn cast(&self, ctx: &mut SpellCastContext) {
-    ///     let center = ctx.effective_center();
-    ///     let targets = ctx.targets_in_radius(center, self.config().area_radius);
-    ///
-    ///     for (target, _) in targets {
-    ///         if target != ctx.caster {
-    ///             ctx.emit_effect(target, EffectSpec::Damage(
-    ///                 crate::effects::DamageEffect { amount: ctx.caster_combat.attack_power },
-    ///             ));
-    ///         }
-    ///     }
-    /// }
-    /// ```
-    fn cast(&self, ctx: &mut SpellCastContext);
-}
-
-/// Delegation trait for the cast logic of spells declared with `#[spell(...)]`.
-///
-/// The `#[spell(...)]` macro generates `impl Spell` for all static metadata
-/// (`id`, `display_name`, `config`) and delegates `Spell::cast` to this trait.
-/// Implement `SpellCast` on your struct to provide the actual cast behavior,
-/// exactly as `EssenceEffect` / `ModifierEffect` / `AncientWordEffect` work
-/// for the corresponding Glifo macros.
-pub trait SpellCast {
-    fn cast(&self, ctx: &mut SpellCastContext);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -750,6 +561,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 0.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let caster = EntityId::new(1);
         let target = EntityId::new(2);
@@ -785,6 +597,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 0.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let caster = EntityId::new(1);
         let target = EntityId::new(2);
@@ -837,6 +650,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 0.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let caster = EntityId::new(1);
         let mut ctx = SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);
@@ -862,6 +676,7 @@ mod tests {
         let combat = CombatStats {
             attack_power: 0.0,
             armor: 0.0,
+            threat_generation: 1.0,
         };
         let caster = EntityId::new(1);
         let mut ctx = SpellCastContext::new(caster, Vec3::ZERO, &combat, Vec3::Z, None, None, &[]);

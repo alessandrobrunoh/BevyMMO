@@ -9,7 +9,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "assets/ui/source/input_kit.jpg"
-OUTPUT = ROOT / "assets/ui/extracted_kit"
+OUTPUT = ROOT / "assets/ui/kit"
 
 # Coordinates are (left, top, right, bottom) in source-image pixels, measured
 # on the 1536x1024 JPEG (Canny + residual components, then checked against a

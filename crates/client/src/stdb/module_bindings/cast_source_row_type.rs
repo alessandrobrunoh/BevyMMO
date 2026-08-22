@@ -10,13 +10,15 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub enum CastSourceRow {
     Spell,
 
-    Eidolon,
+    Weapon,
 
     Helmet,
 
     Armor,
 
     Shoes,
+
+    Catalog,
 }
 
 impl __sdk::InModule for CastSourceRow {

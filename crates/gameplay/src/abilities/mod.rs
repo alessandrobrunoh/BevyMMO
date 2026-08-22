@@ -1,4 +1,4 @@
-//! Sistema Eidolon: gesti fissi dell'equipaggiamento (`BaseAbility`) +
+//! Weapon ability system: gesti fissi dell'equipaggiamento (`BaseAbility`) +
 //! Glifi incisi dal giocatore (`Essence`/`Modifier`/`AncientWord`) = spell
 //! finale. Mirrors `crate::spells`/`crate::items` nello stile (trait +
 //! registry + id), con quattro macro gemelle in `bevymmo-props-macro` per
@@ -29,19 +29,17 @@ pub use base_ability::{
     AbilityCastMode, AbilityGeometry, AbilityId, AbilityParams, AbilityTag, ArcBaseAbility,
     BaseAbility, BaseAbilityRegistry, ChannelMovementPolicy,
 };
-pub use blueprint::{
-    AbilityBlueprint, BlueprintExecution, ManifestationKind, ManifestationPayload,
-};
+pub use blueprint::{AbilityBlueprint, ManifestationKind, ManifestationPayload};
 pub use cast_intent::{
-    charge_release_aim, flush_queued_release, movement_lock_for_ability,
-    queue_release_until_observed, weapon_cast_intent, WeaponCastIntent,
+    flush_queued_release, movement_lock_for_ability, queue_release_until_observed,
+    weapon_cast_intent, WeaponCastIntent,
 };
 pub use cooldowns::AbilityCooldowns;
 
-pub use events::EidolonCastRequest;
+pub use events::WeaponCastRequest;
 pub use inscription::{
-    AbilityInscription, ItemInscription, RuneProfile, SecondaryWord, SlotInscription,
-    WeaponInscription,
+    AbilityInscription, ArmorInscription, ItemInscription, KitInscription, RuneProfile,
+    SecondaryWord, SlotInscription, WeaponInscription,
 };
 pub use root_word::{
     ArcRootWord, RootWord, RootWordEffect, RootWordId, RootWordMetadata, RootWordRegistry,
@@ -50,8 +48,8 @@ pub use root_word::{
 pub use known_glyphs::KnownAncientLanguage;
 
 pub use resolve::{
-    cast_armor_inscribed_ability, cast_root_inscribed_slot, resolve_armor_inscribed_ability,
-    resolve_root_inscribed_slot, CastBlockedReason, SlotPreview,
+    cast_ability_preview, cast_armor_inscribed_ability, cast_root_inscribed_slot, resolve_ability,
+    resolve_armor_inscribed_ability, resolve_root_inscribed_slot, CastBlockedReason, SlotPreview,
 };
 pub use slot::AbilitySlot;
 pub use weapon_abilities::{

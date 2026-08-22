@@ -1,0 +1,519 @@
+{
+  "source": "assets/ui/source/input_kit.jpg",
+  "source_size": {
+    "width": 1536,
+    "height": 1024
+  },
+  "components": [
+    {
+      "name": "input_gold",
+      "file": "assets/ui/kit/input_gold.png",
+      "source_rect": {
+        "left": 42,
+        "top": 19,
+        "right": 729,
+        "bottom": 165
+      },
+      "size": {
+        "width": 687,
+        "height": 146
+      },
+      "opaque_pixels": 44124
+    },
+    {
+      "name": "input_gold_hover",
+      "file": "assets/ui/kit/input_gold_hover.png",
+      "source_rect": {
+        "left": 41,
+        "top": 157,
+        "right": 726,
+        "bottom": 303
+      },
+      "size": {
+        "width": 685,
+        "height": 146
+      },
+      "opaque_pixels": 69292
+    },
+    {
+      "name": "input_blue",
+      "file": "assets/ui/kit/input_blue.png",
+      "source_rect": {
+        "left": 36,
+        "top": 293,
+        "right": 731,
+        "bottom": 441
+      },
+      "size": {
+        "width": 695,
+        "height": 148
+      },
+      "opaque_pixels": 69211
+    },
+    {
+      "name": "input_silver",
+      "file": "assets/ui/kit/input_silver.png",
+      "source_rect": {
+        "left": 38,
+        "top": 434,
+        "right": 729,
+        "bottom": 580
+      },
+      "size": {
+        "width": 691,
+        "height": 146
+      },
+      "opaque_pixels": 41648
+    },
+    {
+      "name": "input_password_gold",
+      "file": "assets/ui/kit/input_password_gold.png",
+      "source_rect": {
+        "left": 807,
+        "top": 19,
+        "right": 1496,
+        "bottom": 165
+      },
+      "size": {
+        "width": 689,
+        "height": 146
+      },
+      "opaque_pixels": 45293
+    },
+    {
+      "name": "input_password_gold_hover",
+      "file": "assets/ui/kit/input_password_gold_hover.png",
+      "source_rect": {
+        "left": 805,
+        "top": 157,
+        "right": 1497,
+        "bottom": 303
+      },
+      "size": {
+        "width": 692,
+        "height": 146
+      },
+      "opaque_pixels": 69063
+    },
+    {
+      "name": "input_password_blue",
+      "file": "assets/ui/kit/input_password_blue.png",
+      "source_rect": {
+        "left": 804,
+        "top": 293,
+        "right": 1498,
+        "bottom": 440
+      },
+      "size": {
+        "width": 694,
+        "height": 147
+      },
+      "opaque_pixels": 69638
+    },
+    {
+      "name": "input_password_silver",
+      "file": "assets/ui/kit/input_password_silver.png",
+      "source_rect": {
+        "left": 804,
+        "top": 431,
+        "right": 1499,
+        "bottom": 580
+      },
+      "size": {
+        "width": 695,
+        "height": 149
+      },
+      "opaque_pixels": 43841
+    },
+    {
+      "name": "icon_user_gold",
+      "file": "assets/ui/kit/icon_user_gold.png",
+      "source_rect": {
+        "left": 55,
+        "top": 596,
+        "right": 203,
+        "bottom": 740
+      },
+      "size": {
+        "width": 148,
+        "height": 144
+      },
+      "opaque_pixels": 14003
+    },
+    {
+      "name": "icon_user_blue",
+      "file": "assets/ui/kit/icon_user_blue.png",
+      "source_rect": {
+        "left": 230,
+        "top": 592,
+        "right": 391,
+        "bottom": 744
+      },
+      "size": {
+        "width": 161,
+        "height": 152
+      },
+      "opaque_pixels": 16505
+    },
+    {
+      "name": "icon_user_silver",
+      "file": "assets/ui/kit/icon_user_silver.png",
+      "source_rect": {
+        "left": 419,
+        "top": 595,
+        "right": 572,
+        "bottom": 740
+      },
+      "size": {
+        "width": 153,
+        "height": 145
+      },
+      "opaque_pixels": 14719
+    },
+    {
+      "name": "icon_lock_gold",
+      "file": "assets/ui/kit/icon_lock_gold.png",
+      "source_rect": {
+        "left": 54,
+        "top": 750,
+        "right": 203,
+        "bottom": 895
+      },
+      "size": {
+        "width": 149,
+        "height": 145
+      },
+      "opaque_pixels": 14344
+    },
+    {
+      "name": "icon_lock_blue",
+      "file": "assets/ui/kit/icon_lock_blue.png",
+      "source_rect": {
+        "left": 230,
+        "top": 748,
+        "right": 395,
+        "bottom": 900
+      },
+      "size": {
+        "width": 165,
+        "height": 152
+      },
+      "opaque_pixels": 16640
+    },
+    {
+      "name": "icon_lock_silver",
+      "file": "assets/ui/kit/icon_lock_silver.png",
+      "source_rect": {
+        "left": 417,
+        "top": 750,
+        "right": 572,
+        "bottom": 896
+      },
+      "size": {
+        "width": 155,
+        "height": 146
+      },
+      "opaque_pixels": 14172
+    },
+    {
+      "name": "divider_gold",
+      "file": "assets/ui/kit/divider_gold.png",
+      "source_rect": {
+        "left": 624,
+        "top": 595,
+        "right": 656,
+        "bottom": 759
+      },
+      "size": {
+        "width": 32,
+        "height": 164
+      },
+      "opaque_pixels": 1535
+    },
+    {
+      "name": "divider_gold_02",
+      "file": "assets/ui/kit/divider_gold_02.png",
+      "source_rect": {
+        "left": 704,
+        "top": 597,
+        "right": 742,
+        "bottom": 761
+      },
+      "size": {
+        "width": 38,
+        "height": 164
+      },
+      "opaque_pixels": 1740
+    },
+    {
+      "name": "divider_blue",
+      "file": "assets/ui/kit/divider_blue.png",
+      "source_rect": {
+        "left": 790,
+        "top": 593,
+        "right": 835,
+        "bottom": 765
+      },
+      "size": {
+        "width": 45,
+        "height": 172
+      },
+      "opaque_pixels": 1593
+    },
+    {
+      "name": "divider_silver",
+      "file": "assets/ui/kit/divider_silver.png",
+      "source_rect": {
+        "left": 887,
+        "top": 594,
+        "right": 920,
+        "bottom": 760
+      },
+      "size": {
+        "width": 33,
+        "height": 166
+      },
+      "opaque_pixels": 1535
+    },
+    {
+      "name": "icon_eye_gold",
+      "file": "assets/ui/kit/icon_eye_gold.png",
+      "source_rect": {
+        "left": 973,
+        "top": 625,
+        "right": 1087,
+        "bottom": 709
+      },
+      "size": {
+        "width": 114,
+        "height": 84
+      },
+      "opaque_pixels": 3404
+    },
+    {
+      "name": "icon_eye_gold_glow",
+      "file": "assets/ui/kit/icon_eye_gold_glow.png",
+      "source_rect": {
+        "left": 1096,
+        "top": 623,
+        "right": 1218,
+        "bottom": 712
+      },
+      "size": {
+        "width": 122,
+        "height": 89
+      },
+      "opaque_pixels": 3697
+    },
+    {
+      "name": "icon_eye_blue",
+      "file": "assets/ui/kit/icon_eye_blue.png",
+      "source_rect": {
+        "left": 1224,
+        "top": 619,
+        "right": 1348,
+        "bottom": 711
+      },
+      "size": {
+        "width": 124,
+        "height": 92
+      },
+      "opaque_pixels": 3884
+    },
+    {
+      "name": "icon_eye_off_silver",
+      "file": "assets/ui/kit/icon_eye_off_silver.png",
+      "source_rect": {
+        "left": 1356,
+        "top": 617,
+        "right": 1467,
+        "bottom": 715
+      },
+      "size": {
+        "width": 111,
+        "height": 98
+      },
+      "opaque_pixels": 3834
+    },
+    {
+      "name": "icon_slash_gold",
+      "file": "assets/ui/kit/icon_slash_gold.png",
+      "source_rect": {
+        "left": 974,
+        "top": 742,
+        "right": 1075,
+        "bottom": 846
+      },
+      "size": {
+        "width": 101,
+        "height": 104
+      },
+      "opaque_pixels": 4929
+    },
+    {
+      "name": "icon_slash_gold_glow",
+      "file": "assets/ui/kit/icon_slash_gold_glow.png",
+      "source_rect": {
+        "left": 1101,
+        "top": 739,
+        "right": 1209,
+        "bottom": 844
+      },
+      "size": {
+        "width": 108,
+        "height": 105
+      },
+      "opaque_pixels": 5072
+    },
+    {
+      "name": "icon_slash_blue",
+      "file": "assets/ui/kit/icon_slash_blue.png",
+      "source_rect": {
+        "left": 1231,
+        "top": 739,
+        "right": 1332,
+        "bottom": 845
+      },
+      "size": {
+        "width": 101,
+        "height": 106
+      },
+      "opaque_pixels": 4578
+    },
+    {
+      "name": "icon_slash_silver",
+      "file": "assets/ui/kit/icon_slash_silver.png",
+      "source_rect": {
+        "left": 1358,
+        "top": 742,
+        "right": 1458,
+        "bottom": 845
+      },
+      "size": {
+        "width": 100,
+        "height": 103
+      },
+      "opaque_pixels": 4733
+    },
+    {
+      "name": "checkbox_gold_empty",
+      "file": "assets/ui/kit/checkbox_gold_empty.png",
+      "source_rect": {
+        "left": 630,
+        "top": 876,
+        "right": 738,
+        "bottom": 983
+      },
+      "size": {
+        "width": 108,
+        "height": 107
+      },
+      "opaque_pixels": 6745
+    },
+    {
+      "name": "checkbox_gold_checked",
+      "file": "assets/ui/kit/checkbox_gold_checked.png",
+      "source_rect": {
+        "left": 740,
+        "top": 876,
+        "right": 845,
+        "bottom": 982
+      },
+      "size": {
+        "width": 105,
+        "height": 106
+      },
+      "opaque_pixels": 6668
+    },
+    {
+      "name": "checkbox_blue_empty",
+      "file": "assets/ui/kit/checkbox_blue_empty.png",
+      "source_rect": {
+        "left": 851,
+        "top": 876,
+        "right": 959,
+        "bottom": 983
+      },
+      "size": {
+        "width": 108,
+        "height": 107
+      },
+      "opaque_pixels": 6765
+    },
+    {
+      "name": "checkbox_blue_checked",
+      "file": "assets/ui/kit/checkbox_blue_checked.png",
+      "source_rect": {
+        "left": 959,
+        "top": 877,
+        "right": 1065,
+        "bottom": 982
+      },
+      "size": {
+        "width": 106,
+        "height": 105
+      },
+      "opaque_pixels": 6922
+    },
+    {
+      "name": "checkbox_silver_empty",
+      "file": "assets/ui/kit/checkbox_silver_empty.png",
+      "source_rect": {
+        "left": 1070,
+        "top": 877,
+        "right": 1173,
+        "bottom": 978
+      },
+      "size": {
+        "width": 103,
+        "height": 101
+      },
+      "opaque_pixels": 6261
+    },
+    {
+      "name": "checkbox_silver_checked",
+      "file": "assets/ui/kit/checkbox_silver_checked.png",
+      "source_rect": {
+        "left": 1178,
+        "top": 877,
+        "right": 1283,
+        "bottom": 980
+      },
+      "size": {
+        "width": 105,
+        "height": 103
+      },
+      "opaque_pixels": 6280
+    },
+    {
+      "name": "checkbox_blue_glow_empty",
+      "file": "assets/ui/kit/checkbox_blue_glow_empty.png",
+      "source_rect": {
+        "left": 1292,
+        "top": 871,
+        "right": 1397,
+        "bottom": 979
+      },
+      "size": {
+        "width": 105,
+        "height": 108
+      },
+      "opaque_pixels": 6131
+    },
+    {
+      "name": "checkbox_blue_glow_checked",
+      "file": "assets/ui/kit/checkbox_blue_glow_checked.png",
+      "source_rect": {
+        "left": 1394,
+        "top": 871,
+        "right": 1501,
+        "bottom": 980
+      },
+      "size": {
+        "width": 107,
+        "height": 109
+      },
+      "opaque_pixels": 5934
+    }
+  ]
+}

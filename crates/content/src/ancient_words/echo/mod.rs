@@ -32,7 +32,7 @@ impl AncientWordEffect for Echo {
 
     fn transform_blueprint(&self, blueprint: &mut AbilityBlueprint) {
         // Set execution mode to echo
-        blueprint.execution = crate::abilities::blueprint::BlueprintExecution::Echo;
+        blueprint.echo = true;
 
         // Reduce potency for the echo (it's a bonus attack)
         blueprint.params.potency *= Self::ECHO_MULTIPLIER;
@@ -59,14 +59,14 @@ mod tests {
             tags: vec![AbilityTag::EchoCompatible],
             geometry: AbilityGeometry::Projectile { speed: 20.0 },
             cast_mode: crate::abilities::AbilityCastMode::Instant,
-            execution: crate::abilities::blueprint::BlueprintExecution::Base,
+            echo: false,
             params: AbilityParams {
                 potency: 100.0,
                 area: 0.0,
                 range: 30.0,
                 cast_time: 0.0,
                 cooldown: 2.0,
-                energy_cost: 15.0,
+                mana_cost: 15.0,
             },
             animation: "attack",
             impact_vfx: "impact",
@@ -77,10 +77,7 @@ mod tests {
 
         Echo.transform_blueprint(&mut blueprint);
 
-        assert_eq!(
-            blueprint.execution,
-            crate::abilities::blueprint::BlueprintExecution::Echo
-        );
+        assert!(blueprint.echo);
         // Echo reduces potency to 60% of original
         assert!((blueprint.params.potency - 60.0).abs() < 0.001);
     }

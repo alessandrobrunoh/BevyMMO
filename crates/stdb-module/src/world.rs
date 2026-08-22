@@ -37,14 +37,16 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use bevymmo_domain::content::placeables::register_all;
-use bevymmo_domain::placeables::PlaceableRegistry;
+use bevymmo_domain::placeables::{InteractionKind, PlaceableRegistry};
 use bevymmo_domain::world::{CollisionGrid, GroundContact, MapManifest, Prop, SurfaceQuery};
 use spacetimedb::{reducer, ReducerContext, Table};
 
 use crate::rows::{StatsRow, Vec3Row};
+use crate::sim::gathering::far_future;
 use crate::tables::{
-    boss_state, entity_stats, game_entity, grid_cell, player, prop_override, BossPhaseRow,
-    BossState, ColorRow, EntityKindRow, EntityStateRow, EntityStats, GameEntity, PropOverride,
+    boss_state, enemy_ai, entity_stats, game_entity, grid_cell, npc, player, prop_override,
+    resource_node, BossPhaseRow, BossState, ColorRow, EnemyAi, EntityKindRow, EntityStateRow,
+    EntityStats, GameEntity, Npc, PropOverride, ResourceNode,
 };
 
 // `EMBEDDED_MAPS: &[(&str, &[u8])]`, one entry per authored map.
@@ -125,12 +127,30 @@ fn maps() -> &'static HashMap<String, MapData> {
 /// The definitions themselves are `bevymmo_domain`'s — the same ones the editor
 /// palette and the client asset resolver use. Nothing about a goblin is
 /// restated here.
-fn placeables() -> &'static PlaceableRegistry {
+pub(crate) fn placeables() -> &'static PlaceableRegistry {
     PLACEABLES.get_or_init(|| {
         let mut registry = PlaceableRegistry::default();
         register_all(&mut registry);
         registry
     })
+}
+
+/// Catalog config for a spawned enemy, keyed by the placeable `kind_id`.
+pub(crate) fn enemy_config_for(kind_id: &str) -> Option<bevymmo_domain::placeables::EnemyConfig> {
+    let id = bevymmo_domain::placeables::KindId::new(kind_id.to_string());
+    placeables()
+        .enemies
+        .get(&id)
+        .map(|definition| definition.enemy_config())
+}
+
+/// Catalog config for a spawned boss, keyed by the placeable `kind_id`.
+pub(crate) fn boss_config_for(kind_id: &str) -> Option<bevymmo_domain::placeables::BossConfig> {
+    let id = bevymmo_domain::placeables::KindId::new(kind_id.to_string());
+    placeables()
+        .bosses
+        .get(&id)
+        .map(|definition| definition.boss_config())
 }
 
 /// Reverses `build.rs`'s encoding.
@@ -230,7 +250,8 @@ pub fn seed(ctx: &ReducerContext) {
     apply_prop_overrides(ctx, DEFAULT_MAP_ID, &mut props);
 
     let registry = placeables();
-    let (mut enemies, mut bosses, mut npcs, mut unbound) = (0u32, 0u32, 0u32, 0u32);
+    let (mut enemies, mut bosses, mut npcs, mut resources, mut unbound) =
+        (0u32, 0u32, 0u32, 0u32, 0u32);
 
     for prop in &props {
         if let Some(definition) = registry.dummies.get(&prop.kind) {
@@ -255,12 +276,10 @@ pub fn seed(ctx: &ReducerContext) {
                 definition.display_name(),
                 StatsRow::from(&config.stats),
             );
-            let attack = config
-                .spell_hotbar
-                .q_spell
-                .clone()
-                .unwrap_or_else(|| bevymmo_domain::spells::SpellId::new("fireball"));
-            crate::sim::ai::remember_enemy(entity.entity_id, config.aggro_range, attack);
+            ctx.db.enemy_ai().insert(EnemyAi {
+                entity_id: entity.entity_id,
+                kind_id: prop.kind.as_str().to_string(),
+            });
             enemies += 1;
         } else if let Some(definition) = registry.bosses.get(&prop.kind) {
             let config = definition.boss_config();
@@ -287,31 +306,80 @@ pub fn seed(ctx: &ReducerContext) {
         } else if let Some(definition) = registry.npcs.get(&prop.kind) {
             // No `entity_stats` row: NPCs are not combatants, and the Bevy
             // server likewise gave them a marker and a transform only.
-            spawn_entity(
+            let entity = spawn_entity(
                 ctx,
                 prop,
                 EntityKindRow::Npc,
                 definition.display_name(),
                 0.0,
             );
+            let market_id = match definition.interaction() {
+                InteractionKind::Market { market_id } => Some(market_id),
+                _ => None,
+            };
+            ctx.db.npc().insert(Npc {
+                entity_id: entity.entity_id,
+                kind_id: prop.kind.as_str().to_string(),
+                market_id,
+            });
             npcs += 1;
+        } else if let Some(definition) = registry.resources.get(&prop.kind) {
+            let entity = spawn_entity(
+                ctx,
+                prop,
+                EntityKindRow::ResourceNode,
+                definition.display_name(),
+                0.0,
+            );
+            upsert_resource_node(ctx, prop, entity.entity_id, definition.resource_config());
+            resources += 1;
         } else if registry.player_spawns.contains_key(&prop.kind) {
             // Read on demand by `player_spawn_point`, not turned into an entity.
         } else if registry.props.contains_key(&prop.kind) {
             // Static scenery. It reaches the simulation through
             // `MapData::collision`, never as a row.
         } else {
-            // Triggers, resource nodes and interactables are registered kinds
-            // with no table to live in yet, as are kinds the registry does not
-            // know at all.
+            // Triggers and interactables are registered kinds with no table
+            // to live in yet, as are kinds the registry does not know at all.
             unbound += 1;
         }
     }
 
     log::info!(
         "seeded {DEFAULT_MAP_ID}: {enemies} enemies, {bosses} bosses, {npcs} npcs, \
-         {unbound} placements with no runtime binding"
+         {resources} resource nodes, {unbound} placements with no runtime binding"
     );
+}
+
+fn upsert_resource_node(
+    ctx: &ReducerContext,
+    prop: &Prop,
+    entity_id: u64,
+    config: bevymmo_domain::placeables::ResourceConfig,
+) {
+    let placement_id = prop.id.clone();
+    if let Some(existing) = ctx.db.resource_node().placement_id().find(&placement_id) {
+        let next_regen_at = if existing.current_pieces >= config.max_pieces {
+            far_future()
+        } else {
+            existing.next_regen_at
+        };
+        ctx.db.resource_node().placement_id().update(ResourceNode {
+            entity_id,
+            kind_id: prop.kind.as_str().to_string(),
+            next_regen_at,
+            ..existing
+        });
+        return;
+    }
+    ctx.db.resource_node().insert(ResourceNode {
+        placement_id,
+        entity_id,
+        kind_id: prop.kind.as_str().to_string(),
+        current_pieces: config.max_pieces,
+        last_regen_at: ctx.timestamp,
+        next_regen_at: far_future(),
+    });
 }
 
 /// Where a newly created character appears.
@@ -394,6 +462,92 @@ fn apply_prop_overrides(ctx: &ReducerContext, map_id: &str, props: &mut Vec<Prop
             prop.transform.scale = [scale.x, scale.y, scale.z];
         }
     }
+}
+
+/// Spawns harvestable placements missing from a live database.
+///
+/// `seed` runs only on an empty DB (and GM reseed). A publish onto an existing
+/// world therefore never creates `resource_oak_tree` — the client does not
+/// draw resource kinds from the map GLB, so the tree is simply absent.
+pub fn ensure_resource_nodes(ctx: &ReducerContext) -> bool {
+    let Some(map) = default_map() else {
+        return false;
+    };
+    let registry = placeables();
+    for prop in &map.manifest.props {
+        let Some(definition) = registry.resources.get(&prop.kind) else {
+            continue;
+        };
+        if let Some(existing) = ctx.db.resource_node().placement_id().find(&prop.id) {
+            if ctx
+                .db
+                .game_entity()
+                .entity_id()
+                .find(&existing.entity_id)
+                .is_some()
+            {
+                continue;
+            }
+        }
+        let entity = spawn_entity(
+            ctx,
+            prop,
+            EntityKindRow::ResourceNode,
+            definition.display_name(),
+            0.0,
+        );
+        upsert_resource_node(ctx, prop, entity.entity_id, definition.resource_config());
+        log::info!(
+            "seeded resource {} ({}) at entity {}",
+            prop.id,
+            prop.kind.as_str(),
+            entity.entity_id
+        );
+    }
+    true
+}
+
+/// Spawns NPC placements missing from a live database.
+///
+/// `seed` only runs on an empty DB. A new crafter added to the map would
+/// otherwise never appear until a reset.
+pub fn ensure_npcs(ctx: &ReducerContext) -> bool {
+    let Some(map) = default_map() else {
+        return false;
+    };
+    let registry = placeables();
+    for prop in &map.manifest.props {
+        let Some(definition) = registry.npcs.get(&prop.kind) else {
+            continue;
+        };
+        let kind = prop.kind.as_str();
+        if ctx.db.npc().iter().any(|row| row.kind_id == kind) {
+            continue;
+        }
+        let entity = spawn_entity(
+            ctx,
+            prop,
+            EntityKindRow::Npc,
+            definition.display_name(),
+            0.0,
+        );
+        let market_id = match definition.interaction() {
+            InteractionKind::Market { market_id } => Some(market_id),
+            _ => None,
+        };
+        ctx.db.npc().insert(Npc {
+            entity_id: entity.entity_id,
+            kind_id: kind.to_string(),
+            market_id,
+        });
+        log::info!(
+            "seeded npc {} ({}) at entity {}",
+            prop.id,
+            kind,
+            entity.entity_id
+        );
+    }
+    true
 }
 
 /// Spawns the allied training dummy if this database was seeded before that
@@ -530,7 +684,7 @@ fn authored_facing(prop: &Prop) -> Vec3Row {
 const GM_IDENTITIES: Option<&str> = option_env!("BEVYMMO_GM_IDENTITIES");
 
 /// Rejects everyone who is not a configured game master.
-fn require_gm(ctx: &ReducerContext) -> Result<(), String> {
+pub(crate) fn require_gm(ctx: &ReducerContext) -> Result<(), String> {
     let sender = ctx.sender().to_hex().to_string();
     let allowed = GM_IDENTITIES.unwrap_or("").split(',').any(|entry| {
         // `0x`-prefixed is how `spacetime sql` prints identities, bare is how
@@ -656,6 +810,7 @@ pub fn gm_reseed_world(ctx: &ReducerContext) -> Result<(), String> {
         .collect();
     for entity_id in seeded {
         ctx.db.boss_state().entity_id().delete(&entity_id);
+        ctx.db.enemy_ai().entity_id().delete(&entity_id);
         ctx.db.entity_stats().entity_id().delete(&entity_id);
         ctx.db.game_entity().entity_id().delete(&entity_id);
     }

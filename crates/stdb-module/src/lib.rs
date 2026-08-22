@@ -45,6 +45,9 @@ pub const MAX_CHARACTERS_PER_ACCOUNT: usize = 3;
 /// How many characters one party may hold at once. See `tables::PartyRow`.
 pub const MAX_PARTY_SIZE: usize = 5;
 
+/// How many API keys one account may hold at once. See `tables::ApiKey`.
+pub const MAX_API_KEYS_PER_ACCOUNT: usize = 20;
+
 /// Normalises a display name into its uniqueness key.
 pub fn normalize_name(name: &str) -> String {
     name.trim().to_lowercase()

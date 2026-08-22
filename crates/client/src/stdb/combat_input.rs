@@ -1,7 +1,7 @@
 //! Bevy input for authoritative armor casts.
 //!
-//! Weapon Q/W/E and 1/2/3 go through `cast_abilities_on_key` so Charge
-//! abilities get a press (`eidolon_cast`) and a release (`release_cast`).
+//! Weapon Primary/Secondary/Ultimate go through `cast_abilities_on_key` so
+//! abilities get a press (`cast_weapon`) and a release (`release_cast`).
 //! This system only sends armor slot/source plus the selected target.
 //! Ability resolution, inscriptions, cast timing and cooldowns remain
 //! server-authoritative in SpacetimeDB.
@@ -96,5 +96,5 @@ fn armor_cast_info(
     let ability_id =
         bevymmo_gameplay::abilities::resolve_armor_ability(loadout, &instance.ability_selection)?;
     let ability = abilities.get(ability_id)?;
-    Some((ability.base_params().energy_cost, ability.geometry()))
+    Some((ability.base_params().mana_cost, ability.geometry()))
 }

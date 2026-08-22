@@ -1,6 +1,6 @@
 //! Central registry of all placeable kinds.
 //!
-//! Mirrors [`crate::spells::SpellRegistry`]: one resource populated at
+//! One resource populated at
 //! startup, looked up by [`KindId`] during map validation and spawn.
 //!
 //! Unlike the spell registry, this one stores definitions in **typed

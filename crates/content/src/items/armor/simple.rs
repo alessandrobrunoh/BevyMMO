@@ -5,13 +5,6 @@
 
 use bevymmo_props_macro::item;
 
-use crate::ability_definitions::arcane_orb::ArcaneOrb;
-use crate::ability_definitions::bulwark_strike::BulwarkStrike;
-use crate::ability_definitions::ground_break::GroundBreak;
-use crate::ability_definitions::iron_wave::IronWave;
-use crate::ability_definitions::mind_burst::MindWard;
-use crate::ability_definitions::swift_kick::SwiftKick;
-use crate::ability_definitions::warding_bolt::WardingBolt;
 use crate::items::ItemRegistry;
 
 #[item(
@@ -21,12 +14,8 @@ use crate::items::ItemRegistry;
     category = Armor,
     rarity = Common,
     slot = Helmet,
+    tradable = true,
     effects = [stat_bonus(field = Armor, op = Add, value = 8.0)],
-    abilities(
-        primary = [WardingBolt],
-        secondary = [MindWard],
-        ultimate = [ArcaneOrb],
-    ),
     rune_profile(capacity = 6, stability = 0.90),
 )]
 pub struct SimpleHelm;
@@ -38,6 +27,7 @@ pub struct SimpleHelm;
     category = Armor,
     rarity = Common,
     slot = Cape,
+    tradable = true,
     effects = [stat_bonus(field = Armor, op = Add, value = 4.0)],
 )]
 pub struct SimpleCape;
@@ -49,12 +39,8 @@ pub struct SimpleCape;
     category = Armor,
     rarity = Common,
     slot = Armor,
+    tradable = true,
     effects = [stat_bonus(field = Armor, op = Add, value = 12.0)],
-    abilities(
-        primary = [BulwarkStrike],
-        secondary = [IronWave],
-        ultimate = [ArcaneOrb],
-    ),
     rune_profile(capacity = 6, stability = 0.92),
 )]
 pub struct SimpleCuirass;
@@ -66,6 +52,7 @@ pub struct SimpleCuirass;
     category = Armor,
     rarity = Common,
     slot = Offhand,
+    tradable = true,
     effects = [stat_bonus(field = Armor, op = Add, value = 8.0)],
 )]
 pub struct SimpleBuckler;
@@ -77,12 +64,8 @@ pub struct SimpleBuckler;
     category = Armor,
     rarity = Common,
     slot = Shoes,
+    tradable = true,
     effects = [stat_bonus(field = Armor, op = Add, value = 4.0)],
-    abilities(
-        primary = [SwiftKick],
-        secondary = [GroundBreak],
-        ultimate = [ArcaneOrb],
-    ),
     rune_profile(capacity = 5, stability = 0.94),
 )]
 pub struct SimpleBoots;
@@ -117,16 +100,27 @@ mod tests {
     }
 
     #[test]
-    fn helm_chest_and_boots_are_inscribable() {
-        assert!(SimpleHelm.ability_loadout().is_some());
+    fn helm_chest_and_boots_are_inscribable_but_have_no_gestures() {
+        assert!(SimpleHelm.ability_loadout().is_none());
         assert!(SimpleHelm.rune_profile().is_some());
-        assert!(SimpleCuirass.ability_loadout().is_some());
-        assert!(SimpleBoots.ability_loadout().is_some());
+        assert!(SimpleCuirass.ability_loadout().is_none());
+        assert!(SimpleCuirass.rune_profile().is_some());
+        assert!(SimpleBoots.ability_loadout().is_none());
+        assert!(SimpleBoots.rune_profile().is_some());
     }
 
     #[test]
     fn cape_and_buckler_stay_stat_only() {
         assert!(SimpleCape.ability_loadout().is_none());
         assert!(SimpleBuckler.ability_loadout().is_none());
+    }
+
+    #[test]
+    fn simple_pieces_are_tradable() {
+        assert!(SimpleHelm.tradable());
+        assert!(SimpleCape.tradable());
+        assert!(SimpleCuirass.tradable());
+        assert!(SimpleBuckler.tradable());
+        assert!(SimpleBoots.tradable());
     }
 }

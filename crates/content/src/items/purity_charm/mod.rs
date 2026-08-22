@@ -1,23 +1,17 @@
-//! "Purity Charm" — accessory that grants cleanse and purge abilities.
+//! "Purity Charm" — offhand accessory.
 
 use bevymmo_props_macro::item;
 
-use crate::ability_definitions::cleanse::CleanseAbility;
-use crate::ability_definitions::purge::PurgeAbility;
 use crate::items::ItemRegistry;
 
 #[item(
     id = "purity_charm",
     name = "Purity Charm",
-    description = "A blessed charm that radiates faint light. Allows the wearer to purify harmful effects from themselves or dispel beneficial magic from enemies.",
+    description = "A blessed charm that radiates faint light.",
     category = Accessory,
     rarity = Rare,
     slot = Offhand,
-    abilities(
-        primary = [CleanseAbility],
-        secondary = [PurgeAbility],
-        ultimate = [CleanseAbility],
-    ),
+    tradable = true,
     rune_profile(capacity = 4, stability = 0.98),
 )]
 pub struct PurityCharm;
@@ -30,7 +24,6 @@ pub fn register(registry: &mut ItemRegistry) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abilities::AbilitySlot;
     use crate::items::components::EquipSlot;
     use crate::items::definition::Item;
 
@@ -51,27 +44,8 @@ mod tests {
     }
 
     #[test]
-    fn offers_cleanse_and_purge_abilities() {
-        let item = PurityCharm;
-        let abilities = item
-            .ability_loadout()
-            .expect("purity_charm must grant abilities");
-
-        // Primary and Ultimate get Cleanse
-        assert_eq!(
-            abilities.options_for(AbilitySlot::Primary),
-            [CleanseAbility::ID.into()]
-        );
-        assert_eq!(
-            abilities.options_for(AbilitySlot::Ultimate),
-            [CleanseAbility::ID.into()]
-        );
-
-        // Secondary gets Purge
-        assert_eq!(
-            abilities.options_for(AbilitySlot::Secondary),
-            [PurgeAbility::ID.into()]
-        );
+    fn has_no_ability_loadout() {
+        assert!(PurityCharm.ability_loadout().is_none());
     }
 
     #[test]

@@ -13,7 +13,8 @@ import { NewsArticle } from '../../shared/models/news.model';
   standalone: true,
   imports: [
     CommonModule,
-    RouterModule
+    RouterModule,
+    EivarButtonComponent
   ],
   templateUrl: './home.component.html',
   styleUrls: ['./home.component.scss']
@@ -46,5 +47,9 @@ export class HomeComponent {
 
   onLearnMore() {
     this.router.navigate(['/updates']);
+  }
+
+  goToNews(): void {
+    this.router.navigate(['/news']);
   }
 }

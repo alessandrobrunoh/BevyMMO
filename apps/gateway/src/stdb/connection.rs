@@ -26,11 +26,19 @@ use std::sync::{Arc, Mutex};
 use spacetimedb_sdk::{DbContext, Table};
 use tokio::sync::oneshot;
 
+use super::module_bindings::api_key_meta_type::ApiKeyMeta;
+use super::module_bindings::authenticate_api_key_reducer::authenticate_api_key;
+use super::module_bindings::create_api_key_reducer::create_api_key;
 use super::module_bindings::login_reducer::login;
 use super::module_bindings::logout_reducer::logout;
 use super::module_bindings::register_reducer::register;
+use super::module_bindings::revoke_api_key_reducer::revoke_api_key;
+use super::module_bindings::stats_row_type::StatsRow;
 use super::module_bindings::{
-    DbConnection, ErrorContext, Player, PlayerTableAccess, ReducerEventContext, SessionTableAccess,
+    CharacterWalletTableAccess, DbConnection, ErrorContext, Market, MarketBuyOrder,
+    MarketBuyOrderTableAccess, MarketSellOrder, MarketSellOrderTableAccess, MarketTableAccess,
+    MyApiKeysTableAccess, Player, PlayerStatsTableAccess, PlayerTableAccess, ReducerEventContext,
+    SessionTableAccess,
 };
 
 /// One of the caller's own characters, for the `/profile` endpoint.
@@ -113,10 +121,14 @@ impl GatewayConnection {
         Ok(this)
     }
 
-    /// Subscribes to `player` (for the character roster) and `session` (for
-    /// this connection's own `account_id` — see `tables::Session`'s doc
-    /// comment on why it is public). Awaits the initial snapshot so the
-    /// caller does not race an empty local cache.
+    /// Subscribes to the public tables this gateway reads, then awaits the
+    /// initial snapshot so callers do not race an empty local cache.
+    ///
+    /// `player` / `session` back the character roster and this connection's
+    /// `account_id`. `market` / `market_sell_order` / `market_buy_order` /
+    /// `character_wallet` back the public market APIs and the wallet lookup.
+    /// `my_api_keys` is the per-caller view of API-key metadata (no hashes).
+    /// `player_stats` backs `/v1/characters/:id/stats`.
     async fn subscribe(&self) -> Result<(), String> {
         let (tx, rx) = oneshot::channel();
         let tx = Arc::new(Mutex::new(Some(tx)));
@@ -135,7 +147,16 @@ impl GatewayConnection {
                     let _ = tx.send(Err(err.to_string()));
                 }
             })
-            .subscribe(["SELECT * FROM player", "SELECT * FROM session"]);
+            .subscribe([
+                "SELECT * FROM player",
+                "SELECT * FROM session",
+                "SELECT * FROM market",
+                "SELECT * FROM market_sell_order",
+                "SELECT * FROM market_buy_order",
+                "SELECT * FROM character_wallet",
+                "SELECT * FROM my_api_keys",
+                "SELECT * FROM player_stats",
+            ]);
 
         rx.await
             .map_err(|_| "subscription dropped before it applied".to_string())?
@@ -198,6 +219,43 @@ impl GatewayConnection {
         self.conn.db().player().iter().collect()
     }
 
+    /// Every `market` row in this connection's local cache.
+    pub fn markets(&self) -> Vec<Market> {
+        self.conn.db().market().iter().collect()
+    }
+
+    /// Every `market_sell_order` row in this connection's local cache.
+    pub fn sell_orders(&self) -> Vec<MarketSellOrder> {
+        self.conn.db().market_sell_order().iter().collect()
+    }
+
+    /// Every `market_buy_order` row in this connection's local cache.
+    pub fn buy_orders(&self) -> Vec<MarketBuyOrder> {
+        self.conn.db().market_buy_order().iter().collect()
+    }
+
+    /// One `player` row by character UUID, if present in the local cache.
+    pub fn player(&self, character_id: uuid::Uuid) -> Option<Player> {
+        let character_id = spacetimedb_sdk::Uuid::from_u128(character_id.as_u128());
+        self.conn
+            .db()
+            .player()
+            .iter()
+            .find(|row| row.character_id == character_id)
+    }
+
+    /// Gold on `character_id`'s wallet, or `0` if no wallet row exists yet.
+    pub fn wallet_gold(&self, character_id: uuid::Uuid) -> u64 {
+        let character_id = spacetimedb_sdk::Uuid::from_u128(character_id.as_u128());
+        self.conn
+            .db()
+            .character_wallet()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .map(|row| row.gold)
+            .unwrap_or(0)
+    }
+
     pub async fn register(&self, email: String, password: String) -> Result<(), String> {
         let (tx, rx) = oneshot::channel();
         self.conn
@@ -213,6 +271,65 @@ impl GatewayConnection {
         self.conn
             .reducers()
             .login_then(email, password, outcome_sender(tx))
+            .map_err(|err| err.to_string())?;
+        rx.await
+            .map_err(|_| "connection closed before the server replied".to_string())?
+    }
+
+    /// The caller's API-key metadata from the `my_api_keys` view. Empty until
+    /// this connection has authenticated (cookie login or `authenticate_api_key`).
+    pub fn api_keys(&self) -> Vec<ApiKeyMeta> {
+        self.conn.db().my_api_keys().iter().collect()
+    }
+
+    pub fn api_key(&self, id: uuid::Uuid) -> Option<ApiKeyMeta> {
+        let id = spacetimedb_sdk::Uuid::from_u128(id.as_u128());
+        self.conn.db().my_api_keys().iter().find(|row| row.id == id)
+    }
+
+    pub fn player_stats(&self, character_id: uuid::Uuid) -> Option<StatsRow> {
+        let character_id = spacetimedb_sdk::Uuid::from_u128(character_id.as_u128());
+        self.conn
+            .db()
+            .player_stats()
+            .iter()
+            .find(|row| row.character_id == character_id)
+            .map(|row| row.stats)
+    }
+
+    pub async fn create_api_key(
+        &self,
+        id: uuid::Uuid,
+        name: String,
+        prefix: String,
+        secret: String,
+    ) -> Result<(), String> {
+        let (tx, rx) = oneshot::channel();
+        let id = spacetimedb_sdk::Uuid::from_u128(id.as_u128());
+        self.conn
+            .reducers()
+            .create_api_key_then(id, name, prefix, secret, outcome_sender(tx))
+            .map_err(|err| err.to_string())?;
+        rx.await
+            .map_err(|_| "connection closed before the server replied".to_string())?
+    }
+
+    pub async fn revoke_api_key(&self, id: uuid::Uuid) -> Result<(), String> {
+        let (tx, rx) = oneshot::channel();
+        let id = spacetimedb_sdk::Uuid::from_u128(id.as_u128());
+        self.conn
+            .reducers()
+            .revoke_api_key_then(id, outcome_sender(tx))
+            .map_err(|err| err.to_string())?;
+        rx.await
+            .map_err(|_| "connection closed before the server replied".to_string())?
+    }
+
+    pub async fn authenticate_api_key(&self, secret: String) -> Result<(), String> {
+        let (tx, rx) = oneshot::channel();
+        self.conn
+            .reducers()
+            .authenticate_api_key_then(secret, outcome_sender(tx))
             .map_err(|err| err.to_string())?;
         rx.await
             .map_err(|_| "connection closed before the server replied".to_string())?

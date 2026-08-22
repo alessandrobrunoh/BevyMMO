@@ -1298,11 +1298,50 @@ mod tests {
         );
 
         let grid = bevymmo_world::CollisionGrid::build(&manifest);
+        let blocking_props = manifest
+            .props
+            .iter()
+            .filter(|prop| prop.blocks_movement && prop.collision.is_some())
+            .count();
         assert_eq!(
             grid.obstacle_count(),
-            manifest.blockers.len(),
-            "every blocking blocker must produce exactly one obstacle"
+            manifest.blockers.len() + blocking_props,
+            "every blocking blocker and blocking prop must produce exactly one obstacle"
         );
+    }
+
+    #[test]
+    fn map_02_places_copper_veins_next_to_the_oaks() {
+        let json_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/maps/map_02.world.json"
+        );
+        let manifest = load_world_json(json_path).expect("map_02 sidecar must load");
+        let veins: Vec<_> = manifest
+            .props
+            .iter()
+            .filter(|prop| prop.kind.as_str() == "resource_copper_vein")
+            .collect();
+        assert_eq!(veins.len(), 2, "west and east copper veins");
+        let ids: Vec<&str> = veins.iter().map(|prop| prop.id.as_str()).collect();
+        assert!(ids.contains(&"copper_vein_west"));
+        assert!(ids.contains(&"copper_vein_east"));
+        assert!(veins.iter().all(|prop| prop.blocks_movement));
+    }
+
+    #[test]
+    fn map_02_places_the_weapon_crafter_near_the_greeter() {
+        let json_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/maps/map_02.world.json"
+        );
+        let manifest = load_world_json(json_path).expect("map_02 sidecar must load");
+        let crafter = manifest
+            .props
+            .iter()
+            .find(|prop| prop.kind.as_str() == "npc_weapon_crafter")
+            .expect("weapon crafter");
+        assert_eq!(crafter.id, "PLACEABLE_npc_weapon_crafter_01");
     }
 
     /// Integration test: loads the real `.world.json` fixture for the main map.

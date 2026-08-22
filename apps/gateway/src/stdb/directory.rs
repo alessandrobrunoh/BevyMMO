@@ -125,7 +125,25 @@ impl PlayerDirectory {
             .find(|row| row.character_id == character_id)
             .map(PlayerEntry::from))
     }
+
+    /// Snapshot of public market rows plus both order books. One reconnect
+    /// so a list-then-filter cannot observe a torn cache.
+    pub async fn market_snapshot(&self) -> Result<MarketSnapshot, String> {
+        let connection = self.live_connection().await?;
+        Ok((
+            connection.markets(),
+            connection.sell_orders(),
+            connection.buy_orders(),
+        ))
+    }
 }
+
+/// Markets and both order books from one live cache read.
+pub type MarketSnapshot = (
+    Vec<super::module_bindings::Market>,
+    Vec<super::module_bindings::MarketSellOrder>,
+    Vec<super::module_bindings::MarketBuyOrder>,
+);
 
 #[cfg(test)]
 mod tests {

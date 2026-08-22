@@ -78,33 +78,6 @@
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
-
-    .cat-btn {
-      padding: 0.45rem 1rem;
-      background: rgba(16, 45, 71, 0.08);
-      border: 1px solid rgba(117, 107, 90, 0.3);
-      border-radius: 2px;
-      color: var(--text-dark);
-      font-family: var(--font-serif);
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      cursor: pointer;
-      transition: all var(--transition);
-
-      &:hover {
-        background: var(--blue-800);
-        color: #ffffff;
-      }
-
-      &.active {
-        background: var(--blue-850);
-        border-color: var(--gold);
-        color: var(--gold-light);
-        box-shadow: 0 4px 12px rgba(7, 26, 42, 0.2);
-      }
-    }
   }
 }
 

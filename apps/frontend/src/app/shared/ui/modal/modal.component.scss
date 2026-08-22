@@ -44,21 +44,7 @@
   }
 
   .close-btn {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--gold-light);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    transition: all var(--transition);
-
-    &:hover {
-      color: #ffffff;
-      transform: scale(1.1);
-    }
+    flex: 0 0 auto;
   }
 }
 

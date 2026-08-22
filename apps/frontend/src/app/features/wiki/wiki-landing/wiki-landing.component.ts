@@ -1,11 +1,9 @@
 import { Component, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule, Router } from '@angular/router';
+import { RouterModule } from '@angular/router';
 import { ContentService } from '../../../core/services/content.service';
 import { PageHeaderComponent } from '../../../shared/ui/page-header/page-header.component';
-import { EivarButtonComponent } from '../../../shared/ui/button/button.component';
 import { RuneDividerComponent } from '../../../shared/ui/rune-divider/rune-divider.component';
-import { WikiCategory, WikiArticle } from '../../../shared/models/wiki.model';
 
 @Component({
   selector: 'app-wiki-landing',
@@ -16,11 +14,12 @@ import { WikiCategory, WikiArticle } from '../../../shared/models/wiki.model';
 })
 export class WikiLandingComponent {
   private contentService = inject(ContentService);
-  private router = inject(Router);
 
-  readonly categories = signal<WikiCategory[]>([]);
-  readonly popularArticles = signal<WikiArticle[]>([]);
+  readonly categories = this.contentService.wikiCategories;
+  readonly catalogError = this.contentService.catalogError;
   readonly searchFilter = signal<string>('');
+
+  readonly popularArticles = computed(() => this.contentService.wikiArticles().slice(0, 3));
 
   readonly filteredCategories = computed(() => {
     const q = this.searchFilter().trim().toLowerCase();
@@ -30,16 +29,6 @@ export class WikiLandingComponent {
       c.description.toLowerCase().includes(q)
     );
   });
-
-  constructor() {
-    this.contentService.getWikiCategories().subscribe(cats => {
-      this.categories.set(cats);
-    });
-
-    this.contentService.getWikiArticles().subscribe(arts => {
-      this.popularArticles.set(arts.slice(0, 3));
-    });
-  }
 
   onSearch(event: Event) {
     const val = (event.target as HTMLInputElement).value;

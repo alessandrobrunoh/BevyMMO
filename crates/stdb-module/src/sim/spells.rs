@@ -1,12 +1,8 @@
-//! The spell runtime: casts in progress, projectiles in flight, AoE regions on
+//! Ability runtime: casts in progress, projectiles in flight, AoE regions on
 //! the ground, and the cooldowns that gate them all.
 //!
-//! This is the port of `crates/server/src/spells` (`systems.rs`, `projectile.rs`,
-//! `aoe.rs`). The game rules did *not* come with it: `Spell::cast` is the same
-//! function that ran under Bevy, because [`SpellCastContext`] was already a pure
-//! collector of pending effects with no ECS in it. What lives here is only the
-//! part Bevy used to provide — where the caster is, who is nearby, and how a
-//! pending effect becomes a row.
+//! Combat content is [`BaseAbility`]. [`SpellCastContext`] collects pending
+//! effects; this module turns those into rows.
 //!
 //! # What changed, and why
 //!
@@ -28,7 +24,11 @@
 
 use std::sync::OnceLock;
 
-use bevymmo_domain::abilities::{AbilityLoadout, AncientWordRegistry, BaseAbilityRegistry};
+use bevymmo_domain::abilities::{
+    cast_ability_preview, resolve_ability, AbilityCastMode, AbilityId, AbilityLoadout,
+    AncientWordRegistry, BaseAbilityRegistry,
+    ChannelMovementPolicy as AbilityChannelMovementPolicy, KitInscription,
+};
 
 use bevymmo_domain::effects::{
     ApplyStatusEffect, CleanseEffect, DamageEffect, EffectBundle, EffectContext, EffectSpec,
@@ -39,10 +39,9 @@ use bevymmo_domain::items::registry::ItemRegistry;
 use bevymmo_domain::items::WeaponFamilyRegistry;
 use bevymmo_domain::spells::components::MOVEMENT_INTERRUPT_EPSILON;
 use bevymmo_domain::spells::context::{
-    AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ProjectileSpawnRequest, Spell,
-    SpellCastContext, TargetingMode,
+    AoeShape, AoeSpawnRequest, AoeTargeting, CastKind, ProjectileSpawnRequest, SpellCastContext,
+    TargetingMode,
 };
-use bevymmo_domain::spells::registry::{SpellId, SpellRegistry};
 use bevymmo_domain::stats::components::{CombatStats, StatsBundleData};
 use bevymmo_domain::stats::events::{
     ApplyStatModifierEvent, ModifierEffect, ModifierKind, ModifierOp,
@@ -57,10 +56,10 @@ use crate::rows::{
 };
 use crate::sim::targets;
 use crate::tables::{
-    aoe_region, cast_ended, cast_state, cooldown, entity_stats, game_entity, grid_cell, projectile,
-    spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow, CastEndedEvent, CastKindRow,
-    CastSourceRow, CastState, Cooldown, EntityStateRow, GameEntity, ModifierKindRow, Projectile,
-    SpellVisualEffectEvent,
+    aoe_region, boss_state, cast_ended, cast_state, cooldown, enemy_ai, entity_stats, game_entity,
+    grid_cell, projectile, spell_visual_effect, AoeRegion, AoeShapeRow, AoeTargetingRow,
+    CastEndedEvent, CastKindRow, CastSourceRow, CastState, Cooldown, EntityStateRow, GameEntity,
+    ModifierKindRow, Projectile, SpellVisualEffectEvent,
 };
 
 /// Resolves an item's ability pools, falling back to its weapon family when
@@ -104,16 +103,6 @@ pub const CAST_RANGE_TOLERANCE: f32 = 1.0;
 // Registries
 // ---------------------------------------------------------------------------
 //
-// Built once per module instance, not per cast: `default_spells` allocates an
-// `Arc` per spell and a `HashMap`, and a cast happens several times a second
-// per player. `OnceLock` rather than `lazy_static` because the module is
-// single-threaded and this needs no dependency.
-
-pub fn spells() -> &'static SpellRegistry {
-    static REGISTRY: OnceLock<SpellRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(bevymmo_domain::content::spells::default_spells)
-}
-
 pub fn base_abilities() -> &'static BaseAbilityRegistry {
     static REGISTRY: OnceLock<BaseAbilityRegistry> = OnceLock::new();
     REGISTRY.get_or_init(bevymmo_domain::content::abilities::default_base_abilities)
@@ -129,7 +118,7 @@ pub fn root_words() -> &'static bevymmo_domain::abilities::RootWordRegistry {
     REGISTRY.get_or_init(bevymmo_domain::content::root_words::default_root_words)
 }
 
-/// The item catalogue, needed to read the equipped weapon's Eidolon gestures.
+/// The item catalogue, needed to read the equipped weapon's abilities.
 ///
 /// Lives here rather than in `reducers::items` because the spell path is its
 /// only consumer today; move it if the inventory reducers grow one.
@@ -261,7 +250,7 @@ pub fn validate_cast_target(
 }
 
 /// Spends `cost` current mana, or refuses the cast.
-pub fn spend_energy(ctx: &ReducerContext, entity_id: u64, cost: f32) -> Result<(), String> {
+pub fn spend_mana(ctx: &ReducerContext, entity_id: u64, cost: f32) -> Result<(), String> {
     if cost <= 0.0 {
         return Ok(());
     }
@@ -291,7 +280,7 @@ pub fn casting_blocked(ctx: &ReducerContext, entity_id: u64) -> bool {
     crate::sim::crowd_control::is_casting_blocked(ctx, entity_id)
 }
 
-/// Whether `ability_id` (a spell id or an Eidolon gesture id) is still cooling
+/// Whether `ability_id` (a spell id or a weapon ability id) is still cooling
 /// down for this entity.
 pub fn is_on_cooldown(ctx: &ReducerContext, entity_id: u64, ability_id: &str) -> bool {
     ctx.db
@@ -338,59 +327,12 @@ pub fn end_cast(ctx: &ReducerContext, entity_id: u64, spell_id: String, interrup
     });
 }
 
-// ---------------------------------------------------------------------------
-// Firing a spell
-// ---------------------------------------------------------------------------
-
-/// Builds the cast context, runs `Spell::cast`, and turns the pending effects
-/// into rows. Returns the cooldown the caster earned, or `None` if the cast
-/// could not run at all.
+/// Fires a weapon ability by re-resolving equipment and inscriptions.
 ///
-/// The direct port of Bevy's `fire_spell`, and the only place a spell's own
-/// logic is invoked — the instant path, the cast-time completion and every
-/// channel tick all come through here.
-pub fn fire_spell(
-    ctx: &ReducerContext,
-    caster: &GameEntity,
-    spell: &dyn Spell,
-    target_position: Option<Vec3>,
-    target_entity: Option<u64>,
-) -> Option<f32> {
-    let combat = combat_stats(ctx, caster.entity_id)?;
-    let config = spell.config();
-    let caster_position = Vec3::from(caster.position);
-
-    let query_radius = config.cast_range + config.area_radius + TARGET_QUERY_MARGIN;
-    let targets = potential_targets(ctx, caster_position, query_radius);
-
-    let mut cast = SpellCastContext::new(
-        EntityId::new(caster.entity_id),
-        caster_position,
-        &combat,
-        Vec3::from(caster.look),
-        target_position,
-        target_entity.map(EntityId::new),
-        &targets,
-    );
-
-    spell.cast(&mut cast);
-    apply_pending(
-        ctx,
-        caster.entity_id,
-        caster_position,
-        spell.id().as_str(),
-        &mut cast,
-    );
-
-    Some(config.cooldown_seconds)
-}
-
-/// Fires an Eidolon ability by re-resolving equipment and inscriptions.
-///
-/// Used by `advance_casts` when a CastTime/Channeling Eidolon cast completes.
+/// Used by `advance_casts` when a CastTime/Channeling weapon cast completes.
 /// Returns the base cooldown duration, or `None` if the caster lost their
 /// weapon/stats between starting and finishing the cast.
-pub fn fire_eidolon_ability(
+pub fn fire_weapon_ability(
     ctx: &ReducerContext,
     caster: &GameEntity,
     ability_id_str: &str,
@@ -413,7 +355,7 @@ pub fn fire_eidolon_ability(
     // call the player made directly. The caster's own character — who started
     // the cast — is `caster.owner_character_id`, not the sender of whatever
     // reducer happens to be running this tick. Using `ctx.sender()` made every
-    // CastTime/Channeling Eidolon ability resolve against a character with no
+    // CastTime/Channeling weapon ability resolve against a character with no
     // rows at all, so every one of them silently failed to fire.
     let character_id = caster.owner_character_id?;
 
@@ -424,7 +366,7 @@ pub fn fire_eidolon_ability(
     let ability_id = bevymmo_domain::abilities::AbilityId::new(ability_id_str.to_string());
 
     let (item, preview, armor_inscription) = match source {
-        CastSourceRow::Eidolon => {
+        CastSourceRow::Weapon => {
             let weapon = equipment.weapon.as_ref()?;
             let item = items().get(&weapon.item_id)?;
             let weapon_abilities = ability_loadout_for_item(item.as_ref())?;
@@ -499,7 +441,7 @@ pub fn fire_eidolon_ability(
             .ok()?;
             (item, preview, armor.armor_inscription.clone())
         }
-        CastSourceRow::Spell => return None,
+        CastSourceRow::Spell | CastSourceRow::Catalog => return None,
     };
 
     let targets = potential_targets(
@@ -519,7 +461,7 @@ pub fn fire_eidolon_ability(
     );
 
     match source {
-        CastSourceRow::Eidolon => {
+        CastSourceRow::Weapon => {
             let equip_row = ctx.db.equipment().character_id().find(&character_id)?;
             let equipment = equipment_from_rows(&equip_row.slots);
             let weapon = equipment.weapon.as_ref()?;
@@ -583,7 +525,7 @@ pub fn fire_eidolon_ability(
             )
             .ok()?;
         }
-        CastSourceRow::Spell => return None,
+        CastSourceRow::Spell | CastSourceRow::Catalog => return None,
     }
 
     cast_ctx.scale_outgoing_potency(charge_fraction);
@@ -598,11 +540,212 @@ pub fn fire_eidolon_ability(
     Some(preview.ability.base_params().cooldown)
 }
 
+fn catalog_inscription(
+    ctx: &ReducerContext,
+    entity_id: u64,
+    ability_id: &str,
+) -> Option<KitInscription> {
+    if let Some(row) = ctx.db.enemy_ai().entity_id().find(&entity_id) {
+        if let Some(config) = crate::world::enemy_config_for(&row.kind_id) {
+            if let Some(entry) = config
+                .abilities
+                .into_iter()
+                .find(|entry| entry.ability_id.as_str() == ability_id)
+            {
+                return Some(entry.inscription);
+            }
+        }
+    }
+    if ctx.db.boss_state().entity_id().find(&entity_id).is_some() {
+        if let Some(config) = crate::world::boss_config_for("boss_dragon") {
+            if let Some(entry) = config
+                .abilities
+                .into_iter()
+                .find(|entry| entry.ability_id.as_str() == ability_id)
+            {
+                return Some(entry.inscription);
+            }
+        }
+    }
+    None
+}
+
+/// Fires a catalog `BaseAbility` without equipment or known glyphs.
+///
+/// Used by AI (enemy kits) and by `advance_casts` when a
+/// [`CastSourceRow::Catalog`] wind-up completes. Returns the cooldown, or
+/// `None` if the ability is not registered or the caster has no stats.
+/// Inscription comes from the caster's `enemy_ai.kind_id` kit, so a CastTime
+/// that started ticks ago still resolves the same Flame Cleave.
+pub fn fire_catalog_ability(
+    ctx: &ReducerContext,
+    caster: &GameEntity,
+    ability_id_str: &str,
+    target_position: Option<Vec3>,
+    target_entity: Option<u64>,
+) -> Option<f32> {
+    let ability_id = AbilityId::new(ability_id_str.to_string());
+    let inscription = catalog_inscription(ctx, caster.entity_id, ability_id_str);
+    let preview = match resolve_ability(
+        &ability_id,
+        inscription.as_ref(),
+        base_abilities(),
+        root_words(),
+        ancient_words(),
+    ) {
+        Ok(preview) => preview,
+        Err(reason) => {
+            log::warn!("catalog ability {ability_id_str} failed to resolve: {reason:?}");
+            return None;
+        }
+    };
+
+    let combat = combat_stats(ctx, caster.entity_id)?;
+    let caster_position = Vec3::from(caster.position);
+    let targets = potential_targets(
+        ctx,
+        caster_position,
+        preview.params.range + preview.params.area + TARGET_QUERY_MARGIN,
+    );
+    let mut cast_ctx = SpellCastContext::new(
+        EntityId::new(caster.entity_id),
+        caster_position,
+        &combat,
+        Vec3::from(caster.look),
+        target_position,
+        target_entity.map(EntityId::new),
+        &targets,
+    );
+    cast_ability_preview(&preview, &mut cast_ctx);
+    apply_pending(
+        ctx,
+        caster.entity_id,
+        caster_position,
+        ability_id_str,
+        &mut cast_ctx,
+    );
+    Some(preview.params.cooldown)
+}
+
+/// Starts a catalog ability for an AI caster: Instant fires now, CastTime /
+/// Channeling open a [`CastSourceRow::Catalog`] row.
+///
+/// Caller must have checked [`can_start_cast`]-equivalent (no existing
+/// `cast_state`, not silenced). Returns whether a cast started or fired.
+pub fn request_catalog_ability(
+    ctx: &ReducerContext,
+    caster: &GameEntity,
+    ability_id_str: &str,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3>,
+) -> bool {
+    let ability_id = AbilityId::new(ability_id_str.to_string());
+    let inscription = catalog_inscription(ctx, caster.entity_id, ability_id_str);
+    let Ok(preview) = resolve_ability(
+        &ability_id,
+        inscription.as_ref(),
+        base_abilities(),
+        root_words(),
+        ancient_words(),
+    ) else {
+        log::warn!("ai: no catalog ability registered for {ability_id_str}");
+        return false;
+    };
+
+    if spend_mana(ctx, caster.entity_id, preview.params.mana_cost).is_err() {
+        return false;
+    }
+
+    match preview.ability.cast_mode() {
+        AbilityCastMode::Instant => request_catalog_ability_instant(
+            ctx,
+            caster,
+            ability_id_str,
+            target_entity,
+            target_position,
+        ),
+        AbilityCastMode::CastTime => {
+            let required_seconds = preview.params.cast_time;
+            if required_seconds <= 0.0 {
+                return request_catalog_ability_instant(
+                    ctx,
+                    caster,
+                    ability_id_str,
+                    target_entity,
+                    target_position,
+                );
+            }
+            ctx.db.cast_state().insert(CastState {
+                entity_id: caster.entity_id,
+                spell_id: ability_id_str.to_string(),
+                kind: CastKindRow::CastTime,
+                source: CastSourceRow::Catalog,
+                elapsed_seconds: 0.0,
+                required_seconds,
+                start_position: caster.position,
+                target_position: target_position.map(Vec3Row::from),
+                target_entity,
+                channel_tick_accumulator: 0.0,
+                tick_interval_seconds: 0.0,
+                channel_movement_interrupts: true,
+            });
+            true
+        }
+        AbilityCastMode::Channeling {
+            tick_interval_seconds,
+            movement_policy,
+        } => {
+            let required_seconds = preview.params.cast_time.max(0.1);
+            start_cooldown(
+                ctx,
+                caster.entity_id,
+                ability_id_str,
+                preview.params.cooldown,
+            );
+            ctx.db.cast_state().insert(CastState {
+                entity_id: caster.entity_id,
+                spell_id: ability_id_str.to_string(),
+                kind: CastKindRow::Channeling,
+                source: CastSourceRow::Catalog,
+                elapsed_seconds: 0.0,
+                required_seconds,
+                start_position: caster.position,
+                target_position: target_position.map(Vec3Row::from),
+                target_entity,
+                channel_tick_accumulator: tick_interval_seconds,
+                tick_interval_seconds,
+                channel_movement_interrupts: matches!(
+                    movement_policy,
+                    AbilityChannelMovementPolicy::InterruptOnMove
+                ),
+            });
+            true
+        }
+    }
+}
+
+fn request_catalog_ability_instant(
+    ctx: &ReducerContext,
+    caster: &GameEntity,
+    ability_id_str: &str,
+    target_entity: Option<u64>,
+    target_position: Option<Vec3>,
+) -> bool {
+    if let Some(cooldown) =
+        fire_catalog_ability(ctx, caster, ability_id_str, target_position, target_entity)
+    {
+        start_cooldown(ctx, caster.entity_id, ability_id_str, cooldown);
+        true
+    } else {
+        false
+    }
+}
+
 /// Drains every `pending_*` list on the context into the database.
 ///
 /// Bevy's `apply_spell_effects`, with message writers replaced by table writes.
 /// `spell_id` is the id of whatever produced the effects — a spell for the
-/// classic path, an Eidolon gesture for `eidolon_cast` — and is what a spawned
+/// classic path, a weapon ability for `cast_weapon` — and is what a spawned
 /// projectile or region is labelled with.
 pub fn apply_pending(
     ctx: &ReducerContext,
@@ -861,7 +1004,7 @@ struct EndedCast {
 /// Bevy's `advance_cast_progress`: ticks every wind-up and channel, fires the
 /// ones that came due, and cancels the ones that were interrupted.
 ///
-/// Handles both legacy [`CastSourceRow::Spell`] and [`CastSourceRow::Eidolon`] casts.
+/// Handles weapon, armor, and catalog [`CastSourceRow`] casts.
 fn advance_casts(ctx: &ReducerContext, dt: f32) {
     // Collected up front because firing writes to `entity_stats`, `projectile`,
     // `aoe_region` and `cooldown`, and a tick is one transaction: iterating a
@@ -892,10 +1035,10 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
         // --- Movement interrupt check (source-agnostic) ---
         // CastTime always interrupts on movement.
         // Channeling respects the stored channel_movement_interrupts policy,
-        // which was captured from SpellConfig (legacy) or AbilityCastMode (Eidolon)
+        // which was captured from SpellConfig (legacy) or AbilityCastMode (weapon)
         // at cast start time.
         let movement_cancels = match cast.kind {
-            CastKindRow::CastTime | CastKindRow::Charge => true,
+            CastKindRow::CastTime => true,
             CastKindRow::Channeling => cast.channel_movement_interrupts,
             CastKindRow::Instant => false,
         };
@@ -913,81 +1056,22 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
         let target_position = cast.target_position.map(Vec3::from);
         let elapsed_seconds = cast.elapsed_seconds + dt;
         let mut channel_tick_accumulator = cast.channel_tick_accumulator;
-        let mut eidolon_cast_failed = false; // Tracks resolution failure for CastTime
+        let mut weapon_cast_failed = false; // Tracks resolution failure for CastTime
 
         let finished = match (cast.source, cast.kind) {
-            // --- Legacy Spell paths (unchanged behaviour) ---
-            (CastSourceRow::Spell, CastKindRow::CastTime) => {
-                let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
-                    log::warn!(
-                        "cast in progress for unknown spell {:?}; cancelling",
-                        cast.spell_id
-                    );
-                    ended.push(EndedCast {
-                        entity_id: cast.entity_id,
-                        spell_id: cast.spell_id,
-                        interrupted: true,
-                    });
-                    continue;
-                };
-                let due = elapsed_seconds >= cast.required_seconds;
-                if due {
-                    if let Some(cd) = fire_spell(
-                        ctx,
-                        &caster,
-                        spell.as_ref(),
-                        target_position,
-                        cast.target_entity,
-                    ) {
-                        start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
-                    }
-                }
-                due
-            }
-            (CastSourceRow::Spell, CastKindRow::Charge) => {
-                // Charge is an Eidolon-only execution. A legacy spell carrying
-                // this state is invalid, so close it without firing.
+            (CastSourceRow::Spell, _) => {
                 log::warn!(
-                    "legacy spell {:?} entered charge state; cancelling",
-                    cast.spell_id
+                    "legacy Spell cast {:?} for entity {} — catalog is gone; interrupting",
+                    cast.spell_id,
+                    cast.entity_id
                 );
+                weapon_cast_failed = true;
                 true
             }
-            (CastSourceRow::Spell, CastKindRow::Channeling) => {
-                let Some(spell) = spells().get(&SpellId::new(cast.spell_id.clone())) else {
-                    log::warn!(
-                        "cast in progress for unknown spell {:?}; cancelling",
-                        cast.spell_id
-                    );
-                    ended.push(EndedCast {
-                        entity_id: cast.entity_id,
-                        spell_id: cast.spell_id,
-                        interrupted: true,
-                    });
-                    continue;
-                };
-                channel_tick_accumulator += dt;
-                let interval = if cast.tick_interval_seconds > 0.0 {
-                    cast.tick_interval_seconds
-                } else {
-                    dt.max(f32::EPSILON)
-                };
-                while channel_tick_accumulator >= interval {
-                    channel_tick_accumulator -= interval;
-                    fire_spell(
-                        ctx,
-                        &caster,
-                        spell.as_ref(),
-                        target_position,
-                        cast.target_entity,
-                    );
-                }
-                cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
-            }
 
-            // --- Eidolon ability paths ---
+            // --- weapon ability paths ---
             (
-                source @ (CastSourceRow::Eidolon
+                source @ (CastSourceRow::Weapon
                 | CastSourceRow::Helmet
                 | CastSourceRow::Armor
                 | CastSourceRow::Shoes),
@@ -997,7 +1081,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                 if due {
                     // Resolution may fail if equipment/selection changed during wind-up.
                     // Treat as interrupted: no effect, no cooldown (client shows cancelled bar).
-                    match fire_eidolon_ability(
+                    match fire_weapon_ability(
                         ctx,
                         &caster,
                         &cast.spell_id,
@@ -1013,10 +1097,11 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                         None => {
                             // Equipment changed or weapon removed during cast.
                             log::info!(
-                                "Eidolon cast {:?} for entity {} failed at completion; interrupting",
-                                cast.spell_id, cast.entity_id
+                                "weapon cast {:?} for entity {} failed at completion; interrupting",
+                                cast.spell_id,
+                                cast.entity_id
                             );
-                            eidolon_cast_failed = true;
+                            weapon_cast_failed = true;
                             true // End the cast (will be marked as interrupted below)
                         }
                     }
@@ -1025,7 +1110,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                 }
             }
             (
-                source @ (CastSourceRow::Eidolon
+                source @ (CastSourceRow::Weapon
                 | CastSourceRow::Helmet
                 | CastSourceRow::Armor
                 | CastSourceRow::Shoes),
@@ -1043,7 +1128,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                     // Tick failures are logged but don't interrupt the channel:
                     // the player may have moved out of range or the target died,
                     // but the channel itself is still valid.
-                    if fire_eidolon_ability(
+                    if fire_weapon_ability(
                         ctx,
                         &caster,
                         &cast.spell_id,
@@ -1055,7 +1140,7 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                     .is_none()
                     {
                         log::debug!(
-                            "Eidolon channel tick {:?} for entity {} failed to resolve",
+                            "weapon channel tick {:?} for entity {} failed to resolve",
                             cast.spell_id,
                             cast.entity_id
                         );
@@ -1063,18 +1148,61 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
                 }
                 cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
-            (
-                CastSourceRow::Eidolon
-                | CastSourceRow::Helmet
-                | CastSourceRow::Armor
-                | CastSourceRow::Shoes,
-                CastKindRow::Charge,
-            ) => {
-                // Charge accumulates while held but does NOT auto-fire.
-                // The ability fires when the player releases (release_cast reducer).
-                // If elapsed exceeds required_seconds, the charge is "full" but
-                // we still wait for release.
-                false
+
+            (CastSourceRow::Catalog, CastKindRow::CastTime) => {
+                let due = elapsed_seconds >= cast.required_seconds;
+                if due {
+                    match fire_catalog_ability(
+                        ctx,
+                        &caster,
+                        &cast.spell_id,
+                        target_position,
+                        cast.target_entity,
+                    ) {
+                        Some(cd) => {
+                            start_cooldown(ctx, caster.entity_id, &cast.spell_id, cd);
+                            true
+                        }
+                        None => {
+                            log::info!(
+                                "catalog cast {:?} for entity {} failed at completion; interrupting",
+                                cast.spell_id,
+                                cast.entity_id
+                            );
+                            weapon_cast_failed = true;
+                            true
+                        }
+                    }
+                } else {
+                    false
+                }
+            }
+            (CastSourceRow::Catalog, CastKindRow::Channeling) => {
+                channel_tick_accumulator += dt;
+                let interval = if cast.tick_interval_seconds > 0.0 {
+                    cast.tick_interval_seconds
+                } else {
+                    dt.max(f32::EPSILON)
+                };
+                while channel_tick_accumulator >= interval {
+                    channel_tick_accumulator -= interval;
+                    if fire_catalog_ability(
+                        ctx,
+                        &caster,
+                        &cast.spell_id,
+                        target_position,
+                        cast.target_entity,
+                    )
+                    .is_none()
+                    {
+                        log::debug!(
+                            "catalog channel tick {:?} for entity {} failed to resolve",
+                            cast.spell_id,
+                            cast.entity_id
+                        );
+                    }
+                }
+                cast.required_seconds > 0.0 && elapsed_seconds >= cast.required_seconds
             }
 
             // Defensive: an instant spell/ability never opens a `cast_state`.
@@ -1083,9 +1211,9 @@ fn advance_casts(ctx: &ReducerContext, dt: f32) {
 
         if finished {
             // Determine if this was a true completion or an interruption.
-            // Instant casts are never interruptions. Eidolon CastTime that failed
+            // Instant casts are never interruptions. weapon CastTime that failed
             // resolution is interrupted. Everything else depends on kind.
-            let interrupted = matches!(cast.kind, CastKindRow::Instant) || eidolon_cast_failed;
+            let interrupted = matches!(cast.kind, CastKindRow::Instant) || weapon_cast_failed;
 
             ended.push(EndedCast {
                 entity_id: cast.entity_id,
@@ -1286,7 +1414,7 @@ fn update_aoe_regions(ctx: &ReducerContext, dt: f32) {
 }
 
 /// Bevy's `tick_spell_cooldowns` and `tick_ability_cooldowns` in one pass —
-/// spells and Eidolon gestures share the `cooldown` table, so they share the
+/// spells and weapon abilities share the `cooldown` table, so they share the
 /// tick as well.
 ///
 /// Finished timers are deleted rather than kept at full elapsed, which is what

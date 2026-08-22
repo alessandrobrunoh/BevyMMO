@@ -23,6 +23,7 @@ use crate::ui::inventory::components::SplitAmountField;
 use crate::ui::login::{AuthPage, EmailInput, PasswordInput};
 use crate::ui::main_menu::PlayerNameInput;
 use crate::ui::settings::layout::SettingsTabButton;
+use crate::ui::settings::widgets::{DropdownHeader, DropdownOption, KeyCapture};
 use crate::ui::settings::{SettingsReturn, SettingsSession};
 use crate::ui::text_input::{
     unfocus_all, TextInput, TextInputErrorText, TextInputImages, TextInputValueText,
@@ -307,7 +308,13 @@ pub fn update_auth_button_actions(
 pub fn update_button_visuals(
     mut query: Query<
         (&Interaction, &mut ImageNode, &UiButtonImages),
-        (Changed<Interaction>, Without<SettingsTabButton>),
+        (
+            Changed<Interaction>,
+            Without<SettingsTabButton>,
+            Without<DropdownHeader>,
+            Without<DropdownOption>,
+            Without<KeyCapture>,
+        ),
     >,
 ) {
     for (interaction, mut image, button_images) in query.iter_mut() {

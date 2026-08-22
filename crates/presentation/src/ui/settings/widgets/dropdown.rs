@@ -7,6 +7,9 @@ use bevy::ecs::component::Component;
 use bevy::ecs::message::Message;
 use bevy::prelude::*;
 
+use crate::ui::button::{
+    apply_button_image, queue_bar_images, sliced_bar_image, BarButtonKind, UiButtonImages,
+};
 use crate::ui::settings::state::SettingChoice;
 use crate::ui::theme::UiTheme;
 
@@ -110,16 +113,17 @@ pub fn spawn_dropdown(
                 flex_direction: FlexDirection::Row,
                 justify_content: JustifyContent::SpaceBetween,
                 align_items: AlignItems::Center,
-                padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
-                border: UiRect::all(Val::Px(1.0)),
+                padding: UiRect::axes(Val::Px(28.0), Val::Px(6.0)),
+                flex_shrink: 0.0,
                 ..default()
             },
-            BackgroundColor(theme.input_bg),
-            BorderColor::all(theme.input_border),
+            sliced_bar_image(Handle::default()),
+            UiButtonImages::placeholder(),
             DropdownHeader,
         ))
         .id();
     commands.entity(root).add_child(header);
+    queue_bar_images(commands, header, BarButtonKind::Neutral);
 
     let label_entity = commands
         .spawn((
@@ -128,7 +132,7 @@ pub fn spawn_dropdown(
                 font_size: FontSize::Px(theme.input_font_size),
                 ..default()
             },
-            TextColor(theme.text_color),
+            TextColor(theme.button_text_color),
         ))
         .id();
     commands.entity(header).add_child(label_entity);
@@ -151,13 +155,10 @@ pub fn spawn_dropdown(
             Node {
                 width: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(2.0),
-                padding: UiRect::all(Val::Px(4.0)),
+                row_gap: Val::Px(4.0),
                 display: Display::None,
                 ..default()
             },
-            BackgroundColor(theme.input_bg),
-            BorderColor::all(theme.input_border),
             DropdownList,
         ))
         .id();
@@ -172,10 +173,12 @@ pub fn spawn_dropdown(
                     height: Val::Px(36.0),
                     justify_content: JustifyContent::FlexStart,
                     align_items: AlignItems::Center,
-                    padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                    padding: UiRect::axes(Val::Px(28.0), Val::Px(4.0)),
+                    flex_shrink: 0.0,
                     ..default()
                 },
-                BackgroundColor(theme.panel_bg),
+                sliced_bar_image(Handle::default()),
+                UiButtonImages::placeholder(),
                 DropdownOption {
                     dropdown: root,
                     index,
@@ -183,6 +186,7 @@ pub fn spawn_dropdown(
             ))
             .id();
         commands.entity(list).add_child(option);
+        queue_bar_images(commands, option, BarButtonKind::Neutral);
         let option_label = commands
             .spawn((
                 Text::new(item.label),
@@ -190,7 +194,7 @@ pub fn spawn_dropdown(
                     font_size: FontSize::Px(theme.input_font_size),
                     ..default()
                 },
-                TextColor(theme.text_color),
+                TextColor(theme.button_text_color),
             ))
             .id();
         commands.entity(option).add_child(option_label);
@@ -328,6 +332,46 @@ pub fn close_dropdowns_on_outside_click(
     }
 }
 
+/// Ornate bar hover/active: open header and selected option stay highlighted.
+pub fn sync_dropdown_bar_visuals(
+    dropdowns: Query<&Dropdown>,
+    mut headers: Query<
+        (&ChildOf, &Interaction, &UiButtonImages, &mut ImageNode),
+        With<DropdownHeader>,
+    >,
+    mut options: Query<(
+        &DropdownOption,
+        &Interaction,
+        &UiButtonImages,
+        &mut ImageNode,
+    )>,
+) {
+    for (parent, interaction, images, mut image) in &mut headers {
+        let open = dropdowns
+            .get(parent.0)
+            .map(|dropdown| dropdown.open)
+            .unwrap_or(false);
+        let shown = if open {
+            Interaction::Hovered
+        } else {
+            *interaction
+        };
+        apply_button_image(shown, &mut image, images);
+    }
+    for (option, interaction, images, mut image) in &mut options {
+        let selected = dropdowns
+            .get(option.dropdown)
+            .map(|dropdown| dropdown.selected == option.index)
+            .unwrap_or(false);
+        let shown = if selected {
+            Interaction::Hovered
+        } else {
+            *interaction
+        };
+        apply_button_image(shown, &mut image, images);
+    }
+}
+
 /// Copies [`Dropdown::open`] onto the list node's `Display`.
 pub fn sync_dropdown_open_state(
     dropdowns: Query<(&Dropdown, &Children), Changed<Dropdown>>,
@@ -399,6 +443,14 @@ mod tests {
             .single(&world)
             .expect("value text");
         assert_eq!(text.0, "Borderless");
+        assert!(
+            world
+                .query_filtered::<&ImageNode, With<DropdownHeader>>()
+                .iter(&world)
+                .next()
+                .is_some(),
+            "dropdown header must use ornate bar art"
+        );
     }
 
     fn press(app: &mut App, entity: Entity) {

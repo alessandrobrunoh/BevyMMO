@@ -12,6 +12,7 @@
 //!   `Window` when they change.
 //! - **`persist_settings_when_changed`** → JSON save when the resource mutates.
 
+use bevy::ecs::query::QueryFilter;
 use bevy::input::keyboard::{KeyCode, KeyboardInput};
 use bevy::input::ButtonInput;
 use bevy::input::ButtonState;
@@ -21,13 +22,12 @@ use bevy::window::{PrimaryWindow, Window};
 use super::layout::{ActiveSettingsTab, SettingsTabButton};
 use super::panels::SettingsPanel;
 use super::widgets::dropdown::DropdownChanged;
-use super::widgets::key_capture::{KeyBindingChanged, KeyCapture};
-use super::widgets::toggle::{apply_toggle_visual, Toggle, ToggleDisplay, ToggleKnob};
+use super::widgets::key_capture::{KeyBindingChanged, KeyCapture, KeyCaptureValue};
+use super::widgets::toggle::Toggle;
 use crate::ui::button::{apply_button_image, UiButtonAction, UiButtonImages};
 use crate::ui::settings::state::{
     save_settings, GameSettings, GameSettingsResource, KeyBinding, KeyModifiers, WindowMode,
 };
-use crate::ui::theme::UiTheme;
 
 // ===========================================================================
 // Sidebar / tab switching
@@ -87,27 +87,12 @@ pub fn update_panel_visibility(
 // Toggle
 // ===========================================================================
 
-/// Click on a toggle flips its state and updates its visual.
-pub fn toggle_on_click(
-    theme: Res<UiTheme>,
-    mut query: Query<(&Interaction, &mut Toggle, &Children), Changed<Interaction>>,
-    mut displays: Query<(&mut BackgroundColor, &Children), With<ToggleDisplay>>,
-    mut knobs: Query<&mut Node, With<ToggleKnob>>,
-) {
-    for (interaction, mut toggle, children) in query.iter_mut() {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        toggle.on = !toggle.on;
-        for child in children.iter() {
-            let Ok((mut bg, knob_children)) = displays.get_mut(child) else {
-                continue;
-            };
-            for knob_entity in knob_children.iter() {
-                if let Ok(mut knob) = knobs.get_mut(knob_entity) {
-                    apply_toggle_visual(toggle.on, &theme, &mut bg, &mut knob);
-                }
-            }
+/// Click on a toggle flips its state. Kit checkbox art is applied by
+/// [`super::widgets::toggle::sync_toggle_visuals`].
+pub fn toggle_on_click(mut query: Query<(&Interaction, &mut Toggle), Changed<Interaction>>) {
+    for (interaction, mut toggle) in query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            toggle.on = !toggle.on;
         }
     }
 }
@@ -120,7 +105,7 @@ pub fn toggle_on_click(
 /// to "Press a key…" / current binding.
 pub fn toggle_key_capture_on_click(
     mut query: Query<(&Interaction, &mut KeyCapture, &Children), Changed<Interaction>>,
-    mut value_texts: Query<&mut Text>,
+    mut value_texts: Query<&mut Text, With<KeyCaptureValue>>,
 ) {
     for (interaction, mut capture, children) in query.iter_mut() {
         if *interaction != Interaction::Pressed {
@@ -143,7 +128,7 @@ pub fn update_key_capture_input(
     mut events: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     mut captures: Query<(Entity, &mut KeyCapture, &Children)>,
-    mut value_texts: Query<&mut Text>,
+    mut value_texts: Query<&mut Text, With<KeyCaptureValue>>,
     mut changed: MessageWriter<KeyBindingChanged>,
 ) {
     let mut cancel_requested = false;
@@ -209,7 +194,11 @@ fn is_modifier_key(code: KeyCode) -> bool {
 /// Writes `new_text` into the first descendant (within `children`) text node
 /// found via the value-texts query. The key-capture button has a single child
 /// text node, so depth-1 search is enough.
-fn update_descendant_text(value_texts: &mut Query<&mut Text>, children: &Children, new_text: &str) {
+fn update_descendant_text<F: QueryFilter>(
+    value_texts: &mut Query<&mut Text, F>,
+    children: &Children,
+    new_text: &str,
+) {
     for child in children.iter() {
         if let Ok(mut text) = value_texts.get_mut(child) {
             text.0 = new_text.to_string();
@@ -247,7 +236,8 @@ pub fn apply_widget_events(
 pub fn reset_keybinds_on_button(
     query: Query<(&Interaction, &crate::ui::button::UiButton), Changed<Interaction>>,
     mut settings: ResMut<GameSettingsResource>,
-    mut captures: Query<&mut KeyCapture>,
+    mut captures: Query<(&mut KeyCapture, &Children)>,
+    mut value_texts: Query<&mut Text, With<KeyCaptureValue>>,
 ) {
     let mut triggered = false;
     for (interaction, button) in query.iter() {
@@ -259,9 +249,10 @@ pub fn reset_keybinds_on_button(
         return;
     }
     settings.0.keybinds.bindings.clear();
-    for mut capture in captures.iter_mut() {
+    for (mut capture, children) in captures.iter_mut() {
         capture.binding = KeyBinding::bare(capture.action.default_binding());
         capture.capturing = false;
+        update_descendant_text(&mut value_texts, children, &capture.binding.label());
     }
 }
 

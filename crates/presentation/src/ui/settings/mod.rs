@@ -68,10 +68,13 @@ impl Plugin for SettingsPlugin {
                         widgets::dropdown::close_dropdowns_on_escape,
                         widgets::dropdown::close_dropdowns_on_outside_click,
                         widgets::dropdown::sync_dropdown_open_state,
+                        widgets::dropdown::sync_dropdown_bar_visuals,
                     )
                         .chain(),
                     systems::toggle_on_click,
+                    widgets::toggle::sync_toggle_visuals,
                     systems::toggle_key_capture_on_click,
+                    widgets::key_capture::sync_key_capture_visuals,
                     systems::update_key_capture_input,
                 ),
             )
